@@ -1,0 +1,50 @@
+package dev.androidagent.overlay
+
+data class PanelBounds(val height: Int, val y: Int)
+
+object PanelKeyboardLayout {
+    fun defaultBounds(
+        displayHeight: Int,
+        presentation: PanelPresentation,
+        popupHeightFraction: Float,
+        fullscreenHeight: Int
+    ): PanelBounds {
+        return when (presentation) {
+            PanelPresentation.Popup -> {
+                val height = (displayHeight * popupHeightFraction).toInt()
+                PanelBounds(height = height, y = displayHeight - height)
+            }
+            PanelPresentation.Fullscreen -> PanelBounds(height = fullscreenHeight, y = 0)
+        }
+    }
+
+    fun adjustedBoundsAboveKeyboard(
+        defaultBounds: PanelBounds,
+        keyboardTop: Int,
+        minPanelHeight: Int,
+        minY: Int,
+        composerGap: Int,
+        minHeight: Int
+    ): PanelBounds? {
+        val defaultBottom = defaultBounds.y + defaultBounds.height
+        if (defaultBottom - keyboardTop < minPanelHeight) {
+            return null
+        }
+        val desiredY = defaultBounds.y.coerceAtMost((keyboardTop - minPanelHeight).coerceAtLeast(minY))
+        val desiredHeight = (keyboardTop - desiredY - composerGap).coerceAtLeast(minHeight)
+        return PanelBounds(height = desiredHeight, y = desiredY)
+    }
+
+    fun composerGap(baseGap: Int, fullscreenExtraGap: Int, presentation: PanelPresentation): Int {
+        return baseGap + if (presentation == PanelPresentation.Fullscreen) fullscreenExtraGap else 0
+    }
+
+    fun bottomClearance(fullscreenClearance: Int, presentation: PanelPresentation): Int {
+        return if (presentation == PanelPresentation.Fullscreen) fullscreenClearance else 0
+    }
+
+    fun estimatedKeyboardHeight(displayHeight: Int, fraction: Float, minHeight: Int, maxFraction: Float): Int {
+        return (displayHeight * fraction).toInt()
+            .coerceIn(minHeight, (displayHeight * maxFraction).toInt())
+    }
+}

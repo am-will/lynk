@@ -60,6 +60,8 @@ import dev.androidagent.chat.ChatTimelineRenderer
 import dev.androidagent.overlay.HostConnectionCopy
 import dev.androidagent.overlay.HostConnectionPhase
 import dev.androidagent.overlay.HostConnectionState
+import dev.androidagent.overlay.PanelBounds
+import dev.androidagent.overlay.PanelKeyboardLayout
 import dev.androidagent.overlay.PanelPresentation
 import dev.androidagent.overlay.hostConnectionColor
 import dev.androidagent.ui.AnchoredPicker
@@ -187,7 +189,6 @@ class OverlayController(
         message = "Checking host connection..."
     )
 
-    private data class PanelBounds(val height: Int, val y: Int)
     private data class SlashToken(val start: Int, val end: Int, val query: String)
 
     fun show() {
@@ -3500,11 +3501,20 @@ class OverlayController(
         panel.translationY = 0f
         setKeyboardSpacerHeight(keyboardBottomClearance())
         val minPanelHeight = dp(300)
-        val desiredY = defaultY.coerceAtMost((keyboardTop - minPanelHeight).coerceAtLeast(dp(8)))
-        val desiredHeight = (keyboardTop - desiredY - keyboardComposerGap()).coerceAtLeast(dp(240))
-        if (params.height != desiredHeight || params.y != desiredY) {
-            params.height = desiredHeight
-            params.y = desiredY
+        val adjustedBounds = PanelKeyboardLayout.adjustedBoundsAboveKeyboard(
+            defaultBounds = defaultBounds,
+            keyboardTop = keyboardTop,
+            minPanelHeight = minPanelHeight,
+            minY = dp(8),
+            composerGap = keyboardComposerGap(),
+            minHeight = dp(240)
+        ) ?: run {
+            restorePanelDefaultSize(panel, params)
+            return
+        }
+        if (params.height != adjustedBounds.height || params.y != adjustedBounds.y) {
+            params.height = adjustedBounds.height
+            params.y = adjustedBounds.y
             windowManager.updateViewLayout(panel, params)
             anchoredPicker?.reposition()
         }
@@ -3569,17 +3579,12 @@ class OverlayController(
         displayHeight: Int,
         presentation: PanelPresentation = activePanelPresentation
     ): PanelBounds {
-        return when (presentation) {
-            PanelPresentation.Popup -> {
-                val height = popupPanelHeight(displayHeight)
-                PanelBounds(height = height, y = displayHeight - height)
-            }
-            PanelPresentation.Fullscreen -> PanelBounds(height = fullscreenPanelHeight(displayHeight), y = 0)
-        }
-    }
-
-    private fun popupPanelHeight(displayHeight: Int): Int {
-        return (displayHeight * CHAT_MODAL_HEIGHT_FRACTION).toInt()
+        return PanelKeyboardLayout.defaultBounds(
+            displayHeight = displayHeight,
+            presentation = presentation,
+            popupHeightFraction = CHAT_MODAL_HEIGHT_FRACTION,
+            fullscreenHeight = fullscreenPanelHeight(displayHeight)
+        )
     }
 
     private fun fullscreenPanelHeight(displayHeight: Int): Int {
@@ -3594,25 +3599,27 @@ class OverlayController(
     }
 
     private fun keyboardComposerGap(): Int {
-        val fullscreenExtraGap = if (activePanelPresentation == PanelPresentation.Fullscreen) {
-            dp(DesignTokens.Spacing.sm)
-        } else {
-            0
-        }
-        return dp(KEYBOARD_COMPOSER_GAP_DP) + fullscreenExtraGap
+        return PanelKeyboardLayout.composerGap(
+            baseGap = dp(KEYBOARD_COMPOSER_GAP_DP),
+            fullscreenExtraGap = dp(DesignTokens.Spacing.sm),
+            presentation = activePanelPresentation
+        )
     }
 
     private fun keyboardBottomClearance(): Int {
-        return if (activePanelPresentation == PanelPresentation.Fullscreen) {
-            dp(FULLSCREEN_KEYBOARD_BOTTOM_CLEARANCE_DP)
-        } else {
-            0
-        }
+        return PanelKeyboardLayout.bottomClearance(
+            fullscreenClearance = dp(FULLSCREEN_KEYBOARD_BOTTOM_CLEARANCE_DP),
+            presentation = activePanelPresentation
+        )
     }
 
     private fun estimatedKeyboardHeight(displayHeight: Int): Int {
-        return (displayHeight * KEYBOARD_HEIGHT_ESTIMATE_FRACTION).toInt()
-            .coerceIn(dp(260), (displayHeight * 0.42f).toInt())
+        return PanelKeyboardLayout.estimatedKeyboardHeight(
+            displayHeight = displayHeight,
+            fraction = KEYBOARD_HEIGHT_ESTIMATE_FRACTION,
+            minHeight = dp(260),
+            maxFraction = 0.42f
+        )
     }
 
     private fun tokens(): ThemeTokens = DesignTokens.resolve(context)
