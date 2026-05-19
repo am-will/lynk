@@ -8,7 +8,6 @@ import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.RectF
 import android.os.Build
@@ -45,7 +44,9 @@ import dev.androidagent.chat.ChatSessionRow
 import dev.androidagent.chat.ChatState
 import dev.androidagent.overlay.BubbleOverlay
 import dev.androidagent.overlay.ChatTimelineBinder
+import dev.androidagent.overlay.ConfirmationOverlay
 import dev.androidagent.overlay.HostConnectionCopy
+import dev.androidagent.overlay.HostConnectionIndicatorButton
 import dev.androidagent.overlay.HostConnectionPhase
 import dev.androidagent.overlay.HostConnectionState
 import dev.androidagent.overlay.PanelBounds
@@ -123,12 +124,11 @@ class OverlayController(
             }
         }
     )
+    private val confirmationOverlay = ConfirmationOverlay(context, windowManager)
     private var panelView: View? = null
     private var panelParams: WindowManager.LayoutParams? = null
     private var panelScrimView: View? = null
     private var panelScrimParams: WindowManager.LayoutParams? = null
-    private var confirmationView: View? = null
-    private var confirmationScrimView: View? = null
     private var statusText: StatusUpdateView? = null
     private var voiceSurface: LinearLayout? = null
     private var voiceStatusText: TextView? = null
@@ -212,7 +212,7 @@ class OverlayController(
         restoreBubbleAfterFullscreen = false
         bubbleOverlay.hide()
         dismissPanel()
-        dismissConfirmation()
+        confirmationOverlay.dismiss()
     }
 
     fun suppressAgentChromeForAutomation() {
@@ -387,109 +387,7 @@ class OverlayController(
     }
 
     fun askConfirmation(message: String, preview: String?): CompletableDeferred<Boolean> {
-        val deferred = CompletableDeferred<Boolean>()
-        if (!Settings.canDrawOverlays(context)) {
-            deferred.complete(false)
-            return deferred
-        }
-        dismissConfirmation()
-        val tokens = tokens()
-
-        val card = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(
-                dp(DesignTokens.Spacing.xxl),
-                dp(DesignTokens.Spacing.xxl),
-                dp(DesignTokens.Spacing.xxl),
-                dp(DesignTokens.Spacing.lg)
-            )
-            background = Drawables.glassPanel(context, tokens, DesignTokens.Radius.xl)
-            elevation = dp(DesignTokens.Elevation.popover).toFloat()
-        }
-
-        val warningBadge = TextView(context).apply {
-            text = "Confirm"
-            Typography.applyOverline(this, tokens)
-            setTextColor(tokens.accent)
-            background = Drawables.accentSoftSurface(context, tokens)
-            setPadding(dp(DesignTokens.Spacing.md), dp(DesignTokens.Spacing.xs), dp(DesignTokens.Spacing.md), dp(DesignTokens.Spacing.xs))
-        }
-        card.addView(warningBadge, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ))
-
-        card.addView(TextView(context).apply {
-            text = "Are you sure?"
-            Typography.applyTitle(this, tokens)
-            setPadding(0, dp(DesignTokens.Spacing.md), 0, 0)
-        })
-
-        card.addView(TextView(context).apply {
-            text = listOfNotNull(message, preview).joinToString("\n\n")
-            Typography.applyBody(this, tokens, secondary = true)
-            setPadding(0, dp(DesignTokens.Spacing.sm), 0, dp(DesignTokens.Spacing.lg))
-            setLineSpacing(dp(DesignTokens.Spacing.xs).toFloat(), 1.0f)
-        })
-
-        val cancelButton = Button(context).apply {
-            text = "Cancel"
-            textSize = DesignTokens.Text.callout
-            isAllCaps = false
-            setTextColor(tokens.primaryText)
-            background = Drawables.pillSurface(context, tokens)
-            backgroundTintList = null
-            setOnClickListener {
-                dismissConfirmation()
-                deferred.complete(false)
-            }
-        }
-        val allowButton = Button(context).apply {
-            text = "Allow"
-            textSize = DesignTokens.Text.callout
-            isAllCaps = false
-            setTextColor(tokens.accentInk)
-            background = Drawables.accentSurface(context, tokens, DesignTokens.Radius.pill)
-            backgroundTintList = null
-            setOnClickListener {
-                dismissConfirmation()
-                deferred.complete(true)
-            }
-        }
-        val buttons = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
-            addView(cancelButton, LinearLayout.LayoutParams(0, dp(DesignTokens.Sizes.action), 1f).apply { rightMargin = dp(DesignTokens.Spacing.sm) })
-            addView(allowButton, LinearLayout.LayoutParams(0, dp(DesignTokens.Sizes.action), 1f))
-        }
-        card.addView(buttons)
-
-        val scrim = View(context).apply {
-            setBackgroundColor(tokens.scrim)
-            setOnClickListener {
-                dismissConfirmation()
-                deferred.complete(false)
-            }
-        }
-        val scrimParams = overlayParams(
-            width = WindowManager.LayoutParams.MATCH_PARENT,
-            height = WindowManager.LayoutParams.MATCH_PARENT,
-            focusable = false
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-        }
-        windowManager.addView(scrim, scrimParams)
-        confirmationScrimView = scrim
-
-        val cardWidth = (context.resources.displayMetrics.widthPixels - dp(DesignTokens.Spacing.xxl * 2))
-            .coerceAtMost(dp(360))
-        val params = overlayParams(width = cardWidth, height = WindowManager.LayoutParams.WRAP_CONTENT, focusable = false).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = dp(96)
-        }
-        windowManager.addView(card, params)
-        confirmationView = card
-        return deferred
+        return confirmationOverlay.ask(message, preview)
     }
 
     fun openPanel(presentation: PanelPresentation = PanelPresentation.Popup) {
@@ -2157,49 +2055,9 @@ class OverlayController(
         }
     }
 
-    private fun dismissConfirmation() {
-        confirmationView?.let { windowManager.removeView(it) }
-        confirmationScrimView?.let { windowManager.removeView(it) }
-        confirmationView = null
-        confirmationScrimView = null
-    }
-
     private fun maxTranscriptHeight(): Int {
         val modalBudget = (context.resources.displayMetrics.heightPixels * VOICE_MODAL_MAX_SCREEN_FRACTION).toInt()
         return (modalBudget - dp(220)).coerceAtLeast(dp(96))
-    }
-
-    private inner class HostConnectionIndicatorButton(context: Context) : View(context) {
-        private var tokens: ThemeTokens = tokens()
-        private var state = lastHostConnectionState
-        private val haloPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-        init {
-            isClickable = true
-            isFocusable = true
-            minimumWidth = dp(DesignTokens.Sizes.compact)
-            minimumHeight = dp(DesignTokens.Sizes.compact)
-        }
-
-        fun bind(tokens: ThemeTokens, state: HostConnectionState) {
-            this.tokens = tokens
-            this.state = state
-            background = Drawables.pillSurface(context, tokens)
-            contentDescription = "${HostConnectionCopy.title(state.phase)}. Tap for host connection details."
-            invalidate()
-        }
-
-        override fun onDraw(canvas: Canvas) {
-            super.onDraw(canvas)
-            val color = hostConnectionColor(tokens, state.phase)
-            val cx = width / 2f
-            val cy = height / 2f
-            haloPaint.color = DesignTokens.withAlpha(color, if (tokens.isDark) 0x44 else 0x2E)
-            dotPaint.color = color
-            canvas.drawCircle(cx, cy, dp(10).toFloat(), haloPaint)
-            canvas.drawCircle(cx, cy, dp(7).toFloat(), dotPaint)
-        }
     }
 
     private inner class ContextUsageView(context: Context) : View(context) {
@@ -2314,24 +2172,6 @@ class OverlayController(
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 .putExtra(MainActivity.EXTRA_SHOW_SETTINGS, true)
         )
-    }
-
-    private fun overlayParams(width: Int, height: Int, focusable: Boolean): WindowManager.LayoutParams {
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
-        return WindowManager.LayoutParams(
-            width,
-            height,
-            type,
-            if (focusable) WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL else WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
-        }
     }
 
     private fun attachDrag(
