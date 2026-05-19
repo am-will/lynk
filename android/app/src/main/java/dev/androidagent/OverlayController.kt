@@ -37,7 +37,6 @@ import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.Space
 import android.widget.TextView
 import android.widget.FrameLayout
@@ -50,6 +49,7 @@ import dev.androidagent.overlay.HostConnectionCopy
 import dev.androidagent.overlay.HostConnectionPhase
 import dev.androidagent.overlay.HostConnectionState
 import dev.androidagent.overlay.PanelBounds
+import dev.androidagent.overlay.PanelChrome
 import dev.androidagent.overlay.PanelKeyboardLayout
 import dev.androidagent.overlay.PanelPresentation
 import dev.androidagent.overlay.detachOverlayView
@@ -101,6 +101,27 @@ class OverlayController(
     private val chatTimelineBinder = ChatTimelineBinder(
         context = context,
         onToggleChatTool = onToggleChatTool
+    )
+    private val panelChrome = PanelChrome(
+        context = context,
+        windowManager = windowManager,
+        callbacks = object : PanelChrome.Callbacks {
+            override fun onBackPressed() {
+                handlePanelBackPressed()
+            }
+
+            override fun onScrimClicked() {
+                dismissPanel()
+            }
+
+            override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+                handlePanelWindowFocusChanged(hasWindowFocus)
+            }
+
+            override fun isPickerShowing(): Boolean {
+                return isAnchoredPickerShowing()
+            }
+        }
     )
     private var panelView: View? = null
     private var panelParams: WindowManager.LayoutParams? = null
@@ -496,124 +517,33 @@ class OverlayController(
         }
         val tokens = tokens()
         val input = buildComposerInput(tokens)
-        val history = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(DesignTokens.Spacing.md), dp(DesignTokens.Spacing.sm), dp(DesignTokens.Spacing.md), dp(DesignTokens.Spacing.md))
-            clipToPadding = false
-        }
-        val historyScroll = ScrollView(context).apply {
-            isFillViewport = false
-            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
-            isVerticalScrollBarEnabled = false
-            addView(history)
-        }
-        chatTimelineBinder.bind(history, historyScroll)
-        statusText = StatusUpdateView(context, tokens).apply {
+        val status = StatusUpdateView(context, tokens).apply {
             setText(lastChatState.status ?: "OpenClaw chat ready.")
             setActive(lastChatState.isRunning)
         }
+        statusText = status
         val voice = buildVoiceSurface(tokens)
         val composer = buildComposer(tokens, input)
-        val keyboardSpacer = View(context).apply {
-            visibility = View.GONE
-            keyboardSpacerView = this
-        }
         val header = buildModalHeader(tokens, presentation)
-
-        val chrome = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            isFocusableInTouchMode = true
-            background = Drawables.glassPanel(context, tokens)
-            elevation = dp(DesignTokens.Elevation.popover).toFloat()
-            setPadding(0, 0, 0, 0)
-            setOnKeyListener { _, keyCode, event ->
-                if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
-                    handlePanelBackPressed()
-                    true
-                } else {
-                    false
-                }
-            }
-            addView(header, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ))
-            addView(voice, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                leftMargin = dp(DesignTokens.Spacing.md)
-                rightMargin = dp(DesignTokens.Spacing.md)
-                topMargin = dp(DesignTokens.Spacing.xs)
-            })
-            addView(historyScroll, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            ))
-            addView(statusText, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ))
-            addView(composer, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                leftMargin = dp(DesignTokens.Spacing.md)
-                rightMargin = dp(DesignTokens.Spacing.md)
-                bottomMargin = dp(DesignTokens.Spacing.md)
-                topMargin = dp(DesignTokens.Spacing.xs)
-            })
-            addView(keyboardSpacer, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0
-            ))
-        }
-        panelContent = chrome
-
-        val host = object : FrameLayout(context) {
-            override fun dispatchTouchEvent(event: android.view.MotionEvent): Boolean {
-                if (isModalCloseHotZone(event)) {
-                    if (event.actionMasked == android.view.MotionEvent.ACTION_UP) {
-                        handlePanelBackPressed()
-                    }
-                    return true
-                }
-                return super.dispatchTouchEvent(event)
-            }
-
-            override fun dispatchKeyEventPreIme(event: KeyEvent): Boolean {
-                if (event.keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
-                    handlePanelBackPressed()
-                    return true
-                }
-                return super.dispatchKeyEventPreIme(event)
-            }
-
-            override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
-                super.onWindowFocusChanged(hasWindowFocus)
-                handlePanelWindowFocusChanged(hasWindowFocus)
-            }
-        }.apply {
-            isFocusableInTouchMode = true
-            addView(chrome, FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            ))
-        }
-        panelHost = host
 
         val display = context.resources.displayMetrics
         val defaultBounds = panelDefaultBounds(display.heightPixels, presentation)
-        val params = overlayParams(
-            width = display.widthPixels,
-            height = defaultBounds.height,
-            focusable = true
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = 0
-            y = defaultBounds.y
-        }
+        val handle = panelChrome.build(
+            tokens = tokens,
+            presentation = presentation,
+            header = header,
+            voice = voice,
+            status = status,
+            composer = composer,
+            defaultBounds = defaultBounds
+        )
+        val host = handle.host
+        val params = handle.panelParams
+        val scrim = handle.scrim
+        panelHost = host
+        panelContent = handle.content
+        keyboardSpacerView = handle.keyboardSpacer
+        chatTimelineBinder.bind(handle.historyContainer, handle.historyScrollView)
         input.setOnFocusChangeListener { _, hasFocus ->
             if (hasFocus) {
                 armKeyboardFallback()
@@ -623,20 +553,9 @@ class OverlayController(
                 restorePanelDefaultSize(host, params)
             }
         }
-        val scrim = View(context).apply {
-            setBackgroundColor(tokens.scrim)
-            setOnClickListener { dismissPanel() }
-        }
-        val scrimParams = overlayParams(
-            width = WindowManager.LayoutParams.MATCH_PARENT,
-            height = WindowManager.LayoutParams.MATCH_PARENT,
-            focusable = false
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-        }
-        windowManager.addView(scrim, scrimParams)
+        windowManager.addView(scrim, handle.scrimParams)
         panelScrimView = scrim
-        panelScrimParams = scrimParams
+        panelScrimParams = handle.scrimParams
 
         windowManager.addView(host, params)
         host.viewTreeObserver.addOnGlobalLayoutListener { positionPanelAboveKeyboard(host, params) }
@@ -654,7 +573,7 @@ class OverlayController(
         renderHostConnectionState(lastHostConnectionState)
         renderTranscriptionState(lastTranscriptionState)
 
-        runPanelOpenAnimation(host, scrim, appearancePrefs(), defaultBounds.height)
+        runPanelOpenAnimation(host, scrim, appearancePrefs(), handle.defaultHeight)
         if (suppressNextPanelViewedCallback) {
             suppressNextPanelViewedCallback = false
         } else {
@@ -827,26 +746,15 @@ class OverlayController(
     }
 
     private fun handlePanelBackPressed() {
-        if (anchoredPicker?.isShowing == true) {
+        if (isAnchoredPickerShowing()) {
             anchoredPicker?.dismiss()
         } else {
             dismissPanel()
         }
     }
 
-    private fun isModalCloseHotZone(event: android.view.MotionEvent): Boolean {
-        if (anchoredPicker?.isShowing == true) {
-            return false
-        }
-        if (event.actionMasked != android.view.MotionEvent.ACTION_DOWN &&
-            event.actionMasked != android.view.MotionEvent.ACTION_UP
-        ) {
-            return false
-        }
-        val host = panelHost ?: return false
-        val closeZoneWidth = dp(MODAL_CLOSE_HOT_ZONE_WIDTH_DP)
-        val closeZoneHeight = dp(MODAL_CLOSE_HOT_ZONE_HEIGHT_DP)
-        return event.x >= host.width - closeZoneWidth && event.y <= closeZoneHeight
+    private fun isAnchoredPickerShowing(): Boolean {
+        return anchoredPicker?.isShowing == true
     }
 
     private fun buildComposerInput(tokens: ThemeTokens): EditText {
@@ -2392,8 +2300,6 @@ class OverlayController(
     companion object {
         private const val VOICE_MODAL_MAX_SCREEN_FRACTION = 0.40f
         private const val CHAT_MODAL_HEIGHT_FRACTION = 0.82f
-        private const val MODAL_CLOSE_HOT_ZONE_WIDTH_DP = 56
-        private const val MODAL_CLOSE_HOT_ZONE_HEIGHT_DP = 88
         private const val KEYBOARD_HEIGHT_ESTIMATE_FRACTION = 0.485f
         private const val KEYBOARD_COMPOSER_GAP_DP = 4
         private const val FULLSCREEN_KEYBOARD_BOTTOM_CLEARANCE_DP = 28
