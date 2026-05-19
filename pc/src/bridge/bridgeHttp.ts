@@ -115,7 +115,7 @@ async function routeHttp(req: IncomingMessage, res: ServerResponse, deps: Bridge
 
   const petsSpritesheetMatch = url.pathname.match(/^\/api\/pets\/([^/]+)\/spritesheet$/);
   if (req.method === "GET" && petsSpritesheetMatch) {
-    await handlePetSpritesheet(res, decodeURIComponent(petsSpritesheetMatch[1] ?? ""), deps);
+    await handlePetSpritesheet(req, res, decodeURIComponent(petsSpritesheetMatch[1] ?? ""), deps);
     return;
   }
 
@@ -131,14 +131,14 @@ async function routeHttp(req: IncomingMessage, res: ServerResponse, deps: Bridge
   json(res, 404, { ok: false, error: "not found" });
 }
 
-async function handlePetSpritesheet(res: ServerResponse, petId: string, deps: BridgeHttpDependencies): Promise<void> {
+async function handlePetSpritesheet(req: IncomingMessage, res: ServerResponse, petId: string, deps: BridgeHttpDependencies): Promise<void> {
   const info = await getPetSpritesheet(petId, petsDir(deps));
   if (!info) {
     json(res, 404, { ok: false, error: "pet not found" });
     return;
   }
   const etag = spritesheetEtag(info);
-  if (res.req.headers["if-none-match"] === etag) {
+  if (req.headers["if-none-match"] === etag) {
     res.writeHead(304, { etag });
     res.end();
     return;

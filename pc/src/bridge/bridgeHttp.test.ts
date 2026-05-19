@@ -1,0 +1,182 @@
+import assert from "node:assert/strict";
+import { createServer, type Server } from "node:http";
+import test from "node:test";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { createBridgeHttpHandler } from "./bridgeHttp.js";
+import { getPetSpritesheet, spritesheetEtag } from "./PetCatalog.js";
+import type { PhoneCommandRequest } from "../protocol/messages.js";
+
+const token = "test-token";
+
+class FakeHub {
+  readonly commands: PhoneCommandRequest[] = [];
+
+  listPhones(): unknown[] {
+    return [{ type: "register", deviceId: "phone", token, capabilities: [], connectedAt: 1 }];
+  }
+
+  async sendCommand(request: PhoneCommandRequest): Promise<{ id: string; deviceId: string; ok: boolean }> {
+    this.commands.push(request);
+    return { id: "cmd_1", deviceId: request.deviceId ?? "phone", ok: true };
+  }
+}
+
+class FakeAudit {
+  recent(limit: number): unknown[] {
+    return [{ id: "event", limit }];
+  }
+
+  active(): unknown[] {
+    return [{ deviceId: "phone" }];
+  }
+}
+
+class FakeDispatcher {
+  readonly requests: unknown[] = [];
+
+  async handleUserRequest(request: unknown): Promise<{ finalMessage: string }> {
+    this.requests.push(request);
+    return { finalMessage: "done" };
+  }
+}
+
+async function withHttpServer<T>(
+  options: { petsDir?: string; stopAgentWork?: (deviceId: string, reason: string) => Promise<void> },
+  fn: (baseUrl: string, fakes: { hub: FakeHub; audit: FakeAudit; dispatcher: FakeDispatcher }) => Promise<T>
+): Promise<T> {
+  const hub = new FakeHub();
+  const audit = new FakeAudit();
+  const dispatcher = new FakeDispatcher();
+  const handler = createBridgeHttpHandler({
+    config: { token, defaultDeviceId: "phone" },
+    hub: hub as never,
+    audit: audit as never,
+    dispatcher: dispatcher as never,
+    stopAgentWork: options.stopAgentWork ?? (async () => {}),
+    petsDir: options.petsDir
+  });
+  const server = createServer((req, res) => {
+    handler(req, res);
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address === "object");
+    return await fn(`http://127.0.0.1:${address.port}`, { hub, audit, dispatcher });
+  } finally {
+    await closeServer(server);
+  }
+}
+
+function closeServer(server: Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.close((error) => error ? reject(error) : resolve());
+  });
+}
+
+function authHeaders(): Record<string, string> {
+  return { authorization: `Bearer ${token}` };
+}
+
+async function makePetsDir(): Promise<string> {
+  return await mkdtemp(join(tmpdir(), "open-claw-http-pets-"));
+}
+
+async function writePet(root: string, id: string): Promise<void> {
+  const dir = join(root, id);
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "pet.json"), JSON.stringify({
+    id,
+    displayName: id,
+    description: `${id} description`,
+    spritesheetPath: "spritesheet.webp"
+  }));
+  await writeFile(join(dir, "spritesheet.webp"), Buffer.from("RIFFFAKEWEBPDATA"));
+}
+
+test("bridge HTTP serves health without auth and protects api routes", async () => {
+  await withHttpServer({}, async (baseUrl) => {
+    const health = await fetch(`${baseUrl}/health`);
+    assert.equal(health.status, 200);
+    assert.deepEqual(await health.json(), {
+      ok: true,
+      phones: [{ type: "register", deviceId: "phone", token, capabilities: [], connectedAt: 1 }]
+    });
+
+    const protectedResponse = await fetch(`${baseUrl}/api/phones`);
+    assert.equal(protectedResponse.status, 401);
+    assert.equal(protectedResponse.headers.get("www-authenticate"), "Bearer");
+  });
+});
+
+test("bridge HTTP validates user requests and dispatches valid text", async () => {
+  await withHttpServer({}, async (baseUrl, { dispatcher }) => {
+    const empty = await fetch(`${baseUrl}/api/user_request`, {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ text: "   " })
+    });
+    assert.equal(empty.status, 400);
+
+    const ok = await fetch(`${baseUrl}/api/user_request`, {
+      method: "POST",
+      headers: { ...authHeaders(), "content-type": "application/json" },
+      body: JSON.stringify({ text: "Open Settings" })
+    });
+    assert.equal(ok.status, 200);
+    assert.deepEqual(dispatcher.requests, [{
+      type: "user_request",
+      inputType: "text",
+      deviceId: "phone",
+      text: "Open Settings"
+    }]);
+  });
+});
+
+test("bridge HTTP routes commands, stop, unknown paths, and pet spritesheets", async () => {
+  const petsDir = await makePetsDir();
+  const stops: Array<{ deviceId: string; reason: string }> = [];
+  try {
+    await writePet(petsDir, "buddy");
+    await withHttpServer({
+      petsDir,
+      stopAgentWork: async (deviceId, reason) => {
+        stops.push({ deviceId, reason });
+      }
+    }, async (baseUrl, { hub }) => {
+      const command = await fetch(`${baseUrl}/api/phone/default/command`, {
+        method: "POST",
+        headers: { ...authHeaders(), "content-type": "application/json" },
+        body: JSON.stringify({ command: "press_home" })
+      });
+      assert.equal(command.status, 200);
+      assert.equal(hub.commands[0].command, "press_home");
+
+      const stop = await fetch(`${baseUrl}/api/agent/stop`, {
+        method: "POST",
+        headers: { ...authHeaders(), "content-type": "application/json" },
+        body: JSON.stringify({ reason: "test stop" })
+      });
+      assert.equal(stop.status, 200);
+      assert.deepEqual(stops, [{ deviceId: "phone", reason: "test stop" }]);
+
+      const missingPet = await fetch(`${baseUrl}/api/pets/missing/spritesheet`, { headers: authHeaders() });
+      assert.equal(missingPet.status, 404);
+
+      const info = await getPetSpritesheet("buddy", petsDir);
+      assert.ok(info);
+      const notModified = await fetch(`${baseUrl}/api/pets/buddy/spritesheet`, {
+        headers: { ...authHeaders(), "if-none-match": spritesheetEtag(info) }
+      });
+      assert.equal(notModified.status, 304);
+
+      const unknown = await fetch(`${baseUrl}/api/nope`, { headers: authHeaders() });
+      assert.equal(unknown.status, 404);
+    });
+  } finally {
+    await rm(petsDir, { recursive: true, force: true });
+  }
+});
