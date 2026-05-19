@@ -250,7 +250,7 @@ test("completed background session runs emit reply notifications without switchi
   assert.equal(reply.textPreview, "Background answer");
 });
 
-test("reasoning changes do not append status messages and invalid levels keep last known value", async () => {
+test("reasoning and model changes do not append chat messages", async () => {
   const { bridge, chatMessages, client } = createHarness();
 
   await bridge.setReasoning({
@@ -269,7 +269,8 @@ test("reasoning changes do not append status messages and invalid levels keep la
     model: "gpt-5.5"
   });
 
-  assert.deepEqual(client.sent.map((entry) => entry.message), ["/think high", "/think high", "/model gpt-5.5"]);
+  assert.deepEqual(client.sent.map((entry) => entry.message), ["/think high", "/think high"]);
+  assert.deepEqual(client.patched.map((entry) => entry.patch), [{ model: "gpt-5.5" }]);
   assert.equal(chatMessages.filter((message) => message.type === "chat.message").length, 0);
 });
 

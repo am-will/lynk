@@ -321,7 +321,13 @@ export class OpenClawChatBridge {
     const state = this.stateFor(message.deviceId);
     const sessionKey = message.sessionKey ?? state.sessionKey;
     state.model = message.model;
-    await this.sendSlashCommand(message.deviceId, `/model ${message.model}`, sessionKey, `Model: ${message.model}`);
+    try {
+      await this.client.patchSession(sessionKey, { model: message.model });
+      this.sendState(message.deviceId, `Model: ${message.model}`);
+      void this.refreshMetadata(message.deviceId);
+    } catch (error) {
+      this.sendChatError(message.deviceId, sessionKey, error);
+    }
   }
 
   async setReasoning(message: ChatSetReasoningMessage): Promise<void> {
