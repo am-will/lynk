@@ -155,7 +155,6 @@ class OverlayController(
     private var contextUsageView: ContextUsageView? = null
     private var composerInput: EditText? = null
     private var transcriptionMicButton: ImageButton? = null
-    private var transcriptionCancelButton: Button? = null
     private var lastTranscriptionState = VoiceTranscriptionState()
     private var automationSuppressionDepth = 0
     private var restoreBubbleAfterAutomation = false
@@ -1140,28 +1139,12 @@ class OverlayController(
             contentDescription = "Start voice transcription"
         ) {
             if (lastTranscriptionState.isRecording) {
-                onStopTranscription()
+                onCancelTranscription()
             } else {
                 onStartTranscription()
             }
         }
         controls.addView(transcriptionMicButton, LinearLayout.LayoutParams(sendSize, sendSize).apply { rightMargin = dp(DesignTokens.Spacing.sm) })
-
-        transcriptionCancelButton = Button(context).apply {
-            text = "Cancel"
-            textSize = DesignTokens.Text.caption
-            isAllCaps = false
-            visibility = View.GONE
-            setTextColor(tokens.primaryText)
-            background = Drawables.pillSurface(context, tokens)
-            backgroundTintList = null
-            includeFontPadding = false
-            minWidth = 0
-            minimumWidth = 0
-            setPadding(dp(DesignTokens.Spacing.sm + 2), 0, dp(DesignTokens.Spacing.sm + 2), 0)
-            setOnClickListener { onCancelTranscription() }
-        }
-        controls.addView(transcriptionCancelButton, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, controlSize).apply { rightMargin = controlGap })
 
         sendStopButton = iconButton(
             tokens = tokens,
@@ -1169,7 +1152,10 @@ class OverlayController(
             contentDescription = "Send message",
             accent = true
         ) {
-            if (lastChatState.isRunning) {
+            if (lastTranscriptionState.isRecording) {
+                onStopTranscription()
+                setStatus("Transcribing audio...")
+            } else if (lastChatState.isRunning) {
                 onStop()
                 setStatus("Stop requested")
             } else {
@@ -1902,10 +1888,7 @@ class OverlayController(
 
     private fun renderChatState(state: ChatState) {
         val tokens = tokens()
-        sendStopButton?.apply {
-            setImageResource(if (state.isRunning) R.drawable.ic_stop else R.drawable.ic_send)
-            contentDescription = if (state.isRunning) "Stop OpenClaw turn" else "Send message"
-        }
+        renderComposerActionButtons(tokens, state, lastTranscriptionState)
         modelButton?.let { btn ->
             val fastModeOn = state.fastMode == true
             btn.text = formatModelLabel(state.selectedModel ?: state.models.firstOrNull()?.id)
@@ -2002,7 +1985,7 @@ class OverlayController(
         val raw = model ?: return "Model"
         val pretty = lastChatState.models.firstOrNull { it.id == raw }?.label
             ?: raw.substringAfter("/").ifBlank { raw }
-        return pretty
+        return if (pretty.startsWith("gpt-", ignoreCase = true)) pretty.drop(4) else pretty
     }
 
     private fun formatReasoningLabel(reasoning: String?): String {
@@ -2706,7 +2689,6 @@ class OverlayController(
         panelContent = null
         composerInput = null
         transcriptionMicButton = null
-        transcriptionCancelButton = null
         voiceSurface = null
         voiceStatusText = null
         voiceTranscriptText = null
@@ -2771,7 +2753,6 @@ class OverlayController(
                 onStopVoice()
                 voiceSurfaceForceHidden = true
                 voiceSurface?.visibility = View.GONE
-                dismissPanel()
             }
         }
         val voiceActions = LinearLayout(context).apply {
@@ -2846,31 +2827,51 @@ class OverlayController(
 
     private fun renderTranscriptionState(state: VoiceTranscriptionState) {
         val tokens = tokens()
-
-        transcriptionMicButton?.apply {
-            isEnabled = !state.isTranscribing
-            contentDescription = when {
-                state.isRecording -> "Stop recording and transcribe"
-                state.isTranscribing -> "Transcribing audio"
-                else -> "Start voice transcription"
-            }
-            background = when {
-                state.isRecording -> Drawables.accentSurface(context, tokens, DesignTokens.Radius.pill)
-                state.isTranscribing -> Drawables.pillSurface(context, tokens)
-                else -> Drawables.pillSurface(context, tokens)
-            }
-            backgroundTintList = null
-            setColorFilter(if (state.isRecording) tokens.accentInk else tokens.primaryText)
-        }
-        transcriptionCancelButton?.visibility = if (state.isRecording) View.VISIBLE else View.GONE
+        renderComposerActionButtons(tokens, lastChatState, state)
 
         when {
             state.error != null -> setStatus("Transcription error: ${state.error}")
             state.isTranscribing -> setStatus("Transcribing audio...")
             state.isRecording -> {
                 val levelPercent = (state.audioLevel * 100f).roundToInt().coerceIn(0, 100)
-                setStatus("Recording for transcription. Level $levelPercent%. Tap mic to stop, or Cancel to discard.")
+                setStatus("Recording for transcription. Level $levelPercent%. Tap X to cancel, or stop to transcribe.")
             }
+        }
+    }
+
+    private fun renderComposerActionButtons(
+        tokens: ThemeTokens,
+        chatState: ChatState,
+        transcriptionState: VoiceTranscriptionState
+    ) {
+        transcriptionMicButton?.apply {
+            isEnabled = !transcriptionState.isTranscribing
+            setImageResource(if (transcriptionState.isRecording) R.drawable.ic_close else R.drawable.ic_mic)
+            contentDescription = when {
+                transcriptionState.isRecording -> "Cancel voice transcription"
+                transcriptionState.isTranscribing -> "Transcribing audio"
+                else -> "Start voice transcription"
+            }
+            background = if (transcriptionState.isRecording) {
+                Drawables.dangerSurface(context, tokens, DesignTokens.Radius.pill)
+            } else {
+                Drawables.pillSurface(context, tokens)
+            }
+            backgroundTintList = null
+            setColorFilter(if (transcriptionState.isRecording) tokens.accentInk else tokens.primaryText)
+        }
+
+        sendStopButton?.apply {
+            val shouldShowStop = transcriptionState.isRecording || chatState.isRunning
+            setImageResource(if (shouldShowStop) R.drawable.ic_stop else R.drawable.ic_send)
+            contentDescription = when {
+                transcriptionState.isRecording -> "Stop recording and transcribe"
+                chatState.isRunning -> "Stop OpenClaw turn"
+                else -> "Send message"
+            }
+            background = Drawables.accentSurface(context, tokens, DesignTokens.Radius.pill)
+            backgroundTintList = null
+            setColorFilter(tokens.accentInk)
         }
     }
 
