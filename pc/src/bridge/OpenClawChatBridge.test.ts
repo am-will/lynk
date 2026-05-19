@@ -22,10 +22,11 @@ const config: BridgeConfig = {
 
 class FakeGatewayClient {
   readonly handlers = new Set<GatewayEventHandler>();
-  readonly sent: Array<{ sessionKey: string; message: string; idempotencyKey?: string }> = [];
+  readonly sent: Array<{ sessionKey: string; message: string; model?: string; idempotencyKey?: string }> = [];
   readonly created: Array<{ key?: string; label?: string; model?: string }> = [];
   readonly patched: Array<{ sessionKey: string; patch: Record<string, unknown> }> = [];
   readonly aborted: Array<{ sessionKey: string; runId?: string }> = [];
+  sessions: Array<Record<string, unknown>> = [];
   readonly duplicateLabels = new Set<string>();
   private runCount = 0;
 
@@ -38,7 +39,7 @@ class FakeGatewayClient {
     return { sessionId: `${sessionKey}:id`, messages: [] };
   }
 
-  async sendChat(options: { sessionKey: string; message: string; idempotencyKey?: string }): Promise<{ runId: string; sessionKey: string }> {
+  async sendChat(options: { sessionKey: string; message: string; model?: string; idempotencyKey?: string }): Promise<{ runId: string; sessionKey: string }> {
     this.runCount += 1;
     this.sent.push(options);
     return { runId: `run_${this.runCount}`, sessionKey: options.sessionKey };
@@ -54,7 +55,7 @@ class FakeGatewayClient {
   }
 
   async listSessions(): Promise<unknown> {
-    return { sessions: [] };
+    return { sessions: this.sessions };
   }
 
   async createSession(options: { key?: string; label?: string; model?: string }): Promise<unknown> {
@@ -266,12 +267,46 @@ test("reasoning and model changes do not append chat messages", async () => {
   await bridge.setModel({
     type: "chat.set_model",
     deviceId: "pixel",
-    model: "gpt-5.5"
+    model: "gpt-5.4"
+  });
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Use the selected model"
   });
 
-  assert.deepEqual(client.sent.map((entry) => entry.message), ["/think high", "/think high"]);
-  assert.deepEqual(client.patched.map((entry) => entry.patch), [{ model: "gpt-5.5" }]);
+  assert.deepEqual(client.sent.map((entry) => entry.message), ["/think high", "/think high", "Use the selected model"]);
+  assert.equal(client.sent.at(-1)?.model, "gpt-5.4");
+  assert.deepEqual(client.patched.map((entry) => entry.patch), []);
   assert.equal(chatMessages.filter((message) => message.type === "chat.message").length, 0);
+});
+
+test("model metadata refresh does not clobber selected model override", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+  client.sessions = [{
+    key: config.openClawChatSessionKey,
+    sessionId: "session_1",
+    model: "gpt-5.5"
+  }];
+
+  await bridge.open({
+    type: "chat.open",
+    deviceId: "pixel"
+  });
+  await bridge.setModel({
+    type: "chat.set_model",
+    deviceId: "pixel",
+    model: "gpt-5.4"
+  });
+  await bridge.controlCommand({
+    type: "chat.control_command",
+    deviceId: "pixel",
+    command: "status",
+    args: {}
+  });
+
+  const latestState = chatMessages.filter((message) => message.type === "chat.state").at(-1);
+  assert.equal(latestState?.model, "gpt-5.4");
 });
 
 test("realtime steer and stop are visible user messages on the active chat", async () => {

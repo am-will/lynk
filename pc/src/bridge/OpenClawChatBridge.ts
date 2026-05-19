@@ -65,6 +65,7 @@ interface GatewayChatClient {
     sessionKey: string;
     sessionId?: string;
     message: string;
+    model?: string;
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult>;
@@ -149,6 +150,7 @@ export class OpenClawChatBridge {
         sessionKey: state.sessionKey,
         sessionId: message.sessionId,
         message: text,
+        model: message.model ?? state.model ?? undefined,
         thinking: state.reasoningEffort ?? undefined,
         idempotencyKey
       });
@@ -223,6 +225,7 @@ export class OpenClawChatBridge {
         sessionKey: state.sessionKey,
         sessionId: state.sessionId ?? undefined,
         message: text,
+        model: request.model ?? state.model ?? undefined,
         thinking: state.reasoningEffort ?? undefined,
         idempotencyKey
       });
@@ -256,6 +259,7 @@ export class OpenClawChatBridge {
       sessionKey: state.sessionKey,
       sessionId: state.sessionId ?? undefined,
       message: text,
+      model: state.model ?? undefined,
       thinking: state.reasoningEffort ?? undefined,
       idempotencyKey
     });
@@ -286,6 +290,7 @@ export class OpenClawChatBridge {
     const state = this.stateFor(message.deviceId);
     state.sessionKey = message.sessionKey;
     state.runId = null;
+    state.model = null;
     state.pendingFirstMessageDisplayName = false;
     state.lastRealtimeRequestAt = null;
     this.sendState(message.deviceId, "Switched session");
@@ -319,15 +324,8 @@ export class OpenClawChatBridge {
 
   async setModel(message: ChatSetModelMessage): Promise<void> {
     const state = this.stateFor(message.deviceId);
-    const sessionKey = message.sessionKey ?? state.sessionKey;
     state.model = message.model;
-    try {
-      await this.client.patchSession(sessionKey, { model: message.model });
-      this.sendState(message.deviceId, `Model: ${message.model}`);
-      void this.refreshMetadata(message.deviceId);
-    } catch (error) {
-      this.sendChatError(message.deviceId, sessionKey, error);
-    }
+    this.sendState(message.deviceId, `Model: ${message.model}`);
   }
 
   async setReasoning(message: ChatSetReasoningMessage): Promise<void> {
@@ -600,7 +598,7 @@ export class OpenClawChatBridge {
     const selected = sessions.find((session) => session.key === state.sessionKey);
     if (selected) {
       state.sessionId = selected.sessionId ?? null;
-      state.model = selected.model ?? state.model ?? null;
+      state.model = state.model ?? selected.model ?? null;
       state.reasoningEffort = normalizeThinkingLevel(selected.thinkingLevel, state.reasoningEffort);
       state.reasoningStream = reasoningStreamEnabled(selected.reasoningLevel) ?? state.reasoningStream ?? null;
       state.fastMode = selected.fastMode ?? null;

@@ -464,6 +464,7 @@ export class OpenClawGatewayChatClient {
     sessionKey: string;
     sessionId?: string;
     message: string;
+    model?: string;
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
@@ -472,6 +473,7 @@ export class OpenClawGatewayChatClient {
       sessionKey: options.sessionKey,
       ...(options.sessionId ? { sessionId: options.sessionId } : {}),
       message: options.message,
+      ...(options.model ? { model: options.model } : {}),
       ...(options.thinking ? { thinking: options.thinking } : {}),
       idempotencyKey
     });
