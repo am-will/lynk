@@ -38,6 +38,7 @@ class AnchoredPicker(
 ) {
 
     data class Row(
+        val id: String? = null,
         val label: String,
         val sublabel: String? = null,
         val iconRes: Int? = null,
@@ -57,6 +58,7 @@ class AnchoredPicker(
     private var preDrawListener: ViewTreeObserver.OnPreDrawListener? = null
     private var onDismissCallback: (() -> Unit)? = null
     private var currentAnchor: View? = null
+    private val rowViewsById = mutableMapOf<String, View>()
 
     val isShowing: Boolean
         get() = sheetView != null
@@ -71,6 +73,19 @@ class AnchoredPicker(
             reposition()
             findBodyScroller(sheet)?.scrollTo(0, scrollY)
         }
+    }
+
+    fun updateRow(row: Row): Boolean {
+        val rowId = row.id ?: return false
+        val existing = rowViewsById[rowId] ?: return false
+        val parent = existing.parent as? ViewGroup ?: return false
+        val index = parent.indexOfChild(existing)
+        if (index < 0) return false
+
+        val replacement = buildRow(row)
+        parent.removeViewAt(index)
+        parent.addView(replacement, index)
+        return true
     }
 
     fun reposition() {
@@ -260,6 +275,7 @@ class AnchoredPicker(
     }
 
     private fun bindSheetContent(container: LinearLayout, title: String?, sections: List<Section>) {
+        rowViewsById.clear()
         container.removeAllViews()
         if (!title.isNullOrBlank()) {
             container.addView(LinearLayout(context).apply {
@@ -374,6 +390,7 @@ class AnchoredPicker(
                 }
             }
         }
+        row.id?.let { rowViewsById[it] = rowView }
 
         row.iconRes?.let { iconRes ->
             val iconFrame = FrameLayout(context).apply {

@@ -1221,40 +1221,9 @@ class OverlayController(
             }
         }
 
-        val fastModeOn = lastChatState.fastMode == true
-        val verboseMode = normalizedVerboseLevel(lastChatState.verboseLevel)
-        val nextVerboseMode = nextVerboseLevel(verboseMode)
-        val reasoningStreamOn = lastChatState.reasoningStreamEnabled == true
         val modeRows = listOf(
-            AnchoredPicker.Row(
-                label = "Fast mode: ${if (fastModeOn) "On" else "Off"}",
-                sublabel = if (fastModeOn) "Tap to turn off" else "Tap to turn on",
-                iconRes = R.drawable.ic_bolt,
-                selected = fastModeOn,
-                dismissOnSelect = false,
-                onSelect = {
-                    val nextEnabled = !fastModeOn
-                    lastChatState = lastChatState.copy(fastMode = nextEnabled, status = if (nextEnabled) "Fast mode enabled" else "Fast mode disabled")
-                    renderChatState(lastChatState)
-                    onChatControlCommand("fast", JSONObject().put("enabled", nextEnabled))
-                    setStatus(if (nextEnabled) "Fast mode enabled" else "Fast mode disabled")
-                    showPlusMenu(replace = true)
-                }
-            ),
-            AnchoredPicker.Row(
-                label = "Verbose: ${verboseMode.replaceFirstChar { it.uppercase() }}",
-                sublabel = "Tap for ${nextVerboseMode.replaceFirstChar { it.uppercase() }}",
-                iconRes = R.drawable.ic_command,
-                selected = verboseMode != "off",
-                dismissOnSelect = false,
-                onSelect = {
-                    lastChatState = lastChatState.copy(verboseLevel = nextVerboseMode, status = "Verbose: $nextVerboseMode")
-                    renderChatState(lastChatState)
-                    onChatControlCommand("verbose", JSONObject().put("level", nextVerboseMode))
-                    setStatus("Verbose: $nextVerboseMode")
-                    showPlusMenu(replace = true)
-                }
-            ),
+            plusFastModeRow(),
+            plusVerboseRow(),
             AnchoredPicker.Row(
                 label = "Refresh status",
                 iconRes = R.drawable.ic_usage,
@@ -1263,30 +1232,8 @@ class OverlayController(
         )
 
         val voiceRows = listOf(
-            AnchoredPicker.Row(
-                label = "Reasoning Stream: ${if (reasoningStreamOn) "On" else "Off"}",
-                sublabel = if (reasoningStreamOn) "Tap to hide reasoning stream" else "Tap to stream reasoning updates",
-                iconRes = R.drawable.ic_reasoning,
-                selected = reasoningStreamOn,
-                dismissOnSelect = false,
-                onSelect = {
-                    toggleReasoningStream()
-                    showPlusMenu(replace = true)
-                }
-            ),
-            AnchoredPicker.Row(
-                label = "Show Tool Calls: ${if (showToolCalls) "On" else "Off"}",
-                sublabel = if (showToolCalls) "Tap to hide bash, MCP, web search, and other tool activity" else "Tap to show tool activity",
-                iconRes = R.drawable.ic_tools,
-                selected = showToolCalls,
-                dismissOnSelect = false,
-                onSelect = {
-                    showToolCalls = !showToolCalls
-                    setStatus("Tool calls ${if (showToolCalls) "shown" else "hidden"}")
-                    renderTimeline(lastChatState)
-                    showPlusMenu(replace = true)
-                }
-            ),
+            plusReasoningStreamRow(),
+            plusToolCallsRow(),
             AnchoredPicker.Row(
                 label = "Voice mode",
                 iconRes = R.drawable.ic_voice,
@@ -1322,6 +1269,89 @@ class OverlayController(
             sections,
             toggleSameAnchor = !replace,
             replaceShowing = replace
+        )
+    }
+
+    private fun updatePlusMenuToggleRow(row: AnchoredPicker.Row) {
+        if (anchoredPicker?.updateRow(row) != true) {
+            showPlusMenu(replace = true)
+        }
+    }
+
+    private fun plusFastModeRow(): AnchoredPicker.Row {
+        val fastModeOn = lastChatState.fastMode == true
+        return AnchoredPicker.Row(
+            id = PLUS_ROW_FAST_MODE,
+            label = "Fast mode: ${if (fastModeOn) "On" else "Off"}",
+            sublabel = if (fastModeOn) "Tap to turn off" else "Tap to turn on",
+            iconRes = R.drawable.ic_bolt,
+            selected = fastModeOn,
+            dismissOnSelect = false,
+            onSelect = {
+                val nextEnabled = lastChatState.fastMode != true
+                lastChatState = lastChatState.copy(
+                    fastMode = nextEnabled,
+                    status = if (nextEnabled) "Fast mode enabled" else "Fast mode disabled"
+                )
+                renderChatState(lastChatState)
+                onChatControlCommand("fast", JSONObject().put("enabled", nextEnabled))
+                setStatus(if (nextEnabled) "Fast mode enabled" else "Fast mode disabled")
+                updatePlusMenuToggleRow(plusFastModeRow())
+            }
+        )
+    }
+
+    private fun plusVerboseRow(): AnchoredPicker.Row {
+        val verboseMode = normalizedVerboseLevel(lastChatState.verboseLevel)
+        val nextVerboseMode = nextVerboseLevel(verboseMode)
+        return AnchoredPicker.Row(
+            id = PLUS_ROW_VERBOSE,
+            label = "Verbose: ${verboseMode.replaceFirstChar { it.uppercase() }}",
+            sublabel = "Tap for ${nextVerboseMode.replaceFirstChar { it.uppercase() }}",
+            iconRes = R.drawable.ic_command,
+            selected = verboseMode != "off",
+            dismissOnSelect = false,
+            onSelect = {
+                val nextLevel = nextVerboseLevel(normalizedVerboseLevel(lastChatState.verboseLevel))
+                lastChatState = lastChatState.copy(verboseLevel = nextLevel, status = "Verbose: $nextLevel")
+                renderChatState(lastChatState)
+                onChatControlCommand("verbose", JSONObject().put("level", nextLevel))
+                setStatus("Verbose: $nextLevel")
+                updatePlusMenuToggleRow(plusVerboseRow())
+            }
+        )
+    }
+
+    private fun plusReasoningStreamRow(): AnchoredPicker.Row {
+        val reasoningStreamOn = lastChatState.reasoningStreamEnabled == true
+        return AnchoredPicker.Row(
+            id = PLUS_ROW_REASONING_STREAM,
+            label = "Reasoning Stream: ${if (reasoningStreamOn) "On" else "Off"}",
+            sublabel = if (reasoningStreamOn) "Tap to hide reasoning stream" else "Tap to stream reasoning updates",
+            iconRes = R.drawable.ic_reasoning,
+            selected = reasoningStreamOn,
+            dismissOnSelect = false,
+            onSelect = {
+                toggleReasoningStream()
+                updatePlusMenuToggleRow(plusReasoningStreamRow())
+            }
+        )
+    }
+
+    private fun plusToolCallsRow(): AnchoredPicker.Row {
+        return AnchoredPicker.Row(
+            id = PLUS_ROW_TOOL_CALLS,
+            label = "Show Tool Calls: ${if (showToolCalls) "On" else "Off"}",
+            sublabel = if (showToolCalls) "Tap to hide bash, MCP, web search, and other tool activity" else "Tap to show tool activity",
+            iconRes = R.drawable.ic_tools,
+            selected = showToolCalls,
+            dismissOnSelect = false,
+            onSelect = {
+                showToolCalls = !showToolCalls
+                setStatus("Tool calls ${if (showToolCalls) "shown" else "hidden"}")
+                renderTimeline(lastChatState)
+                updatePlusMenuToggleRow(plusToolCallsRow())
+            }
         )
     }
 
@@ -2044,6 +2074,10 @@ class OverlayController(
         private const val KEYBOARD_HEIGHT_ESTIMATE_FRACTION = 0.485f
         private const val KEYBOARD_COMPOSER_GAP_DP = 4
         private const val FULLSCREEN_KEYBOARD_BOTTOM_CLEARANCE_DP = 28
+        private const val PLUS_ROW_FAST_MODE = "plus_fast_mode"
+        private const val PLUS_ROW_VERBOSE = "plus_verbose"
+        private const val PLUS_ROW_REASONING_STREAM = "plus_reasoning_stream"
+        private const val PLUS_ROW_TOOL_CALLS = "plus_tool_calls"
         const val MIN_BUBBLE_SIZE_DP = AppearancePrefs.MIN_BUBBLE_SIZE_DP
         const val DEFAULT_BUBBLE_SIZE_DP = AppearancePrefs.DEFAULT_BUBBLE_SIZE_DP
         const val MAX_BUBBLE_SIZE_DP = AppearancePrefs.MAX_BUBBLE_SIZE_DP
