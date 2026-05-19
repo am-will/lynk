@@ -1102,6 +1102,8 @@ class OverlayController(
         controls.addView(plusButton, LinearLayout.LayoutParams(controlSize, controlSize).apply { rightMargin = controlGap })
 
         modelButton = compactPill(tokens, "Model", R.drawable.ic_model).apply {
+            ellipsize = null
+            setHorizontallyScrolling(false)
             setOnClickListener { showModelChoices() }
         }
         controls.addView(modelButton, LinearLayout.LayoutParams(
