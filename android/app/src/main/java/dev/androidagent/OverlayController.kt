@@ -3,9 +3,6 @@ package dev.androidagent
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.AnimatorSet
-import android.animation.ObjectAnimator
-import android.animation.PropertyValuesHolder
-import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
 import android.graphics.Canvas
@@ -14,7 +11,6 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.RectF
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -46,17 +42,13 @@ import android.widget.Space
 import android.widget.TextView
 import android.widget.FrameLayout
 import androidx.core.view.isNotEmpty
-import dev.androidagent.avatar.AvatarConfigStore
-import dev.androidagent.avatar.AvatarLibrary
-import dev.androidagent.avatar.AvatarSelection
-import dev.androidagent.avatar.PetAnimation
-import dev.androidagent.avatar.PetAvatarView
 import dev.androidagent.chat.ChatModelOption
 import dev.androidagent.chat.ChatSessionRow
 import dev.androidagent.chat.ChatTimelineKind
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatTimelineItem
 import dev.androidagent.chat.ChatTimelineRenderer
+import dev.androidagent.overlay.BubbleOverlay
 import dev.androidagent.overlay.HostConnectionCopy
 import dev.androidagent.overlay.HostConnectionPhase
 import dev.androidagent.overlay.HostConnectionState
@@ -106,28 +98,17 @@ class OverlayController(
 ) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val trashShowInterpolator = DecelerateInterpolator()
-    private val trashHideInterpolator = AccelerateInterpolator()
-    private var bubbleView: View? = null
-    private var bubbleUnreadBadgeView: TextView? = null
-    private var bubbleParams: WindowManager.LayoutParams? = null
-    private var bubblePulseAnimator: AnimatorSet? = null
-    private var lastBubbleX: Int? = null
-    private var lastBubbleY: Int? = null
-    private var bubblePetView: PetAvatarView? = null
-    private var bubbleLastDragX: Int? = null
-    private var bubbleLastDragSampleMs: Long = 0L
-    private var bubbleHasUnread: Boolean = false
-    private var bubbleIsWorking: Boolean = false
-    private var bubbleIsDragging: Boolean = false
+    private val bubbleOverlay = BubbleOverlay(
+        context = context,
+        windowManager = windowManager,
+        onTogglePanel = { togglePanel(PanelPresentation.Popup) },
+        onDismissPanelBeforeBubbleDismiss = { dismissPanel(cancelTranscription = false) },
+        onDismiss = onDismiss
+    )
     private var panelView: View? = null
     private var panelParams: WindowManager.LayoutParams? = null
     private var panelScrimView: View? = null
     private var panelScrimParams: WindowManager.LayoutParams? = null
-    private var trashTargetView: ImageView? = null
-    private var trashTargetBounds = Rect()
-    private var isBubbleOverTrashTarget = false
-    private var isDismissAnimating = false
     private var confirmationView: View? = null
     private var confirmationScrimView: View? = null
     private var statusText: StatusUpdateView? = null
@@ -200,114 +181,22 @@ class OverlayController(
     private fun showInternal(allowDuringFullscreenPanel: Boolean) {
         if (
             !Settings.canDrawOverlays(context) ||
-            bubbleView != null ||
+            bubbleOverlay.isVisible ||
             automationSuppressionDepth > 0 ||
             (!allowDuringFullscreenPanel && isFullscreenPanelAttached())
         ) {
             return
         }
-        val tokens = tokens()
-        val badge = TextView(context).apply {
-            visibility = View.GONE
-            gravity = Gravity.CENTER
-            textSize = 10f
-            setTextColor(Color.WHITE)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(10).toFloat()
-                setColor(0xFFE53935.toInt())
-            }
-            minWidth = dp(20)
-            minHeight = dp(20)
-            includeFontPadding = false
-            setPadding(dp(4), 0, dp(4), 0)
-        }
-        val avatarView = buildBubbleAvatarView()
-        val bubble = FrameLayout(context).apply {
-            background = bubbleBackgroundForVoiceState(lastVoiceState, tokens)
-            contentDescription = "Open Claw Agent"
-            elevation = dp(DesignTokens.Elevation.mid).toFloat()
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { togglePanel(PanelPresentation.Popup) }
-            addView(avatarView, FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            ))
-            addView(badge, FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                dp(20),
-                Gravity.TOP or Gravity.END
-            ).apply {
-                topMargin = dp(2)
-                rightMargin = dp(2)
-            })
-        }
-        bubbleUnreadBadgeView = badge
-        val initialBubbleDp = AppearancePrefsStore.load(context).bubbleSizeDp
-            .coerceIn(MIN_BUBBLE_SIZE_DP, MAX_BUBBLE_SIZE_DP)
-        val params = overlayParams(width = dp(initialBubbleDp), height = dp(initialBubbleDp), focusable = false).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = lastBubbleX ?: dp(16)
-            y = lastBubbleY ?: dp(160)
-        }
-        ensureTrashTarget()
-        attachDrag(
-            view = bubble,
-            params = params,
-            onDragStart = {
-                showTrashTarget()
-                bubbleIsDragging = true
-                bubbleLastDragX = params.x
-                bubbleLastDragSampleMs = System.currentTimeMillis()
-            },
-            onDrag = { dragParams, dragView ->
-                updateBubbleAvatarForDrag(dragParams.x)
-                updateTrashTargetState(dragParams, dragView)
-            },
-            onDragEnd = { dragParams, dragView ->
-                bubbleIsDragging = false
-                bubbleLastDragX = null
-                applyBubbleRestingState()
-                val shouldDismiss = updateTrashTargetState(dragParams, dragView)
-                if (shouldDismiss) {
-                    dismissPanel(cancelTranscription = false)
-                    animateBubbleDismiss(dragView)
-                } else {
-                    hideTrashTarget()
-                }
-            },
-            onDragCancel = {
-                bubbleIsDragging = false
-                bubbleLastDragX = null
-                applyBubbleRestingState()
-                hideTrashTarget()
-            }
-        ) { togglePanel(PanelPresentation.Popup) }
-        windowManager.addView(bubble, params)
-        bubbleView = bubble
-        bubbleParams = params
-        applyBubbleVoiceIndicator(lastVoiceState)
-        bubbleIsWorking = lastChatState.isRunning
-        renderBubbleUnreadBadge(lastChatState)
-        applyBubbleRestingState()
+        bubbleOverlay.show(lastVoiceState, lastChatState)
     }
 
     fun hide() {
         automationSuppressionDepth = 0
         restoreBubbleAfterAutomation = false
         restoreBubbleAfterFullscreen = false
-        rememberBubblePosition()
-        stopBubblePulse()
-        bubbleView?.let { windowManager.removeView(it) }
-        removeTrashTarget()
+        bubbleOverlay.hide()
         dismissPanel()
         dismissConfirmation()
-        bubbleView = null
-        bubbleUnreadBadgeView = null
-        bubbleParams = null
-        bubblePetView = null
-        bubbleLastDragX = null
     }
 
     fun suppressAgentChromeForAutomation() {
@@ -316,28 +205,16 @@ class OverlayController(
             return
         }
 
-        restoreBubbleAfterAutomation = bubbleView != null
+        restoreBubbleAfterAutomation = bubbleOverlay.isVisible
         restorePanelAfterAutomation = isOverlayAttached(panelView)
         restorePanelScrimAfterAutomation = isOverlayAttached(panelScrimView)
         restorePanelFocusAfterAutomation = panelView?.hasFocus() == true
         restoreComposerFocusAfterAutomation = composerInput?.hasFocus() == true
-        rememberBubblePosition()
         // Automation suppression only clears our chrome; it must not stop turns,
         // hang up voice, clear the chat modal's state, or dismiss the foreground service.
         detachOverlayView(windowManager, panelView)
         detachOverlayView(windowManager, panelScrimView)
-        stopBubblePulse()
-        bubbleView?.let {
-            it.animate().cancel()
-            it.animate().setListener(null)
-            detachOverlayView(windowManager, it)
-        }
-        bubbleView = null
-        bubbleUnreadBadgeView = null
-        bubbleParams = null
-        bubblePetView = null
-        bubbleLastDragX = null
-        removeTrashTarget()
+        bubbleOverlay.detachForAutomation()
     }
 
     fun restoreAgentChromeAfterAutomation() {
@@ -397,10 +274,7 @@ class OverlayController(
     fun setChatState(state: ChatState) {
         lastChatState = state
         mainHandler.post {
-            bubbleIsWorking = state.isRunning
             renderChatState(state)
-            renderBubbleUnreadBadge(state)
-            applyBubbleRestingState()
             state.status?.let { setStatus(it) }
             state.error?.let { setStatus(it) }
             notifyCurrentChatSessionViewed()
@@ -417,7 +291,7 @@ class OverlayController(
     }
 
     fun isBubbleVisible(): Boolean {
-        return isOverlayAttached(bubbleView)
+        return bubbleOverlay.isVisible
     }
 
     /**
@@ -427,26 +301,7 @@ class OverlayController(
      */
     fun refreshBubbleAvatar() {
         mainHandler.post {
-            val bubble = bubbleView as? FrameLayout ?: return@post
-            val badge = bubbleUnreadBadgeView
-            bubble.removeAllViews()
-            bubblePetView = null
-            bubble.addView(buildBubbleAvatarView(), FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT
-            ))
-            if (badge != null) {
-                bubble.addView(badge, FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    dp(20),
-                    Gravity.TOP or Gravity.END
-                ).apply {
-                    topMargin = dp(2)
-                    rightMargin = dp(2)
-                })
-            }
-            renderBubbleUnreadBadge(lastChatState)
-            applyBubbleRestingState()
+            bubbleOverlay.refreshAvatar(lastChatState)
         }
     }
 
@@ -458,23 +313,7 @@ class OverlayController(
      */
     fun refreshBubbleSize(targetDp: Int) {
         mainHandler.post {
-            val clamped = targetDp.coerceIn(MIN_BUBBLE_SIZE_DP, MAX_BUBBLE_SIZE_DP)
-            val bubble = bubbleView ?: return@post
-            val params = bubbleParams ?: return@post
-            val newSizePx = dp(clamped)
-            if (params.width == newSizePx && params.height == newSizePx) return@post
-            params.width = newSizePx
-            params.height = newSizePx
-            // Clamp using the freshly-set width/height instead of view.width
-            // because the view has not been re-laid out yet.
-            val display = context.resources.displayMetrics
-            val horizontalInset = dp(8)
-            val maxX = (display.widthPixels - newSizePx - horizontalInset).coerceAtLeast(horizontalInset)
-            val maxY = (display.heightPixels - newSizePx - dp(8)).coerceAtLeast(dp(8))
-            params.x = params.x.coerceIn(horizontalInset, maxX)
-            params.y = params.y.coerceIn(dp(8), maxY)
-            runCatching { windowManager.updateViewLayout(bubble, params) }
-            rememberBubblePosition()
+            bubbleOverlay.refreshSize(targetDp)
         }
     }
 
@@ -484,7 +323,7 @@ class OverlayController(
     ) {
         mainHandler.post {
             if (panelView == null) {
-                if (bubbleView == null && presentation == PanelPresentation.Popup) {
+                if (!bubbleOverlay.isVisible && presentation == PanelPresentation.Popup) {
                     show()
                 }
                 suppressNextPanelViewedCallback = !markCurrentSessionViewed
@@ -1884,35 +1723,8 @@ class OverlayController(
             state.status?.let { sv.setText(it) }
             sv.setActive(state.isRunning)
         }
-        renderBubbleUnreadBadge(state)
+        bubbleOverlay.renderUnreadBadge(state)
         renderTimeline(state)
-    }
-
-    private fun renderBubbleUnreadBadge(state: ChatState) {
-        val count = state.totalUnreadReplies
-        bubbleHasUnread = count > 0
-        applyBubbleRestingState()
-        val badge = bubbleUnreadBadgeView ?: return
-        if (count <= 0) {
-            badge.visibility = View.GONE
-            badge.text = ""
-            bubbleView?.contentDescription = "Open Claw Agent"
-            return
-        }
-        badge.text = badgeText(count)
-        badge.visibility = View.VISIBLE
-        bubbleView?.contentDescription = "Open Claw Agent, $count unread replies"
-    }
-
-    private fun applyBubbleRestingState() {
-        if (bubbleIsDragging) return
-        val pet = bubblePetView ?: return
-        val resting = when {
-            bubbleIsWorking -> PetAnimation.State.Review
-            bubbleHasUnread -> PetAnimation.State.Jumping
-            else -> PetAnimation.State.Idle
-        }
-        pet.setState(resting)
     }
 
     private fun notifyCurrentChatSessionViewed() {
@@ -1939,7 +1751,7 @@ class OverlayController(
         if (hasWindowFocus) {
             notifyCurrentChatSessionViewed()
         } else {
-            if (activePanelPresentation == PanelPresentation.Fullscreen && bubbleView == null) {
+            if (activePanelPresentation == PanelPresentation.Fullscreen && !bubbleOverlay.isVisible) {
                 // User backgrounded the fullscreen chat (home, app switcher,
                 // another app on top). Bring the bubble back so it can reflect
                 // chat state. Preserve the original dismiss-time restore intent
@@ -1948,10 +1760,6 @@ class OverlayController(
                 showInternal(allowDuringFullscreenPanel = true)
             }
         }
-    }
-
-    private fun badgeText(count: Int): String {
-        return if (count > 99) "99+" else count.toString()
     }
 
     private fun formatModelLabel(model: String?): String {
@@ -2366,10 +2174,7 @@ class OverlayController(
     private fun appearancePrefs(): AppearancePrefs = AppearancePrefsStore.load(context)
 
     private fun bubbleScreenCenter(): Pair<Int, Int>? {
-        val params = bubbleParams ?: return null
-        if (bubbleView == null) return null
-        val size = if (params.width > 0) params.width else dp(DEFAULT_BUBBLE_SIZE_DP)
-        return (params.x + size / 2) to (params.y + size / 2)
+        return bubbleOverlay.screenCenter()
     }
 
     private fun screenCenterFallback(): Pair<Int, Int> {
@@ -2754,7 +2559,7 @@ class OverlayController(
     }
 
     private fun renderVoiceState(state: VoiceRuntimeState) {
-        applyBubbleVoiceIndicator(state)
+        bubbleOverlay.applyVoiceIndicator(state)
         if (state.isActive) {
             voiceSurfaceForceHidden = false
         }
@@ -2846,329 +2651,12 @@ class OverlayController(
         }
     }
 
-    private fun applyBubbleVoiceIndicator(state: VoiceRuntimeState) {
-        val bubble = bubbleView ?: return
-        val tokens = tokens()
-        bubble.background = bubbleBackgroundForVoiceState(state, tokens)
-        bubble.elevation = if (state.status == VoiceRuntimeStatus.IDLE) dp(DesignTokens.Elevation.mid).toFloat() else dp(DesignTokens.Elevation.popover + 6).toFloat()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val shadowColor = when (state.status) {
-                VoiceRuntimeStatus.LISTENING,
-                VoiceRuntimeStatus.THINKING,
-                VoiceRuntimeStatus.SPEAKING -> tokens.success
-                VoiceRuntimeStatus.CONNECTING,
-                VoiceRuntimeStatus.ERROR -> tokens.danger
-                VoiceRuntimeStatus.IDLE -> Color.TRANSPARENT
-            }
-            bubble.outlineAmbientShadowColor = shadowColor
-            bubble.outlineSpotShadowColor = shadowColor
-        }
-        updateBubblePulse(isSpeaking = state.status == VoiceRuntimeStatus.SPEAKING)
-    }
-
-    private fun bubbleBackgroundForVoiceState(state: VoiceRuntimeState, tokens: ThemeTokens): GradientDrawable {
-        return when (state.status) {
-            VoiceRuntimeStatus.LISTENING,
-            VoiceRuntimeStatus.THINKING,
-            VoiceRuntimeStatus.SPEAKING -> Drawables.bubbleHalo(
-                context,
-                centerColor = DesignTokens.withAlpha(tokens.success, 0xE6),
-                midColor = DesignTokens.withAlpha(tokens.success, 0x88)
-            )
-            VoiceRuntimeStatus.CONNECTING,
-            VoiceRuntimeStatus.ERROR -> Drawables.bubbleHalo(
-                context,
-                centerColor = DesignTokens.withAlpha(tokens.danger, 0xE6),
-                midColor = DesignTokens.withAlpha(tokens.danger, 0x88)
-            )
-            VoiceRuntimeStatus.IDLE -> Drawables.bubbleHalo(
-                context,
-                centerColor = Color.TRANSPARENT,
-                midColor = Color.TRANSPARENT
-            )
-        }
-    }
-
-    private fun buildBubbleAvatarView(): View {
-        bubblePetView = null
-        val selection = AvatarConfigStore.load(context)
-        if (selection is AvatarSelection.Pet) {
-            val asset = AvatarLibrary.findCached(context, selection.id)
-            val file = asset?.spritesheetFile
-            if (file != null && file.exists()) {
-                val view = PetAvatarView(context)
-                if (view.loadFromFile(file)) {
-                    bubblePetView = view
-                    return view
-                }
-            }
-        }
-        return ImageView(context).apply {
-            setImageResource(R.drawable.openclaw_bubble_logo)
-            scaleType = ImageView.ScaleType.FIT_CENTER
-            setPadding(
-                dp(DesignTokens.Spacing.md),
-                dp(DesignTokens.Spacing.md),
-                dp(DesignTokens.Spacing.md),
-                dp(DesignTokens.Spacing.md)
-            )
-        }
-    }
-
-    private fun updateBubbleAvatarForDrag(currentX: Int) {
-        val pet = bubblePetView ?: return
-        val previousX = bubbleLastDragX
-        val now = System.currentTimeMillis()
-        if (previousX == null) {
-            bubbleLastDragX = currentX
-            bubbleLastDragSampleMs = now
-            return
-        }
-        val dx = currentX - previousX
-        if (now - bubbleLastDragSampleMs >= DRAG_DIRECTION_SAMPLE_INTERVAL_MS || kotlin.math.abs(dx) >= DRAG_DIRECTION_PIXEL_THRESHOLD) {
-            if (dx > DRAG_DIRECTION_PIXEL_THRESHOLD) {
-                pet.setState(PetAnimation.State.RunningRight)
-            } else if (dx < -DRAG_DIRECTION_PIXEL_THRESHOLD) {
-                pet.setState(PetAnimation.State.RunningLeft)
-            }
-            bubbleLastDragX = currentX
-            bubbleLastDragSampleMs = now
-        }
-    }
-
-    private fun updateBubblePulse(isSpeaking: Boolean) {
-        val bubble = bubbleView
-        if (!isSpeaking || bubble == null) {
-            stopBubblePulse()
-            bubble?.scaleX = 1f
-            bubble?.scaleY = 1f
-            return
-        }
-        if (bubblePulseAnimator?.isStarted == true) {
-            return
-        }
-        val scaleX = ObjectAnimator.ofFloat(bubble, View.SCALE_X, 1f, 1.08f).apply {
-            duration = VOICE_PULSE_MS
-            repeatCount = ValueAnimator.INFINITE
-            repeatMode = ValueAnimator.REVERSE
-            interpolator = trashShowInterpolator
-        }
-        val scaleY = ObjectAnimator.ofFloat(bubble, View.SCALE_Y, 1f, 1.08f).apply {
-            duration = VOICE_PULSE_MS
-            repeatCount = ValueAnimator.INFINITE
-            repeatMode = ValueAnimator.REVERSE
-            interpolator = trashShowInterpolator
-        }
-        bubblePulseAnimator = AnimatorSet().apply {
-            playTogether(scaleX, scaleY)
-            start()
-        }
-    }
-
-    private fun stopBubblePulse() {
-        bubblePulseAnimator?.cancel()
-        bubblePulseAnimator = null
-    }
-
     private fun dismissConfirmation() {
         confirmationView?.let { windowManager.removeView(it) }
         confirmationScrimView?.let { windowManager.removeView(it) }
         confirmationView = null
         confirmationScrimView = null
     }
-
-    private fun ensureTrashTarget() {
-        if (trashTargetView != null) {
-            return
-        }
-        val size = trashTargetSize()
-        val target = ImageView(context).apply {
-            setImageResource(R.drawable.ic_trash)
-            setColorFilter(Color.WHITE)
-            background = trashTargetBackground(isActive = false)
-            contentDescription = "Close Open Claw Agent bubble"
-            elevation = dp(DesignTokens.Elevation.high).toFloat()
-            setPadding(dp(DesignTokens.Spacing.lg), dp(DesignTokens.Spacing.lg), dp(DesignTokens.Spacing.lg), dp(DesignTokens.Spacing.lg))
-            alpha = 0f
-            scaleX = TRASH_TARGET_HIDDEN_SCALE
-            scaleY = TRASH_TARGET_HIDDEN_SCALE
-            visibility = View.INVISIBLE
-        }
-        val params = overlayParams(width = size, height = size, focusable = false).apply {
-            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            y = dp(DesignTokens.Spacing.xxl + 4)
-            flags = flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-        }
-        windowManager.addView(target, params)
-        trashTargetView = target
-        updateTrashTargetBounds()
-    }
-
-    private fun showTrashTarget() {
-        ensureTrashTarget()
-        trashTargetView?.apply {
-            animate().cancel()
-            animate().setListener(null)
-            background = trashTargetBackground(isActive = false)
-            alpha = 0f
-            scaleX = TRASH_TARGET_HIDDEN_SCALE
-            scaleY = TRASH_TARGET_HIDDEN_SCALE
-            visibility = View.VISIBLE
-            animate()
-                .alpha(1f)
-                .scaleX(1f)
-                .scaleY(1f)
-                .setDuration(TRASH_TARGET_SHOW_MS)
-                .setInterpolator(trashShowInterpolator)
-                .start()
-            post { updateTrashTargetBounds() }
-        }
-        isBubbleOverTrashTarget = false
-    }
-
-    private fun hideTrashTarget() {
-        trashTargetView?.apply {
-            animate().cancel()
-            background = trashTargetBackground(isActive = false)
-            animate()
-                .alpha(0f)
-                .scaleX(TRASH_TARGET_HIDDEN_SCALE)
-                .scaleY(TRASH_TARGET_HIDDEN_SCALE)
-                .setDuration(TRASH_TARGET_HIDE_MS)
-                .setInterpolator(trashHideInterpolator)
-                .setListener(object : AnimatorListenerAdapter() {
-                    override fun onAnimationEnd(animation: Animator) {
-                        visibility = View.INVISIBLE
-                        animate().setListener(null)
-                    }
-                })
-                .start()
-        }
-        isBubbleOverTrashTarget = false
-    }
-
-    private fun removeTrashTarget() {
-        trashTargetView?.let {
-            it.animate().cancel()
-            it.animate().setListener(null)
-            detachOverlayView(windowManager, it)
-        }
-        trashTargetView = null
-        trashTargetBounds = Rect()
-        isBubbleOverTrashTarget = false
-        isDismissAnimating = false
-    }
-
-    private fun updateTrashTargetState(params: WindowManager.LayoutParams, view: View): Boolean {
-        updateTrashTargetBounds()
-        val location = IntArray(2)
-        view.getLocationOnScreen(location)
-        val centerX = location[0] + view.width / 2
-        val centerY = location[1] + view.height / 2
-        val dx = centerX - trashTargetBounds.centerX()
-        val dy = centerY - trashTargetBounds.centerY()
-        val radius = trashTargetBounds.width() / 2
-        val isOverTarget = dx * dx + dy * dy <= radius * radius
-        if (isBubbleOverTrashTarget != isOverTarget) {
-            isBubbleOverTrashTarget = isOverTarget
-            trashTargetView?.background = trashTargetBackground(isActive = isOverTarget)
-        }
-        return isOverTarget
-    }
-
-    private fun animateBubbleDismiss(bubble: View) {
-        if (isDismissAnimating) {
-            return
-        }
-        stopBubblePulse()
-        val target = trashTargetView
-        isDismissAnimating = true
-        listOfNotNull(bubble, target).forEach { view ->
-            view.animate().cancel()
-            view.animate().setListener(null)
-            view.visibility = View.VISIBLE
-            view.alpha = 1f
-            view.scaleX = 1f
-            view.scaleY = 1f
-        }
-        target?.background = trashTargetBackground(isActive = true)
-
-        val animators = mutableListOf<Animator>()
-        animators.add(dismissAnimatorFor(bubble))
-        target?.let { animators.add(dismissAnimatorFor(it)) }
-
-        AnimatorSet().apply {
-            playTogether(animators)
-            addListener(object : AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: Animator) {
-                    onDismiss()
-                }
-
-                override fun onAnimationCancel(animation: Animator) {
-                    isDismissAnimating = false
-                }
-            })
-            start()
-        }
-    }
-
-    private fun dismissAnimatorFor(view: View): AnimatorSet {
-        return AnimatorSet().apply {
-            playSequentially(
-                scaleAnimator(view, 1.12f, TRASH_TARGET_PULSE_MS),
-                scaleAnimator(view, 0.96f, TRASH_TARGET_PULSE_MS),
-                shrinkAnimator(view)
-            )
-        }
-    }
-
-    private fun scaleAnimator(view: View, scale: Float, durationMs: Long): ObjectAnimator {
-        return ObjectAnimator.ofPropertyValuesHolder(
-            view,
-            PropertyValuesHolder.ofFloat(View.SCALE_X, scale),
-            PropertyValuesHolder.ofFloat(View.SCALE_Y, scale)
-        ).apply {
-            duration = durationMs
-            interpolator = trashShowInterpolator
-        }
-    }
-
-    private fun shrinkAnimator(view: View): ObjectAnimator {
-        return ObjectAnimator.ofPropertyValuesHolder(
-            view,
-            PropertyValuesHolder.ofFloat(View.SCALE_X, 0f),
-            PropertyValuesHolder.ofFloat(View.SCALE_Y, 0f),
-            PropertyValuesHolder.ofFloat(View.ALPHA, 0f)
-        ).apply {
-            duration = TRASH_TARGET_SHRINK_MS
-            interpolator = trashHideInterpolator
-        }
-    }
-
-    private fun updateTrashTargetBounds() {
-        val target = trashTargetView ?: return
-        val size = trashTargetSize()
-        val location = IntArray(2)
-        target.getLocationOnScreen(location)
-        if (location[0] == 0 && location[1] == 0) {
-            val display = context.resources.displayMetrics
-            val bottom = display.heightPixels - dp(28)
-            val left = (display.widthPixels - size) / 2
-            trashTargetBounds.set(left, bottom - size, left + size, bottom)
-            return
-        }
-        val width = target.width.takeIf { it > 0 } ?: size
-        val height = target.height.takeIf { it > 0 } ?: size
-        trashTargetBounds.set(location[0], location[1], location[0] + width, location[1] + height)
-    }
-
-    private fun trashTargetBackground(isActive: Boolean): GradientDrawable {
-        val tokens = tokens()
-        val fill = if (isActive) tokens.danger else DesignTokens.withAlpha(if (tokens.isDark) 0xFF1F2A40.toInt() else 0xFF1F1F2C.toInt(), 0xE0)
-        return Drawables.circle(fill = fill)
-    }
-
-    private fun trashTargetSize(): Int = dp(DesignTokens.Sizes.trash)
 
     private fun maxTranscriptHeight(): Int {
         val modalBudget = (context.resources.displayMetrics.heightPixels * VOICE_MODAL_MAX_SCREEN_FRACTION).toInt()
@@ -3261,33 +2749,14 @@ class OverlayController(
         }
     }
 
-    private fun rememberBubblePosition() {
-        bubbleParams?.let {
-            lastBubbleX = it.x
-            lastBubbleY = it.y
-        }
-    }
-
     private fun suppressBubbleForFullscreen() {
-        val bubble = bubbleView
-        restoreBubbleAfterFullscreen = isOverlayAttached(bubble)
-        rememberBubblePosition()
-        stopBubblePulse()
-        bubble?.let {
-            it.animate().cancel()
-            it.animate().setListener(null)
-            detachOverlayView(windowManager, it)
-        }
-        bubbleView = null
-        bubbleUnreadBadgeView = null
-        bubbleParams = null
-        removeTrashTarget()
+        restoreBubbleAfterFullscreen = bubbleOverlay.suppressForFullscreen()
     }
 
     private fun restoreBubbleAfterFullscreenDismiss() {
         val shouldRestore = restoreBubbleAfterFullscreen
         restoreBubbleAfterFullscreen = false
-        if (shouldRestore && Settings.canDrawOverlays(context) && automationSuppressionDepth == 0 && bubbleView == null) {
+        if (shouldRestore && Settings.canDrawOverlays(context) && automationSuppressionDepth == 0 && !bubbleOverlay.isVisible) {
             show()
         }
     }
@@ -3323,14 +2792,6 @@ class OverlayController(
     }
 
     companion object {
-        private const val TRASH_TARGET_SHOW_MS = 140L
-        private const val TRASH_TARGET_HIDE_MS = 110L
-        private const val TRASH_TARGET_PULSE_MS = 55L
-        private const val TRASH_TARGET_SHRINK_MS = 140L
-        private const val TRASH_TARGET_HIDDEN_SCALE = 0.82f
-        private const val DRAG_DIRECTION_SAMPLE_INTERVAL_MS = 80L
-        private const val DRAG_DIRECTION_PIXEL_THRESHOLD = 3
-        private const val VOICE_PULSE_MS = 720L
         private const val VOICE_MODAL_MAX_SCREEN_FRACTION = 0.40f
         private const val CHAT_MODAL_HEIGHT_FRACTION = 0.82f
         private const val MODAL_CLOSE_HOT_ZONE_WIDTH_DP = 56
