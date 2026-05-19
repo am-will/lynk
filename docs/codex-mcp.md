@@ -1,6 +1,6 @@
 # Legacy Codex MCP Configuration
 
-This configuration is for the copied Codex app-server compatibility path. Keep it working until the Open Claw session adapter can expose the same phone-control tools, but do not treat Codex as the long-term product dependency.
+This configuration is for the hand-written Codex app-server compatibility path. Keep it working until the Open Claw session adapter can expose the same phone-control tools, but do not treat Codex as the long-term product dependency.
 
 Run the PC bridge first:
 
@@ -43,7 +43,7 @@ codex mcp list
 codex mcp get android-phone
 ```
 
-If using Codex app-server, reload MCP config or restart app-server after changing config. The dispatcher uses `turn/start` and expects Codex to discover the `android-phone` tools from config.
+If using Codex app-server, reload MCP config or restart app-server after changing config. The legacy adapter is hand-written, uses `turn/start`, and expects Codex to discover the `android-phone` tools from config. Generated Codex schemas are optional local inspection output only and are not tracked.
 
 The server exposes:
 

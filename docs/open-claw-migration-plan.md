@@ -9,7 +9,7 @@ Open Claw Agent should primarily be a phone-native endpoint into the user's inst
 
 Phone control remains valuable, but it is a secondary capability. Most delegated work should happen on the remote PC where Open Claw is installed. The phone should act as an input surface, notification/status surface, and optional tool target only when the task actually requires interacting with the Android device.
 
-The best path is to keep the Android bridge, Android overlay, and OpenAI Realtime voice flow, then replace the copied Codex app-server dispatcher with an `OpenClawSessionClient` that can deliver general Open Claw tasks and expose phone-control tools as optional capabilities.
+The best path is to keep the Android bridge, Android overlay, and OpenAI Realtime voice flow, then keep Codex app-server as a hand-written legacy adapter while `OpenClawSessionClient` delivers general Open Claw tasks and exposes phone-control tools as optional capabilities.
 
 ## Implementation Status
 
@@ -20,7 +20,8 @@ The best path is to keep the Android bridge, Android overlay, and OpenAI Realtim
 - Realtime voice exposes `delegate_openclaw_task` for general remote-PC work and keeps `run_phone_task` for explicit Android phone work.
 - `npm run openclaw:mcp` registers the existing `android-phone` MCP server with OpenClaw, so phone tools are optional capabilities of the OpenClaw session.
 - The Android bubble now opens a large chat modal with scrollable Gateway history, a bottom composer, model/reasoning/session controls, usage summary, and expandable tool rows.
-- The copied Codex app-server adapter remains available only as `PHONE_AGENT_DISPATCHER=codex` legacy compatibility.
+- The hand-written Codex app-server adapter remains available only as `PHONE_AGENT_DISPATCHER=codex` legacy compatibility.
+- Generated Codex app-server schemas are no longer tracked. `npm run codex:schemas` can recreate local, gitignored inspection output, while the legacy adapter stays hand-written.
 
 ## Product Principles
 
@@ -202,7 +203,7 @@ The best path is to keep the Android bridge, Android overlay, and OpenAI Realtim
 
 ### Task 4.2: Remove Or Archive Codex Artifacts
 
-- **Location**: `pc/src/dispatcher/CodexAppServerClient.ts`, `pc/src/generated/codex-app-server/`, `docs/app-server.md`, `docs/codex-mcp.md`
+- **Location**: `pc/src/dispatcher/CodexAppServerClient.ts`, local `pc/src/generated/codex-app-server/` inspection output, `docs/app-server.md`, `docs/codex-mcp.md`
 - **Description**: Decide whether to keep Codex as a legacy adapter or remove generated schemas and docs.
 - **Dependencies**: Task 4.1
 - **Acceptance Criteria**:

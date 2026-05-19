@@ -24,6 +24,8 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - run: npm run build
+      - run: test -z "$(git ls-files ':(top)pc/src/generated/codex-app-server/**')"
 
   android:
     name: Android tests and lint
@@ -41,4 +43,4 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 9.5.1
-      - run: gradle :app:testDebugUnitTest :app:lintDebug
+      - run: gradle :app:assembleDebug :app:testDebugUnitTest :app:lintDebug

@@ -10,7 +10,7 @@ Target control loop:
 4. If the task needs Android interaction, Open Claw can call the phone-control tools exposed by the bridge.
 5. Android executes those optional phone commands with `AccessibilityService` and returns observations.
 
-Current prototype note: the copied PC dispatcher still contains a Codex app-server compatibility path. Treat it as legacy scaffolding for the Open Claw migration, not the product direction.
+Current prototype note: the PC dispatcher still contains a hand-written Codex app-server compatibility path. Treat it as legacy scaffolding for the Open Claw migration, not the product direction. Generated Codex schemas are local/gitignored inspection output only.
 
 ## Quick Start
 

@@ -1,6 +1,6 @@
 # Legacy Codex App-Server Dispatcher
 
-This document describes the copied dispatcher that is still present in the prototype. It is useful for understanding current behavior and fallback testing, but Open Claw Agent's target architecture is to replace this path with an adapter that talks to an installed Open Claw session on the remote PC. See `docs/open-claw-migration-plan.md`.
+This document describes the hand-written Codex app-server compatibility adapter that is still present in the prototype. It is useful for legacy testing, but Open Claw Agent's default path is the adapter that talks to an installed Open Claw session on the remote PC. See `docs/open-claw-migration-plan.md`.
 
 The dispatcher starts Codex app-server with:
 
@@ -22,6 +22,6 @@ The client performs:
 3. `thread/start`
 4. `turn/start` with the Android user request and safety instructions
 
-If app-server integration fails at runtime, the dispatcher reports the exact error to the Android bubble and invokes the isolated fallback adapter. Set `PHONE_AGENT_USE_FALLBACK=1` to test that path deliberately.
+If app-server integration fails at runtime, the dispatcher reports the exact error to the Android bubble. Set `PHONE_AGENT_USE_FALLBACK=1` to test the isolated fallback adapter deliberately.
 
-`npm run codex:schemas` writes generated bindings under `pc/src/generated/codex-app-server`. They are intentionally excluded from the prototype `tsconfig.json` because the current Codex generator emits extensionless relative imports, while this package uses NodeNext ESM imports.
+`npm run codex:schemas` writes generated bindings under `pc/src/generated/codex-app-server`. That tree is local, gitignored, and excluded from `tsconfig.json`; runtime code must remain hand-written and must not import generated Codex schemas.

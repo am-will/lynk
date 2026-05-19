@@ -12,7 +12,7 @@ npm run bridge
 ```
 
 2. Start the Android app, save pairing, enable overlay and accessibility, then start the bubble.
-3. Configure the current phone-task adapter. Today this is the legacy Codex MCP setup in `docs/codex-mcp.md`; the target is an Open Claw session adapter on the remote PC.
+3. Register the `android-phone` MCP server with Open Claw using `npm run openclaw:mcp`. The legacy Codex MCP setup in `docs/codex-mcp.md` is available only when explicitly exercising `PHONE_AGENT_DISPATCHER=codex`.
 4. In the bubble, send:
 
 ```text
