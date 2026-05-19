@@ -22,5 +22,6 @@ android/app/build/
 pc/dist/
 pc/node_modules/
 pc/audit/*.jsonl
+pc/src/generated/codex-app-server/
 *.log
 pc/audit/
