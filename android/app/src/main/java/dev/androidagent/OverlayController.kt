@@ -2296,13 +2296,23 @@ class OverlayController(
     }
 
     private fun animateStreamingDots(tv: TextView) {
-        val frames = arrayOf("•", "•  •", "•  •  •")
-        var index = 0
+        val dotText = "•  •  •"
+        val dotPositions = intArrayOf(0, 3, 6)
+        var visibleDots = 1
         val runner = object : Runnable {
             override fun run() {
                 if (tv.isAttachedToWindow && tv.text.toString().startsWith("•")) {
-                    tv.text = frames[index]
-                    index = (index + 1) % frames.size
+                    val frame = SpannableString(dotText)
+                    dotPositions.forEachIndexed { index, position ->
+                        frame.setSpan(
+                            ForegroundColorSpan(if (index < visibleDots) tv.currentTextColor else Color.TRANSPARENT),
+                            position,
+                            position + 1,
+                            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                    }
+                    tv.text = frame
+                    visibleDots = (visibleDots % dotPositions.size) + 1
                     tv.postDelayed(this, 380L)
                 }
             }
