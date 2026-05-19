@@ -56,6 +56,11 @@ import dev.androidagent.chat.ChatSessionRow
 import dev.androidagent.chat.ChatTimelineKind
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatTimelineItem
+import dev.androidagent.overlay.HostConnectionCopy
+import dev.androidagent.overlay.HostConnectionPhase
+import dev.androidagent.overlay.HostConnectionState
+import dev.androidagent.overlay.PanelPresentation
+import dev.androidagent.overlay.hostConnectionColor
 import dev.androidagent.ui.AnchoredPicker
 import dev.androidagent.ui.ClipboardHelper
 import dev.androidagent.ui.DesignTokens
@@ -179,22 +184,6 @@ class OverlayController(
     private var lastHostConnectionState = HostConnectionState(
         phase = HostConnectionPhase.CONNECTING,
         message = "Checking host connection..."
-    )
-
-    enum class PanelPresentation {
-        Popup,
-        Fullscreen
-    }
-
-    enum class HostConnectionPhase {
-        CONNECTING,
-        CONNECTED,
-        ERROR
-    }
-
-    data class HostConnectionState(
-        val phase: HostConnectionPhase,
-        val message: String
     )
 
     private data class PanelBounds(val height: Int, val y: Int)
@@ -1307,14 +1296,14 @@ class OverlayController(
                 rightMargin = dp(DesignTokens.Spacing.sm)
             })
             addView(TextView(context).apply {
-                text = hostConnectionTitle(state.phase)
+                text = HostConnectionCopy.title(state.phase)
                 Typography.applyCallout(this, tokens)
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setTextColor(statusColor)
             }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         })
         card.addView(TextView(context).apply {
-            text = hostConnectionMessage(state)
+            text = HostConnectionCopy.message(state)
             Typography.applyFootnote(this, tokens, secondary = state.phase != HostConnectionPhase.ERROR)
             if (state.phase == HostConnectionPhase.ERROR) {
                 setTextColor(tokens.danger)
@@ -1389,26 +1378,6 @@ class OverlayController(
         popup.layoutParams = params
         popup.pivotX = (anchorCenterX - params.leftMargin).toFloat().coerceIn(0f, popupWidth.toFloat())
         popup.pivotY = if (params.topMargin < anchorTop) popupHeight.toFloat() else 0f
-    }
-
-    private fun hostConnectionTitle(phase: HostConnectionPhase): String = when (phase) {
-        HostConnectionPhase.CONNECTING -> "Connecting to Host"
-        HostConnectionPhase.CONNECTED -> "Host Connected"
-        HostConnectionPhase.ERROR -> "Host Connection Error"
-    }
-
-    private fun hostConnectionMessage(state: HostConnectionState): String {
-        return state.message.takeIf { it.isNotBlank() } ?: when (state.phase) {
-            HostConnectionPhase.CONNECTING -> "Trying to reach the OpenClaw bridge on the host machine."
-            HostConnectionPhase.CONNECTED -> "The Android app is registered with the OpenClaw bridge."
-            HostConnectionPhase.ERROR -> "The Android app could not reach or register with the OpenClaw bridge."
-        }
-    }
-
-    private fun hostConnectionColor(tokens: ThemeTokens, phase: HostConnectionPhase): Int = when (phase) {
-        HostConnectionPhase.CONNECTING -> tokens.warning
-        HostConnectionPhase.CONNECTED -> tokens.success
-        HostConnectionPhase.ERROR -> tokens.danger
     }
 
     private fun showModelChoices() {
@@ -3221,7 +3190,7 @@ class OverlayController(
             this.tokens = tokens
             this.state = state
             background = Drawables.pillSurface(context, tokens)
-            contentDescription = "${hostConnectionTitle(state.phase)}. Tap for host connection details."
+            contentDescription = "${HostConnectionCopy.title(state.phase)}. Tap for host connection details."
             invalidate()
         }
 
@@ -3381,9 +3350,9 @@ class OverlayController(
         private const val KEYBOARD_HEIGHT_ESTIMATE_FRACTION = 0.485f
         private const val KEYBOARD_COMPOSER_GAP_DP = 4
         private const val FULLSCREEN_KEYBOARD_BOTTOM_CLEARANCE_DP = 28
-        const val MIN_BUBBLE_SIZE_DP = 40
-        const val DEFAULT_BUBBLE_SIZE_DP = 88
-        const val MAX_BUBBLE_SIZE_DP = 132
+        const val MIN_BUBBLE_SIZE_DP = AppearancePrefs.MIN_BUBBLE_SIZE_DP
+        const val DEFAULT_BUBBLE_SIZE_DP = AppearancePrefs.DEFAULT_BUBBLE_SIZE_DP
+        const val MAX_BUBBLE_SIZE_DP = AppearancePrefs.MAX_BUBBLE_SIZE_DP
     }
 
     private fun openSettings() {

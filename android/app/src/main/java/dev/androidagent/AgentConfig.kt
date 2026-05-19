@@ -70,7 +70,9 @@ data class AppearancePrefs(
     val bubbleSizeDp: Int = DEFAULT_BUBBLE_SIZE_DP
 ) {
     companion object {
+        const val MIN_BUBBLE_SIZE_DP = 40
         const val DEFAULT_BUBBLE_SIZE_DP = 88
+        const val MAX_BUBBLE_SIZE_DP = 132
     }
 }
 

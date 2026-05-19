@@ -31,6 +31,9 @@ import dev.androidagent.chat.ChatUsageSummary
 import dev.androidagent.net.BridgeConnectionPhase
 import dev.androidagent.net.BridgeConnectionState
 import dev.androidagent.net.PhoneWebSocketClient
+import dev.androidagent.overlay.HostConnectionPhase
+import dev.androidagent.overlay.HostConnectionState
+import dev.androidagent.overlay.PanelPresentation
 import dev.androidagent.voice.VoiceRuntimeController
 import dev.androidagent.voice.transcription.VoiceTranscriptionManager
 import dev.androidagent.voice.transcription.VoiceTranscriptionState
@@ -316,7 +319,7 @@ class AgentForegroundService : Service() {
 
     private fun openChatFromIntent(intent: Intent?) {
         val presentation = panelPresentationFrom(intent)
-        if (presentation == OverlayController.PanelPresentation.Popup) {
+        if (presentation == PanelPresentation.Popup) {
             overlayController?.show()
         }
         overlayController?.openPanel(presentation)
@@ -324,13 +327,13 @@ class AgentForegroundService : Service() {
 
     private fun openChatSessionFromNotification(
         sessionKey: String,
-        presentation: OverlayController.PanelPresentation
+        presentation: PanelPresentation
     ) {
         webSocketClient?.sendChatSelectSession(sessionKey)
         markChatSessionRead(sessionKey)
         cancelReplyNotification(sessionKey)
         if (Settings.canDrawOverlays(this)) {
-            if (presentation == OverlayController.PanelPresentation.Popup) {
+            if (presentation == PanelPresentation.Popup) {
                 overlayController?.show()
             }
             overlayController?.openChatPanel(
@@ -345,20 +348,20 @@ class AgentForegroundService : Service() {
         }
     }
 
-    private fun panelPresentationFrom(intent: Intent?): OverlayController.PanelPresentation {
+    private fun panelPresentationFrom(intent: Intent?): PanelPresentation {
         return when (intent?.getStringExtra(EXTRA_PANEL_PRESENTATION)) {
-            PANEL_PRESENTATION_FULLSCREEN -> OverlayController.PanelPresentation.Fullscreen
-            PANEL_PRESENTATION_POPUP -> OverlayController.PanelPresentation.Popup
+            PANEL_PRESENTATION_FULLSCREEN -> PanelPresentation.Fullscreen
+            PANEL_PRESENTATION_POPUP -> PanelPresentation.Popup
             PANEL_PRESENTATION_AUTO -> notificationPanelPresentation()
-            else -> OverlayController.PanelPresentation.Popup
+            else -> PanelPresentation.Popup
         }
     }
 
-    private fun notificationPanelPresentation(): OverlayController.PanelPresentation {
+    private fun notificationPanelPresentation(): PanelPresentation {
         return if (overlayController?.isBubbleVisible() == true) {
-            OverlayController.PanelPresentation.Popup
+            PanelPresentation.Popup
         } else {
-            OverlayController.PanelPresentation.Fullscreen
+            PanelPresentation.Fullscreen
         }
     }
 
@@ -409,11 +412,11 @@ class AgentForegroundService : Service() {
     private fun handleBridgeConnectionState(state: BridgeConnectionState) {
         serviceScope.launch {
             overlayController?.setHostConnectionState(
-                OverlayController.HostConnectionState(
+                HostConnectionState(
                     phase = when (state.phase) {
-                        BridgeConnectionPhase.CONNECTING -> OverlayController.HostConnectionPhase.CONNECTING
-                        BridgeConnectionPhase.CONNECTED -> OverlayController.HostConnectionPhase.CONNECTED
-                        BridgeConnectionPhase.ERROR -> OverlayController.HostConnectionPhase.ERROR
+                        BridgeConnectionPhase.CONNECTING -> HostConnectionPhase.CONNECTING
+                        BridgeConnectionPhase.CONNECTED -> HostConnectionPhase.CONNECTED
+                        BridgeConnectionPhase.ERROR -> HostConnectionPhase.ERROR
                     },
                     message = state.message
                 )

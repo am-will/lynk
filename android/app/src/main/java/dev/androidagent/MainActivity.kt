@@ -41,6 +41,7 @@ import dev.androidagent.avatar.AvatarConfigStore
 import dev.androidagent.avatar.AvatarLibrary
 import dev.androidagent.avatar.AvatarSelection
 import dev.androidagent.avatar.PetAsset
+import dev.androidagent.settings.BubbleSizeMapper
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
 import dev.androidagent.ui.ThemeTokens
@@ -355,13 +356,13 @@ class MainActivity : ComponentActivity() {
 
         val sizeSeekBar = SeekBar(this).apply {
             max = 100
-            progress = dpToProgress(current.bubbleSizeDp)
+            progress = BubbleSizeMapper.dpToProgress(current.bubbleSizeDp)
         }
         var currentSizeDp = current.bubbleSizeDp
         var lastAppliedSizeDp = current.bubbleSizeDp
         sizeSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
-                val dpValue = progressToDp(progress)
+                val dpValue = BubbleSizeMapper.progressToDp(progress)
                 currentSizeDp = dpValue
                 sizeValue.text = "$dpValue dp"
                 if (fromUser && dpValue != lastAppliedSizeDp && AgentForegroundService.isRunning) {
@@ -406,28 +407,6 @@ class MainActivity : ComponentActivity() {
         val intent = Intent(this, AgentForegroundService::class.java)
             .setAction(AgentForegroundService.ACTION_REFRESH_AVATAR)
         runCatching { ContextCompat.startForegroundService(this, intent) }
-    }
-
-    private fun progressToDp(progress: Int): Int {
-        val p = progress.coerceIn(0, 100)
-        return if (p <= 50) {
-            OverlayController.MIN_BUBBLE_SIZE_DP +
-                ((OverlayController.DEFAULT_BUBBLE_SIZE_DP - OverlayController.MIN_BUBBLE_SIZE_DP) * p) / 50
-        } else {
-            OverlayController.DEFAULT_BUBBLE_SIZE_DP +
-                ((OverlayController.MAX_BUBBLE_SIZE_DP - OverlayController.DEFAULT_BUBBLE_SIZE_DP) * (p - 50)) / 50
-        }
-    }
-
-    private fun dpToProgress(dp: Int): Int {
-        val clamped = dp.coerceIn(OverlayController.MIN_BUBBLE_SIZE_DP, OverlayController.MAX_BUBBLE_SIZE_DP)
-        return if (clamped <= OverlayController.DEFAULT_BUBBLE_SIZE_DP) {
-            val denom = (OverlayController.DEFAULT_BUBBLE_SIZE_DP - OverlayController.MIN_BUBBLE_SIZE_DP).coerceAtLeast(1)
-            ((clamped - OverlayController.MIN_BUBBLE_SIZE_DP) * 50) / denom
-        } else {
-            val denom = (OverlayController.MAX_BUBBLE_SIZE_DP - OverlayController.DEFAULT_BUBBLE_SIZE_DP).coerceAtLeast(1)
-            50 + ((clamped - OverlayController.DEFAULT_BUBBLE_SIZE_DP) * 50) / denom
-        }
     }
 
     private fun currentAvatarSummary(): String {
