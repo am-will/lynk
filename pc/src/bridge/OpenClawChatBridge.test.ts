@@ -22,7 +22,7 @@ const config: BridgeConfig = {
 
 class FakeGatewayClient {
   readonly handlers = new Set<GatewayEventHandler>();
-  readonly sent: Array<{ sessionKey: string; message: string; model?: string; idempotencyKey?: string }> = [];
+  readonly sent: Array<{ sessionKey: string; message: string; idempotencyKey?: string }> = [];
   readonly created: Array<{ key?: string; label?: string; model?: string }> = [];
   readonly patched: Array<{ sessionKey: string; patch: Record<string, unknown> }> = [];
   readonly aborted: Array<{ sessionKey: string; runId?: string }> = [];
@@ -39,7 +39,7 @@ class FakeGatewayClient {
     return { sessionId: `${sessionKey}:id`, messages: [] };
   }
 
-  async sendChat(options: { sessionKey: string; message: string; model?: string; idempotencyKey?: string }): Promise<{ runId: string; sessionKey: string }> {
+  async sendChat(options: { sessionKey: string; message: string; idempotencyKey?: string }): Promise<{ runId: string; sessionKey: string }> {
     this.runCount += 1;
     this.sent.push(options);
     return { runId: `run_${this.runCount}`, sessionKey: options.sessionKey };
@@ -275,8 +275,7 @@ test("reasoning and model changes do not append chat messages", async () => {
     text: "Use the selected model"
   });
 
-  assert.deepEqual(client.sent.map((entry) => entry.message), ["/think high", "/think high", "Use the selected model"]);
-  assert.equal(client.sent.at(-1)?.model, "gpt-5.4");
+  assert.deepEqual(client.sent.map((entry) => entry.message), ["/think high", "/think high", "/model gpt-5.4", "Use the selected model"]);
   assert.deepEqual(client.patched.map((entry) => entry.patch), []);
   assert.equal(chatMessages.filter((message) => message.type === "chat.message").length, 0);
 });

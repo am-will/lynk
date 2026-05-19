@@ -21,7 +21,7 @@ export const PHONE_COMMANDS = [
 export const phoneCommandSchema = z.enum(PHONE_COMMANDS);
 export type PhoneCommand = z.infer<typeof phoneCommandSchema>;
 
-export const AGENT_MODEL_IDS = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2"] as const;
+export const AGENT_MODEL_IDS = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.2"] as const;
 export const REASONING_EFFORTS = ["low", "medium", "high", "xhigh"] as const;
 
 export const registerMessageSchema = z.object({

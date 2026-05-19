@@ -65,7 +65,6 @@ interface GatewayChatClient {
     sessionKey: string;
     sessionId?: string;
     message: string;
-    model?: string;
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult>;
@@ -150,7 +149,6 @@ export class OpenClawChatBridge {
         sessionKey: state.sessionKey,
         sessionId: message.sessionId,
         message: text,
-        model: message.model ?? state.model ?? undefined,
         thinking: state.reasoningEffort ?? undefined,
         idempotencyKey
       });
@@ -225,7 +223,6 @@ export class OpenClawChatBridge {
         sessionKey: state.sessionKey,
         sessionId: state.sessionId ?? undefined,
         message: text,
-        model: request.model ?? state.model ?? undefined,
         thinking: state.reasoningEffort ?? undefined,
         idempotencyKey
       });
@@ -259,7 +256,6 @@ export class OpenClawChatBridge {
       sessionKey: state.sessionKey,
       sessionId: state.sessionId ?? undefined,
       message: text,
-      model: state.model ?? undefined,
       thinking: state.reasoningEffort ?? undefined,
       idempotencyKey
     });
@@ -324,8 +320,9 @@ export class OpenClawChatBridge {
 
   async setModel(message: ChatSetModelMessage): Promise<void> {
     const state = this.stateFor(message.deviceId);
+    const sessionKey = message.sessionKey ?? state.sessionKey;
     state.model = message.model;
-    this.sendState(message.deviceId, `Model: ${message.model}`);
+    await this.sendSlashCommand(message.deviceId, `/model ${message.model}`, sessionKey, `Model: ${message.model}`);
   }
 
   async setReasoning(message: ChatSetReasoningMessage): Promise<void> {
