@@ -56,6 +56,7 @@ import dev.androidagent.chat.ChatSessionRow
 import dev.androidagent.chat.ChatTimelineKind
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatTimelineItem
+import dev.androidagent.chat.ChatTimelineRenderer
 import dev.androidagent.overlay.HostConnectionCopy
 import dev.androidagent.overlay.HostConnectionPhase
 import dev.androidagent.overlay.HostConnectionState
@@ -1967,13 +1968,11 @@ class OverlayController(
         val container = historyContainer ?: return
         val tokens = tokens()
         container.removeAllViews()
-        val visibleItems = state.timeline
-            .filter { item -> item.kind != ChatTimelineKind.REASONING || !item.isClearing }
-            .filter { item -> showToolCalls || item.kind != ChatTimelineKind.TOOL }
-        if (visibleItems.isEmpty()) {
+        val plan = ChatTimelineRenderer.plan(state, showToolCalls)
+        if (plan.isEmpty) {
             container.addView(emptyHistoryView(tokens))
         } else {
-            visibleItems.forEach { item ->
+            plan.items.forEach { item ->
                 container.addView(when (item.kind) {
                     ChatTimelineKind.MESSAGE -> messageBubble(item, tokens)
                     ChatTimelineKind.TOOL -> toolRow(item, tokens)
