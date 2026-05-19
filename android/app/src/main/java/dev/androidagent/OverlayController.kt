@@ -18,7 +18,6 @@ import android.text.Editable
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.TextWatcher
-import android.text.method.ScrollingMovementMethod
 import android.text.style.ForegroundColorSpan
 import android.util.TypedValue
 import android.view.Gravity
@@ -31,7 +30,6 @@ import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.DecelerateInterpolator
-import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -53,6 +51,7 @@ import dev.androidagent.overlay.PanelBounds
 import dev.androidagent.overlay.PanelChrome
 import dev.androidagent.overlay.PanelKeyboardLayout
 import dev.androidagent.overlay.PanelPresentation
+import dev.androidagent.overlay.VoicePanel
 import dev.androidagent.overlay.detachOverlayView
 import dev.androidagent.overlay.hostConnectionColor
 import dev.androidagent.overlay.isOverlayAttached
@@ -64,7 +63,6 @@ import dev.androidagent.ui.ThemeTokens
 import dev.androidagent.ui.Typography
 import org.json.JSONObject
 import dev.androidagent.voice.VoiceRuntimeState
-import dev.androidagent.voice.VoiceRuntimeStatus
 import dev.androidagent.voice.transcription.VoiceTranscriptionState
 import kotlinx.coroutines.CompletableDeferred
 import kotlin.math.hypot
@@ -125,20 +123,17 @@ class OverlayController(
         }
     )
     private val confirmationOverlay = ConfirmationOverlay(context, windowManager)
+    private val voicePanel = VoicePanel(
+        context = context,
+        onToggleVoiceMute = onToggleVoiceMute,
+        onStopVoice = onStopVoice
+    )
     private var panelView: View? = null
     private var panelParams: WindowManager.LayoutParams? = null
     private var panelScrimView: View? = null
     private var panelScrimParams: WindowManager.LayoutParams? = null
     private var statusText: StatusUpdateView? = null
-    private var voiceSurface: LinearLayout? = null
-    private var voiceStatusText: TextView? = null
-    private var voiceTranscriptText: TextView? = null
-    private var voiceTaskText: TextView? = null
-    private var voiceResultText: TextView? = null
-    private var voiceMuteButton: Button? = null
-    private var voiceHangupButton: Button? = null
     private var lastVoiceState = VoiceRuntimeState()
-    private var voiceSurfaceForceHidden = false
     private var panelDismissAnimating = false
     private var panelOpenAnimator: Animator? = null
     private var panelScrimOpenAnimator: Animator? = null
@@ -420,7 +415,7 @@ class OverlayController(
             setActive(lastChatState.isRunning)
         }
         statusText = status
-        val voice = buildVoiceSurface(tokens)
+        val voice = voicePanel.build(tokens)
         val composer = buildComposer(tokens, input)
         val header = buildModalHeader(tokens, presentation)
 
@@ -1870,13 +1865,7 @@ class OverlayController(
         panelContent = null
         composerInput = null
         transcriptionMicButton = null
-        voiceSurface = null
-        voiceStatusText = null
-        voiceTranscriptText = null
-        voiceTaskText = null
-        voiceResultText = null
-        voiceMuteButton = null
-        voiceHangupButton = null
+        voicePanel.clear()
         chatTimelineBinder.clear()
         composerContainer = null
         keyboardSpacerView = null
@@ -1893,116 +1882,16 @@ class OverlayController(
         }
     }
 
-    private fun buildVoiceSurface(tokens: ThemeTokens): LinearLayout {
-        voiceStatusText = TextView(context).apply {
-            Typography.applyHeadline(this, tokens, color = tokens.accent)
-        }
-        voiceTranscriptText = TextView(context).apply {
-            Typography.applyBody(this, tokens, secondary = true)
-            setPadding(0, dp(DesignTokens.Spacing.sm), 0, dp(DesignTokens.Spacing.sm))
-            maxHeight = maxTranscriptHeight()
-            movementMethod = ScrollingMovementMethod()
-            isVerticalScrollBarEnabled = true
-            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
-        }
-        voiceTaskText = TextView(context).apply {
-            Typography.applyCaption(this, tokens, emphasis = true)
-            setPadding(0, 0, 0, dp(DesignTokens.Spacing.xs))
-        }
-        voiceResultText = TextView(context).apply {
-            Typography.applyCaption(this, tokens, emphasis = false)
-            setPadding(0, 0, 0, dp(DesignTokens.Spacing.sm))
-        }
-        voiceMuteButton = Button(context).apply {
-            text = "Mute"
-            isAllCaps = false
-            textSize = DesignTokens.Text.callout
-            setTextColor(tokens.primaryText)
-            background = Drawables.pillSurface(context, tokens, DesignTokens.Radius.pill)
-            backgroundTintList = null
-            setOnClickListener { onToggleVoiceMute() }
-        }
-        voiceHangupButton = Button(context).apply {
-            text = "Hang up"
-            isAllCaps = false
-            textSize = DesignTokens.Text.callout
-            setTextColor(tokens.accentInk)
-            background = Drawables.dangerSurface(context, tokens, DesignTokens.Radius.pill)
-            backgroundTintList = null
-            setOnClickListener {
-                onStopVoice()
-                voiceSurfaceForceHidden = true
-                voiceSurface?.visibility = View.GONE
-            }
-        }
-        val voiceActions = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
-            addView(voiceMuteButton, LinearLayout.LayoutParams(0, dp(DesignTokens.Sizes.action), 1f).apply { rightMargin = dp(DesignTokens.Spacing.sm) })
-            addView(voiceHangupButton, LinearLayout.LayoutParams(0, dp(DesignTokens.Sizes.action), 1f))
-        }
-        return LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-            setPadding(dp(DesignTokens.Spacing.lg), dp(DesignTokens.Spacing.md), dp(DesignTokens.Spacing.lg), dp(DesignTokens.Spacing.md))
-            background = Drawables.voiceTranscriptSurface(context, tokens)
-            addView(voiceStatusText)
-            addView(voiceTranscriptText)
-            addView(voiceTaskText)
-            addView(voiceResultText)
-            addView(voiceActions)
-            voiceSurface = this
-        }
-    }
-
     private fun showVoiceSurface() {
         if (panelView == null) {
             togglePanel(PanelPresentation.Popup)
         }
-        voiceSurface?.visibility = View.VISIBLE
+        voicePanel.show()
     }
 
     private fun renderVoiceState(state: VoiceRuntimeState) {
         bubbleOverlay.applyVoiceIndicator(state)
-        if (state.isActive) {
-            voiceSurfaceForceHidden = false
-        }
-        val shouldShow = !voiceSurfaceForceHidden &&
-            (state.isActive || state.status == VoiceRuntimeStatus.ERROR)
-        voiceSurface?.visibility = if (shouldShow) View.VISIBLE else View.GONE
-        voiceStatusText?.text = buildString {
-            append("Voice: ")
-            append(state.status.label)
-            state.error?.takeIf { it.isNotBlank() }?.let { append(" - ").append(it) }
-        }
-        voiceTranscriptText?.text = state.transcript.ifBlank { "Voice transcript will appear here." }
-        voiceTranscriptText?.post {
-            voiceTranscriptText?.let { textView ->
-                val scrollAmount = textView.layout?.let { layout ->
-                    layout.getLineTop(textView.lineCount) - textView.height + textView.compoundPaddingBottom + textView.compoundPaddingTop
-                } ?: 0
-                if (scrollAmount > 0) {
-                    textView.scrollTo(0, scrollAmount)
-                }
-            }
-        }
-        voiceTaskText?.text = buildString {
-            val task = state.currentPhoneTask
-            if (state.isPhoneTaskRunning && !task.isNullOrBlank()) {
-                append("Task: ").append(task)
-            } else if (state.queuedPhoneTasks > 0) {
-                append("Tasks queued.")
-            } else {
-                append("No phone task running.")
-            }
-            if (state.queuedPhoneTasks > 0) {
-                append(" Queued: ").append(state.queuedPhoneTasks)
-            }
-        }
-        voiceResultText?.text = state.latestTaskResult ?: "Latest task result will appear here."
-        voiceMuteButton?.text = if (state.isMuted) "Unmute" else "Mute"
-        voiceMuteButton?.isEnabled = state.isActive
-        voiceHangupButton?.isEnabled = state.status != VoiceRuntimeStatus.IDLE
+        voicePanel.render(state)
     }
 
     private fun renderTranscriptionState(state: VoiceTranscriptionState) {
@@ -2053,11 +1942,6 @@ class OverlayController(
             backgroundTintList = null
             setColorFilter(tokens.accentInk)
         }
-    }
-
-    private fun maxTranscriptHeight(): Int {
-        val modalBudget = (context.resources.displayMetrics.heightPixels * VOICE_MODAL_MAX_SCREEN_FRACTION).toInt()
-        return (modalBudget - dp(220)).coerceAtLeast(dp(96))
     }
 
     private inner class ContextUsageView(context: Context) : View(context) {
@@ -2156,7 +2040,6 @@ class OverlayController(
     }
 
     companion object {
-        private const val VOICE_MODAL_MAX_SCREEN_FRACTION = 0.40f
         private const val CHAT_MODAL_HEIGHT_FRACTION = 0.82f
         private const val KEYBOARD_HEIGHT_ESTIMATE_FRACTION = 0.485f
         private const val KEYBOARD_COMPOSER_GAP_DP = 4
