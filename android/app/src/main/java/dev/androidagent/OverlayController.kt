@@ -41,14 +41,11 @@ import android.widget.ScrollView
 import android.widget.Space
 import android.widget.TextView
 import android.widget.FrameLayout
-import androidx.core.view.isNotEmpty
 import dev.androidagent.chat.ChatModelOption
 import dev.androidagent.chat.ChatSessionRow
-import dev.androidagent.chat.ChatTimelineKind
 import dev.androidagent.chat.ChatState
-import dev.androidagent.chat.ChatTimelineItem
-import dev.androidagent.chat.ChatTimelineRenderer
 import dev.androidagent.overlay.BubbleOverlay
+import dev.androidagent.overlay.ChatTimelineBinder
 import dev.androidagent.overlay.HostConnectionCopy
 import dev.androidagent.overlay.HostConnectionPhase
 import dev.androidagent.overlay.HostConnectionState
@@ -59,12 +56,8 @@ import dev.androidagent.overlay.detachOverlayView
 import dev.androidagent.overlay.hostConnectionColor
 import dev.androidagent.overlay.isOverlayAttached
 import dev.androidagent.ui.AnchoredPicker
-import dev.androidagent.ui.ClipboardHelper
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
-import dev.androidagent.ui.MarkdownFencedCodeChunk
-import dev.androidagent.ui.MarkdownFencedCodeParser
-import dev.androidagent.ui.MarkdownRenderer
 import dev.androidagent.ui.StatusUpdateView
 import dev.androidagent.ui.ThemeTokens
 import dev.androidagent.ui.Typography
@@ -105,6 +98,10 @@ class OverlayController(
         onDismissPanelBeforeBubbleDismiss = { dismissPanel(cancelTranscription = false) },
         onDismiss = onDismiss
     )
+    private val chatTimelineBinder = ChatTimelineBinder(
+        context = context,
+        onToggleChatTool = onToggleChatTool
+    )
     private var panelView: View? = null
     private var panelParams: WindowManager.LayoutParams? = null
     private var panelScrimView: View? = null
@@ -136,8 +133,6 @@ class OverlayController(
     private var lastChatState = ChatState()
     private var showToolCalls = true
     private var suppressSlashAutocomplete = false
-    private var historyContainer: LinearLayout? = null
-    private var historyScrollView: ScrollView? = null
     private var composerContainer: LinearLayout? = null
     private var keyboardSpacerView: View? = null
     private var sendStopButton: ImageButton? = null
@@ -506,14 +501,13 @@ class OverlayController(
             setPadding(dp(DesignTokens.Spacing.md), dp(DesignTokens.Spacing.sm), dp(DesignTokens.Spacing.md), dp(DesignTokens.Spacing.md))
             clipToPadding = false
         }
-        historyContainer = history
         val historyScroll = ScrollView(context).apply {
             isFillViewport = false
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             isVerticalScrollBarEnabled = false
             addView(history)
         }
-        historyScrollView = historyScroll
+        chatTimelineBinder.bind(history, historyScroll)
         statusText = StatusUpdateView(context, tokens).apply {
             setText(lastChatState.status ?: "OpenClaw chat ready.")
             setActive(lastChatState.isRunning)
@@ -1776,397 +1770,7 @@ class OverlayController(
     }
 
     private fun renderTimeline(state: ChatState) {
-        val container = historyContainer ?: return
-        val tokens = tokens()
-        container.removeAllViews()
-        val plan = ChatTimelineRenderer.plan(state, showToolCalls)
-        if (plan.isEmpty) {
-            container.addView(emptyHistoryView(tokens))
-        } else {
-            plan.items.forEach { item ->
-                container.addView(when (item.kind) {
-                    ChatTimelineKind.MESSAGE -> messageBubble(item, tokens)
-                    ChatTimelineKind.TOOL -> toolRow(item, tokens)
-                    ChatTimelineKind.REASONING -> reasoningBlock(item, tokens)
-                }, LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(DesignTokens.Spacing.sm) })
-            }
-        }
-        historyScrollView?.post { historyScrollView?.fullScroll(View.FOCUS_DOWN) }
-    }
-
-    private fun reasoningBlock(item: ChatTimelineItem, tokens: ThemeTokens): View {
-        return LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            background = Drawables.accentSoftSurface(context, tokens, DesignTokens.Radius.lg)
-            setPadding(
-                dp(DesignTokens.Spacing.md),
-                dp(DesignTokens.Spacing.sm),
-                dp(DesignTokens.Spacing.md),
-                dp(DesignTokens.Spacing.sm)
-            )
-            addView(TextView(context).apply {
-                text = "Reasoning Stream"
-                Typography.applyCaption(this, tokens, emphasis = true)
-                setTextColor(tokens.accent)
-                setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_reasoning, 0, 0, 0)
-                compoundDrawablePadding = dp(DesignTokens.Spacing.xs)
-            })
-            addView(TextView(context).apply {
-                text = item.text.ifBlank { if (item.isStreaming) "Thinking..." else "" }
-                Typography.applyCallout(this, tokens)
-                setTextColor(tokens.primaryText)
-                setLineSpacing(dp(2).toFloat(), 1.0f)
-            }, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = dp(DesignTokens.Spacing.xs) })
-        }
-    }
-
-    private fun emptyHistoryView(tokens: ThemeTokens): View {
-        return LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(DesignTokens.Spacing.xxl), dp(48), dp(DesignTokens.Spacing.xxl), dp(48))
-
-            addView(ImageView(context).apply {
-                setImageResource(R.drawable.openclaw_bubble_logo)
-                alpha = 0.65f
-            }, LinearLayout.LayoutParams(dp(72), dp(72)).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-            })
-
-            addView(TextView(context).apply {
-                text = "Start a conversation"
-                Typography.applyTitle(this, tokens)
-                gravity = Gravity.CENTER
-            }, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(DesignTokens.Spacing.lg)
-                gravity = Gravity.CENTER_HORIZONTAL
-            })
-
-            addView(TextView(context).apply {
-                text = "OpenClaw is ready. Say something or pick a previous chat from the title menu."
-                Typography.applyBody(this, tokens, secondary = true)
-                gravity = Gravity.CENTER
-            }, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                topMargin = dp(DesignTokens.Spacing.sm)
-                gravity = Gravity.CENTER_HORIZONTAL
-            })
-        }
-    }
-
-    private fun messageBubble(item: ChatTimelineItem, tokens: ThemeTokens): View {
-        val role = item.role
-        val isLocalStatusNotice = role == "system" && item.id.startsWith("system_")
-        if (role == "system" && !isLocalStatusNotice) {
-            return TextView(context).apply {
-                text = item.text.ifBlank { "Status" }
-                Typography.applyFootnote(this, tokens, secondary = true)
-                gravity = Gravity.CENTER
-                setPadding(dp(DesignTokens.Spacing.lg), dp(DesignTokens.Spacing.sm), dp(DesignTokens.Spacing.lg), dp(DesignTokens.Spacing.sm))
-                background = Drawables.chatBubbleSystem(context, tokens)
-                setTextColor(tokens.bubbleSystemInk)
-                attachMessageCopyGesture(this, item.text)
-            }
-        }
-
-        val isUser = role == "user"
-        val isAssistant = role == "assistant"
-        val isStreaming = !isUser && item.isStreaming && item.text.isBlank()
-
-        val maxWidth = (context.resources.displayMetrics.widthPixels * 0.78f).toInt()
-        val bubble = if (isAssistant && !isStreaming) {
-            val chunks = MarkdownFencedCodeParser.parse(item.text)
-            if (chunks.any { it is MarkdownFencedCodeChunk.CodeBlock }) {
-                assistantMessageBubbleWithCodeBlocks(
-                    messageText = item.text,
-                    chunks = chunks,
-                    tokens = tokens,
-                    maxWidth = maxWidth
-                )
-            } else {
-                plainMessageBubble(
-                    messageText = item.text,
-                    tokens = tokens,
-                    isUser = false,
-                    isStreaming = false,
-                    maxWidth = maxWidth
-                )
-            }
-        } else {
-            plainMessageBubble(
-                messageText = item.text,
-                tokens = tokens,
-                isUser = isUser,
-                isStreaming = isStreaming,
-                maxWidth = maxWidth
-            )
-        }
-
-        return LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = if (isUser) Gravity.END else Gravity.START
-            addView(bubble, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                this.gravity = if (isUser) Gravity.END else Gravity.START
-            })
-        }
-    }
-
-    private fun plainMessageBubble(
-        messageText: String,
-        tokens: ThemeTokens,
-        isUser: Boolean,
-        isStreaming: Boolean,
-        maxWidth: Int
-    ): TextView {
-        return TextView(context).apply {
-            Typography.applyCallout(this, tokens)
-            setTextColor(if (isUser) tokens.bubbleUserInk else tokens.bubbleAssistantInk)
-            setLinkTextColor(tokens.accent)
-            setPadding(
-                dp(DesignTokens.Spacing.md + 2),
-                dp(DesignTokens.Spacing.sm + 2),
-                dp(DesignTokens.Spacing.md + 2),
-                dp(DesignTokens.Spacing.sm + 2)
-            )
-            setLineSpacing(dp(DesignTokens.Spacing.xs).toFloat(), 1.0f)
-            background = if (isUser) Drawables.chatBubbleUser(context, tokens)
-                else Drawables.chatBubbleAssistant(context, tokens)
-            movementMethod = android.text.method.LinkMovementMethod.getInstance()
-            this.maxWidth = maxWidth
-            if (isStreaming) {
-                text = "•  •  •"
-                animateStreamingDots(this)
-            } else if (isUser) {
-                text = messageText
-            } else {
-                MarkdownRenderer.render(this, messageText, tokens)
-            }
-            attachMessageCopyGesture(this, messageText, enabled = !isStreaming)
-        }
-    }
-
-    private fun assistantMessageBubbleWithCodeBlocks(
-        messageText: String,
-        chunks: List<MarkdownFencedCodeChunk>,
-        tokens: ThemeTokens,
-        maxWidth: Int
-    ): LinearLayout {
-        val horizontalPadding = dp(DesignTokens.Spacing.md + 2)
-        val childMaxWidth = (maxWidth - (horizontalPadding * 2)).coerceAtLeast(dp(120))
-        return LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(
-                horizontalPadding,
-                dp(DesignTokens.Spacing.sm + 2),
-                horizontalPadding,
-                dp(DesignTokens.Spacing.sm + 2)
-            )
-            background = Drawables.chatBubbleAssistant(context, tokens)
-            attachMessageCopyGesture(this, messageText)
-
-            chunks.forEach { chunk ->
-                val child = when (chunk) {
-                    is MarkdownFencedCodeChunk.Prose -> proseChunkView(chunk.text, tokens, childMaxWidth).also {
-                        attachMessageCopyGesture(it, messageText)
-                    }
-                    is MarkdownFencedCodeChunk.CodeBlock -> codeBlockChunkView(chunk, tokens, messageText, childMaxWidth)
-                }
-                addChunkView(child)
-            }
-        }
-    }
-
-    private fun proseChunkView(
-        text: String,
-        tokens: ThemeTokens,
-        maxWidth: Int
-    ): TextView {
-        return TextView(context).apply {
-            Typography.applyCallout(this, tokens)
-            setTextColor(tokens.bubbleAssistantInk)
-            setLinkTextColor(tokens.accent)
-            setLineSpacing(dp(DesignTokens.Spacing.xs).toFloat(), 1.0f)
-            this.maxWidth = maxWidth
-            MarkdownRenderer.render(this, text, tokens)
-        }
-    }
-
-    private fun codeBlockChunkView(
-        chunk: MarkdownFencedCodeChunk.CodeBlock,
-        tokens: ThemeTokens,
-        messageText: String,
-        maxWidth: Int
-    ): TextView {
-        return TextView(context).apply {
-            Typography.applyMono(this, tokens)
-            setTextColor(tokens.bubbleAssistantInk)
-            setPadding(
-                dp(DesignTokens.Spacing.md),
-                dp(DesignTokens.Spacing.sm),
-                dp(DesignTokens.Spacing.md),
-                dp(DesignTokens.Spacing.sm)
-            )
-            setLineSpacing(dp(DesignTokens.Spacing.xs).toFloat(), 1.0f)
-            background = Drawables.rippleOver(
-                context,
-                tokens,
-                Drawables.glassInset(context, tokens, DesignTokens.Radius.sm)
-            )
-            this.maxWidth = maxWidth
-            minWidth = dp(96)
-            text = chunk.code.ifEmpty { " " }
-            setOnClickListener {
-                ClipboardHelper.copyCodeBlock(context, chunk.copyText)
-            }
-            attachMessageCopyGesture(this, messageText)
-        }
-    }
-
-    private fun LinearLayout.addChunkView(child: View) {
-        val hasPreviousChunk = isNotEmpty()
-        addView(child, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply {
-            if (hasPreviousChunk) {
-                topMargin = dp(DesignTokens.Spacing.sm)
-            }
-        })
-    }
-
-    private fun attachMessageCopyGesture(
-        view: View,
-        messageText: String,
-        enabled: Boolean = true
-    ) {
-        if (!enabled || messageText.isBlank()) {
-            return
-        }
-        view.setOnLongClickListener {
-            ClipboardHelper.copyMessage(context, messageText)
-            true
-        }
-    }
-
-    private fun animateStreamingDots(tv: TextView) {
-        val dotText = "•  •  •"
-        val dotPositions = intArrayOf(0, 3, 6)
-        var visibleDots = 1
-        val runner = object : Runnable {
-            override fun run() {
-                if (tv.isAttachedToWindow && tv.text.toString().startsWith("•")) {
-                    val frame = SpannableString(dotText)
-                    dotPositions.forEachIndexed { index, position ->
-                        frame.setSpan(
-                            ForegroundColorSpan(if (index < visibleDots) tv.currentTextColor else Color.TRANSPARENT),
-                            position,
-                            position + 1,
-                            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                        )
-                    }
-                    tv.text = frame
-                    visibleDots = (visibleDots % dotPositions.size) + 1
-                    tv.postDelayed(this, 380L)
-                }
-            }
-        }
-        tv.post(runner)
-    }
-
-    private fun toolRow(item: ChatTimelineItem, tokens: ThemeTokens): View {
-        val tool = item.toolEvent
-        val expanded = tool?.isExpanded == true
-
-        val chevron = ImageView(context).apply {
-            setImageResource(R.drawable.ic_chevron_right)
-            setColorFilter(tokens.secondaryText)
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-            rotation = if (expanded) 90f else 0f
-        }
-
-        val titleText = TextView(context).apply {
-            text = tool?.title ?: "Tool activity"
-            Typography.applyFootnote(this, tokens)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            isSingleLine = true
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }
-
-        val statusText = TextView(context).apply {
-            text = tool?.status ?: "info"
-            Typography.applyCaption(this, tokens, emphasis = true)
-            background = Drawables.accentSoftSurface(context, tokens)
-            setPadding(dp(DesignTokens.Spacing.sm), dp(2), dp(DesignTokens.Spacing.sm), dp(2))
-            setTextColor(tokens.accent)
-        }
-
-        val headerRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            addView(chevron, LinearLayout.LayoutParams(dp(18), dp(28)).apply {
-                rightMargin = dp(DesignTokens.Spacing.sm)
-            })
-            addView(titleText, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            addView(statusText, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { leftMargin = dp(DesignTokens.Spacing.sm) })
-        }
-
-        return LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            background = Drawables.glassSurface(context, tokens, DesignTokens.Radius.md)
-            setPadding(
-                dp(DesignTokens.Spacing.md),
-                dp(DesignTokens.Spacing.sm),
-                dp(DesignTokens.Spacing.md),
-                dp(DesignTokens.Spacing.sm)
-            )
-            setOnClickListener { tool?.eventId?.let(onToggleChatTool) }
-            addView(headerRow)
-            if (expanded) {
-                val details = listOfNotNull(
-                    tool?.summary?.let { "Summary\n$it" },
-                    tool?.args?.let { "Args\n$it" },
-                    tool?.output?.let { "Output\n${it.take(1200)}" },
-                    tool?.error?.let { "Error\n$it" }
-                ).joinToString("\n\n")
-
-                val detailsContainer = LinearLayout(context).apply {
-                    orientation = LinearLayout.VERTICAL
-                    background = Drawables.glassInset(context, tokens, DesignTokens.Radius.sm)
-                    setPadding(
-                        dp(DesignTokens.Spacing.md),
-                        dp(DesignTokens.Spacing.sm),
-                        dp(DesignTokens.Spacing.md),
-                        dp(DesignTokens.Spacing.sm)
-                    )
-                    addView(TextView(context).apply {
-                        text = details.ifBlank { "No additional details." }
-                        Typography.applyMono(this, tokens)
-                        setLineSpacing(dp(2).toFloat(), 1.0f)
-                    })
-                }
-                addView(detailsContainer, LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = dp(DesignTokens.Spacing.sm) })
-            }
-        }
+        chatTimelineBinder.render(state, showToolCalls)
     }
 
     private data class RevealCenter(val cx: Int, val cy: Int, val bubbleRadius: Float)
@@ -2210,12 +1814,7 @@ class OverlayController(
     }
 
     private fun snapHistoryToBottom() {
-        val scroll = historyScrollView ?: return
-        val child = scroll.getChildAt(0) ?: return
-        val target = (child.height - scroll.height).coerceAtLeast(0)
-        if (scroll.scrollY != target) {
-            scroll.scrollTo(0, target)
-        }
+        chatTimelineBinder.snapToBottom()
     }
 
     private fun cancelPanelOpenAnimators() {
@@ -2472,8 +2071,7 @@ class OverlayController(
         voiceResultText = null
         voiceMuteButton = null
         voiceHangupButton = null
-        historyContainer = null
-        historyScrollView = null
+        chatTimelineBinder.clear()
         composerContainer = null
         keyboardSpacerView = null
         sendStopButton = null
