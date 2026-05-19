@@ -1114,6 +1114,8 @@ class OverlayController(
         })
 
         reasoningButton = compactPill(tokens, "Reason", R.drawable.ic_reasoning).apply {
+            ellipsize = null
+            setHorizontallyScrolling(false)
             setOnClickListener { showReasoningChoices() }
             setOnLongClickListener { cycleReasoningChoice(); true }
         }
@@ -2005,6 +2007,7 @@ class OverlayController(
 
     private fun formatReasoningLabel(reasoning: String?): String {
         val value = reasoning?.takeIf { it.isNotBlank() } ?: return "Reason"
+        if (value.equals("medium", ignoreCase = true)) return "Med"
         return value.replaceFirstChar { it.uppercase() }
     }
 
