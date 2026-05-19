@@ -63,7 +63,9 @@ import dev.androidagent.overlay.HostConnectionState
 import dev.androidagent.overlay.PanelBounds
 import dev.androidagent.overlay.PanelKeyboardLayout
 import dev.androidagent.overlay.PanelPresentation
+import dev.androidagent.overlay.detachOverlayView
 import dev.androidagent.overlay.hostConnectionColor
+import dev.androidagent.overlay.isOverlayAttached
 import dev.androidagent.ui.AnchoredPicker
 import dev.androidagent.ui.ClipboardHelper
 import dev.androidagent.ui.DesignTokens
@@ -322,13 +324,13 @@ class OverlayController(
         rememberBubblePosition()
         // Automation suppression only clears our chrome; it must not stop turns,
         // hang up voice, clear the chat modal's state, or dismiss the foreground service.
-        detachOverlayView(panelView)
-        detachOverlayView(panelScrimView)
+        detachOverlayView(windowManager, panelView)
+        detachOverlayView(windowManager, panelScrimView)
         stopBubblePulse()
         bubbleView?.let {
             it.animate().cancel()
             it.animate().setListener(null)
-            detachOverlayView(it)
+            detachOverlayView(windowManager, it)
         }
         bubbleView = null
         bubbleUnreadBadgeView = null
@@ -2646,8 +2648,8 @@ class OverlayController(
         panelDismissAnimating = false
         cancelPanelOpenAnimators()
         cancelPanelCloseAnimators()
-        detachOverlayView(panelView)
-        detachOverlayView(panelScrimView)
+        detachOverlayView(windowManager, panelView)
+        detachOverlayView(windowManager, panelScrimView)
         panelView = null
         panelParams = null
         panelScrimView = null
@@ -3049,7 +3051,7 @@ class OverlayController(
         trashTargetView?.let {
             it.animate().cancel()
             it.animate().setListener(null)
-            detachOverlayView(it)
+            detachOverlayView(windowManager, it)
         }
         trashTargetView = null
         trashTargetBounds = Rect()
@@ -3274,7 +3276,7 @@ class OverlayController(
         bubble?.let {
             it.animate().cancel()
             it.animate().setListener(null)
-            detachOverlayView(it)
+            detachOverlayView(windowManager, it)
         }
         bubbleView = null
         bubbleUnreadBadgeView = null
@@ -3318,20 +3320,6 @@ class OverlayController(
                 restorePanelFocus -> panel.post { panel.requestFocus() }
             }
         }
-    }
-
-    private fun detachOverlayView(view: View?) {
-        view ?: return
-        view.animate().cancel()
-        view.animate().setListener(null)
-        if (isOverlayAttached(view)) {
-            runCatching { windowManager.removeViewImmediate(view) }
-                .recoverCatching { windowManager.removeView(view) }
-        }
-    }
-
-    private fun isOverlayAttached(view: View?): Boolean {
-        return view?.isAttachedToWindow == true || view?.parent != null
     }
 
     companion object {
