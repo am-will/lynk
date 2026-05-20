@@ -27,6 +27,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:5.3.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("io.github.webrtc-sdk:android:144.7559.05")
+    implementation("com.google.ai.edge.litertlm:litertlm-android:latest.release")
 
     val markwon = "4.6.2"
     implementation("io.noties.markwon:core:$markwon")
