@@ -1,6 +1,6 @@
 # Open Claw Agent
 
-Open Claw Agent is an Android bubble endpoint for delegating work to an installed Open Claw session on the user's remote PC. The phone app is the always-available chat and voice surface; Open Claw does most work on the remote PC, and Android phone control is exposed as an optional tool capability when a task actually needs the phone.
+Open Claw Agent is an Android bubble endpoint for delegating work to an installed Open Claw session on the user's remote PC, with an optional local-phone mode for on-device LiteRT-LM models. The phone app is the always-available chat and voice surface; Host mode does most work on the remote PC, while Local mode can chat and call Android/local tools directly on the device.
 
 Target control loop:
 
@@ -11,6 +11,12 @@ Target control loop:
 5. Android executes those optional phone commands with `AccessibilityService` and returns observations.
 
 Current prototype note: the PC dispatcher still contains a hand-written Codex app-server compatibility path. Treat it as legacy scaffolding for the Open Claw migration, not the product direction. Generated Codex schemas are local/gitignored inspection output only.
+
+## Host and Local Modes
+
+- **Host bridge** is the default mode. Android connects to the PC bridge over LAN, USB reverse, or Tailscale and uses OpenClaw Gateway/CLI on the host.
+- **Local phone** runs a `.litertlm` model through LiteRT-LM on Android. Import the model from **Connection & Config**, choose CPU/GPU/NPU, then switch **Run on** to **Local phone**.
+- Local mode reuses the Android accessibility tools and adds app-private workspace tools. Full shell/git/build execution requires a future Termux helper, so keep Host mode for mature desktop/coding workflows.
 
 ## Quick Start
 

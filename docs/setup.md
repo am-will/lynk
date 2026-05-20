@@ -59,7 +59,9 @@ The realtime voice path is separate from the task dispatcher: Android starts the
 
 Open `android/` in Android Studio or run Gradle from that directory. Install the app on the device, then:
 
-1. Open **Open Connection & Config** and save the **WebSocket URL**, **Device ID**, **Auth token**, and **OpenAI API key for realtime voice** if you want realtime voice or composer transcription.
+1. Open **Open Connection & Config** and choose **Run on**:
+   - **Host bridge** uses the PC bridge. Save the **WebSocket URL**, **Device ID**, **Auth token**, and **OpenAI API key for realtime voice** if you want realtime voice or composer transcription.
+   - **Local phone** uses an Android-local LiteRT-LM model. Import a `.litertlm` file, choose CPU/GPU/NPU, and set the context window. Host URL/token are not required for local chat.
 2. Grant overlay permission.
 3. If Android shows **Restricted setting**, open **Settings > Apps > Open Claw Agent**, use the three-dot menu, choose **Allow restricted settings**, and authenticate.
 4. Enable **Settings > Accessibility > Installed apps > Open Claw Agent**.
@@ -67,6 +69,8 @@ Open `android/` in Android Studio or run Gradle from that directory. Install the
 6. Start the foreground agent bubble.
 
 While Open Claw Agent is running, tap the bubble to open a large chat modal. The modal loads Gateway session history, streams active replies, shows model/reasoning/session controls behind the `+` button, and keeps phone-control tool activity collapsed until expanded. The foreground notification includes a **Stop Turn** action for active chat, dispatcher, and realtime voice work, including moments when the floating bubble is temporarily hidden during taps, swipes, or screenshots.
+
+Local phone mode stores its chat sessions under the app's private storage and emits the same `chat.*` timeline events as Host mode. It can call Android accessibility tools directly and can read/search/write files in its app-private local workspace when local developer tools are enabled. Termux command execution is reserved for a dedicated helper and reports a configuration error until that helper exists.
 
 For adb installs, build `android/app/build/outputs/apk/debug/app-debug.apk` and run:
 

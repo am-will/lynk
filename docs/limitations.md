@@ -10,3 +10,5 @@
 - The bridge uses a shared token suitable for a local prototype, not production auth.
 - The legacy Codex adapter depends on app-server protocol details that may change by installed version. Generate local, gitignored schemas with `npm run codex:schemas` for inspection while that path remains; runtime code stays hand-written.
 - The OpenClaw CLI adapter currently runs one `openclaw agent --json` task at a time through the bridge. Mid-task steering depends on OpenClaw support and may require stopping and sending a follow-up.
+- Local phone mode requires a user-imported `.litertlm` model and device resources vary widely by RAM, GPU/NPU support, and thermals.
+- Local phone mode can control Android and use app-private workspace tools. It does not yet provide a full desktop-class shell/git/build environment; `termux_command` is a placeholder until a dedicated Termux helper is configured.

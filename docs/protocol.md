@@ -2,6 +2,8 @@
 
 Android connects outbound to the PC bridge at `/phone`. The bridge validates `token` during registration. Android never implements MCP directly.
 
+In **Local phone** mode, Android bypasses `/phone` for chat turns and generates the same `chat.*` event shapes in-process. The WebSocket protocol below still describes Host bridge mode and remains the compatibility contract for PC/OpenClaw sessions.
+
 ## Register
 
 ```json
@@ -97,6 +99,8 @@ Android can ask the bridge to stop the active phone-control turn. The same messa
 ## Gateway Chat
 
 The large Android overlay uses explicit `chat.*` messages for OpenClaw Gateway-backed session chat. The legacy `user_request` message remains available for compatibility, but normal typed overlay submissions use `chat.send`.
+
+Local phone mode mirrors these outbound event types locally: `chat.models`, `chat.sessions`, `chat.history`, `chat.state`, `chat.delta`, `chat.final`, `chat.error`, `chat.tool_event`, and `chat.tools`. Local session keys use the `local:` prefix, and the local model id is currently `local-litertlm`.
 
 Android opens or refreshes the selected Gateway session after registration:
 
