@@ -46,7 +46,9 @@ class AccessibilityCommandExecutor(
         val service = PhoneAccessibilityService.instance
 
         return when (command) {
-            "observe_screen" -> CommandResult(true, observer.observe(requireService(service)))
+            "observe_screen" -> withAgentChromeSuppressed {
+                CommandResult(true, observer.observe(requireService(service)))
+            }
             "open_app" -> withAgentChromeSuppressed {
                 val targetPackage = openApp(args)
                 waitMs(900)
