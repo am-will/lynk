@@ -23,6 +23,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityManager
 import android.widget.ArrayAdapter
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -30,6 +31,7 @@ import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
@@ -41,6 +43,7 @@ import dev.androidagent.avatar.AvatarConfigStore
 import dev.androidagent.avatar.AvatarLibrary
 import dev.androidagent.avatar.AvatarSelection
 import dev.androidagent.avatar.PetAsset
+import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.settings.BubbleSizeMapper
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
@@ -58,6 +61,21 @@ class MainActivity : ComponentActivity() {
     }
     private var agentToggleButton: TextView? = null
     private var agentToggleLastIsRunning: Boolean? = null
+    private var pendingLocalModelPathField: EditText? = null
+    private val localModelPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        runCatching {
+            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        runCatching {
+            LocalModelStore.importModel(this, uri)
+        }.onSuccess { path ->
+            pendingLocalModelPathField?.setText(path)
+            statusText.text = "Imported local model."
+        }.onFailure { error ->
+            statusText.text = error.message ?: "Could not import local model."
+        }
+    }
     private val serviceStateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == AgentForegroundService.ACTION_STATE_CHANGED) {
@@ -173,7 +191,7 @@ class MainActivity : ComponentActivity() {
         }, stackedParams())
 
         root.addView(card(tokens).apply {
-            addView(sectionHeader("Connection & Config", "Server URL, auth token, model, reasoning, and system prompt now live in this submenu.", tokens))
+            addView(sectionHeader("Connection & Config", "Choose host bridge or local phone mode, then configure model, reasoning, and system prompt.", tokens))
             addView(actionButton("Open Connection & Config", ButtonTone.Secondary, tokens) {
                 showConnectionConfigMenu()
             }, stackedParams(DesignTokens.Spacing.lg))
@@ -222,6 +240,12 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(DesignTokens.Spacing.xl), dp(DesignTokens.Spacing.md), dp(DesignTokens.Spacing.xl), 0)
         }
 
+        val modeOptions = AgentMode.values().toList()
+        val modeSpinner = styledSpinner(
+            modeOptions.map { it.label },
+            modeOptions.indexOf(config.agentMode).coerceAtLeast(0),
+            tokens
+        )
         val hostInput = configField("WebSocket URL", config.hostUrl, tokens)
         val deviceInput = configField("Device ID", config.deviceId, tokens)
         val tokenInput = configField(
@@ -236,12 +260,49 @@ class MainActivity : ComponentActivity() {
             tokens,
             InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
         )
+        val localModelPathInput = configField("Local .litertlm model path", config.localModelPath, tokens)
+        pendingLocalModelPathField = localModelPathInput
+        val localBackends = LocalModelBackend.values().toList()
+        val localBackendSpinner = styledSpinner(
+            localBackends.map { it.label },
+            localBackends.indexOf(config.localModelBackend).coerceAtLeast(0),
+            tokens
+        )
+        val localContextInput = configField(
+            "Local context tokens",
+            config.localContextTokens.toString(),
+            tokens,
+            InputType.TYPE_CLASS_NUMBER
+        )
+        val localDeveloperToolsInput = CheckBox(this).apply {
+            text = "Enable local workspace and Termux-backed developer tools"
+            isChecked = config.localDeveloperToolsEnabled
+            setTextColor(tokens.primaryText)
+            buttonTintList = android.content.res.ColorStateList.valueOf(tokens.accent)
+        }
+
+        content.addView(fieldLabel("Run on", tokens))
+        content.addView(modeSpinner, stackedParams(DesignTokens.Spacing.sm))
 
         content.addView(fieldLabel("Bridge", tokens))
         content.addView(hostInput, stackedParams(DesignTokens.Spacing.sm))
         content.addView(deviceInput, stackedParams(DesignTokens.Spacing.sm + 2))
         content.addView(tokenInput, stackedParams(DesignTokens.Spacing.sm + 2))
         content.addView(openAiKeyInput, stackedParams(DesignTokens.Spacing.sm + 2))
+
+        content.addView(fieldLabel("Local phone model", tokens), stackedParams(DesignTokens.Spacing.lg))
+        content.addView(body("Import a LiteRT-LM .litertlm model for offline local mode. Host mode ignores these fields.", tokens).apply {
+            setPadding(0, dp(DesignTokens.Spacing.xs), 0, 0)
+        }, stackedParams(DesignTokens.Spacing.xs))
+        content.addView(localModelPathInput, stackedParams(DesignTokens.Spacing.sm))
+        content.addView(actionButton("Import Local Model", ButtonTone.Secondary, tokens) {
+            localModelPicker.launch(arrayOf("*/*"))
+        }, stackedParams(DesignTokens.Spacing.sm + 2))
+        content.addView(fieldLabel("Local inference backend", tokens), stackedParams(DesignTokens.Spacing.lg))
+        content.addView(localBackendSpinner, stackedParams(DesignTokens.Spacing.sm + 2))
+        content.addView(fieldLabel("Local context window", tokens), stackedParams(DesignTokens.Spacing.lg))
+        content.addView(localContextInput, stackedParams(DesignTokens.Spacing.sm + 2))
+        content.addView(localDeveloperToolsInput, stackedParams(DesignTokens.Spacing.sm + 2))
 
         content.addView(fieldLabel("Model", tokens), stackedParams(DesignTokens.Spacing.lg))
         val modelSpinner = styledSpinner(
@@ -286,13 +347,23 @@ class MainActivity : ComponentActivity() {
                     openAiApiKey = openAiKeyInput.text.toString().trim(),
                     systemPrompt = promptDraft.trim().ifBlank { DefaultSystemPrompt.text },
                     model = AgentModelOptions.models.getOrElse(modelSpinner.selectedItemPosition) { AgentModelOptions.models.first() }.id,
-                    reasoningEffort = AgentModelOptions.reasoningEfforts.getOrElse(reasoningSpinner.selectedItemPosition) { AgentModelOptions.reasoningEfforts[1] }.id
+                    reasoningEffort = AgentModelOptions.reasoningEfforts.getOrElse(reasoningSpinner.selectedItemPosition) { AgentModelOptions.reasoningEfforts[1] }.id,
+                    agentMode = modeOptions.getOrElse(modeSpinner.selectedItemPosition) { AgentMode.Host },
+                    localModelPath = localModelPathInput.text.toString().trim(),
+                    localModelBackend = localBackends.getOrElse(localBackendSpinner.selectedItemPosition) { LocalModelBackend.Cpu },
+                    localContextTokens = localContextInput.text.toString().trim().toIntOrNull()?.coerceIn(512, 131_072) ?: config.localContextTokens,
+                    localDeveloperToolsEnabled = localDeveloperToolsInput.isChecked
                 )
                 AgentConfigStore.save(this, saved)
                 systemPromptText = saved.systemPrompt
                 refreshStatus()
             }
             .create()
+        dialog.setOnDismissListener {
+            if (pendingLocalModelPathField === localModelPathInput) {
+                pendingLocalModelPathField = null
+            }
+        }
         dialog.setOnShowListener {
             dialog.window?.setBackgroundDrawable(
                 Drawables.glassSurface(this@MainActivity, tokens, DesignTokens.Radius.xl)
@@ -598,11 +669,20 @@ class MainActivity : ComponentActivity() {
         val service = AgentForegroundService.isRunning
         val tokens = tokens()
         val bridgeTokenReady = config.token.isNotBlank()
+        val localModelReady = LocalModelStore.exists(config.localModelPath)
+        val endpointLine = when (config.agentMode) {
+            AgentMode.Host -> "${config.deviceId} -> ${config.hostUrl}"
+            AgentMode.Local -> "Local phone -> ${config.localModelBackend.label} model"
+        }
+        val authLine = when (config.agentMode) {
+            AgentMode.Host -> "Auth token: ${if (bridgeTokenReady) "saved" else "missing"}"
+            AgentMode.Local -> "Local model: ${if (localModelReady) "ready" else "missing"}"
+        }
 
         endpointSummary.text = """
-            ${config.deviceId} -> ${config.hostUrl}
+            $endpointLine
             ${modelLabel(config.model)} / ${reasoningLabel(config.reasoningEffort)} reasoning
-            Auth token: ${if (bridgeTokenReady) "saved" else "missing"}
+            $authLine
         """.trimIndent()
 
         updateChip("overlay", if (overlay) "Granted" else "Missing", if (overlay) tokens.success else tokens.warning)
@@ -613,10 +693,16 @@ class MainActivity : ComponentActivity() {
 
         agentToggleButton?.let { applyAgentToggleState(it, service, animated = true) }
 
-        statusText.text = if (!bridgeTokenReady) {
+        statusText.text = if (config.agentMode == AgentMode.Host && !bridgeTokenReady) {
             "Paste the PC PHONE_AGENT_TOKEN in Connection & Config before starting the bridge session."
+        } else if (config.agentMode == AgentMode.Local && !localModelReady) {
+            "Import a LiteRT-LM .litertlm model before starting local phone mode."
         } else if (overlay && microphone && accessibility) {
-            "Ready. Start the bubble when your Open Claw bridge is listening."
+            if (config.agentMode == AgentMode.Local) {
+                "Ready. Start the bubble to run the local phone model."
+            } else {
+                "Ready. Start the bubble when your Open Claw bridge is listening."
+            }
         } else {
             "Finish the missing permission steps before expecting reliable automation."
         }

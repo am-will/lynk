@@ -2,6 +2,27 @@ package dev.androidagent
 
 import android.content.Context
 
+enum class AgentMode(val key: String, val label: String) {
+    Host("host", "Host bridge"),
+    Local("local", "Local phone");
+
+    companion object {
+        fun fromKey(value: String?): AgentMode =
+            values().firstOrNull { it.key == value } ?: Host
+    }
+}
+
+enum class LocalModelBackend(val key: String, val label: String) {
+    Cpu("cpu", "CPU"),
+    Gpu("gpu", "GPU"),
+    Npu("npu", "NPU");
+
+    companion object {
+        fun fromKey(value: String?): LocalModelBackend =
+            values().firstOrNull { it.key == value } ?: Cpu
+    }
+}
+
 data class AgentConfig(
     val hostUrl: String,
     val deviceId: String,
@@ -9,7 +30,12 @@ data class AgentConfig(
     val openAiApiKey: String,
     val systemPrompt: String,
     val model: String,
-    val reasoningEffort: String
+    val reasoningEffort: String,
+    val agentMode: AgentMode = AgentMode.Host,
+    val localModelPath: String = "",
+    val localModelBackend: LocalModelBackend = LocalModelBackend.Cpu,
+    val localContextTokens: Int = 4096,
+    val localDeveloperToolsEnabled: Boolean = false
 )
 
 object AgentConfigStore {
@@ -22,6 +48,12 @@ object AgentConfigStore {
     private const val SYSTEM_PROMPT = "system_prompt"
     private const val MODEL = "model"
     private const val REASONING_EFFORT = "reasoning_effort"
+    private const val AGENT_MODE = "agent_mode"
+    private const val LOCAL_MODEL_PATH = "local_model_path"
+    private const val LOCAL_MODEL_BACKEND = "local_model_backend"
+    private const val LOCAL_CONTEXT_TOKENS = "local_context_tokens"
+    private const val LOCAL_DEVELOPER_TOOLS_ENABLED = "local_developer_tools_enabled"
+    private const val DEFAULT_LOCAL_CONTEXT_TOKENS = 4096
 
     fun load(context: Context): AgentConfig {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -32,7 +64,12 @@ object AgentConfigStore {
             openAiApiKey = prefs.getString(OPENAI_API_KEY, "") ?: "",
             systemPrompt = prefs.getString(SYSTEM_PROMPT, DefaultSystemPrompt.text) ?: DefaultSystemPrompt.text,
             model = prefs.getString(MODEL, "gpt-5.5") ?: "gpt-5.5",
-            reasoningEffort = prefs.getString(REASONING_EFFORT, "medium") ?: "medium"
+            reasoningEffort = prefs.getString(REASONING_EFFORT, "medium") ?: "medium",
+            agentMode = AgentMode.fromKey(prefs.getString(AGENT_MODE, AgentMode.Host.key)),
+            localModelPath = prefs.getString(LOCAL_MODEL_PATH, "") ?: "",
+            localModelBackend = LocalModelBackend.fromKey(prefs.getString(LOCAL_MODEL_BACKEND, LocalModelBackend.Cpu.key)),
+            localContextTokens = prefs.getInt(LOCAL_CONTEXT_TOKENS, DEFAULT_LOCAL_CONTEXT_TOKENS).coerceIn(512, 131_072),
+            localDeveloperToolsEnabled = prefs.getBoolean(LOCAL_DEVELOPER_TOOLS_ENABLED, false)
         )
     }
 
@@ -46,6 +83,11 @@ object AgentConfigStore {
             .putString(SYSTEM_PROMPT, config.systemPrompt)
             .putString(MODEL, config.model)
             .putString(REASONING_EFFORT, config.reasoningEffort)
+            .putString(AGENT_MODE, config.agentMode.key)
+            .putString(LOCAL_MODEL_PATH, config.localModelPath)
+            .putString(LOCAL_MODEL_BACKEND, config.localModelBackend.key)
+            .putInt(LOCAL_CONTEXT_TOKENS, config.localContextTokens.coerceIn(512, 131_072))
+            .putBoolean(LOCAL_DEVELOPER_TOOLS_ENABLED, config.localDeveloperToolsEnabled)
             .apply()
     }
 
