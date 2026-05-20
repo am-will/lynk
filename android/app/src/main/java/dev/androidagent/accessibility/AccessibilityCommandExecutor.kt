@@ -49,7 +49,7 @@ class AccessibilityCommandExecutor(
             "observe_screen" -> CommandResult(true, observer.observe(requireService(service)))
             "open_app" -> withAgentChromeSuppressed {
                 val targetPackage = openApp(args)
-                waitMs(1500)
+                waitMs(900)
                 val observation = service?.let { observer.observe(it) }
                     ?: JSONObject().put("screenSummary", "App opened; accessibility service is not enabled")
                 val observedPackage = observation.optString("package")
@@ -64,7 +64,7 @@ class AccessibilityCommandExecutor(
                 withAgentChromeSuppressed {
                     val node = requireNode(args.getString("nodeId"))
                     tapNode(service, node)
-                    waitMs(350)
+                    waitMs(180)
                     CommandResult(true, observer.observe(service))
                 }
             }
@@ -72,7 +72,7 @@ class AccessibilityCommandExecutor(
                 service ?: return accessibilityMissing()
                 withAgentChromeSuppressed {
                     tap(service, args.getDouble("x").toFloat(), args.getDouble("y").toFloat())
-                    waitMs(350)
+                    waitMs(180)
                     CommandResult(true, observer.observe(service))
                 }
             }
@@ -80,7 +80,7 @@ class AccessibilityCommandExecutor(
                 service ?: return accessibilityMissing()
                 withAgentChromeSuppressed {
                     tapNormalized(service, args.getDouble("xPct").toFloat(), args.getDouble("yPct").toFloat())
-                    waitMs(350)
+                    waitMs(180)
                     CommandResult(true, observer.observe(service))
                 }
             }
@@ -89,7 +89,7 @@ class AccessibilityCommandExecutor(
                 withAgentChromeSuppressed {
                     val node = requireNode(args.getString("nodeId"))
                     longPressNode(service, node)
-                    waitMs(400)
+                    waitMs(250)
                     CommandResult(true, observer.observe(service))
                 }
             }
@@ -97,7 +97,7 @@ class AccessibilityCommandExecutor(
                 service ?: return accessibilityMissing()
                 withAgentChromeSuppressed {
                     typeText(service, args.getString("text"))
-                    waitMs(300)
+                    waitMs(180)
                     CommandResult(true, observer.observe(service))
                 }
             }
@@ -105,7 +105,7 @@ class AccessibilityCommandExecutor(
                 service ?: return accessibilityMissing()
                 withAgentChromeSuppressed {
                     scroll(service, args.optString("direction", "down"))
-                    waitMs(400)
+                    waitMs(250)
                     CommandResult(true, observer.observe(service))
                 }
             }
@@ -120,7 +120,7 @@ class AccessibilityCommandExecutor(
                         args.getDouble("endY").toFloat(),
                         args.optLong("durationMs", 350L)
                     )
-                    waitMs(350)
+                    waitMs(220)
                     CommandResult(true, observer.observe(service))
                 }
             }
@@ -299,7 +299,7 @@ class AccessibilityCommandExecutor(
         if (!service.performGlobalAction(action)) {
             return CommandResult(false, observer.observe(service), "Global action failed")
         }
-        waitMs(400)
+        waitMs(250)
         return CommandResult(true, observer.observe(service))
     }
 
@@ -359,7 +359,7 @@ class AccessibilityCommandExecutor(
         val controller = overlayController ?: return block()
         controller.suppressAgentChromeForAutomation()
         return try {
-            waitMs(80)
+            waitMs(40)
             block()
         } finally {
             controller.restoreAgentChromeAfterAutomation()
