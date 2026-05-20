@@ -136,6 +136,8 @@ data class ChatState(
 }
 
 object ChatStateReducer {
+    private const val SYSTEM_MESSAGE_DEDUPE_WINDOW_MS = 10_000L
+
     fun localUserMessage(state: ChatState, text: String): ChatState {
         val trimmed = text.trim()
         if (trimmed.isBlank()) return state
@@ -148,6 +150,21 @@ object ChatStateReducer {
                 timestamp = System.currentTimeMillis()
             ),
             status = "Sent to OpenClaw",
+            error = null
+        )
+    }
+
+    fun localSystemMessage(state: ChatState, text: String): ChatState {
+        val trimmed = text.trim()
+        if (trimmed.isBlank()) return state
+        return state.copy(
+            timeline = mergeTimelineItem(state.timeline, ChatTimelineItem(
+                id = "system_${UUID.randomUUID()}",
+                kind = ChatTimelineKind.MESSAGE,
+                role = "system",
+                text = trimmed,
+                timestamp = System.currentTimeMillis()
+            )),
             error = null
         )
     }
@@ -218,7 +235,10 @@ object ChatStateReducer {
 
     private fun reduceHistory(state: ChatState, message: JSONObject): ChatState {
         val localStatusMessages = state.timeline.filter { item ->
-            item.kind == ChatTimelineKind.MESSAGE && item.id.startsWith("system_")
+            item.kind == ChatTimelineKind.MESSAGE && (
+                item.id.startsWith("system_") ||
+                    (item.id.startsWith("local_") && item.role == "user" && item.text.trimStart().startsWith("/"))
+                )
         }
         val history = parseHistory(message.optJSONArray("messages"))
         val historyIds = history.map { it.id }.toSet()
@@ -239,7 +259,7 @@ object ChatStateReducer {
         return state.copy(
             sessionKey = message.optNullableString("sessionKey") ?: state.sessionKey,
             sessionId = message.optNullableString("sessionId") ?: state.sessionId,
-            timeline = upsertTimeline(state.timeline, item),
+            timeline = mergeTimelineItem(state.timeline, item),
             error = null
         )
     }
@@ -447,6 +467,25 @@ object ChatStateReducer {
                 sessionDisplayName = session.displayName ?: unread.sessionDisplayName
             )
         }
+    }
+
+    private fun mergeTimelineItem(timeline: List<ChatTimelineItem>, item: ChatTimelineItem): List<ChatTimelineItem> {
+        val duplicateSystemIndex = if (item.role == "system" && item.text.isNotBlank()) {
+            timeline.indexOfFirst { existing ->
+                existing.role == "system" &&
+                    existing.text == item.text &&
+                    existing.id != item.id &&
+                    existing.timestamp != null &&
+                    item.timestamp != null &&
+                    kotlin.math.abs(existing.timestamp - item.timestamp) <= SYSTEM_MESSAGE_DEDUPE_WINDOW_MS
+            }
+        } else {
+            -1
+        }
+        if (duplicateSystemIndex >= 0) {
+            return timeline.toMutableList().also { it[duplicateSystemIndex] = item }
+        }
+        return upsertTimeline(timeline, item)
     }
 
     private fun upsertTimeline(timeline: List<ChatTimelineItem>, item: ChatTimelineItem): List<ChatTimelineItem> {

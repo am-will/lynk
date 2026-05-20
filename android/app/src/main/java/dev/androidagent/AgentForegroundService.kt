@@ -96,7 +96,7 @@ class AgentForegroundService : Service() {
             onNewChatSession = { startNewChatFromUi() },
             onSetChatModel = { model -> webSocketClient?.sendChatSetModel(chatState.sessionKey, model) },
             onSetChatReasoning = { reasoning -> webSocketClient?.sendChatSetReasoning(chatState.sessionKey, reasoning) },
-            onChatControlCommand = { command, args -> webSocketClient?.sendChatControlCommand(command, args) },
+            onChatControlCommand = { command, args -> submitChatControlCommand(command, args) },
             onToggleChatTool = { eventId ->
                 chatState = ChatStateReducer.toggleTool(chatState, eventId)
                 overlayController?.setChatState(chatState)
@@ -208,9 +208,12 @@ class AgentForegroundService : Service() {
         }
         chatState = ChatStateReducer.localUserMessage(chatState, text)
         overlayController?.setChatState(chatState)
+        val requestConfig = AgentConfigStore.load(this)
         val sent = webSocketClient?.sendChatMessage(
             text = text,
-            sessionKey = chatState.sessionKey
+            sessionKey = chatState.sessionKey,
+            model = chatState.selectedModel ?: requestConfig.model,
+            reasoningEffort = chatState.reasoningEffort ?: requestConfig.reasoningEffort
         ) == true
         if (sent) {
             lastNotificationText = "Sent to OpenClaw"
@@ -225,7 +228,7 @@ class AgentForegroundService : Service() {
 
     private fun submitSlashCommand(text: String): Boolean {
         val slashText = text.trim()
-        val command = slashText.removePrefix("/").substringBefore(' ').trim()
+        val command = slashText.removePrefix("/").substringBefore(' ').trim().lowercase()
         if (command.isBlank()) {
             return false
         }
@@ -243,6 +246,34 @@ class AgentForegroundService : Service() {
         isAgentTurnActive = command != "status"
         updateNotification()
         return true
+    }
+
+    private fun submitChatControlCommand(command: String, args: JSONObject) {
+        val notice = chatControlNotice(command, args)
+        if (!notice.isNullOrBlank()) {
+            chatState = ChatStateReducer.localSystemMessage(chatState, notice)
+            overlayController?.setChatState(chatState)
+            lastNotificationText = notice
+            updateNotification()
+        }
+        webSocketClient?.sendChatControlCommand(command, args)
+    }
+
+    private fun chatControlNotice(command: String, args: JSONObject): String? {
+        return when (command.trim().removePrefix("/").substringBefore(' ').lowercase()) {
+            "fast" -> {
+                if (args.has("enabled")) {
+                    "Fast mode ${if (args.optBoolean("enabled")) "enabled" else "disabled"}"
+                } else {
+                    null
+                }
+            }
+            "verbose" -> args.optString("level").takeIf { it.isNotBlank() }?.let { "Verbose mode set to $it" }
+            "reasoning" -> args.optString("level").takeIf { it.isNotBlank() }?.let { level ->
+                "Reasoning Stream ${if (level == "stream") "enabled" else "disabled"}"
+            }
+            else -> null
+        }
     }
 
     private fun startNewChatFromUi() {

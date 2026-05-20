@@ -326,7 +326,14 @@ export interface ChatCommandOption {
   description?: string | null;
   category?: string | null;
   textAliases?: string[];
+  source?: string | null;
   acceptsArgs?: boolean;
+  args?: Array<{
+    name: string;
+    description?: string | null;
+    type?: string | null;
+    required?: boolean | null;
+  }>;
 }
 
 export interface ChatToolSummary {

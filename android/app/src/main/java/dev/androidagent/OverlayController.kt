@@ -538,7 +538,7 @@ class OverlayController(
             isFocusable = true
             background = Drawables.pillSurface(context, tokens)
             backgroundTintList = null
-            contentDescription = "Show previous OpenClaw chats"
+            contentDescription = "Open chat menu"
             setPadding(dp(DesignTokens.Spacing.sm), dp(3), dp(DesignTokens.Spacing.sm), dp(3))
             addView(ImageView(context).apply {
                 setImageResource(R.drawable.openclaw_bubble_logo)
@@ -558,7 +558,7 @@ class OverlayController(
             addView(titleChevron, LinearLayout.LayoutParams(dp(18), dp(18)).apply {
                 leftMargin = dp(DesignTokens.Spacing.xs)
             })
-            setOnClickListener { showHeaderSessionsMenu() }
+            setOnClickListener { showHeaderChatMenu() }
             headerSessionAnchor = this
         }
 
@@ -719,10 +719,10 @@ class OverlayController(
 
         plusButton = iconButton(
             tokens = tokens,
-            drawableRes = R.drawable.ic_plus,
-            contentDescription = "Open chat controls",
+            drawableRes = R.drawable.ic_new_chat,
+            contentDescription = "Start new chat",
             compact = true
-        ) { showPlusMenu() }.apply {
+        ) { startNewChatSession() }.apply {
             setPadding(dp(4), dp(4), dp(4), dp(4))
         }
         controls.addView(plusButton, LinearLayout.LayoutParams(controlSize, controlSize).apply { rightMargin = controlGap })
@@ -1137,23 +1137,13 @@ class OverlayController(
         setStatus("Reasoning: ${next.label}")
     }
 
-    private fun showHeaderSessionsMenu() {
+    private fun showHeaderChatMenu() {
         val anchor = headerSessionAnchor ?: panelHost ?: return
-        val rows = sessionPickerRows()
-        if (rows.isEmpty()) {
-            animateHeaderSessionChevron(expanded = false)
-            setStatus("No previous chats yet.")
-            return
-        }
-
         if (anchoredPicker?.isShowingFor(anchor) != true) {
             animateHeaderSessionChevron(expanded = true)
         }
-        showAnchoredPicker(
-            anchor,
-            "Previous chats",
-            listOf(AnchoredPicker.Section(null, rows)),
-            toggleSameAnchor = true,
+        showPlusMenu(
+            anchorOverride = anchor,
             onDismiss = { animateHeaderSessionChevron(expanded = false) }
         )
     }
@@ -1180,8 +1170,18 @@ class OverlayController(
         }
     }
 
-    private fun showPlusMenu(replace: Boolean = false) {
-        val plusAnchor: View = plusButton ?: panelContent ?: panelHost ?: return
+    private fun startNewChatSession() {
+        onNewChatSession()
+        composerInput?.setText("")
+        setStatus("Started a new chat session")
+    }
+
+    private fun showPlusMenu(
+        anchorOverride: View? = null,
+        replace: Boolean = false,
+        onDismiss: (() -> Unit)? = null
+    ) {
+        val menuAnchor: View = anchorOverride ?: headerSessionAnchor ?: panelContent ?: panelHost ?: return
 
         val sessions = lastChatState.sessions
         val commands = lastChatState.commands
@@ -1189,12 +1189,8 @@ class OverlayController(
         val sessionRows = mutableListOf<AnchoredPicker.Row>()
         sessionRows.add(AnchoredPicker.Row(
             label = "New chat",
-            iconRes = R.drawable.ic_plus,
-            onSelect = {
-                onNewChatSession()
-                composerInput?.setText("")
-                setStatus("Started a new chat session")
-            }
+            iconRes = R.drawable.ic_new_chat,
+            onSelect = { startNewChatSession() }
         ))
         if (sessions.isNotEmpty()) {
             val sessionCount = sessions.size.coerceAtMost(30)
@@ -1204,7 +1200,7 @@ class OverlayController(
                 iconRes = R.drawable.ic_notification_bubble,
                 badgeCount = lastChatState.totalUnreadReplies,
                 dismissOnSelect = false,
-                onSelect = { showSessionsMenu() }
+                onSelect = { showSessionsMenu(menuAnchor) }
             ))
         }
 
@@ -1264,17 +1260,22 @@ class OverlayController(
         sections.add(AnchoredPicker.Section("More", voiceRows))
 
         showAnchoredPicker(
-            plusAnchor,
+            menuAnchor,
             "Menu",
             sections,
             toggleSameAnchor = !replace,
-            replaceShowing = replace
+            replaceShowing = replace,
+            onDismiss = onDismiss
         )
     }
 
     private fun updatePlusMenuToggleRow(row: AnchoredPicker.Row) {
         if (anchoredPicker?.updateRow(row) != true) {
-            showPlusMenu(replace = true)
+            showPlusMenu(
+                anchorOverride = headerSessionAnchor,
+                replace = true,
+                onDismiss = { animateHeaderSessionChevron(expanded = false) }
+            )
         }
     }
 
@@ -1382,14 +1383,27 @@ class OverlayController(
         }
     }
 
-    private fun showSessionsMenu() {
-        val anchor = plusButton ?: panelHost ?: return
+    private fun showSessionsMenu(anchorOverride: View? = null) {
+        val anchor = anchorOverride ?: headerSessionAnchor ?: panelHost ?: return
         val rows = sessionPickerRows()
         if (rows.isEmpty()) {
             setStatus("No previous chats yet.")
             return
         }
-        showAnchoredPicker(anchor, "Previous chats", listOf(AnchoredPicker.Section(null, rows)), toggleSameAnchor = false)
+        showAnchoredPicker(
+            anchor,
+            "Previous chats",
+            listOf(AnchoredPicker.Section(null, rows)),
+            toggleSameAnchor = false,
+            onDismiss = if (anchor === headerSessionAnchor) {
+                { animateHeaderSessionChevron(expanded = false) }
+            } else {
+                null
+            }
+        )
+        if (anchor === headerSessionAnchor) {
+            animateHeaderSessionChevron(expanded = true)
+        }
     }
 
     private fun sessionLabel(session: ChatSessionRow): String {

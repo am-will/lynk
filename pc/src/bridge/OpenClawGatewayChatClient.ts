@@ -294,7 +294,28 @@ export function normalizeCommands(value: unknown): ChatCommandOption[] {
       description: stringField(record, "description") ?? null,
       category: stringField(record, "category") ?? null,
       textAliases: aliases,
-      acceptsArgs: booleanField(record, "acceptsArgs") ?? false
+      source: stringField(record, "source") ?? null,
+      acceptsArgs: booleanField(record, "acceptsArgs") ?? false,
+      args: commandArgs(record)
+    });
+  }
+  return normalized;
+}
+
+function commandArgs(record: Record<string, unknown> | undefined): ChatCommandOption["args"] {
+  const args = Array.isArray(record?.args) ? record.args as unknown[] : [];
+  const normalized: NonNullable<ChatCommandOption["args"]> = [];
+  for (const item of args) {
+    const arg = asRecord(item);
+    const name = stringField(arg, "name");
+    if (!name) {
+      continue;
+    }
+    normalized.push({
+      name,
+      description: stringField(arg, "description") ?? null,
+      type: stringField(arg, "type") ?? null,
+      required: booleanField(arg, "required")
     });
   }
   return normalized;
@@ -522,6 +543,10 @@ export class OpenClawGatewayChatClient {
       agentId: this.config.openClawChatAgentId,
       sessionKey
     });
+  }
+
+  async health(): Promise<unknown> {
+    return await this.request("health", {});
   }
 
   async request(method: string, params: Record<string, unknown>, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS): Promise<unknown> {

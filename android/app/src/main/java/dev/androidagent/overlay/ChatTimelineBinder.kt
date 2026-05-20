@@ -144,21 +144,17 @@ class ChatTimelineBinder(
 
     private fun messageBubble(item: ChatTimelineItem, tokens: ThemeTokens): View {
         val role = item.role
-        val isLocalStatusNotice = role == "system" && item.id.startsWith("system_")
-        if (role == "system" && !isLocalStatusNotice) {
-            return TextView(context).apply {
-                text = item.text.ifBlank { "Status" }
-                Typography.applyFootnote(this, tokens, secondary = true)
-                gravity = Gravity.CENTER
-                setPadding(
-                    dp(DesignTokens.Spacing.lg),
-                    dp(DesignTokens.Spacing.sm),
-                    dp(DesignTokens.Spacing.lg),
-                    dp(DesignTokens.Spacing.sm)
-                )
-                background = Drawables.chatBubbleSystem(context, tokens)
-                setTextColor(tokens.bubbleSystemInk)
-                attachMessageCopyGesture(this, item.text)
+        if (role == "system") {
+            val maxWidth = (context.resources.displayMetrics.widthPixels * 0.9f).toInt()
+            return LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.START
+                addView(systemMessageBubble(item, tokens, maxWidth), LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    gravity = Gravity.START
+                })
             }
         }
 
@@ -204,6 +200,29 @@ class ChatTimelineBinder(
             ).apply {
                 this.gravity = if (isUser) Gravity.END else Gravity.START
             })
+        }
+    }
+
+    private fun systemMessageBubble(
+        item: ChatTimelineItem,
+        tokens: ThemeTokens,
+        maxWidth: Int
+    ): TextView {
+        return TextView(context).apply {
+            Typography.applyCallout(this, tokens)
+            setTextColor(tokens.bubbleAssistantInk)
+            setPadding(
+                dp(DesignTokens.Spacing.md + 2),
+                dp(DesignTokens.Spacing.sm + 2),
+                dp(DesignTokens.Spacing.md + 2),
+                dp(DesignTokens.Spacing.sm + 2)
+            )
+            setLineSpacing(dp(DesignTokens.Spacing.sm).toFloat(), 1.0f)
+            background = Drawables.chatBubbleAssistant(context, tokens)
+            gravity = Gravity.START
+            this.maxWidth = maxWidth
+            text = item.text.ifBlank { "Status" }
+            attachMessageCopyGesture(this, item.text)
         }
     }
 
