@@ -2192,7 +2192,6 @@ class OverlayController(
     private fun positionPanelAboveKeyboard(panel: View, params: WindowManager.LayoutParams) {
         val displayHeight = context.resources.displayMetrics.heightPixels
         val defaultBounds = panelDefaultBounds(displayHeight)
-        val defaultY = defaultBounds.y
         val defaultBottom = defaultBounds.y + defaultBounds.height
         val imeHeight = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             panel.rootWindowInsets?.getInsets(WindowInsets.Type.ime())?.bottom ?: 0
@@ -2223,6 +2222,23 @@ class OverlayController(
         }
 
         panel.translationY = 0f
+        if (activePanelPresentation == PanelPresentation.Fullscreen) {
+            setKeyboardSpacerHeight(
+                PanelKeyboardLayout.fullscreenKeyboardSpacerHeight(
+                    defaultBounds = defaultBounds,
+                    keyboardTop = keyboardTop,
+                    bottomClearance = keyboardBottomClearance()
+                )
+            )
+            if (params.height != defaultBounds.height || params.y != defaultBounds.y) {
+                params.height = defaultBounds.height
+                params.y = defaultBounds.y
+                windowManager.updateViewLayout(panel, params)
+            }
+            anchoredPicker?.reposition()
+            return
+        }
+
         setKeyboardSpacerHeight(keyboardBottomClearance())
         val minPanelHeight = dp(300)
         val adjustedBounds = PanelKeyboardLayout.adjustedBoundsAboveKeyboard(

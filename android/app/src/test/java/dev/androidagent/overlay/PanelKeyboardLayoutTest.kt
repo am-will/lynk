@@ -63,4 +63,24 @@ class PanelKeyboardLayoutTest {
         assertEquals(0, PanelKeyboardLayout.bottomClearance(fullscreenClearance = 28, PanelPresentation.Popup))
         assertEquals(28, PanelKeyboardLayout.bottomClearance(fullscreenClearance = 28, PanelPresentation.Fullscreen))
     }
+
+    @Test
+    fun fullscreenKeyboardSpacerTracksKeyboardOverlapAndClearance() {
+        assertEquals(
+            328,
+            PanelKeyboardLayout.fullscreenKeyboardSpacerHeight(
+                defaultBounds = PanelBounds(height = 940, y = 0),
+                keyboardTop = 640,
+                bottomClearance = 28
+            )
+        )
+        assertEquals(
+            0,
+            PanelKeyboardLayout.fullscreenKeyboardSpacerHeight(
+                defaultBounds = PanelBounds(height = 940, y = 0),
+                keyboardTop = 960,
+                bottomClearance = 28
+            )
+        )
+    }
 }

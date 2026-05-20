@@ -43,6 +43,16 @@ object PanelKeyboardLayout {
         return if (presentation == PanelPresentation.Fullscreen) fullscreenClearance else 0
     }
 
+    fun fullscreenKeyboardSpacerHeight(
+        defaultBounds: PanelBounds,
+        keyboardTop: Int,
+        bottomClearance: Int
+    ): Int {
+        val defaultBottom = defaultBounds.y + defaultBounds.height
+        val keyboardOverlap = (defaultBottom - keyboardTop).coerceAtLeast(0)
+        return if (keyboardOverlap == 0) 0 else keyboardOverlap + bottomClearance
+    }
+
     fun estimatedKeyboardHeight(displayHeight: Int, fraction: Float, minHeight: Int, maxFraction: Float): Int {
         return (displayHeight * fraction).toInt()
             .coerceIn(minHeight, (displayHeight * maxFraction).toInt())
