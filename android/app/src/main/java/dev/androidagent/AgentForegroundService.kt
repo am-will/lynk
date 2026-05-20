@@ -21,6 +21,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.app.ServiceCompat
 import dev.androidagent.accessibility.AccessibilityCommandExecutor
+import dev.androidagent.agentchat.AgentChatClient
+import dev.androidagent.agentchat.HostAgentChatClient
+import dev.androidagent.agentchat.LocalAgentChatClient
 import dev.androidagent.avatar.AvatarLibrary
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatStateReducer
@@ -49,6 +52,9 @@ class AgentForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var overlayController: OverlayController? = null
     private var webSocketClient: PhoneWebSocketClient? = null
+    private var chatClient: AgentChatClient? = null
+    private var chatClientMode: AgentMode? = null
+    private var commandExecutor: AccessibilityCommandExecutor? = null
     private var voiceRuntimeController: VoiceRuntimeController? = null
     private var voiceTranscriptionManager: VoiceTranscriptionManager? = null
     private var lastNotificationText = DEFAULT_NOTIFICATION_TEXT
@@ -81,8 +87,12 @@ class AgentForegroundService : Service() {
             onStop = { requestStopTurn("Stopped from Android overlay") },
             onDismiss = { stopSelf() },
             onStartVoice = {
-                promoteVoiceForegroundIfAllowed()
-                voiceRuntimeController?.start()
+                if (AgentConfigStore.load(this).agentMode == AgentMode.Local) {
+                    overlayController?.setStatus("Realtime voice still requires Host bridge mode.")
+                } else {
+                    promoteVoiceForegroundIfAllowed()
+                    voiceRuntimeController?.start()
+                }
             },
             onToggleVoiceMute = { voiceRuntimeController?.toggleMute() },
             onStopVoice = { voiceRuntimeController?.stopFromUi() },
@@ -90,12 +100,19 @@ class AgentForegroundService : Service() {
             onStopTranscription = { stopComposerTranscription() },
             onCancelTranscription = { cancelComposerTranscription() },
             onSelectChatSession = { sessionKey ->
-                webSocketClient?.sendChatSelectSession(sessionKey)
+                connectAgentClient()
+                chatClient?.selectSession(sessionKey)
                 markChatSessionRead(sessionKey)
             },
             onNewChatSession = { startNewChatFromUi() },
-            onSetChatModel = { model -> webSocketClient?.sendChatSetModel(chatState.sessionKey, model) },
-            onSetChatReasoning = { reasoning -> webSocketClient?.sendChatSetReasoning(chatState.sessionKey, reasoning) },
+            onSetChatModel = { model ->
+                connectAgentClient()
+                chatClient?.setModel(chatState.sessionKey, model)
+            },
+            onSetChatReasoning = { reasoning ->
+                connectAgentClient()
+                chatClient?.setReasoning(chatState.sessionKey, reasoning)
+            },
             onChatControlCommand = { command, args -> submitChatControlCommand(command, args) },
             onToggleChatTool = { eventId ->
                 chatState = ChatStateReducer.toggleTool(chatState, eventId)
@@ -112,12 +129,12 @@ class AgentForegroundService : Service() {
             sendToolCall = { call -> webSocketClient?.sendRealtimeToolCall(call, AgentConfigStore.load(this)) },
             onStateChanged = { state -> overlayController?.setVoiceState(state) }
         )
-        connectWebSocket()
+        connectAgentClient()
         registerCloseSystemDialogsReceiver()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        connectWebSocket()
+        connectAgentClient()
         when (intent?.action) {
             ACTION_STOP_TURN -> {
                 requestStopTurn("Stopped from Android notification")
@@ -155,6 +172,7 @@ class AgentForegroundService : Service() {
         voiceRuntimeController?.close()
         voiceTranscriptionManager?.close()
         serviceScope.cancel()
+        chatClient?.close()
         webSocketClient?.close()
         unregisterCloseSystemDialogsReceiver()
         overlayController?.hide()
@@ -165,13 +183,35 @@ class AgentForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun connectWebSocket() {
-        if (webSocketClient != null) {
+    private fun connectAgentClient() {
+        val config = AgentConfigStore.load(this)
+        if (chatClient != null && chatClientMode == config.agentMode) {
             return
         }
-        val config = AgentConfigStore.load(this)
-        val executor = AccessibilityCommandExecutor(this, overlayController)
-        webSocketClient = PhoneWebSocketClient(
+        chatClient?.close()
+        chatClient = when (config.agentMode) {
+            AgentMode.Host -> HostAgentChatClient(connectWebSocket(config))
+            AgentMode.Local -> {
+                webSocketClient?.close()
+                webSocketClient = null
+                handleBridgeConnectionState(BridgeConnectionState(BridgeConnectionPhase.CONNECTED, "Local phone model mode"))
+                LocalAgentChatClient(
+                    context = this,
+                    scope = serviceScope,
+                    commandExecutor = commandExecutor(),
+                    configProvider = { AgentConfigStore.load(this) },
+                    onStatus = ::handleBridgeStatus,
+                    onChatMessage = { handleChatMessage(it) }
+                ).also { it.open(chatState.sessionKey) }
+            }
+        }
+        chatClientMode = config.agentMode
+    }
+
+    private fun connectWebSocket(config: AgentConfig = AgentConfigStore.load(this)): PhoneWebSocketClient {
+        webSocketClient?.let { return it }
+        val executor = commandExecutor()
+        return PhoneWebSocketClient(
             config = config,
             commandExecutor = executor,
             onStatus = ::handleBridgeStatus,
@@ -185,7 +225,16 @@ class AgentForegroundService : Service() {
             onRealtimeToolResult = { voiceRuntimeController?.onRealtimeToolResult(it) },
             onRealtimeTaskStatus = { voiceRuntimeController?.onRealtimeTaskStatus(it) },
             onChatMessage = { handleChatMessage(it) }
-        ).also { it.connect() }
+        ).also {
+            webSocketClient = it
+            it.connect()
+        }
+    }
+
+    private fun commandExecutor(): AccessibilityCommandExecutor {
+        return commandExecutor ?: AccessibilityCommandExecutor(this, overlayController).also {
+            commandExecutor = it
+        }
     }
 
     private fun registerCloseSystemDialogsReceiver() {
@@ -202,24 +251,24 @@ class AgentForegroundService : Service() {
     }
 
     private fun submitChatText(text: String): Boolean {
-        connectWebSocket()
+        connectAgentClient()
         if (text.trimStart().startsWith("/")) {
             return submitSlashCommand(text)
         }
         chatState = ChatStateReducer.localUserMessage(chatState, text)
         overlayController?.setChatState(chatState)
         val requestConfig = AgentConfigStore.load(this)
-        val sent = webSocketClient?.sendChatMessage(
+        val sent = chatClient?.send(
             text = text,
             sessionKey = chatState.sessionKey,
             model = chatState.selectedModel ?: requestConfig.model,
             reasoningEffort = chatState.reasoningEffort ?: requestConfig.reasoningEffort
         ) == true
         if (sent) {
-            lastNotificationText = "Sent to OpenClaw"
+            lastNotificationText = if (requestConfig.agentMode == AgentMode.Local) "Sent to local model" else "Sent to OpenClaw"
             isAgentTurnActive = true
         } else {
-            lastNotificationText = "Bridge is not connected"
+            lastNotificationText = if (requestConfig.agentMode == AgentMode.Local) "Local model is not ready" else "Bridge is not connected"
             isAgentTurnActive = false
         }
         updateNotification()
@@ -241,7 +290,7 @@ class AgentForegroundService : Service() {
             status = "Running $slashText"
         )
         overlayController?.setChatState(chatState)
-        webSocketClient?.sendChatControlCommand(slashText, JSONObject())
+        chatClient?.controlCommand(slashText, JSONObject())
         lastNotificationText = "Running $slashText"
         isAgentTurnActive = command != "status"
         updateNotification()
@@ -256,7 +305,8 @@ class AgentForegroundService : Service() {
             lastNotificationText = notice
             updateNotification()
         }
-        webSocketClient?.sendChatControlCommand(command, args)
+        connectAgentClient()
+        chatClient?.controlCommand(command, args)
     }
 
     private fun chatControlNotice(command: String, args: JSONObject): String? {
@@ -296,7 +346,8 @@ class AgentForegroundService : Service() {
             usage = ChatUsageSummary()
         )
         overlayController?.setChatState(chatState)
-        webSocketClient?.sendChatNewSession()
+        connectAgentClient()
+        chatClient?.newSession()
         lastNotificationText = "Started a new chat"
         isAgentTurnActive = false
         updateNotification()
@@ -333,6 +384,17 @@ class AgentForegroundService : Service() {
             isAgentTurnActive = chatState.isRunning
             syncReplyNotifications()
             updateNotification()
+            if (AgentConfigStore.load(this@AgentForegroundService).agentMode == AgentMode.Local && isTerminalChatMessage(message)) {
+                overlayController?.show()
+                overlayController?.openChatPanel(presentation = PanelPresentation.Popup)
+            }
+        }
+    }
+
+    private fun isTerminalChatMessage(message: JSONObject): Boolean {
+        return when (message.optString("type")) {
+            "chat.final", "chat.error", "chat.reply_available" -> true
+            else -> false
         }
     }
 
@@ -360,7 +422,8 @@ class AgentForegroundService : Service() {
         sessionKey: String,
         presentation: PanelPresentation
     ) {
-        webSocketClient?.sendChatSelectSession(sessionKey)
+        connectAgentClient()
+        chatClient?.selectSession(sessionKey)
         markChatSessionRead(sessionKey)
         cancelReplyNotification(sessionKey)
         if (Settings.canDrawOverlays(this)) {
@@ -469,12 +532,12 @@ class AgentForegroundService : Service() {
     }
 
     private fun requestStopTurn(reason: String) {
-        connectWebSocket()
+        connectAgentClient()
         overlayController?.setStatus("Stop requested")
         lastNotificationText = "Stopping active turn..."
         isAgentTurnActive = true
         updateNotification()
-        webSocketClient?.sendChatStop(chatState.sessionKey, chatState.activeRunId, reason)
+        chatClient?.stop(chatState.sessionKey, chatState.activeRunId, reason)
         webSocketClient?.sendStopRequest(reason)
     }
 

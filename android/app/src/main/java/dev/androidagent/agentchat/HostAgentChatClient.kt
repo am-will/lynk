@@ -1,0 +1,40 @@
+package dev.androidagent.agentchat
+
+import dev.androidagent.net.PhoneWebSocketClient
+import org.json.JSONObject
+
+class HostAgentChatClient(
+    private val webSocketClient: PhoneWebSocketClient
+) : AgentChatClient {
+    override fun open(sessionKey: String?): Boolean =
+        webSocketClient.sendChatOpen(sessionKey)
+
+    override fun send(text: String, sessionKey: String?, model: String?, reasoningEffort: String?): Boolean =
+        webSocketClient.sendChatMessage(text, sessionKey, model, reasoningEffort)
+
+    override fun stop(sessionKey: String?, runId: String?, reason: String) {
+        webSocketClient.sendChatStop(sessionKey, runId, reason)
+    }
+
+    override fun selectSession(sessionKey: String) {
+        webSocketClient.sendChatSelectSession(sessionKey)
+    }
+
+    override fun newSession(label: String?, model: String?) {
+        webSocketClient.sendChatNewSession(label, model)
+    }
+
+    override fun setModel(sessionKey: String?, model: String) {
+        webSocketClient.sendChatSetModel(sessionKey, model)
+    }
+
+    override fun setReasoning(sessionKey: String?, reasoningEffort: String) {
+        webSocketClient.sendChatSetReasoning(sessionKey, reasoningEffort)
+    }
+
+    override fun controlCommand(command: String, args: JSONObject) {
+        webSocketClient.sendChatControlCommand(command, args)
+    }
+
+    override fun close() = Unit
+}
