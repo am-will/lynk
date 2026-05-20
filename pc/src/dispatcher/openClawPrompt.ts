@@ -13,7 +13,7 @@ Keep status and final responses concise enough for a phone bubble.
 const PHONE_CONTEXT = `
 This request is explicitly an Android phone-control task from Open Claw Agent.
 
-Use the android-phone MCP tools to observe and act on the connected Android device. Observe first, act deliberately, observe again after meaningful actions, and do not claim completion until the requested final state is visible or confirmed.
+Use the android-phone MCP tools to observe and act on the connected Android device. Observe first when current screen context is missing, act deliberately, then use the post-action observation returned by each phone action as the next screen state. Avoid redundant phone_observe calls and use phone_wait only for visible loading or animation, preferably 300-1000 ms. Do not claim completion until the requested final state is visible or confirmed.
 
 Ask Android confirmation before purchases, payments, money movement, account/security/privacy changes, deleting data, installing apps, sharing credentials, or other hard-to-undo actions. Biometric, passkey, password-manager, and OS credential prompts must remain manual.
 `.trim();

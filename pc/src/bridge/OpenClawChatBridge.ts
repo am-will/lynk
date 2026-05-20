@@ -3,6 +3,7 @@ import type { AgentRunResult, AgentTaskKind } from "../dispatcher/AgentClient.js
 import type { Dispatcher } from "../dispatcher/dispatcher.js";
 import type {
   ChatControlCommandMessage,
+  ChatCommandOption,
   ChatErrorMessage,
   ChatFinalMessage,
   ChatHistoryMessage,
@@ -75,6 +76,7 @@ interface GatewayChatClient {
   patchSession(sessionKey: string, patch: Record<string, unknown>): Promise<unknown>;
   listCommands(): Promise<unknown>;
   effectiveTools(sessionKey: string): Promise<unknown>;
+  health(): Promise<unknown>;
   close(): void;
 }
 
@@ -89,6 +91,13 @@ interface RunWaiter {
 
 const REALTIME_CHAT_REUSE_WINDOW_MS = 15 * 60 * 1000;
 const REALTIME_CHAT_RUN_TIMEOUT_MS = 10 * 60 * 1000;
+const FAST_PHONE_LOOP_INSTRUCTION = [
+  "Phone-control speed policy:",
+  "- Use the observation already returned by phone action tools as the next screen state.",
+  "- Avoid extra phone_observe calls unless current context is missing, ambiguous, or stale.",
+  "- Avoid screenshots unless the accessibility tree is insufficient or coordinates must come from pixels.",
+  "- Use phone_wait only for visible loading/animation; prefer 300-1000 ms and avoid longer waits unless the screen is clearly still changing."
+].join("\n");
 
 export class OpenClawChatBridge {
   private readonly client: GatewayChatClient;
@@ -138,17 +147,18 @@ export class OpenClawChatBridge {
     if (await this.handleVisibleSlashCommand(message.deviceId, text, state.sessionKey)) {
       return;
     }
-    if (isExplicitPhoneTask(text)) {
-      await this.maybeSetFirstMessageDisplayName(message.deviceId, text);
-      await this.fallbackSend(message, idempotencyKey, "phone");
-      return;
-    }
-
     try {
+      const taskKind = isExplicitPhoneTask(text) ? "phone" : "general";
+      state.reasoningEffort = normalizeThinkingLevel(message.reasoningEffort, state.reasoningEffort);
+      const requestedModel = message.model?.trim();
+      if (requestedModel && requestedModel !== state.model) {
+        await this.patchSession(message.deviceId, state.sessionKey, { model: requestedModel });
+        state.model = requestedModel;
+      }
       const result = await this.client.sendChat({
         sessionKey: state.sessionKey,
         sessionId: message.sessionId,
-        message: text,
+        message: messageForGateway(text, taskKind),
         thinking: state.reasoningEffort ?? undefined,
         idempotencyKey
       });
@@ -222,7 +232,7 @@ export class OpenClawChatBridge {
       const result = await this.client.sendChat({
         sessionKey: state.sessionKey,
         sessionId: state.sessionId ?? undefined,
-        message: text,
+        message: messageForGateway(text, options.taskKind),
         thinking: state.reasoningEffort ?? undefined,
         idempotencyKey
       });
@@ -255,7 +265,7 @@ export class OpenClawChatBridge {
     const result = await this.client.sendChat({
       sessionKey: state.sessionKey,
       sessionId: state.sessionId ?? undefined,
-      message: text,
+      message: messageForGateway(text, options?.taskKind ?? "general"),
       thinking: state.reasoningEffort ?? undefined,
       idempotencyKey
     });
@@ -344,7 +354,8 @@ export class OpenClawChatBridge {
       return;
     }
     const normalized = command.startsWith("/") ? command.slice(1).trim() : command;
-    const [name = "", ...parts] = normalized.split(/\s+/);
+    const [rawName = "", ...parts] = normalized.split(/\s+/);
+    const name = rawName.toLowerCase();
     const firstArg = parts[0];
 
     if (name === "new") {
@@ -356,9 +367,27 @@ export class OpenClawChatBridge {
     }
 
     if (name === "status") {
-      this.sendState(message.deviceId, "Refreshing status");
-      await this.refreshDevice(message.deviceId);
-      this.sendState(message.deviceId, "Status refreshed");
+      await this.sendStatusReport(message.deviceId);
+      return;
+    }
+
+    if (name === "help") {
+      await this.sendHelp(message.deviceId);
+      return;
+    }
+
+    if (name === "commands") {
+      await this.sendCommandList(message.deviceId);
+      return;
+    }
+
+    if (name === "tools") {
+      await this.sendToolList(message.deviceId, firstArg);
+      return;
+    }
+
+    if (name === "tasks") {
+      this.sendTaskList(message.deviceId);
       return;
     }
 
@@ -645,6 +674,73 @@ export class OpenClawChatBridge {
       deviceId,
       commands: normalizeCommands(payload)
     });
+  }
+
+  private async sendCommandList(deviceId: string): Promise<void> {
+    try {
+      const payload = await this.client.listCommands();
+      const commands = normalizeCommands(payload);
+      this.sendChat(deviceId, {
+        type: "chat.commands",
+        deviceId,
+        commands
+      });
+      this.appendSystemMessage(deviceId, formatCommandList(commands), `system_${randomUUID()}`);
+      this.sendState(deviceId, "Listed slash commands");
+    } catch (error) {
+      this.sendChatError(deviceId, this.stateFor(deviceId).sessionKey, error);
+    }
+  }
+
+  private async sendHelp(deviceId: string): Promise<void> {
+    try {
+      const payload = await this.client.listCommands();
+      const commands = normalizeCommands(payload);
+      this.sendChat(deviceId, {
+        type: "chat.commands",
+        deviceId,
+        commands
+      });
+      this.appendSystemMessage(deviceId, formatHelp(commands), `system_${randomUUID()}`);
+      this.sendState(deviceId, "Shown help");
+    } catch (error) {
+      this.sendChatError(deviceId, this.stateFor(deviceId).sessionKey, error);
+    }
+  }
+
+  private async sendToolList(deviceId: string, mode?: string): Promise<void> {
+    const state = this.stateFor(deviceId);
+    try {
+      await this.ensureSession(deviceId);
+      const payload = await this.client.effectiveTools(state.sessionKey);
+      const tools = normalizeTools(payload);
+      this.sendChat(deviceId, {
+        type: "chat.tools",
+        deviceId,
+        sessionKey: state.sessionKey,
+        tools
+      });
+      this.appendSystemMessage(deviceId, formatToolList(tools, mode), `system_${randomUUID()}`);
+      this.sendState(deviceId, "Listed tools");
+    } catch (error) {
+      this.sendChatError(deviceId, state.sessionKey, error);
+    }
+  }
+
+  private sendTaskList(deviceId: string): void {
+    const state = this.stateFor(deviceId);
+    this.appendSystemMessage(deviceId, formatTaskList(state), `system_${randomUUID()}`);
+    this.sendState(deviceId, "Listed tasks");
+  }
+
+  private async sendStatusReport(deviceId: string): Promise<void> {
+    const state = this.stateFor(deviceId);
+    this.sendState(deviceId, "Refreshing status");
+    await this.refreshDevice(deviceId);
+    const latest = this.stateFor(deviceId);
+    const health = await this.client.health().catch(() => undefined);
+    this.appendSystemMessage(deviceId, formatStatusReport(latest, health), `system_${randomUUID()}`);
+    this.sendState(deviceId, "Status refreshed");
   }
 
   private async sendTools(deviceId: string): Promise<void> {
@@ -1030,9 +1126,174 @@ export class OpenClawChatBridge {
   }
 }
 
+function formatHelp(commands: ChatCommandOption[]): string {
+  const commandByName = commandLookup(commands);
+  const session = ["/new", "/reset", "/compact [instructions]", "/stop"];
+  const options = [
+    "/think <level>",
+    "/model <id>",
+    "/fast status|on|off",
+    "/verbose on|off|full",
+    "/trace on|off|raw"
+  ].filter((entry) => commandByName.has(entry.slice(1).split(/[ <]/)[0]));
+  const status = ["/status", "/tasks", "/whoami", "/context"].filter((entry) => commandByName.has(entry.slice(1)));
+  const hasSkill = commandByName.has("skill");
+
+  return [
+    "ℹ️ Help",
+    "",
+    "Session",
+    session.filter((entry) => commandByName.has(entry.slice(1).split(/[ <\[]/)[0])).join(" | "),
+    "",
+    "Options",
+    options.join(" | "),
+    "",
+    "Status",
+    status.join(" | "),
+    "",
+    "Skills",
+    hasSkill ? "/skill <name> [input]" : "",
+    "",
+    "More: /commands for full list, /tools for available capabilities"
+  ].filter((line, index, lines) => line !== "" || lines[index - 1] !== "").join("\n").trim();
+}
+
+function formatCommandList(commands: ChatCommandOption[]): string {
+  if (commands.length === 0) {
+    return "No slash commands are available from OpenClaw right now.";
+  }
+
+  const native = commands.filter((command) => command.source !== "skill");
+  const skills = commands.filter((command) => command.source === "skill");
+  const lines = [
+    `ℹ️ Commands (${commands.length})`,
+    "",
+    ...formatCommandGroups(native),
+    ...(skills.length > 0 ? ["", `Skills (${skills.length})`, ...skills.slice(0, 40).map(formatCommandLine)] : [])
+  ];
+  if (skills.length > 40) {
+    lines.push(`...and ${skills.length - 40} more skills. Use /skill <name> [input] to run one.`);
+  }
+  return lines.join("\n").trim();
+}
+
+function formatToolList(tools: ReturnType<typeof normalizeTools>, mode?: string): string {
+  if (tools.length === 0) {
+    return "🧰 Tools\nNo runtime tools are available for this session.";
+  }
+  const verbose = mode?.toLowerCase() === "verbose";
+  const grouped = groupBy(tools, (tool) => tool.group ?? tool.source ?? "Tools");
+  const lines = [`🧰 Tools (${tools.length})`];
+  for (const [group, groupTools] of grouped) {
+    lines.push("", group);
+    for (const tool of groupTools.slice(0, verbose ? 30 : 20)) {
+      const label = tool.label && tool.label !== tool.id ? `${tool.label} (${tool.id})` : tool.id;
+      const description = verbose && tool.description ? ` - ${tool.description}` : "";
+      lines.push(`/${label}${description}`);
+    }
+    if (groupTools.length > (verbose ? 30 : 20)) {
+      lines.push(`...and ${groupTools.length - (verbose ? 30 : 20)} more in ${group}`);
+    }
+  }
+  if (!verbose) {
+    lines.push("", "Use /tools verbose for descriptions.");
+  }
+  return lines.join("\n");
+}
+
+function formatTaskList(state: DeviceChatState): string {
+  const pending = [...state.pendingRuns.entries()];
+  if (!state.runId && pending.length === 0) {
+    return "📋 Tasks\nNo background tasks are running for this session.";
+  }
+  const lines = ["📋 Tasks"];
+  if (state.runId) {
+    lines.push(`Active run: ${state.runId}`);
+  }
+  for (const [runId, run] of pending) {
+    lines.push(`/${runId} - ${run.sessionKey === state.sessionKey ? "current session" : run.sessionKey}`);
+  }
+  return lines.join("\n");
+}
+
+function formatStatusReport(state: DeviceChatState, health: unknown): string {
+  const record = health && typeof health === "object" ? health as Record<string, unknown> : undefined;
+  const eventLoop = record?.eventLoop && typeof record.eventLoop === "object" ? record.eventLoop as Record<string, unknown> : undefined;
+  const sessions = state.sessionSummaries.size;
+  return [
+    "ℹ️ Status",
+    "",
+    `Session: ${state.sessionKey}`,
+    `Run: ${state.runId ?? "idle"}`,
+    `Model: ${state.model ?? "default"}`,
+    `Thinking: ${state.reasoningEffort ?? "default"}`,
+    `Reasoning stream: ${state.reasoningStream === true ? "on" : "off"}`,
+    `Fast mode: ${state.fastMode === true ? "on" : state.fastMode === false ? "off" : "unknown"}`,
+    `Verbose: ${state.verboseLevel ?? "unknown"}`,
+    `Known sessions: ${sessions}`,
+    record ? `Gateway: ${record.ok === true ? "ok" : "not ok"}${eventLoop?.degraded === true ? " (degraded)" : ""}` : "Gateway: unavailable"
+  ].join("\n");
+}
+
+function formatCommandGroups(commands: ChatCommandOption[]): string[] {
+  const lines: string[] = [];
+  for (const [category, categoryCommands] of groupBy(commands, (command) => titleCase(command.category ?? "other"))) {
+    lines.push(category);
+    for (const command of categoryCommands) {
+      lines.push(formatCommandLine(command));
+    }
+    lines.push("");
+  }
+  while (lines.at(-1) === "") {
+    lines.pop();
+  }
+  return lines;
+}
+
+function formatCommandLine(command: ChatCommandOption): string {
+  const aliases = command.textAliases?.filter((alias) => alias.trim()) ?? [];
+  const primary = aliases.find((alias) => alias.startsWith("/")) ?? `/${command.name}`;
+  const secondary = aliases.filter((alias) => alias !== primary).slice(0, 3).join(", ");
+  const args = command.args?.length
+    ? ` ${command.args.map((arg) => arg.required ? `<${arg.name}>` : `[${arg.name}]`).join(" ")}`
+    : command.acceptsArgs
+      ? " [args]"
+      : "";
+  const aliasText = secondary ? ` (${secondary})` : "";
+  const description = command.description ? ` - ${command.description}` : "";
+  return `${primary}${args}${aliasText}${description}`;
+}
+
+function commandLookup(commands: ChatCommandOption[]): Set<string> {
+  return new Set(commands.flatMap((command) => [
+    command.name,
+    ...(command.textAliases ?? []).map((alias) => alias.replace(/^\//, ""))
+  ]));
+}
+
+function groupBy<T>(items: T[], keyFor: (item: T) => string): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const item of items) {
+    const key = keyFor(item);
+    grouped.set(key, [...(grouped.get(key) ?? []), item]);
+  }
+  return grouped;
+}
+
+function titleCase(value: string): string {
+  return value.replace(/(^|\s)\S/g, (letter) => letter.toUpperCase());
+}
+
+function messageForGateway(text: string, taskKind: AgentTaskKind): string {
+  if (taskKind !== "phone") {
+    return text;
+  }
+  return `${FAST_PHONE_LOOP_INSTRUCTION}\n\nUser request:\n${text}`;
+}
+
 function isExplicitPhoneTask(text: string): boolean {
   const normalized = text.toLowerCase();
-  return /\b(android|phone|device|screen|app|tap|swipe|scroll|keyboard|notification|settings app|facebook app|instagram app|messages app|sms)\b/.test(normalized)
+  return /\b(android|phone|device|screen|tap|swipe|scroll|keyboard|notification|settings app|facebook app|instagram app|messages app|sms)\b/.test(normalized)
     && !/\b(mac|desktop|pc|laptop|browser|terminal|repo|codebase)\b/.test(normalized);
 }
 

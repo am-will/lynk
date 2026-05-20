@@ -62,22 +62,22 @@ export function registerPhoneTools(server: McpServer, client = new PhoneToolClie
     "open_app"
   );
 
-  register(server, client, "phone_tap_node", "Tap an observed accessibility node.", { nodeId: z.string() }, "tap_node");
-  register(server, client, "phone_tap_xy", "Tap screen coordinates.", { x: z.number(), y: z.number() }, "tap_xy");
+  register(server, client, "phone_tap_node", "Tap an observed accessibility node. The result includes a fresh post-tap observation; do not call phone_observe again unless the result is ambiguous or stale.", { nodeId: z.string() }, "tap_node");
+  register(server, client, "phone_tap_xy", "Tap screen coordinates. The result includes a fresh post-tap observation; do not call phone_observe again unless the result is ambiguous or stale.", { x: z.number(), y: z.number() }, "tap_xy");
   register(
     server,
     client,
     "phone_tap_normalized",
-    "Tap normalized full-screen coordinates from 0 to 1. Use this for coordinates derived from a screenshot shown at a scaled size.",
+    "Tap normalized full-screen coordinates from 0 to 1. Use this for coordinates derived from a screenshot shown at a scaled size. The result includes a fresh post-tap observation.",
     { xPct: z.number().min(0).max(1), yPct: z.number().min(0).max(1) },
     "tap_normalized"
   );
-  register(server, client, "phone_long_press_node", "Long press an observed accessibility node.", { nodeId: z.string() }, "long_press_node");
+  register(server, client, "phone_long_press_node", "Long press an observed accessibility node. The result includes a fresh post-action observation.", { nodeId: z.string() }, "long_press_node");
   register(
     server,
     client,
     "phone_type_text",
-    "Type text into the focused field. The Android client first tries Accessibility ACTION_SET_TEXT and falls back to clipboard paste for apps that reject direct text setting.",
+    "Type text into the focused field. The Android client first tries Accessibility ACTION_SET_TEXT and falls back to clipboard paste for apps that reject direct text setting. The result includes a fresh post-type observation.",
     { text: z.string() },
     "type_text"
   );
@@ -85,7 +85,7 @@ export function registerPhoneTools(server: McpServer, client = new PhoneToolClie
     server,
     client,
     "phone_scroll",
-    "Scroll the active Android screen.",
+    "Scroll the active Android screen. The result includes a fresh post-scroll observation.",
     { direction: z.enum(["up", "down", "left", "right"]) },
     "scroll"
   );
@@ -137,5 +137,5 @@ export function registerPhoneTools(server: McpServer, client = new PhoneToolClie
     },
     "ask_user_confirmation"
   );
-  register(server, client, "phone_wait", "Wait on the Android device, then observe.", { ms: z.number().int().min(0).max(120_000) }, "wait");
+  register(server, client, "phone_wait", "Wait on the Android device, then observe. Use only for visible loading/animation; prefer 300-1000 ms and avoid multi-second waits unless the screen is clearly still changing.", { ms: z.number().int().min(0).max(120_000) }, "wait");
 }

@@ -22,11 +22,12 @@ const config: BridgeConfig = {
 
 class FakeGatewayClient {
   readonly handlers = new Set<GatewayEventHandler>();
-  readonly sent: Array<{ sessionKey: string; message: string; idempotencyKey?: string }> = [];
+  readonly sent: Array<{ sessionKey: string; message: string; thinking?: string; idempotencyKey?: string }> = [];
   readonly created: Array<{ key?: string; label?: string; model?: string }> = [];
   readonly patched: Array<{ sessionKey: string; patch: Record<string, unknown> }> = [];
   readonly aborted: Array<{ sessionKey: string; runId?: string }> = [];
   sessions: Array<Record<string, unknown>> = [];
+  commands: Array<Record<string, unknown>> = [];
   readonly duplicateLabels = new Set<string>();
   private runCount = 0;
 
@@ -39,7 +40,7 @@ class FakeGatewayClient {
     return { sessionId: `${sessionKey}:id`, messages: [] };
   }
 
-  async sendChat(options: { sessionKey: string; message: string; idempotencyKey?: string }): Promise<{ runId: string; sessionKey: string }> {
+  async sendChat(options: { sessionKey: string; message: string; thinking?: string; idempotencyKey?: string }): Promise<{ runId: string; sessionKey: string }> {
     this.runCount += 1;
     this.sent.push(options);
     return { runId: `run_${this.runCount}`, sessionKey: options.sessionKey };
@@ -72,11 +73,15 @@ class FakeGatewayClient {
   }
 
   async listCommands(): Promise<unknown> {
-    return { commands: [] };
+    return { commands: this.commands };
   }
 
   async effectiveTools(): Promise<unknown> {
     return { groups: [] };
+  }
+
+  async health(): Promise<unknown> {
+    return { ok: true, eventLoop: { degraded: false } };
   }
 
   close(): void {}
@@ -90,20 +95,22 @@ class FakeGatewayClient {
 
 function createHarness() {
   const chatMessages: ChatOutboundMessage[] = [];
+  const fallbackCalls: unknown[] = [];
   const hub = {
     sendChat(_deviceId: string, message: ChatOutboundMessage) {
       chatMessages.push(message);
     }
   } as unknown as PhoneHub;
   const dispatcher = {
-    async handleUserRequest() {
+    async handleUserRequest(...args: unknown[]) {
+      fallbackCalls.push(args);
       return { finalMessage: "fallback" };
     },
     async stopActiveTurn() {}
   };
   const client = new FakeGatewayClient();
   const bridge = new OpenClawChatBridge(config, hub, dispatcher, undefined, client);
-  return { bridge, chatMessages, client };
+  return { bridge, chatMessages, client, fallbackCalls };
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {
@@ -215,6 +222,42 @@ test("new chats use uuid labels until first message display name is set", async 
   ]);
 });
 
+test("explicit phone chat uses gateway session so session fast mode applies", async () => {
+  const { bridge, client, fallbackCalls } = createHarness();
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Open the Settings app on my phone",
+    model: "gpt-5.4",
+    reasoningEffort: "low"
+  });
+
+  assert.equal(fallbackCalls.length, 0);
+  assert.equal(client.sent.length, 1);
+  assert.deepEqual(client.patched.map((entry) => entry.patch), [{ model: "gpt-5.4" }]);
+  assert.match(client.sent[0]?.message ?? "", /Phone-control speed policy/);
+  assert.match(client.sent[0]?.message ?? "", /User request:\nOpen the Settings app on my phone/);
+  assert.equal(client.sent[0]?.thinking, "low");
+});
+
+test("realtime phone requests include fast phone loop guidance in gateway run", async () => {
+  const { bridge, client } = createHarness();
+
+  const request = bridge.handleRealtimeRequest({
+    type: "user_request",
+    deviceId: "pixel",
+    inputType: "text",
+    text: "Open Gemini"
+  }, { taskKind: "phone", callId: "call_1" });
+  await waitFor(() => client.sent.length === 1);
+  client.emit({ event: "chat", payload: { sessionKey: client.sent[0]?.sessionKey, runId: "run_1", state: "final", message: "Done" } });
+
+  assert.match(client.sent[0]?.message ?? "", /Avoid extra phone_observe/);
+  assert.match(client.sent[0]?.message ?? "", /User request:\nOpen Gemini/);
+  assert.deepEqual(await request, { finalMessage: "Done" });
+});
+
 test("completed background session runs emit reply notifications without switching timeline", async () => {
   const { bridge, chatMessages, client } = createHarness();
 
@@ -306,6 +349,35 @@ test("model metadata refresh does not clobber selected model override", async ()
 
   const latestState = chatMessages.filter((message) => message.type === "chat.state").at(-1);
   assert.equal(latestState?.model, "gpt-5.4");
+});
+
+test("help slash command emits a visible command list without starting a run", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+  client.commands = [{
+    name: "help",
+    description: "Show available slash commands",
+    textAliases: ["/help", "/commands"],
+    acceptsArgs: false
+  }, {
+    name: "fast",
+    description: "Toggle fast mode",
+    textAliases: ["/fast"],
+    acceptsArgs: true
+  }];
+
+  await bridge.controlCommand({
+    type: "chat.control_command",
+    deviceId: "pixel",
+    command: "/help",
+    args: {}
+  });
+
+  assert.equal(client.sent.length, 0);
+  const message = chatMessages.find((entry) => entry.type === "chat.message");
+  assert.equal(message?.message.role, "system");
+  assert.match(message?.message.text ?? "", /Help/);
+  assert.match(message?.message.text ?? "", /\/commands/);
+  assert.match(message?.message.text ?? "", /\/fast/);
 });
 
 test("realtime steer and stop are visible user messages on the active chat", async () => {
