@@ -243,6 +243,53 @@ class ChatStateReducerTest {
     }
 
     @Test
+    fun modelsDoNotSelectByListOrder() {
+        val state = ChatStateReducer.reduce(ChatState(), JSONObject()
+            .put("type", "chat.models")
+            .put("models", JSONArray()
+                .put(JSONObject()
+                    .put("id", "openai-codex/gpt-5.4")
+                    .put("label", "gpt-5.4")
+                    .put("available", false))
+                .put(JSONObject()
+                    .put("id", "openai-codex/gpt-5.5")
+                    .put("label", "gpt-5.5")
+                    .put("available", true))))
+
+        assertEquals(null, state.selectedModel)
+    }
+
+    @Test
+    fun modelsDoNotOverrideExistingModelSelection() {
+        val state = ChatStateReducer.reduce(ChatState(selectedModel = "gpt-5.4"), JSONObject()
+            .put("type", "chat.models")
+            .put("models", JSONArray().put(JSONObject()
+                .put("id", "openai-codex/gpt-5.5")
+                .put("label", "gpt-5.5")
+                .put("available", true))))
+
+        assertEquals("gpt-5.4", state.selectedModel)
+    }
+
+    @Test
+    fun sessionsDoNotClobberPersistedModelSelection() {
+        val withModels = ChatStateReducer.reduce(ChatState(), JSONObject()
+            .put("type", "chat.models")
+            .put("models", JSONArray().put(JSONObject()
+                .put("id", "openai-codex/gpt-5.5")
+                .put("label", "gpt-5.5")
+                .put("available", true))))
+        val withSessions = ChatStateReducer.reduce(withModels.copy(selectedModel = "openai-codex/gpt-5.5"), JSONObject()
+            .put("type", "chat.sessions")
+            .put("selectedSessionKey", "agent:main:main")
+            .put("sessions", JSONArray().put(JSONObject()
+                .put("key", "agent:main:main")
+                .put("model", "gpt-5.4"))))
+
+        assertEquals("openai-codex/gpt-5.5", withSessions.selectedModel)
+    }
+
+    @Test
     fun sessionsUpdateUsageAndSelections() {
         val state = ChatStateReducer.reduce(ChatState(), JSONObject()
             .put("type", "chat.sessions")

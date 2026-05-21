@@ -268,7 +268,7 @@ object ChatStateReducer {
             activeRunId = message.optNullableString("runId"),
             isRunning = message.optBoolean("isRunning", state.isRunning),
             status = message.optNullableString("status") ?: state.status,
-            selectedModel = message.optNullableString("model") ?: state.selectedModel,
+            selectedModel = state.selectedModel ?: message.optNullableString("model"),
             reasoningEffort = normalizeReasoningEffort(message.optNullableString("reasoningEffort"), state.reasoningEffort),
             reasoningStreamEnabled = message.optNullableBoolean("reasoningStream") ?: state.reasoningStreamEnabled,
             fastMode = message.optNullableBoolean("fastMode") ?: state.fastMode,
@@ -464,8 +464,9 @@ object ChatStateReducer {
         val filtered = incoming.filter { it.id in ChatState.allowedReasoningIds }
         val reasoning = (if (filtered.isNotEmpty()) filtered else state.reasoningOptions)
             .ifEmpty { ChatState.defaultReasoningOptions }
+        val models = parseModels(message.optJSONArray("models"))
         return state.copy(
-            models = parseModels(message.optJSONArray("models")),
+            models = models,
             reasoningOptions = reasoning,
             error = null
         )
@@ -478,7 +479,7 @@ object ChatStateReducer {
         return state.copy(
             sessionKey = selectedKey,
             sessions = sessions,
-            selectedModel = selected?.model ?: state.selectedModel,
+            selectedModel = state.selectedModel ?: selected?.model,
             reasoningEffort = normalizeReasoningEffort(selected?.thinkingLevel, state.reasoningEffort),
             reasoningStreamEnabled = selected?.reasoningLevel?.let(::reasoningStreamEnabled) ?: state.reasoningStreamEnabled,
             fastMode = selected?.fastMode ?: state.fastMode,

@@ -4,25 +4,31 @@
     android:viewportWidth="24"
     android:viewportHeight="24">
     <!-- Lucide: message-square-plus, adapted to Android VectorDrawable. -->
-    <path
-        android:fillColor="@android:color/transparent"
-        android:pathData="M21,15a2,2 0,0 1,-2 2H7l-4,4V5a2,2 0,0 1,2 -2h14a2,2 0,0 1,2 2z"
-        android:strokeColor="#FF000000"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:strokeWidth="1.55" />
-    <path
-        android:fillColor="@android:color/transparent"
-        android:pathData="M12,7v6"
-        android:strokeColor="#FF000000"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:strokeWidth="1.55" />
-    <path
-        android:fillColor="@android:color/transparent"
-        android:pathData="M9,10h6"
-        android:strokeColor="#FF000000"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:strokeWidth="1.55" />
+    <group
+        android:scaleX="0.65"
+        android:scaleY="0.65"
+        android:translateX="4.2"
+        android:translateY="4.2">
+        <path
+            android:fillColor="@android:color/transparent"
+            android:pathData="M21,15a2,2 0,0 1,-2 2H7l-4,4V5a2,2 0,0 1,2 -2h14a2,2 0,0 1,2 2z"
+            android:strokeColor="#FF000000"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="1.55" />
+        <path
+            android:fillColor="@android:color/transparent"
+            android:pathData="M12,7v6"
+            android:strokeColor="#FF000000"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="1.55" />
+        <path
+            android:fillColor="@android:color/transparent"
+            android:pathData="M9,10h6"
+            android:strokeColor="#FF000000"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:strokeWidth="1.55" />
+    </group>
 </vector>

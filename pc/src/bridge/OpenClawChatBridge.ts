@@ -151,7 +151,7 @@ export class OpenClawChatBridge {
       const taskKind = isExplicitPhoneTask(text) ? "phone" : "general";
       state.reasoningEffort = normalizeThinkingLevel(message.reasoningEffort, state.reasoningEffort);
       const requestedModel = message.model?.trim();
-      if (requestedModel && requestedModel !== state.model) {
+      if (requestedModel && !isSameModelSelection(requestedModel, state.model)) {
         await this.patchSession(message.deviceId, state.sessionKey, { model: requestedModel });
         state.model = requestedModel;
       }
@@ -582,10 +582,8 @@ export class OpenClawChatBridge {
   }
 
   private async refreshMetadata(deviceId: string): Promise<void> {
-    await Promise.allSettled([
-      this.sendModels(deviceId),
-      this.sendSessions(deviceId)
-    ]);
+    await this.sendModels(deviceId).catch(() => undefined);
+    await this.sendSessions(deviceId).catch(() => undefined);
   }
 
   private async ensureSession(deviceId: string): Promise<void> {
@@ -608,10 +606,11 @@ export class OpenClawChatBridge {
       this.client.listModels(),
       this.client.listSessions(1).catch(() => undefined)
     ]);
+    const models = normalizeModels(modelsPayload);
     this.sendChat(deviceId, {
       type: "chat.models",
       deviceId,
-      models: normalizeModels(modelsPayload),
+      models,
       reasoningOptions: normalizeReasoningOptions(sessionsPayload)
     });
   }
@@ -1233,6 +1232,13 @@ function formatStatusReport(state: DeviceChatState, health: unknown): string {
     `Known sessions: ${sessions}`,
     record ? `Gateway: ${record.ok === true ? "ok" : "not ok"}${eventLoop?.degraded === true ? " (degraded)" : ""}` : "Gateway: unavailable"
   ].join("\n");
+}
+
+function isSameModelSelection(requestedModel: string, currentModel?: string | null): boolean {
+  if (!currentModel) {
+    return false;
+  }
+  return requestedModel === currentModel || currentModel.endsWith(`/${requestedModel}`);
 }
 
 function formatCommandGroups(commands: ChatCommandOption[]): string[] {

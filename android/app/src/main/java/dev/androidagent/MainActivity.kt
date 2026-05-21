@@ -364,8 +364,7 @@ class MainActivity : ComponentActivity() {
                     token = tokenInput.text.toString().trim(),
                     openAiApiKey = openAiKeyInput.text.toString().trim(),
                     systemPrompt = promptDraft.trim().ifBlank { DefaultSystemPrompt.text },
-                    model = config.model.takeUnless { it == AgentModelOptions.LOCAL_LITERT_MODEL_ID }
-                        ?: AgentModelOptions.models.first().id,
+                    model = config.model,
                     reasoningEffort = config.reasoningEffort,
                     agentMode = AgentMode.Host,
                     experimentalLocalModelsEnabled = experimentalLocalModelsInput.isChecked,

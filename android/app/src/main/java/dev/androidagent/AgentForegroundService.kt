@@ -84,6 +84,7 @@ class AgentForegroundService : Service() {
         createChannel()
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), foregroundServiceType(includeMicrophone = false))
         AgentConfigStore.load(this).also { config ->
+            chatState = chatState.copy(selectedModel = selectedChatModel(config))
             AvatarLibrary.scanOnBoot(applicationContext, config.hostUrl, config.token)
         }
         voiceTranscriptionManager = VoiceTranscriptionManager(onStateChanged = ::handleTranscriptionState)
@@ -126,7 +127,10 @@ class AgentForegroundService : Service() {
                 overlayController?.setChatState(chatState)
             },
             onChatSessionViewed = { sessionKey -> markChatSessionRead(sessionKey) }
-        ).also { it.show() }
+        ).also {
+            it.setChatState(chatState)
+            it.show()
+        }
         voiceRuntimeController = VoiceRuntimeController(
             context = this,
             sendStart = { sdp, config -> webSocketClient?.sendRealtimeStart(sdp, config, AgentLocationProvider.currentBestEffortLocation(this)) },
@@ -252,8 +256,7 @@ class AgentForegroundService : Service() {
 
     private fun selectedChatModel(config: AgentConfig = AgentConfigStore.load(this)): String {
         val selected = chatState.selectedModel?.takeIf { it.isNotBlank() }
-        val fallback = config.model
-            .takeUnless { it == AgentModelOptions.LOCAL_LITERT_MODEL_ID }
+        val fallback = config.model.takeUnless { it == AgentModelOptions.LOCAL_LITERT_MODEL_ID }
             ?: AgentModelOptions.models.first().id
         return when (selected) {
             AgentModelOptions.LOCAL_LITERT_MODEL_ID -> {
@@ -346,6 +349,7 @@ class AgentForegroundService : Service() {
             return
         }
         val route = routeForModel(model, config)
+        AgentConfigStore.save(this, config.copy(model = model))
         chatState = chatState.copy(
             selectedModel = model,
             status = if (route == ChatClientRoute.Local) "Model: Local LiteRT-LM" else "Model: ${AgentModelOptions.modelLabel(model)}",
@@ -411,8 +415,11 @@ class AgentForegroundService : Service() {
             usage = ChatUsageSummary()
         )
         overlayController?.setChatState(chatState)
-        connectAgentClient()
-        chatClient?.newSession()
+        val config = AgentConfigStore.load(this)
+        val selectedModel = selectedChatModel(config)
+        val route = routeForModel(selectedModel, config)
+        connectAgentClient(selectedModel)
+        chatClient?.newSession(model = modelForRoute(selectedModel, route, config))
         lastNotificationText = "Started a new chat"
         isAgentTurnActive = false
         updateNotification()
@@ -476,11 +483,19 @@ class AgentForegroundService : Service() {
     }
 
     private fun openChatFromIntent(intent: Intent?) {
+        openActiveChatConnection()
         val presentation = panelPresentationFrom(intent)
         if (presentation == PanelPresentation.Popup) {
             overlayController?.show()
         }
         overlayController?.openPanel(presentation)
+    }
+
+    private fun openActiveChatConnection() {
+        val config = AgentConfigStore.load(this)
+        val model = selectedChatModel(config)
+        val route = routeForModel(model, config)
+        connectAgentClient(model)?.open(sessionKeyForRoute(route))
     }
 
     private fun openChatSessionFromNotification(

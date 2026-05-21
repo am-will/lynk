@@ -27,6 +27,7 @@ class FakeGatewayClient {
   readonly patched: Array<{ sessionKey: string; patch: Record<string, unknown> }> = [];
   readonly aborted: Array<{ sessionKey: string; runId?: string }> = [];
   sessions: Array<Record<string, unknown>> = [];
+  models: Array<Record<string, unknown>> = [];
   commands: Array<Record<string, unknown>> = [];
   readonly duplicateLabels = new Set<string>();
   private runCount = 0;
@@ -52,7 +53,7 @@ class FakeGatewayClient {
   }
 
   async listModels(): Promise<unknown> {
-    return { models: [] };
+    return { models: this.models };
   }
 
   async listSessions(): Promise<unknown> {
@@ -349,6 +350,54 @@ test("model metadata refresh does not clobber selected model override", async ()
 
   const latestState = chatMessages.filter((message) => message.type === "chat.state").at(-1);
   assert.equal(latestState?.model, "gpt-5.4");
+});
+
+test("model metadata does not override the selected session model by list order", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+  client.models = [{
+    key: "openai-codex/gpt-5.4",
+    name: "gpt-5.4",
+    available: false
+  }, {
+    key: "openai-codex/gpt-5.5",
+    name: "gpt-5.5",
+    available: true
+  }];
+  client.sessions = [{
+    key: config.openClawChatSessionKey,
+    sessionId: "session_1",
+    model: "gpt-5.4"
+  }];
+
+  await bridge.open({
+    type: "chat.open",
+    deviceId: "pixel"
+  });
+
+  const latestState = chatMessages.filter((message) => message.type === "chat.state").at(-1);
+  assert.equal(latestState?.model, "gpt-5.4");
+});
+
+test("static Android fallback model does not override connected model id", async () => {
+  const { bridge, client } = createHarness();
+  client.sessions = [{
+    key: config.openClawChatSessionKey,
+    sessionId: "session_1",
+    model: "openai-codex/gpt-5.5"
+  }];
+
+  await bridge.open({
+    type: "chat.open",
+    deviceId: "pixel"
+  });
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Use default model",
+    model: "gpt-5.5"
+  });
+
+  assert.deepEqual(client.patched.map((entry) => entry.patch), []);
 });
 
 test("help slash command emits a visible command list without starting a run", async () => {
