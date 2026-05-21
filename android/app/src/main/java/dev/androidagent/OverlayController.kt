@@ -40,6 +40,7 @@ import android.widget.FrameLayout
 import dev.androidagent.chat.ChatModelOption
 import dev.androidagent.chat.ChatSessionRow
 import dev.androidagent.chat.ChatState
+import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.overlay.BubbleOverlay
 import dev.androidagent.overlay.ChatTimelineBinder
 import dev.androidagent.overlay.ConfirmationOverlay
@@ -61,6 +62,9 @@ import dev.androidagent.ui.Drawables
 import dev.androidagent.ui.StatusUpdateView
 import dev.androidagent.ui.ThemeTokens
 import dev.androidagent.ui.Typography
+import dev.androidagent.ui.exposeToAccessibility
+import dev.androidagent.ui.hideFromAccessibility
+import dev.androidagent.ui.updateAccessibilityState
 import org.json.JSONObject
 import dev.androidagent.voice.VoiceRuntimeState
 import dev.androidagent.voice.transcription.VoiceTranscriptionState
@@ -476,6 +480,7 @@ class OverlayController(
 
     private fun buildModalHeader(tokens: ThemeTokens, presentation: PanelPresentation): View {
         val connectionButton = HostConnectionIndicatorButton(context).apply {
+            id = R.id.openclaw_header_host_status_button
             bind(tokens, lastHostConnectionState)
             setOnClickListener { showHostConnectionPopup(this) }
         }
@@ -484,6 +489,7 @@ class OverlayController(
             tokens = tokens,
             drawableRes = R.drawable.ic_voice_wave,
             contentDescription = "Start realtime voice mode",
+            viewId = R.id.openclaw_header_voice_button,
             compact = true
         ) {
             startVoiceAndMinimizePanel()
@@ -492,6 +498,7 @@ class OverlayController(
             tokens = tokens,
             drawableRes = R.drawable.ic_settings_gear,
             contentDescription = "Open Claw Agent settings",
+            viewId = R.id.openclaw_header_settings_button,
             compact = true
         ) {
             dismissPanel()
@@ -501,11 +508,16 @@ class OverlayController(
             tokens = tokens,
             drawableRes = R.drawable.ic_close,
             contentDescription = "Close chat",
+            viewId = R.id.openclaw_header_close_button,
             compact = true
         ) { handlePanelBackPressed() }
 
         val handleArea = if (presentation == PanelPresentation.Popup) {
             val handle = View(context).apply {
+                exposeToAccessibility(
+                    viewId = R.id.openclaw_panel_drag_handle,
+                    description = "Drag down to dismiss chat"
+                )
                 background = Drawables.rounded(
                     fill = DesignTokens.withAlpha(tokens.tertiaryText, 0x80),
                     radius = dp(DesignTokens.Radius.pill).toFloat()
@@ -529,6 +541,7 @@ class OverlayController(
             setImageResource(R.drawable.ic_chevron_down)
             setColorFilter(tokens.secondaryText)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
+            hideFromAccessibility()
             headerSessionChevron = this
         }
         val titleStack = LinearLayout(context).apply {
@@ -543,6 +556,7 @@ class OverlayController(
             addView(ImageView(context).apply {
                 setImageResource(R.drawable.openclaw_bubble_logo)
                 scaleType = ImageView.ScaleType.CENTER_INSIDE
+                hideFromAccessibility()
             }, LinearLayout.LayoutParams(dp(28), dp(28)).apply {
                 rightMargin = dp(DesignTokens.Spacing.xs)
             })
@@ -554,10 +568,16 @@ class OverlayController(
                 includeFontPadding = false
                 isSingleLine = true
                 ellipsize = android.text.TextUtils.TruncateAt.END
+                hideFromAccessibility()
             }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
             addView(titleChevron, LinearLayout.LayoutParams(dp(18), dp(18)).apply {
                 leftMargin = dp(DesignTokens.Spacing.xs)
             })
+            exposeToAccessibility(
+                viewId = R.id.openclaw_header_menu_button,
+                description = "Open chat menu",
+                focusable = true
+            )
             setOnClickListener { showHeaderChatMenu() }
             headerSessionAnchor = this
         }
@@ -665,6 +685,10 @@ class OverlayController(
                 return super.onKeyPreIme(keyCode, event)
             }
         }.apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_composer_input,
+                description = "Message composer"
+            )
             hint = "Message OpenClaw"
             minLines = 1
             maxLines = 5
@@ -721,6 +745,7 @@ class OverlayController(
             tokens = tokens,
             drawableRes = R.drawable.ic_new_chat,
             contentDescription = "Start new chat",
+            viewId = R.id.openclaw_new_chat_button,
             compact = true
         ) { startNewChatSession() }.apply {
             setPadding(dp(4), dp(4), dp(4), dp(4))
@@ -728,6 +753,11 @@ class OverlayController(
         controls.addView(plusButton, LinearLayout.LayoutParams(controlSize, controlSize).apply { rightMargin = controlGap })
 
         modelButton = compactPill(tokens, "Model", R.drawable.ic_model).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_model_selector,
+                description = "Model selector",
+                stateDescription = text
+            )
             ellipsize = null
             setHorizontallyScrolling(false)
             setOnClickListener { showModelChoices() }
@@ -740,6 +770,11 @@ class OverlayController(
         })
 
         reasoningButton = compactPill(tokens, "Reason", R.drawable.ic_reasoning).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_reasoning_selector,
+                description = "Reasoning selector",
+                stateDescription = text
+            )
             ellipsize = null
             setHorizontallyScrolling(false)
             setOnClickListener { showReasoningChoices() }
@@ -753,6 +788,7 @@ class OverlayController(
         })
 
         contextUsageView = ContextUsageView(context).apply {
+            id = R.id.openclaw_context_usage_button
             bind(tokens, lastChatState.usage.contextRatio)
             setOnClickListener { showUsageControls() }
         }
@@ -763,7 +799,8 @@ class OverlayController(
         transcriptionMicButton = iconButton(
             tokens = tokens,
             drawableRes = R.drawable.ic_mic,
-            contentDescription = "Start voice transcription"
+            contentDescription = "Start voice transcription",
+            viewId = R.id.openclaw_transcription_button
         ) {
             if (lastTranscriptionState.isRecording) {
                 onCancelTranscription()
@@ -777,6 +814,7 @@ class OverlayController(
             tokens = tokens,
             drawableRes = R.drawable.ic_send,
             contentDescription = "Send message",
+            viewId = R.id.openclaw_send_stop_button,
             accent = true
         ) {
             if (lastTranscriptionState.isRecording) {
@@ -800,6 +838,10 @@ class OverlayController(
         return LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             composerContainer = this
+            exposeToAccessibility(
+                viewId = R.id.openclaw_composer_container,
+                description = "Message composer controls"
+            )
             addView(inputCard, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
@@ -815,6 +857,7 @@ class OverlayController(
         tokens: ThemeTokens,
         drawableRes: Int,
         contentDescription: String,
+        viewId: Int? = null,
         accent: Boolean = false,
         compact: Boolean = false,
         onClick: () -> Unit
@@ -826,7 +869,11 @@ class OverlayController(
                 else Drawables.pillSurface(context, tokens)
             backgroundTintList = null
             setColorFilter(if (accent) tokens.accentInk else tokens.primaryText)
-            this.contentDescription = contentDescription
+            exposeToAccessibility(
+                viewId = viewId,
+                description = contentDescription,
+                focusable = true
+            )
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             setMinimumWidth(0)
             setMinimumHeight(0)
@@ -1025,9 +1072,14 @@ class OverlayController(
             setStatus("No models available.")
             return
         }
-        val selectedId = lastChatState.selectedModel ?: ""
+        val selectedId = if (lastChatState.selectedModel == AgentModelOptions.LOCAL_LITERT_MODEL_ID && !isExperimentalLocalModelAvailable()) {
+            AgentModelOptions.models.firstOrNull()?.id.orEmpty()
+        } else {
+            lastChatState.selectedModel.orEmpty()
+        }
         val rows = merged.map { model ->
             AnchoredPicker.Row(
+                id = "model:${model.id}",
                 label = model.label,
                 sublabel = model.provider?.takeIf { it.isNotBlank() },
                 iconRes = R.drawable.ic_model,
@@ -1108,7 +1160,23 @@ class OverlayController(
         gatewayModels.forEach { remote ->
             byId[remote.id] = remote
         }
+        if (isExperimentalLocalModelAvailable()) {
+            byId[AgentModelOptions.LOCAL_LITERT_MODEL_ID] = ChatModelOption(
+                id = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
+                label = "Local LiteRT-LM",
+                provider = "android",
+                contextWindow = null,
+                available = true
+            )
+        } else {
+            byId.remove(AgentModelOptions.LOCAL_LITERT_MODEL_ID)
+        }
         return byId.values.toList()
+    }
+
+    private fun isExperimentalLocalModelAvailable(): Boolean {
+        val config = AgentConfigStore.load(context)
+        return config.experimentalLocalModelsEnabled && LocalModelStore.exists(config.localModelPath)
     }
 
     private fun showReasoningChoices() {
@@ -1116,6 +1184,7 @@ class OverlayController(
         val options = lastChatState.reasoningOptions.ifEmpty { ChatState.defaultReasoningOptions }
         val rows = options.map { option ->
             AnchoredPicker.Row(
+                id = "reasoning:${option.id}",
                 label = option.label,
                 iconRes = R.drawable.ic_reasoning,
                 selected = option.id == (lastChatState.reasoningEffort ?: ""),
@@ -1160,6 +1229,7 @@ class OverlayController(
         return lastChatState.sessions.take(limit).map { session ->
             val label = sessionLabel(session)
             AnchoredPicker.Row(
+                id = "session:${session.key}",
                 label = label.take(40),
                 sublabel = session.model,
                 iconRes = R.drawable.ic_notification_bubble,
@@ -1188,6 +1258,7 @@ class OverlayController(
 
         val sessionRows = mutableListOf<AnchoredPicker.Row>()
         sessionRows.add(AnchoredPicker.Row(
+            id = "chat:new",
             label = "New chat",
             iconRes = R.drawable.ic_new_chat,
             onSelect = { startNewChatSession() }
@@ -1195,6 +1266,7 @@ class OverlayController(
         if (sessions.isNotEmpty()) {
             val sessionCount = sessions.size.coerceAtMost(30)
             sessionRows.add(AnchoredPicker.Row(
+                id = "chat:previous",
                 label = "Previous chats",
                 sublabel = "Last $sessionCount",
                 iconRes = R.drawable.ic_notification_bubble,
@@ -1209,6 +1281,7 @@ class OverlayController(
             commands.take(20).forEach { command ->
                 val text = command.aliases.firstOrNull() ?: "/${command.name}"
                 commandRows.add(AnchoredPicker.Row(
+                    id = "command:${command.name}",
                     label = text,
                     sublabel = command.description?.take(64),
                     iconRes = R.drawable.ic_command,
@@ -1221,6 +1294,7 @@ class OverlayController(
             plusFastModeRow(),
             plusVerboseRow(),
             AnchoredPicker.Row(
+                id = "status:refresh",
                 label = "Refresh status",
                 iconRes = R.drawable.ic_usage,
                 onSelect = { onChatControlCommand("status", JSONObject()); setStatus("Refreshing status") }
@@ -1231,22 +1305,26 @@ class OverlayController(
             plusReasoningStreamRow(),
             plusToolCallsRow(),
             AnchoredPicker.Row(
+                id = "voice:start",
                 label = "Voice mode",
                 iconRes = R.drawable.ic_voice,
                 onSelect = { startVoiceAndMinimizePanel() }
             ),
             AnchoredPicker.Row(
+                id = "queue:steer",
                 label = "Queue steer",
                 iconRes = R.drawable.ic_steer,
                 onSelect = { insertComposerText("/queue steer ") }
             ),
             AnchoredPicker.Row(
+                id = "usage:open",
                 label = "Usage",
                 iconRes = R.drawable.ic_usage,
                 dismissOnSelect = false,
                 onSelect = { showUsageControls() }
             ),
             AnchoredPicker.Row(
+                id = "settings:open",
                 label = "Settings",
                 iconRes = R.drawable.ic_settings_gear,
                 onSelect = { dismissPanel(); openSettings() }
@@ -1416,6 +1494,7 @@ class OverlayController(
         val percent = usage.contextRatio?.let { "${(it * 100).roundToInt()}%" } ?: "unknown"
         val rows = listOf(
             AnchoredPicker.Row(
+                id = "usage:context",
                 label = "Context",
                 sublabel = percent,
                 iconRes = R.drawable.ic_usage,
@@ -1423,6 +1502,7 @@ class OverlayController(
                 onSelect = {}
             ),
             AnchoredPicker.Row(
+                id = "usage:total_tokens",
                 label = "Total tokens",
                 sublabel = (usage.totalTokens ?: "--").toString(),
                 iconRes = R.drawable.ic_usage,
@@ -1430,6 +1510,7 @@ class OverlayController(
                 onSelect = {}
             ),
             AnchoredPicker.Row(
+                id = "usage:input_tokens",
                 label = "Input tokens",
                 sublabel = (usage.inputTokens ?: "--").toString(),
                 iconRes = R.drawable.ic_usage,
@@ -1437,6 +1518,7 @@ class OverlayController(
                 onSelect = {}
             ),
             AnchoredPicker.Row(
+                id = "usage:output_tokens",
                 label = "Output tokens",
                 sublabel = (usage.outputTokens ?: "--").toString(),
                 iconRes = R.drawable.ic_usage,
@@ -1444,6 +1526,7 @@ class OverlayController(
                 onSelect = {}
             ),
             AnchoredPicker.Row(
+                id = "usage:refresh",
                 label = "Refresh",
                 iconRes = R.drawable.ic_bolt,
                 onSelect = { onChatControlCommand("status", JSONObject()) }
@@ -1479,6 +1562,7 @@ class OverlayController(
         val rows = commands.map { command ->
             val text = slashCommandText(command)
             AnchoredPicker.Row(
+                id = "slash:${command.name}",
                 label = text,
                 sublabel = command.description?.take(72),
                 iconRes = R.drawable.ic_command,
@@ -1542,7 +1626,12 @@ class OverlayController(
         renderComposerActionButtons(tokens, state, lastTranscriptionState)
         modelButton?.let { btn ->
             val fastModeOn = state.fastMode == true
-            btn.text = formatModelLabel(state.selectedModel ?: state.models.firstOrNull()?.id)
+            val modelLabel = formatModelLabel(state.selectedModel ?: state.models.firstOrNull()?.id)
+            btn.text = modelLabel
+            btn.updateAccessibilityState(
+                description = "Model selector",
+                stateDescription = if (fastModeOn) "$modelLabel, fast mode on" else modelLabel
+            )
             btn.setTextColor(if (fastModeOn) tokens.accent else tokens.primaryText)
             val chevron = androidx.core.content.ContextCompat
                 .getDrawable(context, R.drawable.ic_chevron_down)?.mutate()?.apply {
@@ -1556,7 +1645,14 @@ class OverlayController(
                 }
             btn.setCompoundDrawables(left, null, chevron, null)
         }
-        reasoningButton?.text = formatReasoningLabel(state.reasoningEffort)
+        reasoningButton?.let { btn ->
+            val reasoningLabel = formatReasoningLabel(state.reasoningEffort)
+            btn.text = reasoningLabel
+            btn.updateAccessibilityState(
+                description = "Reasoning selector",
+                stateDescription = reasoningLabel
+            )
+        }
         contextUsageView?.bind(tokens, state.usage.contextRatio)
         statusText?.let { sv ->
             state.status?.let { sv.setText(it) }
@@ -1602,7 +1698,11 @@ class OverlayController(
     }
 
     private fun formatModelLabel(model: String?): String {
-        val raw = model ?: return "Model"
+        val raw = if (model == AgentModelOptions.LOCAL_LITERT_MODEL_ID && !isExperimentalLocalModelAvailable()) {
+            AgentModelOptions.models.firstOrNull()?.id
+        } else {
+            model
+        } ?: return "Model"
         val pretty = lastChatState.models.firstOrNull { it.id == raw }?.label
             ?: raw.substringAfter("/").ifBlank { raw }
         return if (pretty.startsWith("gpt-", ignoreCase = true)) pretty.drop(4) else pretty
@@ -1960,11 +2060,11 @@ class OverlayController(
         transcriptionMicButton?.apply {
             isEnabled = !transcriptionState.isTranscribing
             setImageResource(if (transcriptionState.isRecording) R.drawable.ic_close else R.drawable.ic_mic)
-            contentDescription = when {
+            updateAccessibilityState(description = when {
                 transcriptionState.isRecording -> "Cancel voice transcription"
                 transcriptionState.isTranscribing -> "Transcribing audio"
                 else -> "Start voice transcription"
-            }
+            })
             background = if (transcriptionState.isRecording) {
                 Drawables.dangerSurface(context, tokens, DesignTokens.Radius.pill)
             } else {
@@ -1977,11 +2077,11 @@ class OverlayController(
         sendStopButton?.apply {
             val shouldShowStop = transcriptionState.isRecording || chatState.isRunning
             setImageResource(if (shouldShowStop) R.drawable.ic_stop else R.drawable.ic_send)
-            contentDescription = when {
+            updateAccessibilityState(description = when {
                 transcriptionState.isRecording -> "Stop recording and transcribe"
                 chatState.isRunning -> "Stop OpenClaw turn"
                 else -> "Send message"
-            }
+            })
             background = Drawables.accentSurface(context, tokens, DesignTokens.Radius.pill)
             backgroundTintList = null
             setColorFilter(tokens.accentInk)
@@ -2008,13 +2108,21 @@ class OverlayController(
         init {
             // Subtle ring background so the control reads as a button while idle.
             background = Drawables.pillSurface(context, tokens)
+            exposeToAccessibility(
+                viewId = R.id.openclaw_context_usage_button,
+                description = "Context usage",
+                focusable = true
+            )
         }
 
         fun bind(tokens: ThemeTokens, ratio: Float?) {
             this.tokens = tokens
             this.ratio = ratio
             background = Drawables.pillSurface(context, tokens)
-            contentDescription = ratio?.let { "Context window ${(it * 100).roundToInt()} percent used" } ?: "Context usage unknown"
+            updateAccessibilityState(
+                description = "Context usage",
+                stateDescription = ratio?.let { "Context window ${(it * 100).roundToInt()} percent used" } ?: "Unknown"
+            )
             invalidate()
         }
 
