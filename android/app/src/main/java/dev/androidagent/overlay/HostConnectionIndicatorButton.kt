@@ -4,9 +4,12 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.view.View
+import dev.androidagent.R
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
 import dev.androidagent.ui.ThemeTokens
+import dev.androidagent.ui.exposeToAccessibility
+import dev.androidagent.ui.updateAccessibilityState
 
 class HostConnectionIndicatorButton(context: Context) : View(context) {
     private var tokens: ThemeTokens = DesignTokens.resolve(context)
@@ -18,8 +21,12 @@ class HostConnectionIndicatorButton(context: Context) : View(context) {
     private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     init {
+        exposeToAccessibility(
+            viewId = R.id.openclaw_header_host_status_button,
+            description = "Host connection status",
+            focusable = true
+        )
         isClickable = true
-        isFocusable = true
         minimumWidth = dp(DesignTokens.Sizes.compact)
         minimumHeight = dp(DesignTokens.Sizes.compact)
     }
@@ -28,7 +35,10 @@ class HostConnectionIndicatorButton(context: Context) : View(context) {
         this.tokens = tokens
         this.state = state
         background = Drawables.pillSurface(context, tokens)
-        contentDescription = "${HostConnectionCopy.title(state.phase)}. Tap for host connection details."
+        updateAccessibilityState(
+            description = "Host connection status",
+            stateDescription = "${HostConnectionCopy.title(state.phase)}. Tap for host connection details."
+        )
         invalidate()
     }
 

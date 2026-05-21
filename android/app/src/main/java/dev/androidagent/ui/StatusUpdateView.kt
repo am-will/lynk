@@ -13,6 +13,7 @@ import android.view.ViewGroup
 import android.view.animation.LinearInterpolator
 import android.widget.LinearLayout
 import android.widget.TextView
+import dev.androidagent.R
 import dev.androidagent.ui.DesignTokens.dp
 
 /**
@@ -31,6 +32,11 @@ class StatusUpdateView(context: Context, private var tokens: ThemeTokens) : Line
     private var active: Boolean = false
 
     init {
+        exposeToAccessibility(
+            viewId = R.id.openclaw_status_line,
+            description = "OpenClaw status",
+            liveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        )
         orientation = HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         val padH = dp(context, DesignTokens.Spacing.lg)
@@ -48,9 +54,15 @@ class StatusUpdateView(context: Context, private var tokens: ThemeTokens) : Line
             LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
         Typography.applyCaption(label, tokens, emphasis = false)
+        label.exposeToAccessibility(
+            viewId = R.id.openclaw_status_line_label,
+            description = "OpenClaw status text",
+            liveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+        )
         label.maxLines = 1
         label.ellipsize = android.text.TextUtils.TruncateAt.END
         dots.visibility = View.GONE
+        dots.hideFromAccessibility()
     }
 
     fun applyTokens(newTokens: ThemeTokens) {
@@ -62,6 +74,10 @@ class StatusUpdateView(context: Context, private var tokens: ThemeTokens) : Line
 
     fun setText(text: CharSequence?) {
         label.text = text ?: ""
+        updateAccessibilityState(
+            description = "OpenClaw status",
+            stateDescription = label.text
+        )
     }
 
     val textValue: CharSequence

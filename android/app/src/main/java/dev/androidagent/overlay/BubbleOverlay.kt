@@ -34,6 +34,8 @@ import dev.androidagent.chat.ChatState
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
 import dev.androidagent.ui.ThemeTokens
+import dev.androidagent.ui.exposeToAccessibility
+import dev.androidagent.ui.hideFromAccessibility
 import dev.androidagent.voice.VoiceRuntimeState
 import dev.androidagent.voice.VoiceRuntimeStatus
 
@@ -72,6 +74,7 @@ class BubbleOverlay(
 
         val tokens = tokens()
         val badge = TextView(context).apply {
+            id = R.id.openclaw_bubble_unread_badge
             visibility = View.GONE
             gravity = Gravity.CENTER
             textSize = 10f
@@ -88,11 +91,15 @@ class BubbleOverlay(
         }
         val avatarView = buildBubbleAvatarView()
         val bubble = FrameLayout(context).apply {
+            id = R.id.openclaw_bubble
             background = bubbleBackgroundForVoiceState(voiceState, tokens)
-            contentDescription = "Open Claw Agent"
+            exposeToAccessibility(
+                viewId = R.id.openclaw_bubble,
+                description = "Open Claw Agent",
+                focusable = true
+            )
             elevation = dp(DesignTokens.Elevation.mid).toFloat()
             isClickable = true
-            isFocusable = true
             setOnClickListener { onTogglePanel() }
             addView(avatarView, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -357,6 +364,7 @@ class BubbleOverlay(
             if (file != null && file.exists()) {
                 val view = PetAvatarView(context)
                 if (view.loadFromFile(file)) {
+                    view.hideFromAccessibility()
                     bubblePetView = view
                     return view
                 }
@@ -371,6 +379,7 @@ class BubbleOverlay(
                 dp(DesignTokens.Spacing.md),
                 dp(DesignTokens.Spacing.md)
             )
+            hideFromAccessibility()
         }
     }
 
@@ -441,7 +450,10 @@ class BubbleOverlay(
             setImageResource(R.drawable.ic_trash)
             setColorFilter(Color.WHITE)
             background = trashTargetBackground(isActive = false)
-            contentDescription = "Close Open Claw Agent bubble"
+            exposeToAccessibility(
+                viewId = R.id.openclaw_bubble_trash_target,
+                description = "Close Open Claw Agent bubble"
+            )
             elevation = dp(DesignTokens.Elevation.high).toFloat()
             setPadding(
                 dp(DesignTokens.Spacing.lg),

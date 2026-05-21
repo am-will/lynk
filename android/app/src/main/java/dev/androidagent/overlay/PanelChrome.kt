@@ -11,10 +11,13 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import dev.androidagent.R
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
 import dev.androidagent.ui.StatusUpdateView
 import dev.androidagent.ui.ThemeTokens
+import dev.androidagent.ui.exposeToAccessibility
+import dev.androidagent.ui.hideFromAccessibility
 
 data class PanelChromeHandle(
     val host: FrameLayout,
@@ -60,6 +63,11 @@ class PanelChrome(
             clipToPadding = false
         }
         val historyScroll = ScrollView(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_chat_history,
+                description = "Chat history",
+                liveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            )
             isFillViewport = false
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             isVerticalScrollBarEnabled = false
@@ -67,9 +75,15 @@ class PanelChrome(
         }
         val keyboardSpacer = View(context).apply {
             visibility = View.GONE
+            hideFromAccessibility()
         }
         val chrome = buildContent(tokens, header, voice, historyScroll, status, composer, keyboardSpacer)
         val host = PanelHost(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_panel_host,
+                description = "OpenClaw chat panel",
+                focusable = true
+            )
             isFocusableInTouchMode = true
             addView(chrome, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -87,6 +101,10 @@ class PanelChrome(
             y = defaultBounds.y
         }
         val scrim = View(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_panel_scrim,
+                description = "Dismiss OpenClaw chat panel"
+            )
             setBackgroundColor(tokens.scrim)
             setOnClickListener { callbacks.onScrimClicked() }
         }
@@ -120,6 +138,11 @@ class PanelChrome(
         keyboardSpacer: View
     ): LinearLayout {
         return LinearLayout(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_panel_content,
+                description = "OpenClaw chat controls",
+                focusable = true
+            )
             orientation = LinearLayout.VERTICAL
             isFocusableInTouchMode = true
             background = Drawables.glassPanel(context, tokens)

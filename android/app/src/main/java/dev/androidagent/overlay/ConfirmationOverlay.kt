@@ -10,9 +10,11 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import dev.androidagent.R
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
 import dev.androidagent.ui.Typography
+import dev.androidagent.ui.exposeToAccessibility
 import kotlinx.coroutines.CompletableDeferred
 
 class ConfirmationOverlay(
@@ -32,6 +34,11 @@ class ConfirmationOverlay(
         val tokens = DesignTokens.resolve(context)
 
         val card = LinearLayout(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_confirmation_card,
+                description = "Confirm action",
+                focusable = true
+            )
             orientation = LinearLayout.VERTICAL
             setPadding(
                 dp(DesignTokens.Spacing.xxl),
@@ -67,6 +74,10 @@ class ConfirmationOverlay(
         })
 
         card.addView(TextView(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_confirmation_message,
+                description = "Confirmation message"
+            )
             text = listOfNotNull(message, preview).joinToString("\n\n")
             Typography.applyBody(this, tokens, secondary = true)
             setPadding(0, dp(DesignTokens.Spacing.sm), 0, dp(DesignTokens.Spacing.lg))
@@ -74,6 +85,11 @@ class ConfirmationOverlay(
         })
 
         val cancelButton = Button(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_confirmation_cancel_button,
+                description = "Cancel confirmation",
+                focusable = true
+            )
             text = "Cancel"
             textSize = DesignTokens.Text.callout
             isAllCaps = false
@@ -86,6 +102,11 @@ class ConfirmationOverlay(
             }
         }
         val allowButton = Button(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_confirmation_allow_button,
+                description = "Allow confirmation",
+                focusable = true
+            )
             text = "Allow"
             textSize = DesignTokens.Text.callout
             isAllCaps = false
@@ -108,6 +129,10 @@ class ConfirmationOverlay(
         card.addView(buttons)
 
         val scrim = View(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_confirmation_scrim,
+                description = "Cancel confirmation"
+            )
             setBackgroundColor(tokens.scrim)
             setOnClickListener {
                 dismiss()
@@ -129,7 +154,7 @@ class ConfirmationOverlay(
         val params = overlayParams(
             width = cardWidth,
             height = WindowManager.LayoutParams.WRAP_CONTENT,
-            focusable = false
+            focusable = true
         ).apply {
             gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             y = dp(96)

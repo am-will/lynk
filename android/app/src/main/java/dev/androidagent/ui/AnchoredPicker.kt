@@ -260,6 +260,10 @@ class AnchoredPicker(
         val maxHeight = (display.heightPixels * 0.55f).toInt()
 
         val container = LinearLayout(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_picker_sheet,
+                description = title?.let { "$it menu" } ?: "OpenClaw menu"
+            )
             orientation = LinearLayout.VERTICAL
             background = Drawables.dropdownSheet(context, tokens)
             elevation = dp(context, DesignTokens.Elevation.popover).toFloat()
@@ -291,7 +295,11 @@ class AnchoredPicker(
                     setColorFilter(tokens.secondaryText)
                     background = Drawables.pillSurface(context, tokens)
                     backgroundTintList = null
-                    contentDescription = "Close menu"
+                    exposeToAccessibility(
+                        viewId = R.id.openclaw_picker_close_button,
+                        description = "Close menu",
+                        focusable = true
+                    )
                     scaleType = ImageView.ScaleType.CENTER_INSIDE
                     setPadding(dp(context, 6), dp(context, 6), dp(context, 6), dp(context, 6))
                     setOnClickListener { dismiss() }
@@ -300,6 +308,10 @@ class AnchoredPicker(
         }
 
         val scroller = ScrollView(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_picker_scroller,
+                description = title?.let { "$it options" } ?: "Menu options"
+            )
             tag = BODY_SCROLLER_TAG
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             isVerticalScrollBarEnabled = false
@@ -368,6 +380,14 @@ class AnchoredPicker(
 
     private fun buildRow(row: Row): View {
         val rowView = LinearLayout(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_picker_row,
+                description = row.accessibilityDescription(),
+                stateDescription = row.accessibilityStateDescription(),
+                focusable = row.enabled
+            )
+            row.id?.let { setTag(R.id.openclaw_picker_row_key, it) }
+            isSelected = row.selected
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = Drawables.dropdownRowBackground(context, tokens)
@@ -394,6 +414,7 @@ class AnchoredPicker(
 
         row.iconRes?.let { iconRes ->
             val iconFrame = FrameLayout(context).apply {
+                hideFromAccessibility()
                 addView(ImageView(context).apply {
                     setImageResource(iconRes)
                     setColorFilter(if (row.destructive) tokens.danger else tokens.secondaryText)
@@ -448,6 +469,7 @@ class AnchoredPicker(
                 setImageResource(R.drawable.ic_check)
                 setColorFilter(tokens.accent)
                 scaleType = ImageView.ScaleType.CENTER_INSIDE
+                hideFromAccessibility()
             }, LinearLayout.LayoutParams(dp(context, 18), dp(context, 18)).apply {
                 leftMargin = dp(context, DesignTokens.Spacing.md)
             })
@@ -458,6 +480,22 @@ class AnchoredPicker(
 
     private fun badgeText(count: Int): String {
         return if (count > 99) "99+" else count.toString()
+    }
+
+    private fun Row.accessibilityDescription(): String {
+        val parts = listOfNotNull(
+            label,
+            sublabel?.takeIf { it.isNotBlank() },
+            badgeCount.takeIf { it > 0 }?.let { "$it unread" }
+        )
+        return parts.joinToString(", ")
+    }
+
+    private fun Row.accessibilityStateDescription(): String {
+        return buildList {
+            add(if (selected) "selected" else "not selected")
+            if (!enabled) add("disabled")
+        }.joinToString(", ")
     }
 
     private fun divider(): View = View(context).apply {

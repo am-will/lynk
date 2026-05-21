@@ -25,6 +25,8 @@ import dev.androidagent.ui.MarkdownFencedCodeParser
 import dev.androidagent.ui.MarkdownRenderer
 import dev.androidagent.ui.ThemeTokens
 import dev.androidagent.ui.Typography
+import dev.androidagent.ui.exposeToAccessibility
+import dev.androidagent.ui.hideFromAccessibility
 
 class ChatTimelineBinder(
     private val context: Context,
@@ -76,6 +78,10 @@ class ChatTimelineBinder(
 
     private fun reasoningBlock(item: ChatTimelineItem, tokens: ThemeTokens): View {
         return LinearLayout(context).apply {
+            exposeToAccessibility(
+                description = "Reasoning stream",
+                liveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            )
             orientation = LinearLayout.VERTICAL
             background = Drawables.accentSoftSurface(context, tokens, DesignTokens.Radius.lg)
             setPadding(
@@ -112,6 +118,7 @@ class ChatTimelineBinder(
             addView(ImageView(context).apply {
                 setImageResource(R.drawable.openclaw_bubble_logo)
                 alpha = 0.65f
+                hideFromAccessibility()
             }, LinearLayout.LayoutParams(dp(72), dp(72)).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
             })
@@ -192,6 +199,10 @@ class ChatTimelineBinder(
         }
 
         return LinearLayout(context).apply {
+            exposeToAccessibility(
+                description = if (isUser) "User message" else "Assistant message",
+                liveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            )
             orientation = LinearLayout.VERTICAL
             gravity = if (isUser) Gravity.END else Gravity.START
             addView(bubble, LinearLayout.LayoutParams(
@@ -272,6 +283,10 @@ class ChatTimelineBinder(
         val horizontalPadding = dp(DesignTokens.Spacing.md + 2)
         val childMaxWidth = (maxWidth - (horizontalPadding * 2)).coerceAtLeast(dp(120))
         return LinearLayout(context).apply {
+            exposeToAccessibility(
+                description = "Assistant message",
+                liveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            )
             orientation = LinearLayout.VERTICAL
             setPadding(
                 horizontalPadding,
@@ -333,6 +348,7 @@ class ChatTimelineBinder(
             this.maxWidth = maxWidth
             minWidth = dp(96)
             text = chunk.code.ifEmpty { " " }
+            contentDescription = "Code block: ${chunk.copyText.take(160)}"
             setOnClickListener {
                 ClipboardHelper.copyCodeBlock(context, chunk.copyText)
             }
@@ -400,6 +416,7 @@ class ChatTimelineBinder(
             setColorFilter(tokens.secondaryText)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             rotation = if (expanded) 90f else 0f
+            hideFromAccessibility()
         }
 
         val titleText = TextView(context).apply {
@@ -432,6 +449,17 @@ class ChatTimelineBinder(
         }
 
         return LinearLayout(context).apply {
+            exposeToAccessibility(
+                description = buildString {
+                    append(tool?.title ?: "Tool activity")
+                    append(", ")
+                    append(tool?.status ?: "info")
+                    append(if (expanded) ", expanded" else ", collapsed")
+                },
+                stateDescription = if (expanded) "expanded" else "collapsed",
+                focusable = true,
+                liveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            )
             orientation = LinearLayout.VERTICAL
             background = Drawables.glassSurface(context, tokens, DesignTokens.Radius.md)
             setPadding(

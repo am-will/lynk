@@ -7,10 +7,13 @@ import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import dev.androidagent.R
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
 import dev.androidagent.ui.ThemeTokens
 import dev.androidagent.ui.Typography
+import dev.androidagent.ui.exposeToAccessibility
+import dev.androidagent.ui.updateAccessibilityState
 import dev.androidagent.voice.VoiceRuntimeState
 import dev.androidagent.voice.VoiceRuntimeStatus
 
@@ -30,9 +33,19 @@ class VoicePanel(
 
     fun build(tokens: ThemeTokens): LinearLayout {
         statusText = TextView(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_voice_status,
+                description = "Voice status",
+                liveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            )
             Typography.applyHeadline(this, tokens, color = tokens.accent)
         }
         transcriptText = TextView(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_voice_transcript,
+                description = "Voice transcript",
+                liveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            )
             Typography.applyBody(this, tokens, secondary = true)
             setPadding(0, dp(DesignTokens.Spacing.sm), 0, dp(DesignTokens.Spacing.sm))
             maxHeight = maxTranscriptHeight()
@@ -41,14 +54,29 @@ class VoicePanel(
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
         }
         taskText = TextView(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_voice_task,
+                description = "Current voice task",
+                liveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            )
             Typography.applyCaption(this, tokens, emphasis = true)
             setPadding(0, 0, 0, dp(DesignTokens.Spacing.xs))
         }
         resultText = TextView(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_voice_result,
+                description = "Latest voice task result",
+                liveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            )
             Typography.applyCaption(this, tokens, emphasis = false)
             setPadding(0, 0, 0, dp(DesignTokens.Spacing.sm))
         }
         muteButton = Button(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_voice_mute_button,
+                description = "Mute voice mode",
+                focusable = true
+            )
             text = "Mute"
             isAllCaps = false
             textSize = DesignTokens.Text.callout
@@ -58,6 +86,11 @@ class VoicePanel(
             setOnClickListener { onToggleVoiceMute() }
         }
         hangupButton = Button(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_voice_hangup_button,
+                description = "Hang up voice mode",
+                focusable = true
+            )
             text = "Hang up"
             isAllCaps = false
             textSize = DesignTokens.Text.callout
@@ -79,6 +112,10 @@ class VoicePanel(
             addView(hangupButton, LinearLayout.LayoutParams(0, dp(DesignTokens.Sizes.action), 1f))
         }
         return LinearLayout(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_voice_panel,
+                description = "Realtime voice panel"
+            )
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
             setPadding(
@@ -138,8 +175,16 @@ class VoicePanel(
         }
         resultText?.text = state.latestTaskResult ?: "Latest task result will appear here."
         muteButton?.text = if (state.isMuted) "Unmute" else "Mute"
+        muteButton?.updateAccessibilityState(
+            description = if (state.isMuted) "Unmute voice mode" else "Mute voice mode",
+            stateDescription = if (state.isActive) "active" else "inactive"
+        )
         muteButton?.isEnabled = state.isActive
         hangupButton?.isEnabled = state.status != VoiceRuntimeStatus.IDLE
+        hangupButton?.updateAccessibilityState(
+            description = "Hang up voice mode",
+            stateDescription = if (state.status == VoiceRuntimeStatus.IDLE) "inactive" else "active"
+        )
     }
 
     fun clear() {
