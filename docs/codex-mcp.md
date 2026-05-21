@@ -53,6 +53,7 @@ The server exposes:
 - `phone_tap_xy`
 - `phone_long_press_node`
 - `phone_type_text`
+- `phone_submit_text`
 - `phone_scroll`
 - `phone_swipe`
 - `phone_press_back`

@@ -8,6 +8,7 @@ export const PHONE_COMMANDS = [
   "tap_normalized",
   "long_press_node",
   "type_text",
+  "submit_text",
   "scroll",
   "swipe",
   "press_back",

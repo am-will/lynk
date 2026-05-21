@@ -84,6 +84,14 @@ export function registerPhoneTools(server: McpServer, client = new PhoneToolClie
   register(
     server,
     client,
+    "phone_submit_text",
+    "Submit the focused Android text field using IME enter or a keyboard fallback tap. The result includes a fresh post-submit observation.",
+    {},
+    "submit_text"
+  );
+  register(
+    server,
+    client,
     "phone_scroll",
     "Scroll the active Android screen. The result includes a fresh post-scroll observation.",
     { direction: z.enum(["up", "down", "left", "right"]) },

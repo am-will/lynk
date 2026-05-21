@@ -37,6 +37,8 @@ Coordinate taps use full-screen pixels, including the status and navigation bars
 }
 ```
 
+`type_text` sets or pastes text into the focused editable node. `submit_text` submits the focused field through IME enter when available, with an Android keyboard-position fallback for older or custom input surfaces.
+
 ## Result
 
 ```json
@@ -49,7 +51,27 @@ Coordinate taps use full-screen pixels, including the status and navigation bars
     "package": "com.android.settings",
     "activity": "com.android.settings.Settings",
     "screenSummary": "Settings | Connections | Notifications",
-    "nodes": []
+    "nodes": [
+      {
+        "id": "n17",
+        "viewIdResourceName": "dev.openclawagent:id/openclaw_send_stop_button",
+        "packageName": "dev.openclawagent",
+        "text": "",
+        "contentDescription": "Send message",
+        "stateDescription": "",
+        "className": "android.widget.ImageButton",
+        "clickable": true,
+        "longClickable": false,
+        "scrollable": false,
+        "editable": false,
+        "checkable": false,
+        "checked": false,
+        "selected": false,
+        "enabled": true,
+        "focused": false,
+        "bounds": [936, 1908, 1032, 2004]
+      }
+    ]
   },
   "screenshot": {
     "widthPx": 1080,
@@ -59,7 +81,32 @@ Coordinate taps use full-screen pixels, including the status and navigation bars
 }
 ```
 
+Observation node IDs such as `n17` are ephemeral and only valid until the next observation. Prefer `viewIdResourceName`, visible `text`, or `contentDescription` as stable selectors when available. Android exports OpenClaw resource IDs for meaningful controls under `dev.openclawagent:id/...`; decorative artwork is intentionally hidden from accessibility so the tree stays focused on actionable UI.
+
 `take_screenshot` results include `screenshotBase64` plus `screenshot.widthPx` and `screenshot.heightPx`. Those dimensions are the source of truth for mapping visual screenshot positions back to phone coordinates.
+
+## OpenClaw ADB and UIAutomator Selectors
+
+OpenClaw's own Android UI is exposed as a normal accessibility tree. Canonical selectors include:
+
+- Bubble: `dev.openclawagent:id/openclaw_bubble` or content description `Open Claw Agent`
+- Chat composer: `dev.openclawagent:id/openclaw_composer_input`
+- Send or stop: `dev.openclawagent:id/openclaw_send_stop_button`
+- Model selector: `dev.openclawagent:id/openclaw_model_selector`
+- Reasoning selector: `dev.openclawagent:id/openclaw_reasoning_selector`
+- Settings action: `dev.openclawagent:id/openclaw_header_settings_button`
+- Confirmation allow/cancel: `dev.openclawagent:id/openclaw_confirmation_allow_button` and `dev.openclawagent:id/openclaw_confirmation_cancel_button`
+- Main settings controls: `dev.openclawagent:id/openclaw_connection_config_button`, `dev.openclawagent:id/openclaw_agent_toggle_button`, and the individual config field IDs documented in Android resources
+
+For manual verification:
+
+```sh
+adb shell uiautomator dump /sdcard/window.xml
+adb shell uiautomator dump --compressed /sdcard/window.xml
+adb shell cmd package resolve-activity dev.openclawagent
+```
+
+When the active window package is `dev.openclawagent`, Android keeps OpenClaw chrome attached during phone-control commands so `observe_screen`, `tap_node`, text entry, and screenshots can target the OpenClaw UI itself. When another app owns the active window, OpenClaw chrome is still suppressed during automation to avoid blocking taps and screenshots.
 
 ## User Request
 
