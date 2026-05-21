@@ -4,6 +4,8 @@ data class ModelOption(val id: String, val label: String)
 data class ReasoningOption(val id: String, val label: String)
 
 object AgentModelOptions {
+    const val LOCAL_LITERT_MODEL_ID = "local-litertlm"
+
     val models = listOf(
         ModelOption("gpt-5.5", "gpt-5.5"),
         ModelOption("gpt-5.4", "gpt-5.4"),

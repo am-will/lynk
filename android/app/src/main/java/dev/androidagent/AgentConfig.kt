@@ -32,6 +32,7 @@ data class AgentConfig(
     val model: String,
     val reasoningEffort: String,
     val agentMode: AgentMode = AgentMode.Host,
+    val experimentalLocalModelsEnabled: Boolean = false,
     val localModelPath: String = "",
     val localModelBackend: LocalModelBackend = LocalModelBackend.Cpu,
     val localContextTokens: Int = 4096,
@@ -49,6 +50,7 @@ object AgentConfigStore {
     private const val MODEL = "model"
     private const val REASONING_EFFORT = "reasoning_effort"
     private const val AGENT_MODE = "agent_mode"
+    private const val EXPERIMENTAL_LOCAL_MODELS_ENABLED = "experimental_local_models_enabled"
     private const val LOCAL_MODEL_PATH = "local_model_path"
     private const val LOCAL_MODEL_BACKEND = "local_model_backend"
     private const val LOCAL_CONTEXT_TOKENS = "local_context_tokens"
@@ -57,6 +59,7 @@ object AgentConfigStore {
 
     fun load(context: Context): AgentConfig {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val experimentalLocalModelsEnabled = prefs.getBoolean(EXPERIMENTAL_LOCAL_MODELS_ENABLED, false)
         return AgentConfig(
             hostUrl = prefs.getString(HOST_URL, "ws://127.0.0.1:8788/phone") ?: "ws://127.0.0.1:8788/phone",
             deviceId = prefs.getString(DEVICE_ID, "openclaw-agent") ?: "openclaw-agent",
@@ -65,7 +68,12 @@ object AgentConfigStore {
             systemPrompt = prefs.getString(SYSTEM_PROMPT, DefaultSystemPrompt.text) ?: DefaultSystemPrompt.text,
             model = prefs.getString(MODEL, "gpt-5.5") ?: "gpt-5.5",
             reasoningEffort = prefs.getString(REASONING_EFFORT, "medium") ?: "medium",
-            agentMode = AgentMode.fromKey(prefs.getString(AGENT_MODE, AgentMode.Host.key)),
+            agentMode = if (experimentalLocalModelsEnabled) {
+                AgentMode.fromKey(prefs.getString(AGENT_MODE, AgentMode.Host.key))
+            } else {
+                AgentMode.Host
+            },
+            experimentalLocalModelsEnabled = experimentalLocalModelsEnabled,
             localModelPath = prefs.getString(LOCAL_MODEL_PATH, "") ?: "",
             localModelBackend = LocalModelBackend.fromKey(prefs.getString(LOCAL_MODEL_BACKEND, LocalModelBackend.Cpu.key)),
             localContextTokens = prefs.getInt(LOCAL_CONTEXT_TOKENS, DEFAULT_LOCAL_CONTEXT_TOKENS).coerceIn(512, 131_072),
@@ -84,6 +92,7 @@ object AgentConfigStore {
             .putString(MODEL, config.model)
             .putString(REASONING_EFFORT, config.reasoningEffort)
             .putString(AGENT_MODE, config.agentMode.key)
+            .putBoolean(EXPERIMENTAL_LOCAL_MODELS_ENABLED, config.experimentalLocalModelsEnabled)
             .putString(LOCAL_MODEL_PATH, config.localModelPath)
             .putString(LOCAL_MODEL_BACKEND, config.localModelBackend.key)
             .putInt(LOCAL_CONTEXT_TOKENS, config.localContextTokens.coerceIn(512, 131_072))
