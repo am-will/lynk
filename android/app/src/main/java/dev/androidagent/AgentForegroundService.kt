@@ -380,32 +380,15 @@ class AgentForegroundService : Service() {
     }
 
     private fun submitChatControlCommand(command: String, args: JSONObject) {
-        val notice = chatControlNotice(command, args)
+        val notice = ChatStateReducer.localControlNotice(command, args)
         if (!notice.isNullOrBlank()) {
-            chatState = ChatStateReducer.localSystemMessage(chatState, notice)
+            chatState = ChatStateReducer.localControlCommand(chatState, command, args)
             overlayController?.setChatState(chatState)
             lastNotificationText = notice
             updateNotification()
         }
         connectAgentClient()
         chatClient?.controlCommand(command, args)
-    }
-
-    private fun chatControlNotice(command: String, args: JSONObject): String? {
-        return when (command.trim().removePrefix("/").substringBefore(' ').lowercase()) {
-            "fast" -> {
-                if (args.has("enabled")) {
-                    "Fast mode ${if (args.optBoolean("enabled")) "enabled" else "disabled"}"
-                } else {
-                    null
-                }
-            }
-            "verbose" -> args.optString("level").takeIf { it.isNotBlank() }?.let { "Verbose mode set to $it" }
-            "reasoning" -> args.optString("level").takeIf { it.isNotBlank() }?.let { level ->
-                "Reasoning Stream ${if (level == "stream") "enabled" else "disabled"}"
-            }
-            else -> null
-        }
     }
 
     private fun startNewChatFromUi() {

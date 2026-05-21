@@ -169,6 +169,46 @@ object ChatStateReducer {
         )
     }
 
+    fun localControlNotice(command: String, args: JSONObject): String? {
+        return when (normalizeControlCommand(command)) {
+            "fast" -> {
+                if (args.has("enabled")) {
+                    "Fast mode ${if (args.optBoolean("enabled")) "enabled" else "disabled"}"
+                } else {
+                    null
+                }
+            }
+            "verbose" -> args.optString("level").takeIf { it.isNotBlank() }?.let { "Verbose mode set to $it" }
+            "reasoning" -> args.optString("level").takeIf { it.isNotBlank() }?.let { level ->
+                "Reasoning Stream ${if (level == "stream") "enabled" else "disabled"}"
+            }
+            else -> null
+        }
+    }
+
+    fun localControlCommand(state: ChatState, command: String, args: JSONObject): ChatState {
+        val notice = localControlNotice(command, args) ?: return state
+        val next = localSystemMessage(state, notice).copy(status = notice)
+        return when (normalizeControlCommand(command)) {
+            "fast" -> {
+                if (args.has("enabled")) {
+                    next.copy(fastMode = args.optBoolean("enabled"))
+                } else {
+                    next
+                }
+            }
+            "verbose" -> {
+                val level = args.optString("level").takeIf { it.isNotBlank() }
+                if (level != null) next.copy(verboseLevel = level) else next
+            }
+            "reasoning" -> {
+                val level = args.optString("level").takeIf { it.isNotBlank() }
+                if (level != null) next.copy(reasoningStreamEnabled = level == "stream") else next
+            }
+            else -> next
+        }
+    }
+
     fun toggleTool(state: ChatState, eventId: String): ChatState {
         return state.copy(
             timeline = state.timeline.map { item ->
@@ -180,6 +220,10 @@ object ChatStateReducer {
                 }
             }
         )
+    }
+
+    private fun normalizeControlCommand(command: String): String {
+        return command.trim().removePrefix("/").substringBefore(' ').lowercase()
     }
 
     fun markSessionRead(state: ChatState, sessionKey: String?): ChatState {

@@ -99,6 +99,34 @@ class ChatStateReducerTest {
     }
 
     @Test
+    fun localControlCommandUpdatesFastModeStateAndNotice() {
+        val enabled = ChatStateReducer.localControlCommand(ChatState(fastMode = false), "fast", JSONObject()
+            .put("enabled", true))
+        val disabled = ChatStateReducer.localControlCommand(enabled, "/fast", JSONObject()
+            .put("enabled", false))
+
+        assertEquals(true, enabled.fastMode)
+        assertEquals("Fast mode enabled", enabled.status)
+        assertEquals("Fast mode enabled", enabled.timeline.single().text)
+        assertEquals(false, disabled.fastMode)
+        assertEquals("Fast mode disabled", disabled.status)
+        assertEquals("Fast mode disabled", disabled.timeline.last().text)
+    }
+
+    @Test
+    fun localControlCommandUpdatesOtherMenuToggles() {
+        val verbose = ChatStateReducer.localControlCommand(ChatState(), "verbose", JSONObject()
+            .put("level", "high"))
+        val reasoningOff = ChatStateReducer.localControlCommand(verbose, "reasoning", JSONObject()
+            .put("level", "off"))
+
+        assertEquals("high", verbose.verboseLevel)
+        assertEquals("Verbose mode set to high", verbose.status)
+        assertEquals(false, reasoningOff.reasoningStreamEnabled)
+        assertEquals("Reasoning Stream disabled", reasoningOff.status)
+    }
+
+    @Test
     fun deltasAppendThenFinalStopsRun() {
         val withDelta = ChatStateReducer.reduce(ChatState(), JSONObject()
             .put("type", "chat.delta")
