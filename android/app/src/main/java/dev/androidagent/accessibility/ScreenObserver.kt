@@ -43,29 +43,59 @@ class ScreenObserver {
     }
 
     private fun walk(node: AccessibilityNodeInfo, out: JSONArray, summary: MutableList<String>, depth: Int) {
-        if (nodesById.size >= 120 || depth > 12) {
+        if (nodesById.size >= MAX_NODES || depth > MAX_DEPTH) {
             return
         }
         val text = node.text?.toString().orEmpty()
         val contentDescription = node.contentDescription?.toString().orEmpty()
+        val viewIdResourceName = node.viewIdResourceName?.toString().orEmpty()
+        val packageName = node.packageName?.toString().orEmpty()
+        val stateDescription = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            node.stateDescription?.toString().orEmpty()
+        } else {
+            ""
+        }
         if (text.isNotBlank()) {
             summary.add(text)
         } else if (contentDescription.isNotBlank()) {
             summary.add(contentDescription)
+        } else if (stateDescription.isNotBlank()) {
+            summary.add(stateDescription)
         }
 
         val rect = Rect()
         node.getBoundsInScreen(rect)
-        if (!rect.isEmpty && (text.isNotBlank() || contentDescription.isNotBlank() || node.isClickable || node.isScrollable || node.isFocused)) {
+        val includeNode = text.isNotBlank() ||
+            contentDescription.isNotBlank() ||
+            viewIdResourceName.isNotBlank() ||
+            stateDescription.isNotBlank() ||
+            node.isClickable ||
+            node.isLongClickable ||
+            node.isScrollable ||
+            node.isEditable ||
+            node.isCheckable ||
+            node.isChecked ||
+            node.isSelected ||
+            node.isFocused
+        if (!rect.isEmpty && includeNode) {
             val id = "n${nodesById.size + 1}"
             nodesById[id] = AccessibilityNodeInfo.obtain(node)
             out.put(
                 JSONObject()
                     .put("id", id)
+                    .put("viewIdResourceName", viewIdResourceName)
+                    .put("packageName", packageName)
                     .put("text", text)
                     .put("contentDescription", contentDescription)
+                    .put("stateDescription", stateDescription)
                     .put("className", node.className?.toString().orEmpty())
                     .put("clickable", node.isClickable)
+                    .put("longClickable", node.isLongClickable)
+                    .put("scrollable", node.isScrollable)
+                    .put("editable", node.isEditable)
+                    .put("checkable", node.isCheckable)
+                    .put("checked", node.isChecked)
+                    .put("selected", node.isSelected)
                     .put("enabled", node.isEnabled)
                     .put("focused", node.isFocused)
                     .put("bounds", JSONArray(listOf(rect.left, rect.top, rect.right, rect.bottom)))
@@ -83,6 +113,9 @@ class ScreenObserver {
     }
 
     companion object {
+        private const val MAX_NODES = 240
+        private const val MAX_DEPTH = 16
+
         fun displayJson(service: PhoneAccessibilityService): JSONObject {
             val size = realDisplaySize(service)
             val displayMetrics = service.resources.displayMetrics
