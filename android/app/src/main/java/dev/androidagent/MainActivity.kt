@@ -191,7 +191,7 @@ class MainActivity : ComponentActivity() {
         }, stackedParams())
 
         root.addView(card(tokens).apply {
-            addView(sectionHeader("Connection & Config", "Choose host bridge or local phone mode, then configure model, reasoning, and system prompt.", tokens))
+            addView(sectionHeader("Connection & Config", "Configure the host bridge, system prompt, and optional experimental local models.", tokens))
             addView(actionButton("Open Connection & Config", ButtonTone.Secondary, tokens) {
                 showConnectionConfigMenu()
             }, stackedParams(DesignTokens.Spacing.lg))
@@ -240,12 +240,6 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(DesignTokens.Spacing.xl), dp(DesignTokens.Spacing.md), dp(DesignTokens.Spacing.xl), 0)
         }
 
-        val modeOptions = AgentMode.values().toList()
-        val modeSpinner = styledSpinner(
-            modeOptions.map { it.label },
-            modeOptions.indexOf(config.agentMode).coerceAtLeast(0),
-            tokens
-        )
         val hostInput = configField("WebSocket URL", config.hostUrl, tokens)
         val deviceInput = configField("Device ID", config.deviceId, tokens)
         val tokenInput = configField(
@@ -274,6 +268,12 @@ class MainActivity : ComponentActivity() {
             tokens,
             InputType.TYPE_CLASS_NUMBER
         )
+        val experimentalLocalModelsInput = CheckBox(this).apply {
+            text = "Enable experimental local LiteRT models"
+            isChecked = config.experimentalLocalModelsEnabled
+            setTextColor(tokens.primaryText)
+            buttonTintList = android.content.res.ColorStateList.valueOf(tokens.accent)
+        }
         val localDeveloperToolsInput = CheckBox(this).apply {
             text = "Enable local workspace and Termux-backed developer tools"
             isChecked = config.localDeveloperToolsEnabled
@@ -281,19 +281,18 @@ class MainActivity : ComponentActivity() {
             buttonTintList = android.content.res.ColorStateList.valueOf(tokens.accent)
         }
 
-        content.addView(fieldLabel("Run on", tokens))
-        content.addView(modeSpinner, stackedParams(DesignTokens.Spacing.sm))
-
         content.addView(fieldLabel("Bridge", tokens))
         content.addView(hostInput, stackedParams(DesignTokens.Spacing.sm))
         content.addView(deviceInput, stackedParams(DesignTokens.Spacing.sm + 2))
         content.addView(tokenInput, stackedParams(DesignTokens.Spacing.sm + 2))
         content.addView(openAiKeyInput, stackedParams(DesignTokens.Spacing.sm + 2))
 
-        content.addView(fieldLabel("Local phone model", tokens), stackedParams(DesignTokens.Spacing.lg))
-        content.addView(body("Import a LiteRT-LM .litertlm model for offline local mode. Host mode ignores these fields.", tokens).apply {
+        content.addView(fieldLabel("Experimental", tokens), stackedParams(DesignTokens.Spacing.lg))
+        content.addView(experimentalLocalModelsInput, stackedParams(DesignTokens.Spacing.sm))
+        content.addView(body("When enabled and a .litertlm model is installed, Local LiteRT appears in the main model picker. Normal models continue to use the host bridge.", tokens).apply {
             setPadding(0, dp(DesignTokens.Spacing.xs), 0, 0)
         }, stackedParams(DesignTokens.Spacing.xs))
+        content.addView(fieldLabel("Local LiteRT model", tokens), stackedParams(DesignTokens.Spacing.lg))
         content.addView(localModelPathInput, stackedParams(DesignTokens.Spacing.sm))
         content.addView(actionButton("Import Local Model", ButtonTone.Secondary, tokens) {
             localModelPicker.launch(arrayOf("*/*"))
@@ -303,22 +302,6 @@ class MainActivity : ComponentActivity() {
         content.addView(fieldLabel("Local context window", tokens), stackedParams(DesignTokens.Spacing.lg))
         content.addView(localContextInput, stackedParams(DesignTokens.Spacing.sm + 2))
         content.addView(localDeveloperToolsInput, stackedParams(DesignTokens.Spacing.sm + 2))
-
-        content.addView(fieldLabel("Model", tokens), stackedParams(DesignTokens.Spacing.lg))
-        val modelSpinner = styledSpinner(
-            AgentModelOptions.models.map { it.label },
-            AgentModelOptions.models.indexOfFirst { it.id == config.model }.coerceAtLeast(0),
-            tokens
-        )
-        content.addView(modelSpinner, stackedParams(DesignTokens.Spacing.sm))
-
-        content.addView(fieldLabel("Reasoning", tokens), stackedParams(DesignTokens.Spacing.lg))
-        val reasoningSpinner = styledSpinner(
-            AgentModelOptions.reasoningEfforts.map { it.label },
-            AgentModelOptions.reasoningEfforts.indexOfFirst { it.id == config.reasoningEffort }.coerceAtLeast(1),
-            tokens
-        )
-        content.addView(reasoningSpinner, stackedParams(DesignTokens.Spacing.sm))
 
         content.addView(fieldLabel("System prompt", tokens), stackedParams(DesignTokens.Spacing.lg))
         val promptSummary = body(systemPromptPreview(promptDraft), tokens).apply {
@@ -346,9 +329,11 @@ class MainActivity : ComponentActivity() {
                     token = tokenInput.text.toString().trim(),
                     openAiApiKey = openAiKeyInput.text.toString().trim(),
                     systemPrompt = promptDraft.trim().ifBlank { DefaultSystemPrompt.text },
-                    model = AgentModelOptions.models.getOrElse(modelSpinner.selectedItemPosition) { AgentModelOptions.models.first() }.id,
-                    reasoningEffort = AgentModelOptions.reasoningEfforts.getOrElse(reasoningSpinner.selectedItemPosition) { AgentModelOptions.reasoningEfforts[1] }.id,
-                    agentMode = modeOptions.getOrElse(modeSpinner.selectedItemPosition) { AgentMode.Host },
+                    model = config.model.takeUnless { it == AgentModelOptions.LOCAL_LITERT_MODEL_ID }
+                        ?: AgentModelOptions.models.first().id,
+                    reasoningEffort = config.reasoningEffort,
+                    agentMode = AgentMode.Host,
+                    experimentalLocalModelsEnabled = experimentalLocalModelsInput.isChecked,
                     localModelPath = localModelPathInput.text.toString().trim(),
                     localModelBackend = localBackends.getOrElse(localBackendSpinner.selectedItemPosition) { LocalModelBackend.Cpu },
                     localContextTokens = localContextInput.text.toString().trim().toIntOrNull()?.coerceIn(512, 131_072) ?: config.localContextTokens,
@@ -670,19 +655,17 @@ class MainActivity : ComponentActivity() {
         val tokens = tokens()
         val bridgeTokenReady = config.token.isNotBlank()
         val localModelReady = LocalModelStore.exists(config.localModelPath)
-        val endpointLine = when (config.agentMode) {
-            AgentMode.Host -> "${config.deviceId} -> ${config.hostUrl}"
-            AgentMode.Local -> "Local phone -> ${config.localModelBackend.label} model"
+        val experimentalLine = when {
+            !config.experimentalLocalModelsEnabled -> "Experimental LiteRT: off"
+            localModelReady -> "Experimental LiteRT: ready (${config.localModelBackend.label})"
+            else -> "Experimental LiteRT: enabled, model missing"
         }
-        val authLine = when (config.agentMode) {
-            AgentMode.Host -> "Auth token: ${if (bridgeTokenReady) "saved" else "missing"}"
-            AgentMode.Local -> "Local model: ${if (localModelReady) "ready" else "missing"}"
-        }
+        val authLine = "Auth token: ${if (bridgeTokenReady) "saved" else "missing"}"
 
         endpointSummary.text = """
-            $endpointLine
-            ${modelLabel(config.model)} / ${reasoningLabel(config.reasoningEffort)} reasoning
+            ${config.deviceId} -> ${config.hostUrl}
             $authLine
+            $experimentalLine
         """.trimIndent()
 
         updateChip("overlay", if (overlay) "Granted" else "Missing", if (overlay) tokens.success else tokens.warning)
@@ -693,13 +676,11 @@ class MainActivity : ComponentActivity() {
 
         agentToggleButton?.let { applyAgentToggleState(it, service, animated = true) }
 
-        statusText.text = if (config.agentMode == AgentMode.Host && !bridgeTokenReady) {
+        statusText.text = if (!bridgeTokenReady) {
             "Paste the PC PHONE_AGENT_TOKEN in Connection & Config before starting the bridge session."
-        } else if (config.agentMode == AgentMode.Local && !localModelReady) {
-            "Import a LiteRT-LM .litertlm model before starting local phone mode."
         } else if (overlay && microphone && accessibility) {
-            if (config.agentMode == AgentMode.Local) {
-                "Ready. Start the bubble to run the local phone model."
+            if (config.experimentalLocalModelsEnabled && !localModelReady) {
+                "Ready for host models. Import a LiteRT-LM .litertlm model before Local LiteRT appears in the picker."
             } else {
                 "Ready. Start the bubble when your Open Claw bridge is listening."
             }
