@@ -12,12 +12,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
 
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <package android:name="com.termux" />
     </queries>
 
     <application
@@ -53,6 +55,10 @@
             android:name=".AgentForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync|microphone" />
+
+        <receiver
+            android:name=".localmodel.TermuxResultReceiver"
+            android:exported="false" />
 
         <service
             android:name=".accessibility.PhoneAccessibilityService"

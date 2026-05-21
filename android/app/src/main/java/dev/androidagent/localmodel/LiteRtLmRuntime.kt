@@ -2,6 +2,7 @@ package dev.androidagent.localmodel
 
 import android.content.Context
 import com.google.ai.edge.litertlm.Backend
+import com.google.ai.edge.litertlm.Content
 import com.google.ai.edge.litertlm.Contents
 import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
@@ -20,7 +21,7 @@ class LiteRtLmRuntime(
 
     override suspend fun generate(request: LocalModelRequest, onDelta: suspend (String) -> Unit): String =
         withContext(Dispatchers.IO) {
-            val activeEngine = engineFor(request.config)
+            val activeEngine = engineFor(request.config, visionEnabled = request.imagePaths.isNotEmpty())
             val conversation = activeEngine.createConversation(
                 ConversationConfig(
                     systemInstruction = Contents.of(request.systemPrompt)
@@ -28,7 +29,12 @@ class LiteRtLmRuntime(
             )
             try {
                 val output = StringBuilder()
-                conversation.sendMessageAsync(request.prompt).collect { message ->
+                val contents = if (request.imagePaths.isEmpty()) {
+                    Contents.of(request.prompt)
+                } else {
+                    Contents.of(request.imagePaths.map { Content.ImageFile(it) } + Content.Text(request.prompt))
+                }
+                conversation.sendMessageAsync(contents).collect { message ->
                     val delta = message.toString()
                     if (delta.isNotBlank()) {
                         output.append(delta)
@@ -47,20 +53,22 @@ class LiteRtLmRuntime(
         loadedKey = null
     }
 
-    private fun engineFor(config: AgentConfig): Engine {
+    private fun engineFor(config: AgentConfig, visionEnabled: Boolean): Engine {
         val path = config.localModelPath.trim()
         if (!LocalModelStore.exists(path)) {
             throw IllegalStateException("Local LiteRT-LM model is not configured. Import a .litertlm model in Connection & Config.")
         }
         val maxNumTokens = config.localContextTokens.coerceAtLeast(512)
-        val key = listOf(path, config.localModelBackend.key, maxNumTokens).joinToString("|")
+        val key = listOf(path, config.localModelBackend.key, maxNumTokens, "vision=$visionEnabled").joinToString("|")
         engine?.takeIf { loadedKey == key }?.let { return it }
         close()
         val next = Engine(
             EngineConfig(
                 modelPath = path,
                 backend = backendFor(config.localModelBackend),
+                visionBackend = if (visionEnabled) backendFor(config.localModelBackend) else null,
                 maxNumTokens = maxNumTokens,
+                maxNumImages = if (visionEnabled) 1 else null,
                 cacheDir = context.cacheDir.absolutePath
             )
         )

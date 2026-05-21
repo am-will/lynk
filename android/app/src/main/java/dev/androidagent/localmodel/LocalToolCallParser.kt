@@ -10,12 +10,35 @@ data class LocalToolCall(
 
 object LocalToolCallParser {
     fun parse(text: String): List<LocalToolCall> {
+        parseTemplateToolCalls(text)?.let { return it }
         val json = extractJson(text.trim()) ?: return emptyList()
-        val root = runCatching { JSONObject(json) }.getOrNull() ?: return emptyList()
+        val root = parseObject(json) ?: return regexFallback(json)
         root.optJSONArray("toolCalls")?.let { return parseArray(it) }
         root.optJSONArray("tool_calls")?.let { return parseArray(it) }
         val name = root.optString("tool", root.optString("name")).takeIf { it.isNotBlank() } ?: return emptyList()
         return listOf(LocalToolCall(name = name, args = root.optJSONObject("args") ?: root.optJSONObject("arguments") ?: JSONObject()))
+    }
+
+    private fun parseObject(json: String): JSONObject? {
+        runCatching { JSONObject(json) }.getOrNull()?.let { return it }
+
+        // Gemma local models sometimes emit `"args:{}}` or `"arguments:{...}`
+        // instead of `"args":{}`. Repair that narrow case before giving up.
+        val repaired = json
+            .replace(Regex("\"(args|arguments):"), "\"$1\":")
+            .replace(Regex("'([^']+)'\\s*:"), "\"$1\":")
+            .replace('\'', '"')
+        return runCatching { JSONObject(repaired) }.getOrNull()
+    }
+
+    private fun regexFallback(json: String): List<LocalToolCall> {
+        val name = Regex("\"(?:tool|name)\"\\s*:\\s*\"([^\"]+)\"")
+            .find(json)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.takeIf { it.isNotBlank() }
+            ?: return emptyList()
+        return listOf(LocalToolCall(name = name, args = JSONObject()))
     }
 
     private fun parseArray(array: JSONArray): List<LocalToolCall> {
@@ -26,6 +49,27 @@ object LocalToolCallParser {
                 add(LocalToolCall(name = name, args = item.optJSONObject("args") ?: item.optJSONObject("arguments") ?: JSONObject()))
             }
         }
+    }
+
+    private fun parseTemplateToolCalls(text: String): List<LocalToolCall>? {
+        val matches = Regex(
+            """<\|tool_call>\s*call:([A-Za-z0-9_]+)\s*\{(.*?)\}\s*<tool_call\|>""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        ).findAll(text).toList()
+        if (matches.isEmpty()) return null
+        return matches.mapNotNull { match ->
+            val name = match.groupValues.getOrNull(1)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            LocalToolCall(name = name, args = parseTemplateArgs(match.groupValues.getOrNull(2).orEmpty()))
+        }
+    }
+
+    private fun parseTemplateArgs(args: String): JSONObject {
+        val trimmed = args.trim()
+        if (trimmed.isBlank()) return JSONObject()
+        val jsonLike = trimmed
+            .replace("""<|"|>""", "\"")
+            .replace(Regex("""([A-Za-z_][A-Za-z0-9_]*)\s*:"""), "\"$1\":")
+        return runCatching { JSONObject("{$jsonLike}") }.getOrElse { JSONObject() }
     }
 
     private fun extractJson(text: String): String? {

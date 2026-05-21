@@ -14,6 +14,15 @@ class LocalToolCallParserTest {
     }
 
     @Test
+    fun repairsMalformedArgsKeyFromLocalModel() {
+        val calls = LocalToolCallParser.parse("""{"tool":"phone_observe","args:{}}""")
+
+        assertEquals(1, calls.size)
+        assertEquals("phone_observe", calls.single().name)
+        assertEquals(0, calls.single().args.length())
+    }
+
+    @Test
     fun parsesToolCallArrayInsideFence() {
         val calls = LocalToolCallParser.parse(
             """
@@ -26,6 +35,24 @@ class LocalToolCallParserTest {
         assertEquals(1, calls.size)
         assertEquals("phone_open_app", calls.single().name)
         assertEquals("Settings", calls.single().args.getString("appName"))
+    }
+
+    @Test
+    fun parsesLiteRtTemplateToolCall() {
+        val calls = LocalToolCallParser.parse("""<|tool_call>call:phone_open_app{appName:<|"|>YouTube<|"|>}<tool_call|>""")
+
+        assertEquals(1, calls.size)
+        assertEquals("phone_open_app", calls.single().name)
+        assertEquals("YouTube", calls.single().args.getString("appName"))
+    }
+
+    @Test
+    fun parsesLiteRtTemplateToolCallWithoutArgs() {
+        val calls = LocalToolCallParser.parse("""<|tool_call>call:phone_observe{}<tool_call|>""")
+
+        assertEquals(1, calls.size)
+        assertEquals("phone_observe", calls.single().name)
+        assertEquals(0, calls.single().args.length())
     }
 
     @Test

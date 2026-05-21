@@ -5,7 +5,8 @@ import dev.androidagent.AgentConfig
 data class LocalModelRequest(
     val prompt: String,
     val systemPrompt: String,
-    val config: AgentConfig
+    val config: AgentConfig,
+    val imagePaths: List<String> = emptyList()
 )
 
 interface LocalModelRuntime {

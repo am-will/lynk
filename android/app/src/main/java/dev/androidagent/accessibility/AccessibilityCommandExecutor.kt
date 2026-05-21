@@ -130,6 +130,14 @@ class AccessibilityCommandExecutor(
             "press_home" -> withAgentChromeSuppressed { global(requireService(service), AccessibilityService.GLOBAL_ACTION_HOME) }
             "open_recents" -> withAgentChromeSuppressed { global(requireService(service), AccessibilityService.GLOBAL_ACTION_RECENTS) }
             "take_screenshot" -> takeScreenshot(requireService(service))
+            "submit_text" -> {
+                service ?: return accessibilityMissing()
+                withAgentChromeSuppressed {
+                    submitFocusedText(service)
+                    waitMs(700)
+                    CommandResult(true, observer.observe(service))
+                }
+            }
             "ask_user_confirmation" -> askUserConfirmation(service, args)
             "wait" -> {
                 waitMs(args.optLong("ms", 1000L))
@@ -203,6 +211,20 @@ class AccessibilityCommandExecutor(
         }
 
         throw IllegalStateException("Focused field accepted neither ACTION_SET_TEXT nor ACTION_PASTE")
+    }
+
+    private suspend fun submitFocusedText(service: PhoneAccessibilityService) {
+        val target = service.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            ?: service.rootInActiveWindow?.findFirstEditable()
+        if (target != null) {
+            val imeEnter = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                target.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+            } else {
+                false
+            }
+            if (imeEnter) return
+        }
+        tapNormalized(service, 0.92f, 0.93f)
     }
 
     private suspend fun pasteText(service: PhoneAccessibilityService, target: AccessibilityNodeInfo, text: String): Boolean {
