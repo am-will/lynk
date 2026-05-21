@@ -2,6 +2,7 @@ package dev.androidagent.agentchat
 
 import android.content.Context
 import dev.androidagent.AgentConfig
+import dev.androidagent.AgentModelOptions
 import dev.androidagent.accessibility.AccessibilityCommandExecutor
 import dev.androidagent.localmodel.LiteRtLmRuntime
 import dev.androidagent.localmodel.LocalAgentController
@@ -99,7 +100,7 @@ class LocalAgentChatClient(
     }
 
     override fun setModel(sessionKey: String?, model: String) {
-        emit(state(sessionKey ?: activeSessionKey, null, false, "Local mode uses the imported LiteRT-LM model", model = "local-litertlm"))
+        emit(state(sessionKey ?: activeSessionKey, null, false, "Local mode uses the imported LiteRT-LM model", model = AgentModelOptions.LOCAL_LITERT_MODEL_ID))
     }
 
     override fun setReasoning(sessionKey: String?, reasoningEffort: String) {
@@ -136,7 +137,7 @@ class LocalAgentChatClient(
         JSONObject()
             .put("type", "chat.models")
             .put("models", JSONArray().put(JSONObject()
-                .put("id", "local-litertlm")
+                .put("id", AgentModelOptions.LOCAL_LITERT_MODEL_ID)
                 .put("label", "Local LiteRT-LM")
                 .put("provider", "android")
                 .put("available", true)))
@@ -162,7 +163,7 @@ class LocalAgentChatClient(
                         .put("label", session.label)
                         .put("displayName", session.label)
                         .put("updatedAt", session.updatedAt)
-                        .put("model", "local-litertlm")
+                        .put("model", AgentModelOptions.LOCAL_LITERT_MODEL_ID)
                         .put("modelProvider", "android")
                         .put("thinkingLevel", configProvider().reasoningEffort))
                 }
@@ -187,7 +188,7 @@ class LocalAgentChatClient(
         runId: String?,
         isRunning: Boolean,
         status: String,
-        model: String = "local-litertlm",
+        model: String = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
         reasoningEffort: String = configProvider().reasoningEffort
     ): JSONObject =
         JSONObject()
@@ -217,4 +218,5 @@ class LocalAgentChatClient(
             .put("sessionLabel", session.label)
             .put("sessionDisplayName", session.label)
     }
+
 }

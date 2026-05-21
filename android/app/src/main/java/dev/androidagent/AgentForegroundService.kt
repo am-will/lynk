@@ -31,6 +31,7 @@ import dev.androidagent.chat.ChatTimelineItem
 import dev.androidagent.chat.ChatTimelineKind
 import dev.androidagent.chat.ChatUnreadReply
 import dev.androidagent.chat.ChatUsageSummary
+import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.net.BridgeConnectionPhase
 import dev.androidagent.net.BridgeConnectionState
 import dev.androidagent.net.PhoneWebSocketClient
@@ -48,12 +49,17 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.util.UUID
 
+private enum class ChatClientRoute {
+    Host,
+    Local
+}
+
 class AgentForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var overlayController: OverlayController? = null
     private var webSocketClient: PhoneWebSocketClient? = null
     private var chatClient: AgentChatClient? = null
-    private var chatClientMode: AgentMode? = null
+    private var chatClientRoute: ChatClientRoute? = null
     private var commandExecutor: AccessibilityCommandExecutor? = null
     private var voiceRuntimeController: VoiceRuntimeController? = null
     private var voiceTranscriptionManager: VoiceTranscriptionManager? = null
@@ -87,9 +93,11 @@ class AgentForegroundService : Service() {
             onStop = { requestStopTurn("Stopped from Android overlay") },
             onDismiss = { stopSelf() },
             onStartVoice = {
-                if (AgentConfigStore.load(this).agentMode == AgentMode.Local) {
-                    overlayController?.setStatus("Realtime voice still requires Host bridge mode.")
+                val config = AgentConfigStore.load(this)
+                if (selectedChatModel(config) == AgentModelOptions.LOCAL_LITERT_MODEL_ID) {
+                    overlayController?.setStatus("Realtime voice still requires a host model.")
                 } else {
+                    connectAgentClient(selectedChatModel(config))
                     promoteVoiceForegroundIfAllowed()
                     voiceRuntimeController?.start()
                 }
@@ -106,8 +114,7 @@ class AgentForegroundService : Service() {
             },
             onNewChatSession = { startNewChatFromUi() },
             onSetChatModel = { model ->
-                connectAgentClient()
-                chatClient?.setModel(chatState.sessionKey, model)
+                setChatModelFromUi(model)
             },
             onSetChatReasoning = { reasoning ->
                 connectAgentClient()
@@ -129,12 +136,10 @@ class AgentForegroundService : Service() {
             sendToolCall = { call -> webSocketClient?.sendRealtimeToolCall(call, AgentConfigStore.load(this)) },
             onStateChanged = { state -> overlayController?.setVoiceState(state) }
         )
-        connectAgentClient()
         registerCloseSystemDialogsReceiver()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        connectAgentClient()
         when (intent?.action) {
             ACTION_STOP_TURN -> {
                 requestStopTurn("Stopped from Android notification")
@@ -183,15 +188,17 @@ class AgentForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun connectAgentClient() {
+    private fun connectAgentClient(modelOverride: String? = null): AgentChatClient? {
         val config = AgentConfigStore.load(this)
-        if (chatClient != null && chatClientMode == config.agentMode) {
-            return
+        val route = routeForModel(modelOverride ?: selectedChatModel(config), config)
+        if (chatClient != null && chatClientRoute == route) {
+            return chatClient
         }
+        chatClientRoute = route
         chatClient?.close()
-        chatClient = when (config.agentMode) {
-            AgentMode.Host -> HostAgentChatClient(connectWebSocket(config))
-            AgentMode.Local -> {
+        chatClient = when (route) {
+            ChatClientRoute.Host -> HostAgentChatClient(connectWebSocket(config))
+            ChatClientRoute.Local -> {
                 webSocketClient?.close()
                 webSocketClient = null
                 handleBridgeConnectionState(BridgeConnectionState(BridgeConnectionPhase.CONNECTED, "Local phone model mode"))
@@ -202,10 +209,10 @@ class AgentForegroundService : Service() {
                     configProvider = { AgentConfigStore.load(this) },
                     onStatus = ::handleBridgeStatus,
                     onChatMessage = { handleChatMessage(it) }
-                ).also { it.open(chatState.sessionKey) }
+                ).also { it.open(sessionKeyForRoute(ChatClientRoute.Local)) }
             }
         }
-        chatClientMode = config.agentMode
+        return chatClient
     }
 
     private fun connectWebSocket(config: AgentConfig = AgentConfigStore.load(this)): PhoneWebSocketClient {
@@ -214,8 +221,16 @@ class AgentForegroundService : Service() {
         return PhoneWebSocketClient(
             config = config,
             commandExecutor = executor,
-            onStatus = ::handleBridgeStatus,
-            onConnectionState = ::handleBridgeConnectionState,
+            onStatus = { text, status ->
+                if (chatClientRoute == ChatClientRoute.Host) {
+                    handleBridgeStatus(text, status)
+                }
+            },
+            onConnectionState = { state ->
+                if (chatClientRoute == ChatClientRoute.Host) {
+                    handleBridgeConnectionState(state)
+                }
+            },
             onRealtimeSdp = { voiceRuntimeController?.onRealtimeSdp(it) },
             onRealtimeTranscriptDelta = { voiceRuntimeController?.onRealtimeTranscriptDelta(it) },
             onRealtimeItemAdded = { voiceRuntimeController?.onRealtimeItemAdded(it) },
@@ -224,10 +239,57 @@ class AgentForegroundService : Service() {
             onRealtimeClosed = { voiceRuntimeController?.onRealtimeClosed(it) },
             onRealtimeToolResult = { voiceRuntimeController?.onRealtimeToolResult(it) },
             onRealtimeTaskStatus = { voiceRuntimeController?.onRealtimeTaskStatus(it) },
-            onChatMessage = { handleChatMessage(it) }
+            onChatMessage = {
+                if (chatClientRoute == ChatClientRoute.Host) {
+                    handleChatMessage(it)
+                }
+            }
         ).also {
             webSocketClient = it
             it.connect()
+        }
+    }
+
+    private fun selectedChatModel(config: AgentConfig = AgentConfigStore.load(this)): String {
+        val selected = chatState.selectedModel?.takeIf { it.isNotBlank() }
+        val fallback = config.model
+            .takeUnless { it == AgentModelOptions.LOCAL_LITERT_MODEL_ID }
+            ?: AgentModelOptions.models.first().id
+        return when (selected) {
+            AgentModelOptions.LOCAL_LITERT_MODEL_ID -> {
+                if (isExperimentalLocalModelAvailable(config)) selected else fallback
+            }
+            null -> fallback
+            else -> selected
+        }
+    }
+
+    private fun routeForModel(model: String, config: AgentConfig = AgentConfigStore.load(this)): ChatClientRoute {
+        return if (model == AgentModelOptions.LOCAL_LITERT_MODEL_ID && isExperimentalLocalModelAvailable(config)) {
+            ChatClientRoute.Local
+        } else {
+            ChatClientRoute.Host
+        }
+    }
+
+    private fun isExperimentalLocalModelAvailable(config: AgentConfig = AgentConfigStore.load(this)): Boolean =
+        config.experimentalLocalModelsEnabled && LocalModelStore.exists(config.localModelPath)
+
+    private fun modelForRoute(model: String, route: ChatClientRoute, config: AgentConfig): String {
+        return when (route) {
+            ChatClientRoute.Local -> AgentModelOptions.LOCAL_LITERT_MODEL_ID
+            ChatClientRoute.Host -> model
+                .takeUnless { it == AgentModelOptions.LOCAL_LITERT_MODEL_ID }
+                ?: config.model.takeUnless { it == AgentModelOptions.LOCAL_LITERT_MODEL_ID }
+                ?: AgentModelOptions.models.first().id
+        }
+    }
+
+    private fun sessionKeyForRoute(route: ChatClientRoute): String? {
+        val key = chatState.sessionKey?.takeIf { it.isNotBlank() } ?: return null
+        return when (route) {
+            ChatClientRoute.Local -> key.takeIf { it.startsWith("local:") }
+            ChatClientRoute.Host -> key.takeUnless { it.startsWith("local:") }
         }
     }
 
@@ -251,28 +313,48 @@ class AgentForegroundService : Service() {
     }
 
     private fun submitChatText(text: String): Boolean {
-        connectAgentClient()
         if (text.trimStart().startsWith("/")) {
             return submitSlashCommand(text)
         }
         chatState = ChatStateReducer.localUserMessage(chatState, text)
         overlayController?.setChatState(chatState)
         val requestConfig = AgentConfigStore.load(this)
-        val sent = chatClient?.send(
+        val selectedModel = selectedChatModel(requestConfig)
+        val route = routeForModel(selectedModel, requestConfig)
+        val client = connectAgentClient(selectedModel)
+        val sent = client?.send(
             text = text,
-            sessionKey = chatState.sessionKey,
-            model = chatState.selectedModel ?: requestConfig.model,
+            sessionKey = sessionKeyForRoute(route),
+            model = modelForRoute(selectedModel, route, requestConfig),
             reasoningEffort = chatState.reasoningEffort ?: requestConfig.reasoningEffort
         ) == true
         if (sent) {
-            lastNotificationText = if (requestConfig.agentMode == AgentMode.Local) "Sent to local model" else "Sent to OpenClaw"
+            lastNotificationText = if (route == ChatClientRoute.Local) "Sent to local model" else "Sent to OpenClaw"
             isAgentTurnActive = true
         } else {
-            lastNotificationText = if (requestConfig.agentMode == AgentMode.Local) "Local model is not ready" else "Bridge is not connected"
+            lastNotificationText = if (route == ChatClientRoute.Local) "Local model is not ready" else "Bridge is not connected"
             isAgentTurnActive = false
         }
         updateNotification()
         return sent
+    }
+
+    private fun setChatModelFromUi(model: String) {
+        val config = AgentConfigStore.load(this)
+        if (model == AgentModelOptions.LOCAL_LITERT_MODEL_ID && !isExperimentalLocalModelAvailable(config)) {
+            overlayController?.setStatus("Enable Experimental and import a LiteRT model first.")
+            return
+        }
+        val route = routeForModel(model, config)
+        chatState = chatState.copy(
+            selectedModel = model,
+            status = if (route == ChatClientRoute.Local) "Model: Local LiteRT-LM" else "Model: ${AgentModelOptions.modelLabel(model)}",
+            error = null
+        )
+        overlayController?.setChatState(chatState)
+        connectAgentClient(model)?.setModel(sessionKeyForRoute(route), modelForRoute(model, route, config))
+        lastNotificationText = chatState.status ?: lastNotificationText
+        updateNotification()
     }
 
     private fun submitSlashCommand(text: String): Boolean {
@@ -384,7 +466,7 @@ class AgentForegroundService : Service() {
             isAgentTurnActive = chatState.isRunning
             syncReplyNotifications()
             updateNotification()
-            if (AgentConfigStore.load(this@AgentForegroundService).agentMode == AgentMode.Local && isTerminalChatMessage(message)) {
+            if (chatClientRoute == ChatClientRoute.Local && isTerminalChatMessage(message)) {
                 overlayController?.show()
                 overlayController?.openChatPanel(presentation = PanelPresentation.Popup)
             }
@@ -537,8 +619,10 @@ class AgentForegroundService : Service() {
         lastNotificationText = "Stopping active turn..."
         isAgentTurnActive = true
         updateNotification()
-        chatClient?.stop(chatState.sessionKey, chatState.activeRunId, reason)
-        webSocketClient?.sendStopRequest(reason)
+        chatClient?.stop(sessionKeyForRoute(chatClientRoute ?: ChatClientRoute.Host), chatState.activeRunId, reason)
+        if (chatClientRoute != ChatClientRoute.Local) {
+            webSocketClient?.sendStopRequest(reason)
+        }
     }
 
     private fun foregroundServiceType(includeMicrophone: Boolean): Int {
