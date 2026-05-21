@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="openclaw_root" type="id" />
+    <item name="openclaw_status_text" type="id" />
+    <item name="openclaw_endpoint_summary" type="id" />
+    <item name="openclaw_connection_config_button" type="id" />
+    <item name="openclaw_appearance_button" type="id" />
+    <item name="openclaw_agent_toggle_button" type="id" />
+    <item name="openclaw_overlay_permission_button" type="id" />
+    <item name="openclaw_microphone_permission_button" type="id" />
+    <item name="openclaw_location_permission_button" type="id" />
+    <item name="openclaw_accessibility_settings_button" type="id" />
+    <item name="openclaw_mode_spinner" type="id" />
+    <item name="openclaw_bridge_url_field" type="id" />
+    <item name="openclaw_bridge_token_field" type="id" />
+    <item name="openclaw_openai_api_key_field" type="id" />
+    <item name="openclaw_local_model_path_field" type="id" />
+    <item name="openclaw_local_model_import_button" type="id" />
+    <item name="openclaw_local_backend_spinner" type="id" />
+    <item name="openclaw_local_context_field" type="id" />
+    <item name="openclaw_local_developer_tools_checkbox" type="id" />
+    <item name="openclaw_model_spinner" type="id" />
+    <item name="openclaw_reasoning_spinner" type="id" />
+    <item name="openclaw_system_prompt_button" type="id" />
+    <item name="openclaw_system_prompt_editor" type="id" />
+    <item name="openclaw_animation_spinner" type="id" />
+    <item name="openclaw_avatar_picker_button" type="id" />
+    <item name="openclaw_avatar_row" type="id" />
+    <item name="openclaw_bubble_size_seekbar" type="id" />
+    <item name="openclaw_bubble_size_value" type="id" />
+
+    <item name="openclaw_bubble" type="id" />
+    <item name="openclaw_bubble_unread_badge" type="id" />
+    <item name="openclaw_bubble_trash_target" type="id" />
+    <item name="openclaw_panel_host" type="id" />
+    <item name="openclaw_panel_content" type="id" />
+    <item name="openclaw_panel_scrim" type="id" />
+    <item name="openclaw_panel_drag_handle" type="id" />
+    <item name="openclaw_header_menu_button" type="id" />
+    <item name="openclaw_header_host_status_button" type="id" />
+    <item name="openclaw_header_voice_button" type="id" />
+    <item name="openclaw_header_settings_button" type="id" />
+    <item name="openclaw_header_close_button" type="id" />
+    <item name="openclaw_chat_history" type="id" />
+    <item name="openclaw_status_line" type="id" />
+    <item name="openclaw_status_line_label" type="id" />
+    <item name="openclaw_composer_container" type="id" />
+    <item name="openclaw_composer_input" type="id" />
+    <item name="openclaw_new_chat_button" type="id" />
+    <item name="openclaw_model_selector" type="id" />
+    <item name="openclaw_reasoning_selector" type="id" />
+    <item name="openclaw_context_usage_button" type="id" />
+    <item name="openclaw_transcription_button" type="id" />
+    <item name="openclaw_send_stop_button" type="id" />
+
+    <item name="openclaw_picker_sheet" type="id" />
+    <item name="openclaw_picker_close_button" type="id" />
+    <item name="openclaw_picker_scroller" type="id" />
+    <item name="openclaw_picker_row" type="id" />
+    <item name="openclaw_picker_row_key" type="id" />
+
+    <item name="openclaw_confirmation_scrim" type="id" />
+    <item name="openclaw_confirmation_card" type="id" />
+    <item name="openclaw_confirmation_message" type="id" />
+    <item name="openclaw_confirmation_cancel_button" type="id" />
+    <item name="openclaw_confirmation_allow_button" type="id" />
+
+    <item name="openclaw_voice_panel" type="id" />
+    <item name="openclaw_voice_status" type="id" />
+    <item name="openclaw_voice_transcript" type="id" />
+    <item name="openclaw_voice_task" type="id" />
+    <item name="openclaw_voice_result" type="id" />
+    <item name="openclaw_voice_mute_button" type="id" />
+    <item name="openclaw_voice_hangup_button" type="id" />
+</resources>
