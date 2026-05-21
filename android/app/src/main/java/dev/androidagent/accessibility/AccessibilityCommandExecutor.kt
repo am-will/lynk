@@ -381,12 +381,25 @@ class AccessibilityCommandExecutor(
 
     private suspend fun <T> withAgentChromeSuppressed(block: suspend () -> T): T {
         val controller = overlayController ?: return block()
+        if (isOpenClawActiveWindow()) {
+            return block()
+        }
         controller.suppressAgentChromeForAutomation()
         return try {
             waitMs(40)
             block()
         } finally {
             controller.restoreAgentChromeAfterAutomation()
+        }
+    }
+
+    private fun isOpenClawActiveWindow(): Boolean {
+        val service = PhoneAccessibilityService.instance ?: return false
+        val root = service.rootInActiveWindow ?: return false
+        return try {
+            root.packageName?.toString() == context.packageName
+        } finally {
+            root.recycle()
         }
     }
 
