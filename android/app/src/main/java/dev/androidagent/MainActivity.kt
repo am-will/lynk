@@ -49,6 +49,9 @@ import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
 import dev.androidagent.ui.ThemeTokens
 import dev.androidagent.ui.Typography
+import dev.androidagent.ui.exposeToAccessibility
+import dev.androidagent.ui.labelFor
+import dev.androidagent.ui.updateAccessibilityState
 import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
@@ -72,8 +75,10 @@ class MainActivity : ComponentActivity() {
         }.onSuccess { path ->
             pendingLocalModelPathField?.setText(path)
             statusText.text = "Imported local model."
+            statusText.updateAccessibilityState("Setup status", statusText.text)
         }.onFailure { error ->
             statusText.text = error.message ?: "Could not import local model."
+            statusText.updateAccessibilityState("Setup status", statusText.text)
         }
     }
     private val serviceStateReceiver = object : BroadcastReceiver() {
@@ -144,6 +149,10 @@ class MainActivity : ComponentActivity() {
         statusChips.clear()
 
         val scrollView = ScrollView(this).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_root,
+                description = "Open Claw Agent settings"
+            )
             setBackgroundColor(tokens.background)
             clipToPadding = false
         }
@@ -170,6 +179,11 @@ class MainActivity : ComponentActivity() {
             })
 
             endpointSummary = body("", tokens, secondary = false).apply {
+                exposeToAccessibility(
+                    viewId = R.id.openclaw_endpoint_summary,
+                    description = "Connection summary",
+                    liveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+                )
                 setPadding(0, dp(DesignTokens.Spacing.xl), 0, 0)
                 typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             }
@@ -185,6 +199,11 @@ class MainActivity : ComponentActivity() {
             addView(statusRow("Agent Bubble", "Foreground service state.", "service", tokens))
 
             statusText = body("", tokens).apply {
+                exposeToAccessibility(
+                    viewId = R.id.openclaw_status_text,
+                    description = "Setup status",
+                    liveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+                )
                 setPadding(0, dp(DesignTokens.Spacing.lg), 0, 0)
             }
             addView(statusText)
@@ -194,14 +213,14 @@ class MainActivity : ComponentActivity() {
             addView(sectionHeader("Connection & Config", "Configure the host bridge, system prompt, and optional experimental local models.", tokens))
             addView(actionButton("Open Connection & Config", ButtonTone.Secondary, tokens) {
                 showConnectionConfigMenu()
-            }, stackedParams(DesignTokens.Spacing.lg))
+            }.exposeToAccessibility(R.id.openclaw_connection_config_button, "Open connection and config"), stackedParams(DesignTokens.Spacing.lg))
         }, stackedParams())
 
         root.addView(card(tokens).apply {
             addView(sectionHeader("Appearance", "Choose how the chat modal opens and closes when you tap the bubble.", tokens))
             addView(actionButton("Open Appearance", ButtonTone.Secondary, tokens) {
                 showAppearanceMenu()
-            }, stackedParams(DesignTokens.Spacing.lg))
+            }.exposeToAccessibility(R.id.openclaw_appearance_button, "Open appearance settings"), stackedParams(DesignTokens.Spacing.lg))
         }, stackedParams())
 
         root.addView(card(tokens).apply {
@@ -212,16 +231,16 @@ class MainActivity : ComponentActivity() {
             addView(toggle, stackedParams(DesignTokens.Spacing.lg))
             addView(actionButton("Grant Overlay Permission", ButtonTone.Secondary, tokens) {
                 openOverlaySettings()
-            }, stackedParams(DesignTokens.Spacing.sm + 2))
+            }.exposeToAccessibility(R.id.openclaw_overlay_permission_button, "Grant overlay permission"), stackedParams(DesignTokens.Spacing.sm + 2))
             addView(actionButton("Grant Microphone Permission", ButtonTone.Secondary, tokens) {
                 requestMicPermission()
-            }, stackedParams(DesignTokens.Spacing.sm + 2))
+            }.exposeToAccessibility(R.id.openclaw_microphone_permission_button, "Grant microphone permission"), stackedParams(DesignTokens.Spacing.sm + 2))
             addView(actionButton("Grant Location Permission", ButtonTone.Secondary, tokens) {
                 requestLocationPermission()
-            }, stackedParams(DesignTokens.Spacing.sm + 2))
+            }.exposeToAccessibility(R.id.openclaw_location_permission_button, "Grant location permission"), stackedParams(DesignTokens.Spacing.sm + 2))
             addView(actionButton("Open Accessibility Settings", ButtonTone.Secondary, tokens) {
                 startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            }, stackedParams(DesignTokens.Spacing.sm + 2))
+            }.exposeToAccessibility(R.id.openclaw_accessibility_settings_button, "Open accessibility settings"), stackedParams(DesignTokens.Spacing.sm + 2))
         }, stackedParams())
 
         setContentView(scrollView.apply {
@@ -240,45 +259,61 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(DesignTokens.Spacing.xl), dp(DesignTokens.Spacing.md), dp(DesignTokens.Spacing.xl), 0)
         }
 
-        val hostInput = configField("WebSocket URL", config.hostUrl, tokens)
-        val deviceInput = configField("Device ID", config.deviceId, tokens)
+        val hostInput = configField("WebSocket URL", config.hostUrl, tokens).apply {
+            exposeToAccessibility(R.id.openclaw_bridge_url_field, "Bridge WebSocket URL")
+        }
+        val deviceInput = configField("Device ID", config.deviceId, tokens).apply {
+            exposeToAccessibility(R.id.openclaw_device_id_field, "Device ID")
+        }
         val tokenInput = configField(
             "Auth token",
             config.token,
             tokens,
             InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        )
+        ).apply {
+            exposeToAccessibility(R.id.openclaw_bridge_token_field, "Bridge auth token")
+        }
         val openAiKeyInput = configField(
             "OpenAI API key for realtime voice",
             config.openAiApiKey,
             tokens,
             InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        )
-        val localModelPathInput = configField("Local .litertlm model path", config.localModelPath, tokens)
+        ).apply {
+            exposeToAccessibility(R.id.openclaw_openai_api_key_field, "OpenAI API key for realtime voice")
+        }
+        val localModelPathInput = configField("Local .litertlm model path", config.localModelPath, tokens).apply {
+            exposeToAccessibility(R.id.openclaw_local_model_path_field, "Local LiteRT model path")
+        }
         pendingLocalModelPathField = localModelPathInput
         val localBackends = LocalModelBackend.values().toList()
         val localBackendSpinner = styledSpinner(
             localBackends.map { it.label },
             localBackends.indexOf(config.localModelBackend).coerceAtLeast(0),
             tokens
-        )
+        ).apply {
+            exposeToAccessibility(R.id.openclaw_local_backend_spinner, "Local inference backend")
+        }
         val localContextInput = configField(
             "Local context tokens",
             config.localContextTokens.toString(),
             tokens,
             InputType.TYPE_CLASS_NUMBER
-        )
+        ).apply {
+            exposeToAccessibility(R.id.openclaw_local_context_field, "Local context window")
+        }
         val experimentalLocalModelsInput = CheckBox(this).apply {
             text = "Enable experimental local LiteRT models"
             isChecked = config.experimentalLocalModelsEnabled
             setTextColor(tokens.primaryText)
             buttonTintList = android.content.res.ColorStateList.valueOf(tokens.accent)
+            exposeToAccessibility(R.id.openclaw_experimental_local_models_checkbox, "Enable experimental local LiteRT models")
         }
         val localDeveloperToolsInput = CheckBox(this).apply {
             text = "Enable local workspace and Termux-backed developer tools"
             isChecked = config.localDeveloperToolsEnabled
             setTextColor(tokens.primaryText)
             buttonTintList = android.content.res.ColorStateList.valueOf(tokens.accent)
+            exposeToAccessibility(R.id.openclaw_local_developer_tools_checkbox, "Enable local developer tools")
         }
 
         content.addView(fieldLabel("Bridge", tokens))
@@ -292,14 +327,14 @@ class MainActivity : ComponentActivity() {
         content.addView(body("When enabled and a .litertlm model is installed, Local LiteRT appears in the main model picker. Normal models continue to use the host bridge.", tokens).apply {
             setPadding(0, dp(DesignTokens.Spacing.xs), 0, 0)
         }, stackedParams(DesignTokens.Spacing.xs))
-        content.addView(fieldLabel("Local LiteRT model", tokens), stackedParams(DesignTokens.Spacing.lg))
+        content.addView(fieldLabel("Local LiteRT model", tokens).apply { labelFor(localModelPathInput) }, stackedParams(DesignTokens.Spacing.lg))
         content.addView(localModelPathInput, stackedParams(DesignTokens.Spacing.sm))
         content.addView(actionButton("Import Local Model", ButtonTone.Secondary, tokens) {
             localModelPicker.launch(arrayOf("*/*"))
-        }, stackedParams(DesignTokens.Spacing.sm + 2))
-        content.addView(fieldLabel("Local inference backend", tokens), stackedParams(DesignTokens.Spacing.lg))
+        }.exposeToAccessibility(R.id.openclaw_local_model_import_button, "Import local LiteRT model"), stackedParams(DesignTokens.Spacing.sm + 2))
+        content.addView(fieldLabel("Local inference backend", tokens).apply { labelFor(localBackendSpinner) }, stackedParams(DesignTokens.Spacing.lg))
         content.addView(localBackendSpinner, stackedParams(DesignTokens.Spacing.sm + 2))
-        content.addView(fieldLabel("Local context window", tokens), stackedParams(DesignTokens.Spacing.lg))
+        content.addView(fieldLabel("Local context window", tokens).apply { labelFor(localContextInput) }, stackedParams(DesignTokens.Spacing.lg))
         content.addView(localContextInput, stackedParams(DesignTokens.Spacing.sm + 2))
         content.addView(localDeveloperToolsInput, stackedParams(DesignTokens.Spacing.sm + 2))
 
@@ -314,7 +349,7 @@ class MainActivity : ComponentActivity() {
                 promptDraft = updated
                 promptSummary.text = systemPromptPreview(promptDraft)
             }
-        }, stackedParams(DesignTokens.Spacing.sm + 2))
+        }.exposeToAccessibility(R.id.openclaw_system_prompt_button, "Edit system prompt"), stackedParams(DesignTokens.Spacing.sm + 2))
 
         val dialog = AlertDialog.Builder(this)
             .setTitle("Connection & Config")
@@ -381,7 +416,9 @@ class MainActivity : ComponentActivity() {
             animationOptions.map { it.second },
             animationOptions.indexOfFirst { it.first == current.panelAnimation }.coerceAtLeast(0),
             tokens
-        )
+        ).apply {
+            exposeToAccessibility(R.id.openclaw_animation_spinner, "Panel animation")
+        }
         content.addView(animationSpinner, stackedParams(DesignTokens.Spacing.sm))
 
         content.addView(fieldLabel("Avatar", tokens), stackedParams(DesignTokens.Spacing.lg))
@@ -389,13 +426,14 @@ class MainActivity : ComponentActivity() {
             setPadding(0, dp(DesignTokens.Spacing.xs), 0, 0)
         }, stackedParams(DesignTokens.Spacing.xs))
         val avatarSummary = body(currentAvatarSummary(), tokens).apply {
+            exposeToAccessibility(description = "Current avatar")
             background = Drawables.glassInset(this@MainActivity, tokens, DesignTokens.Radius.md)
             setPadding(dp(DesignTokens.Spacing.lg), dp(DesignTokens.Spacing.md + 2), dp(DesignTokens.Spacing.lg), dp(DesignTokens.Spacing.md + 2))
         }
         content.addView(avatarSummary, stackedParams(DesignTokens.Spacing.sm))
         content.addView(actionButton("Open Avatar Picker", ButtonTone.Secondary, tokens) {
             showAvatarPickerMenu { avatarSummary.text = currentAvatarSummary() }
-        }, stackedParams(DesignTokens.Spacing.sm + 2))
+        }.exposeToAccessibility(R.id.openclaw_avatar_picker_button, "Open avatar picker"), stackedParams(DesignTokens.Spacing.sm + 2))
 
         content.addView(fieldLabel("Bubble size", tokens), stackedParams(DesignTokens.Spacing.lg))
         content.addView(body("Resize the floating bubble. Drag to preview live.", tokens).apply {
@@ -403,6 +441,12 @@ class MainActivity : ComponentActivity() {
         }, stackedParams(DesignTokens.Spacing.xs))
 
         val sizeValue = TextView(this).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_bubble_size_value,
+                description = "Bubble size",
+                stateDescription = "${current.bubbleSizeDp} dp",
+                liveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            )
             setTextColor(tokens.primaryText)
             textSize = DesignTokens.Text.body
             text = "${current.bubbleSizeDp} dp"
@@ -411,6 +455,7 @@ class MainActivity : ComponentActivity() {
         content.addView(sizeValue, stackedParams(DesignTokens.Spacing.sm))
 
         val sizeSeekBar = SeekBar(this).apply {
+            exposeToAccessibility(R.id.openclaw_bubble_size_seekbar, "Bubble size slider")
             max = 100
             progress = BubbleSizeMapper.dpToProgress(current.bubbleSizeDp)
         }
@@ -421,6 +466,14 @@ class MainActivity : ComponentActivity() {
                 val dpValue = BubbleSizeMapper.progressToDp(progress)
                 currentSizeDp = dpValue
                 sizeValue.text = "$dpValue dp"
+                sizeValue.updateAccessibilityState(
+                    description = "Bubble size",
+                    stateDescription = "$dpValue dp"
+                )
+                seekBar?.updateAccessibilityState(
+                    description = "Bubble size slider",
+                    stateDescription = "$dpValue dp"
+                )
                 if (fromUser && dpValue != lastAppliedSizeDp && AgentForegroundService.isRunning) {
                     val intent = Intent(this@MainActivity, AgentForegroundService::class.java)
                         .setAction(AgentForegroundService.ACTION_RESIZE_BUBBLE)
@@ -565,6 +618,12 @@ class MainActivity : ComponentActivity() {
         onClick: () -> Unit
     ): View {
         val row = LinearLayout(this).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_avatar_row,
+                description = "$title, $subtitle",
+                stateDescription = if (selected) "selected" else "not selected",
+                focusable = true
+            )
             orientation = LinearLayout.VERTICAL
             background = Drawables.glassInset(this@MainActivity, tokens, DesignTokens.Radius.md)
             setPadding(dp(DesignTokens.Spacing.lg), dp(DesignTokens.Spacing.md + 2), dp(DesignTokens.Spacing.lg), dp(DesignTokens.Spacing.md + 2))
@@ -589,6 +648,7 @@ class MainActivity : ComponentActivity() {
     private fun showSystemPromptEditor(initialText: String, onSave: (String) -> Unit) {
         val tokens = tokens()
         val editor = EditText(this).apply {
+            exposeToAccessibility(R.id.openclaw_system_prompt_editor, "System prompt editor")
             setText(initialText)
             minLines = 10
             maxLines = 18
@@ -667,6 +727,7 @@ class MainActivity : ComponentActivity() {
             $authLine
             $experimentalLine
         """.trimIndent()
+        endpointSummary.updateAccessibilityState("Connection summary", endpointSummary.text)
 
         updateChip("overlay", if (overlay) "Granted" else "Missing", if (overlay) tokens.success else tokens.warning)
         updateChip("microphone", if (microphone) "Granted" else "Missing", if (microphone) tokens.success else tokens.warning)
@@ -687,6 +748,7 @@ class MainActivity : ComponentActivity() {
         } else {
             "Finish the missing permission steps before expecting reliable automation."
         }
+        statusText.updateAccessibilityState("Setup status", statusText.text)
     }
 
     private fun maybeRequestMicPermission(intent: Intent?) {
@@ -819,6 +881,7 @@ class MainActivity : ComponentActivity() {
 
     private fun statusRow(title: String, subtitle: String, key: String, tokens: ThemeTokens): LinearLayout {
         return LinearLayout(this).apply {
+            exposeToAccessibility(description = "$title status")
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, dp(DesignTokens.Spacing.lg), 0, 0)
 
@@ -837,6 +900,7 @@ class MainActivity : ComponentActivity() {
             addView(copy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
             val chip = TextView(this@MainActivity).apply {
+                exposeToAccessibility(description = "$title status value")
                 gravity = Gravity.CENTER
                 textSize = DesignTokens.Text.footnote
                 typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
@@ -849,6 +913,11 @@ class MainActivity : ComponentActivity() {
 
     private fun buildAgentToggleButton(tokens: ThemeTokens): TextView {
         val button = TextView(this).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_agent_toggle_button,
+                description = "Agent bubble toggle",
+                focusable = true
+            )
             gravity = Gravity.CENTER
             Typography.applyCallout(this, tokens)
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
@@ -908,6 +977,10 @@ class MainActivity : ComponentActivity() {
             button.text = label
             button.background = newBackground
             button.setTextColor(newTextColor)
+            button.updateAccessibilityState(
+                description = "Agent bubble toggle",
+                stateDescription = if (isRunning) "running" else "stopped"
+            )
             button.alpha = 1f
             return
         }
@@ -919,6 +992,10 @@ class MainActivity : ComponentActivity() {
                 button.text = label
                 button.background = newBackground
                 button.setTextColor(newTextColor)
+                button.updateAccessibilityState(
+                    description = "Agent bubble toggle",
+                    stateDescription = if (isRunning) "running" else "stopped"
+                )
                 button.animate().alpha(1f).setDuration(150L).start()
             }
             .start()
@@ -1017,6 +1094,10 @@ class MainActivity : ComponentActivity() {
         val tokens = tokens()
         statusChips[key]?.apply {
             this.text = text
+            updateAccessibilityState(
+                description = "$key status",
+                stateDescription = text
+            )
             setTextColor(color)
             background = Drawables.rounded(
                 fill = tint(color, if (tokens.isDark) 0.20f else 0.12f),

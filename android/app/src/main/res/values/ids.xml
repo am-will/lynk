@@ -11,6 +11,7 @@
     <item name="openclaw_location_permission_button" type="id" />
     <item name="openclaw_accessibility_settings_button" type="id" />
     <item name="openclaw_mode_spinner" type="id" />
+    <item name="openclaw_device_id_field" type="id" />
     <item name="openclaw_bridge_url_field" type="id" />
     <item name="openclaw_bridge_token_field" type="id" />
     <item name="openclaw_openai_api_key_field" type="id" />
@@ -18,6 +19,7 @@
     <item name="openclaw_local_model_import_button" type="id" />
     <item name="openclaw_local_backend_spinner" type="id" />
     <item name="openclaw_local_context_field" type="id" />
+    <item name="openclaw_experimental_local_models_checkbox" type="id" />
     <item name="openclaw_local_developer_tools_checkbox" type="id" />
     <item name="openclaw_model_spinner" type="id" />
     <item name="openclaw_reasoning_spinner" type="id" />
