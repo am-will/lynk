@@ -1,12 +1,5 @@
 import type { AgentTaskKind } from "../dispatcher/AgentClient.js";
-
-const FAST_PHONE_LOOP_INSTRUCTION = [
-  "Phone-control speed policy:",
-  "- Use the observation already returned by phone action tools as the next screen state.",
-  "- Avoid extra phone_observe calls unless current context is missing, ambiguous, or stale.",
-  "- Avoid screenshots unless the accessibility tree is insufficient or coordinates must come from pixels.",
-  "- Use phone_wait only for visible loading/animation; prefer 300-1000 ms and avoid longer waits unless the screen is clearly still changing."
-].join("\n");
+import { PHONE_TURN_HINT } from "../dispatcher/promptPolicy.js";
 
 const ALLOWED_THINKING_LEVELS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
 
@@ -21,7 +14,7 @@ export function messageForGateway(text: string, taskKind: AgentTaskKind): string
   if (taskKind !== "phone") {
     return text;
   }
-  return `${FAST_PHONE_LOOP_INSTRUCTION}\n\nUser request:\n${text}`;
+  return `${PHONE_TURN_HINT}\n\nUser request:\n${text}`;
 }
 
 export function isExplicitPhoneTask(text: string): boolean {
