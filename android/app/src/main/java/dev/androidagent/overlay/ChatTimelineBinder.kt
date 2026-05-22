@@ -385,21 +385,21 @@ class ChatTimelineBinder(
     private fun animateStreamingDots(tv: TextView) {
         val dotText = "•  •  •"
         val dotPositions = intArrayOf(0, 3, 6)
-        var visibleDots = 1
+        var activeDot = 0
         val runner = object : Runnable {
             override fun run() {
                 if (tv.isAttachedToWindow && tv.text.toString().startsWith("•")) {
                     val frame = SpannableString(dotText)
                     dotPositions.forEachIndexed { index, position ->
                         frame.setSpan(
-                            ForegroundColorSpan(if (index < visibleDots) tv.currentTextColor else Color.TRANSPARENT),
+                            ForegroundColorSpan(if (index == activeDot) tv.currentTextColor else Color.TRANSPARENT),
                             position,
                             position + 1,
                             Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
                         )
                     }
                     tv.text = frame
-                    visibleDots = (visibleDots % dotPositions.size) + 1
+                    activeDot = (activeDot + 1) % dotPositions.size
                     tv.postDelayed(this, 380L)
                 }
             }

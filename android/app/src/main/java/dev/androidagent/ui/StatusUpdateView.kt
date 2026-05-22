@@ -154,7 +154,7 @@ private class ThinkingDotsView(context: Context, private var tokens: ThemeTokens
         for (i in 0 until 3) {
             val cx = spacing + radius + i * (radius * 2f + spacing)
             val offset = (i * 0.18f)
-            val t = ((phase + offset) % 1f)
+            val t = ((phase - offset + 1f) % 1f)
             val scale = 0.55f + 0.45f * kotlin.math.sin(t * Math.PI * 2.0).toFloat().let { if (it < 0f) 0f else it }
             paint.alpha = (140 + 115 * scale).toInt().coerceIn(80, 255)
             canvas.drawCircle(cx, cy, radius * (0.7f + 0.5f * scale), paint)
