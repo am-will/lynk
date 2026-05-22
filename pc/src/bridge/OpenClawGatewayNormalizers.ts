@@ -289,13 +289,102 @@ export function normalizeSessions(value: unknown): ChatSessionSummary[] {
 }
 
 export function usageFromSession(session: ChatSessionSummary | undefined): ChatUsageSummary {
+  const contextTokens = sessionContextTokens(session);
   return {
     inputTokens: session?.inputTokens ?? null,
     outputTokens: session?.outputTokens ?? null,
     totalTokens: session?.totalTokens ?? null,
-    contextTokens: session?.contextTokens ?? null,
+    contextTokens,
     estimatedCostUsd: session?.estimatedCostUsd ?? null
   };
+}
+
+export function enrichSessionsWithModelContext(
+  sessions: ChatSessionSummary[],
+  models: Iterable<ChatModelOption>
+): ChatSessionSummary[] {
+  return sessions.map((session) => {
+    const contextTokens = sessionContextTokens(session, models);
+    if (contextTokens === (session.contextTokens ?? null)) {
+      return session;
+    }
+    return {
+      ...session,
+      contextTokens
+    };
+  });
+}
+
+function sessionContextTokens(
+  session: ChatSessionSummary | undefined,
+  models: Iterable<ChatModelOption> = []
+): number | null {
+  const explicit = positiveNumber(session?.contextTokens);
+  if (explicit !== null) {
+    return explicit;
+  }
+  return modelContextWindowForSession(session, models);
+}
+
+function modelContextWindowForSession(
+  session: ChatSessionSummary | undefined,
+  models: Iterable<ChatModelOption>
+): number | null {
+  if (!session?.model) {
+    return null;
+  }
+  const sessionModel = session.model.trim();
+  const sessionSelection = splitHarnessModel(sessionModel);
+  const sessionHarness = session.harnessId ?? sessionSelection.harnessId;
+  for (const model of models) {
+    const contextWindow = positiveNumber(model.contextWindow);
+    if (contextWindow === null) {
+      continue;
+    }
+    if (modelMatchesSession(model, sessionModel, sessionSelection.modelId, sessionHarness)) {
+      return contextWindow;
+    }
+  }
+  return null;
+}
+
+function modelMatchesSession(
+  model: ChatModelOption,
+  sessionModel: string,
+  sessionModelId: string,
+  sessionHarness: string | undefined
+): boolean {
+  const modelIds = uniqueStrings([model.id, model.modelId].filter((value): value is string => Boolean(value?.trim())));
+  if (modelIds.includes(sessionModel)) {
+    return true;
+  }
+  const modelSelection = splitHarnessModel(model.id);
+  const modelHarness = model.harnessId ?? modelSelection.harnessId;
+  if (sessionHarness && modelHarness && sessionHarness !== modelHarness) {
+    return false;
+  }
+  return modelIds.some((id) => splitHarnessModel(id).modelId === sessionModelId);
+}
+
+function splitHarnessModel(value: string): { harnessId?: string; modelId: string } {
+  const trimmed = value.trim();
+  const separatorIndex = trimmed.indexOf(":");
+  if (separatorIndex <= 0) {
+    return { modelId: trimmed };
+  }
+  const prefix = trimmed.slice(0, separatorIndex).toLowerCase();
+  if (prefix === "openclaw" || prefix === "hermes" || prefix === "codex") {
+    return { harnessId: prefix, modelId: trimmed.slice(separatorIndex + 1).trim() };
+  }
+  return { modelId: trimmed };
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function positiveNumber(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
 export function normalizeCommands(value: unknown): ChatCommandOption[] {

@@ -49,6 +49,7 @@ import { OpenClawFallbackSender } from "./OpenClawFallbackSender.js";
 import { OpenClawGatewayEventRouter } from "./OpenClawGatewayEventRouter.js";
 import {
   chatMessagesFromHistory,
+  enrichSessionsWithModelContext,
   normalizeCommands,
   normalizeModels,
   normalizeReasoningOptions,
@@ -423,6 +424,7 @@ export class OpenClawChatBridge {
       this.client.listSessions(1, state.harnessId).catch(() => undefined)
     ]);
     const models = normalizeModels(modelsPayload);
+    state.modelOptions = new Map(models.map((model) => [model.id, model]));
     this.sendChat(deviceId, {
       type: "chat.models",
       deviceId,
@@ -434,7 +436,7 @@ export class OpenClawChatBridge {
   private async sendSessions(deviceId: string): Promise<void> {
     const state = this.stateFor(deviceId);
     const payload = await this.client.listSessions(50, state.harnessId);
-    const sessions = normalizeSessions(payload);
+    const sessions = enrichSessionsWithModelContext(normalizeSessions(payload), state.modelOptions.values());
     state.sessionSummaries = new Map(sessions.map((session) => [session.key, session]));
     const selected = sessions.find((session) => session.key === state.sessionKey);
     if (selected) {

@@ -4,6 +4,7 @@ import type { BridgeConfig } from "./config.js";
 import { asRecord, stringField } from "./OpenClawGatewayNormalizers.js";
 export {
   chatMessagesFromHistory,
+  enrichSessionsWithModelContext,
   extractGatewayText,
   mapGatewayChatEvent,
   normalizeCommands,

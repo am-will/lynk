@@ -1,4 +1,4 @@
-import type { ChatSessionSummary } from "../protocol/messages.js";
+import type { ChatModelOption, ChatSessionSummary } from "../protocol/messages.js";
 import type { HarnessId } from "./AgentHarness.js";
 import type { BridgeConfig } from "./config.js";
 import type { GatewayChatSendResult, GatewayEventHandler } from "./OpenClawGatewayChatClient.js";
@@ -18,6 +18,7 @@ export interface DeviceChatState {
   lastRealtimeRequestAt?: number | null;
   sessionKeysByHarness: Map<HarnessId, string>;
   modelsByHarness: Map<HarnessId, string | null>;
+  modelOptions: Map<string, ChatModelOption>;
   pendingRuns: Map<string, PendingChatRun>;
   sessionSummaries: Map<string, ChatSessionSummary>;
 }
@@ -72,6 +73,7 @@ export class DeviceChatStateStore {
       lastRealtimeRequestAt: null,
       sessionKeysByHarness: new Map([["openclaw", defaultSessionKeyForDevice(this.config, deviceId)]]),
       modelsByHarness: new Map(),
+      modelOptions: new Map(),
       pendingRuns: new Map(),
       sessionSummaries: new Map()
     };
