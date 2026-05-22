@@ -21,6 +21,7 @@ export interface AgentRequestOptions {
   model?: string;
   reasoningEffort?: string;
   taskKind?: AgentTaskKind;
+  threadId?: string;
 }
 
 export interface AgentClient {

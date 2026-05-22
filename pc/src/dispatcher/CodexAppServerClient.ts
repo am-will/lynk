@@ -132,7 +132,7 @@ export class CodexAppServerClient implements AgentClient {
   ): Promise<AgentRunResult> {
     this.activeSink = sink;
     await this.ensureStarted();
-    const threadId = await this.startThread({ model: options.model });
+    const threadId = options.threadId ?? await this.createThread({ model: options.model });
     this.audit?.record("codex_turn_starting", undefined, { threadId, text, model: options.model, reasoningEffort: options.reasoningEffort });
     sink.working("Sending request to Codex app-server");
     const result = await this.request("turn/start", {
@@ -154,7 +154,7 @@ export class CodexAppServerClient implements AgentClient {
 
   async startRealtime(options: RealtimeStartOptions, sink: RealtimeEventSink): Promise<RealtimeSession> {
     await this.ensureStarted();
-    const threadId = await this.startThread({
+    const threadId = await this.createThread({
       model: options.model,
       baseInstructions: buildRealtimeBaseInstructions(options.systemPrompt)
     });
@@ -215,6 +215,24 @@ export class CodexAppServerClient implements AgentClient {
   async listModels(): Promise<unknown> {
     await this.ensureStarted();
     return await this.request("model/list", {});
+  }
+
+  async createThread(options: { model?: string; baseInstructions?: string } = {}): Promise<string> {
+    await this.ensureStarted();
+    const result = await this.request("thread/start", {
+      model: options.model,
+      cwd: this.cwd,
+      approvalPolicy: "never",
+      sandbox: "workspace-write",
+      personality: "pragmatic",
+      serviceName: "android_phone_agent",
+      baseInstructions: options.baseInstructions
+    });
+    const thread = (result as { thread?: { id?: string } }).thread;
+    if (!thread?.id) {
+      throw new Error("Codex app-server thread/start returned no thread id");
+    }
+    return thread.id;
   }
 
   async steer(text: string): Promise<void> {
@@ -315,23 +333,6 @@ export class CodexAppServerClient implements AgentClient {
     });
     this.notify("initialized", {});
     this.initialized = true;
-  }
-
-  private async startThread(options: { model?: string; baseInstructions?: string } = {}): Promise<string> {
-    const result = await this.request("thread/start", {
-      model: options.model,
-      cwd: this.cwd,
-      approvalPolicy: "never",
-      sandbox: "workspace-write",
-      personality: "pragmatic",
-      serviceName: "android_phone_agent",
-      baseInstructions: options.baseInstructions
-    });
-    const thread = (result as { thread?: { id?: string } }).thread;
-    if (!thread?.id) {
-      throw new Error("Codex app-server thread/start returned no thread id");
-    }
-    return thread.id;
   }
 
   private request(method: string, params?: unknown): Promise<unknown> {
@@ -544,7 +545,6 @@ export class CodexAppServerClient implements AgentClient {
       const text = message.params?.delta ?? message.params?.textDelta;
       if (typeof text === "string" && text.trim()) {
         this.pendingTurn?.finalMessage.push(text);
-        sink.info(text);
       }
       return;
     }

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import type { AuditLog } from "./AuditLog.js";
 import type { AgentRunResult, AgentStatusSink } from "../dispatcher/AgentClient.js";
 import { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js";
@@ -26,15 +27,17 @@ function arrayField(record: Record<string, unknown> | undefined, key: string): u
 
 export class CodexChatClient {
   private readonly client: CodexAppServerClient;
-  private readonly sessions = new InMemoryHarnessSessionStore("codex", {
-    defaultModel: "gpt-5.3-codex",
-    modelProvider: "codex"
-  });
+  private readonly sessions: InMemoryHarnessSessionStore;
   private readonly handlers = new Set<GatewayEventHandler>();
   private active?: ActiveRun;
 
-  constructor(audit?: AuditLog, client?: CodexAppServerClient) {
+  constructor(audit?: AuditLog, client?: CodexAppServerClient, sessionStoragePath: string | null = join(process.cwd(), "state", "codex-sessions.json")) {
     this.client = client ?? new CodexAppServerClient(audit);
+    this.sessions = new InMemoryHarnessSessionStore("codex", {
+      defaultModel: "gpt-5.3-codex",
+      modelProvider: "codex",
+      storagePath: sessionStoragePath ?? undefined
+    });
   }
 
   addEventListener(handler: GatewayEventHandler): () => void {
@@ -58,6 +61,7 @@ export class CodexChatClient {
     }
     const session = this.sessions.ensureSession(options.sessionKey, options.sessionId);
     this.sessions.setThinkingLevel(session, options.thinking);
+    await this.ensureAppServerThread(session);
     this.sessions.appendUserMessage(session, options.message, options.idempotencyKey);
 
     const runId = options.idempotencyKey ?? `codex_${randomUUID()}`;
@@ -137,7 +141,17 @@ export class CodexChatClient {
   }
 
   async createSession(options: { key?: string; label?: string; model?: string }): Promise<unknown> {
-    return this.sessions.createSession(options);
+    const created = this.sessions.createSession(options);
+    const key = created.key ?? options.key;
+    if (!key) {
+      return created;
+    }
+    const session = this.sessions.ensureSession(key);
+    await this.ensureAppServerThread(session, options.model);
+    return {
+      ...created,
+      sessionId: session.sessionId
+    };
   }
 
   async patchSession(sessionKey: string, patch: Record<string, unknown>): Promise<unknown> {
@@ -176,10 +190,14 @@ export class CodexChatClient {
   ): Promise<void> {
     try {
       const result = await this.client.submitUserRequest(text, this.statusSink(session.key, runId), {
+        threadId: session.sessionId,
         model,
         reasoningEffort,
         taskKind: "general"
       });
+      if (result.threadId) {
+        this.sessions.setSessionId(session, result.threadId);
+      }
       const finalText = finalTextFromResult(result);
       this.sessions.upsertAssistantMessage(session, runId, finalText);
       this.emit("chat", {
@@ -230,9 +248,25 @@ export class CodexChatClient {
       handler(gatewayEvent);
     }
   }
+
+  private async ensureAppServerThread(session: HarnessStoredSession, model?: string): Promise<void> {
+    if (!isLocalCodexSessionId(session.key, session.sessionId)) {
+      return;
+    }
+    const threadId = await this.client.createThread({ model: model ?? session.model });
+    this.sessions.setSessionId(session, threadId);
+  }
 }
 
 function finalTextFromResult(result: AgentRunResult): string {
   return result.finalMessage || result.error || "";
+}
+
+function isLocalCodexSessionId(sessionKey: string, sessionId: string): boolean {
+  const localSessionId = sessionKey
+    .replace(/^codex:/, "")
+    .replace(/[^a-zA-Z0-9_.:-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "default";
+  return sessionId === localSessionId;
 }
 
