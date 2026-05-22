@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { AgentRunResult, AgentTaskKind } from "../dispatcher/AgentClient.js";
 import type { Dispatcher } from "../dispatcher/dispatcher.js";
+import {
+  defaultSessionKeyForHarness,
+  harnessForSessionKey,
+  harnessLabel,
+  parseHarnessModel,
+  type HarnessId
+} from "./AgentHarness.js";
 import type {
   ChatControlCommandMessage,
   ChatErrorMessage,
@@ -19,6 +26,7 @@ import type {
 } from "../protocol/messages.js";
 import type { AuditLog } from "./AuditLog.js";
 import type { BridgeConfig } from "./config.js";
+import { HarnessGatewayChatClient } from "./HarnessGatewayChatClient.js";
 import { OpenClawControlCommandRouter } from "./OpenClawControlCommands.js";
 import {
   firstMessageDisplayName,
@@ -47,7 +55,6 @@ import {
   normalizeReasoningOptions,
   normalizeSessions,
   normalizeTools,
-  OpenClawGatewayChatClient,
   requestKeyFromSessionKey,
   usageFromSession
 } from "./OpenClawGatewayChatClient.js";
@@ -71,7 +78,7 @@ export class OpenClawChatBridge {
     private readonly audit?: AuditLog,
     client?: GatewayChatClient
   ) {
-    this.client = client ?? new OpenClawGatewayChatClient(config);
+    this.client = client ?? new HarnessGatewayChatClient(config, audit);
     this.states = new DeviceChatStateStore(config);
     this.commandRouter = new OpenClawControlCommandRouter({
       stateFor: (deviceId) => this.stateFor(deviceId),
@@ -126,8 +133,10 @@ export class OpenClawChatBridge {
       return;
     }
     const state = this.stateFor(message.deviceId);
-    if (message.sessionKey) {
-      state.sessionKey = message.sessionKey;
+    const previousModel = state.model;
+    this.applyModelSelection(message.deviceId, state, message.model);
+    if (message.sessionKey && harnessForSessionKey(message.sessionKey) === state.harnessId) {
+      this.activateSession(state, message.sessionKey);
     }
 
     const idempotencyKey = message.idempotencyKey ?? randomUUID();
@@ -137,10 +146,11 @@ export class OpenClawChatBridge {
     const taskKind = isExplicitPhoneTask(text) ? "phone" : "general";
     try {
       state.reasoningEffort = normalizeThinkingLevel(message.reasoningEffort, state.reasoningEffort);
-      const requestedModel = message.model?.trim();
-      if (requestedModel && !isSameModelSelection(requestedModel, state.model)) {
+      const requestedModel = this.rawModelForSelection(message.model);
+      if (requestedModel && !isSameModelSelection(message.model?.trim() ?? requestedModel, previousModel)) {
         await this.patchSession(message.deviceId, state.sessionKey, { model: requestedModel });
-        state.model = requestedModel;
+        state.model = parseHarnessModel(message.model)?.selectionId ?? requestedModel;
+        state.modelsByHarness.set(state.harnessId, state.model);
       }
       const result = await this.client.sendChat({
         sessionKey: state.sessionKey,
@@ -163,7 +173,7 @@ export class OpenClawChatBridge {
         runId: result.runId,
         length: text.length
       });
-      this.sendState(message.deviceId, "OpenClaw is working");
+      this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} is working`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.sendChat(message.deviceId, {
@@ -232,7 +242,7 @@ export class OpenClawChatBridge {
         taskKind: options.taskKind,
         length: text.length
       });
-      this.sendState(request.deviceId, options.taskKind === "phone" ? "OpenClaw is working on phone task" : "OpenClaw is working");
+      this.sendState(request.deviceId, options.taskKind === "phone" ? `${harnessLabel(state.harnessId)} is working on phone task` : `${harnessLabel(state.harnessId)} is working`);
       return await this.runWaiters.waitForRun(request.deviceId, state.sessionKey, result.runId);
     } catch (error) {
       this.sendChatError(request.deviceId, state.sessionKey, error);
@@ -281,9 +291,9 @@ export class OpenClawChatBridge {
 
   async selectSession(message: ChatSelectSessionMessage): Promise<void> {
     const state = this.stateFor(message.deviceId);
-    state.sessionKey = message.sessionKey;
+    this.activateSession(state, message.sessionKey);
     state.runId = null;
-    state.model = null;
+    state.model = state.modelsByHarness.get(state.harnessId) ?? null;
     state.pendingFirstMessageDisplayName = false;
     state.lastRealtimeRequestAt = null;
     this.sendState(message.deviceId, "Switched session");
@@ -292,21 +302,30 @@ export class OpenClawChatBridge {
 
   async newSession(message: ChatNewSessionMessage): Promise<void> {
     const state = this.stateFor(message.deviceId);
+    const selection = parseHarnessModel(message.model ?? state.model);
+    if (selection) {
+      this.switchHarness(message.deviceId, state, selection.harnessId);
+      state.model = selection.selectionId;
+      state.modelsByHarness.set(selection.harnessId, selection.selectionId);
+    }
     const sessionUuid = randomUUID();
     const requestKey = typeof message.key === "string" && message.key.trim()
       ? message.key.trim()
-      : `phone-${message.deviceId}-${sessionUuid}`;
+      : state.harnessId === "openclaw"
+        ? `phone-${message.deviceId}-${sessionUuid}`
+        : `${state.harnessId}:phone-${message.deviceId}-${sessionUuid}`;
     const explicitLabel = typeof message.label === "string" && message.label.trim()
       ? message.label.trim()
       : undefined;
     const created = await this.client.createSession({
       key: requestKey,
       label: explicitLabel ?? sessionUuid,
-      model: message.model ?? state.model ?? undefined
+      model: selection?.modelId ?? this.rawModelForSelection(state.model) ?? undefined
     });
     const record = created && typeof created === "object" ? created as Record<string, unknown> : {};
     const key = typeof record.key === "string" && record.key.trim() ? record.key.trim() : undefined;
-    state.sessionKey = key ?? `agent:${this.config.openClawChatAgentId}:explicit:${requestKey}`;
+    state.sessionKey = key ?? defaultSessionKeyForHarness(state.harnessId, this.config, message.deviceId);
+    state.sessionKeysByHarness.set(state.harnessId, state.sessionKey);
     state.sessionId = typeof record.sessionId === "string" ? record.sessionId : null;
     state.runId = null;
     state.pendingFirstMessageDisplayName = explicitLabel ? false : true;
@@ -317,21 +336,36 @@ export class OpenClawChatBridge {
 
   async setModel(message: ChatSetModelMessage): Promise<void> {
     const state = this.stateFor(message.deviceId);
-    const sessionKey = message.sessionKey ?? state.sessionKey;
-    state.model = message.model;
-    await this.sendSlashCommand(message.deviceId, `/model ${message.model}`, sessionKey, `Model: ${message.model}`);
+    this.applyModelSelection(message.deviceId, state, message.model);
+    const sessionKey = message.sessionKey && harnessForSessionKey(message.sessionKey) === state.harnessId
+      ? message.sessionKey
+      : state.sessionKey;
+    const rawModel = this.rawModelForSelection(message.model) ?? message.model;
+    state.model = parseHarnessModel(message.model)?.selectionId ?? message.model;
+    state.modelsByHarness.set(state.harnessId, state.model);
+    if (state.harnessId === "openclaw") {
+      await this.sendSlashCommand(message.deviceId, `/model ${rawModel}`, sessionKey, `Model: ${rawModel}`);
+    } else {
+      await this.patchSession(message.deviceId, sessionKey, { model: rawModel });
+      await this.refreshDevice(message.deviceId);
+    }
   }
 
   async setReasoning(message: ChatSetReasoningMessage): Promise<void> {
     const state = this.stateFor(message.deviceId);
     const sessionKey = message.sessionKey ?? state.sessionKey;
     state.reasoningEffort = normalizeThinkingLevel(message.reasoningEffort, state.reasoningEffort);
-    await this.sendSlashCommand(
-      message.deviceId,
-      `/think ${state.reasoningEffort}`,
-      sessionKey,
-      `Reasoning: ${state.reasoningEffort}`
-    );
+    if (state.harnessId === "openclaw") {
+      await this.sendSlashCommand(
+        message.deviceId,
+        `/think ${state.reasoningEffort}`,
+        sessionKey,
+        `Reasoning: ${state.reasoningEffort}`
+      );
+    } else {
+      await this.patchSession(message.deviceId, sessionKey, { thinking: state.reasoningEffort });
+      await this.refreshDevice(message.deviceId);
+    }
   }
 
   async controlCommand(message: ChatControlCommandMessage): Promise<void> {
@@ -345,6 +379,46 @@ export class OpenClawChatBridge {
 
   private stateFor(deviceId: string): DeviceChatState {
     return this.states.stateFor(deviceId);
+  }
+
+  private switchHarness(deviceId: string, state: DeviceChatState, harnessId: HarnessId): void {
+    if (state.harnessId === harnessId) {
+      return;
+    }
+    state.sessionKeysByHarness.set(state.harnessId, state.sessionKey);
+    state.modelsByHarness.set(state.harnessId, state.model ?? null);
+    state.harnessId = harnessId;
+    state.sessionKey = state.sessionKeysByHarness.get(harnessId)
+      ?? defaultSessionKeyForHarness(harnessId, this.config, deviceId);
+    state.sessionKeysByHarness.set(harnessId, state.sessionKey);
+    state.sessionId = null;
+    state.runId = null;
+    state.pendingRuns.clear();
+    state.pendingFirstMessageDisplayName = false;
+    state.lastRealtimeRequestAt = null;
+    state.model = state.modelsByHarness.get(harnessId) ?? null;
+  }
+
+  private activateSession(state: DeviceChatState, sessionKey: string): void {
+    state.sessionKeysByHarness.set(state.harnessId, state.sessionKey);
+    const harnessId = harnessForSessionKey(sessionKey);
+    state.harnessId = harnessId;
+    state.sessionKey = sessionKey;
+    state.sessionKeysByHarness.set(harnessId, sessionKey);
+  }
+
+  private applyModelSelection(deviceId: string, state: DeviceChatState, model: string | undefined): void {
+    const selection = parseHarnessModel(model);
+    if (!selection) {
+      return;
+    }
+    this.switchHarness(deviceId, state, selection.harnessId);
+    state.model = selection.selectionId;
+    state.modelsByHarness.set(selection.harnessId, selection.selectionId);
+  }
+
+  private rawModelForSelection(model: string | undefined | null): string | undefined {
+    return parseHarnessModel(model)?.modelId ?? model?.trim() ?? undefined;
   }
 
   private async refreshDevice(deviceId: string): Promise<void> {
@@ -378,9 +452,10 @@ export class OpenClawChatBridge {
   }
 
   private async sendModels(deviceId: string): Promise<void> {
+    const state = this.stateFor(deviceId);
     const [modelsPayload, sessionsPayload] = await Promise.all([
       this.client.listModels(),
-      this.client.listSessions(1).catch(() => undefined)
+      this.client.listSessions(1, state.harnessId).catch(() => undefined)
     ]);
     const models = normalizeModels(modelsPayload);
     this.sendChat(deviceId, {
@@ -393,13 +468,14 @@ export class OpenClawChatBridge {
 
   private async sendSessions(deviceId: string): Promise<void> {
     const state = this.stateFor(deviceId);
-    const payload = await this.client.listSessions(50);
+    const payload = await this.client.listSessions(50, state.harnessId);
     const sessions = normalizeSessions(payload);
     state.sessionSummaries = new Map(sessions.map((session) => [session.key, session]));
     const selected = sessions.find((session) => session.key === state.sessionKey);
     if (selected) {
       state.sessionId = selected.sessionId ?? null;
       state.model = state.model ?? selected.model ?? null;
+      state.modelsByHarness.set(state.harnessId, state.model);
       state.reasoningEffort = normalizeThinkingLevel(selected.thinkingLevel, state.reasoningEffort);
       state.reasoningStream = reasoningStreamEnabled(selected.reasoningLevel) ?? state.reasoningStream ?? null;
       state.fastMode = selected.fastMode ?? null;
@@ -443,7 +519,7 @@ export class OpenClawChatBridge {
   }
 
   private async sendCommands(deviceId: string): Promise<void> {
-    const payload = await this.client.listCommands();
+    const payload = await this.client.listCommands(this.stateFor(deviceId).sessionKey);
     this.sendChat(deviceId, {
       type: "chat.commands",
       deviceId,
@@ -453,7 +529,7 @@ export class OpenClawChatBridge {
 
   private async sendCommandList(deviceId: string): Promise<void> {
     try {
-      const payload = await this.client.listCommands();
+      const payload = await this.client.listCommands(this.stateFor(deviceId).sessionKey);
       const commands = normalizeCommands(payload);
       this.sendChat(deviceId, {
         type: "chat.commands",
@@ -469,7 +545,7 @@ export class OpenClawChatBridge {
 
   private async sendHelp(deviceId: string): Promise<void> {
     try {
-      const payload = await this.client.listCommands();
+      const payload = await this.client.listCommands(this.stateFor(deviceId).sessionKey);
       const commands = normalizeCommands(payload);
       this.sendChat(deviceId, {
         type: "chat.commands",
@@ -581,6 +657,8 @@ export class OpenClawChatBridge {
       deviceId,
       sessionKey: state.sessionKey,
       sessionId: state.sessionId,
+      harnessId: state.harnessId,
+      harnessLabel: harnessLabel(state.harnessId),
       runId: state.runId ?? null,
       isRunning: Boolean(state.runId),
       status: status ?? null,
