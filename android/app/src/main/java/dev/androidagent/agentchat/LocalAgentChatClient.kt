@@ -33,6 +33,13 @@ class LocalAgentChatClient(
     private var activeSessionKey: String = store.session(null).key
     private var activeRun: Job? = null
 
+    private data class LocalUsage(
+        val inputTokens: Long,
+        val outputTokens: Long,
+        val totalTokens: Long,
+        val contextTokens: Long
+    )
+
     override fun open(sessionKey: String?): Boolean {
         activeSessionKey = store.session(sessionKey).key
         refresh(activeSessionKey, "Local phone model ready")
@@ -125,6 +132,7 @@ class LocalAgentChatClient(
         emit(models())
         emit(tools())
         emit(sessions(session.key))
+        emit(usage(session))
         emit(history(session))
         emit(state(session.key, null, activeRun?.isActive == true, status))
     }
@@ -141,6 +149,7 @@ class LocalAgentChatClient(
                 .put("id", AgentModelOptions.LOCAL_LITERT_MODEL_ID)
                 .put("label", "Local LiteRT-LM")
                 .put("provider", "android")
+                .put("contextWindow", configProvider().localContextTokens)
                 .put("available", true)))
             .put("reasoningOptions", JSONArray()
                 .put(JSONObject().put("id", "low").put("label", "low"))
@@ -158,7 +167,10 @@ class LocalAgentChatClient(
             .put("type", "chat.sessions")
             .put("selectedSessionKey", selectedKey)
             .put("sessions", JSONArray().also { array ->
+                val config = configProvider()
+                val toolTokens = estimateTokenCount(tools.toolDescriptions().toString())
                 store.all().forEach { session ->
+                    val usage = tokenUsage(session, config, toolTokens)
                     array.put(JSONObject()
                         .put("key", session.key)
                         .put("label", session.label)
@@ -166,9 +178,50 @@ class LocalAgentChatClient(
                         .put("updatedAt", session.updatedAt)
                         .put("model", AgentModelOptions.LOCAL_LITERT_MODEL_ID)
                         .put("modelProvider", "android")
-                        .put("thinkingLevel", configProvider().reasoningEffort))
+                        .put("inputTokens", usage.inputTokens)
+                        .put("outputTokens", usage.outputTokens)
+                        .put("totalTokens", usage.totalTokens)
+                        .put("contextTokens", usage.contextTokens)
+                        .put("thinkingLevel", config.reasoningEffort))
                 }
             })
+
+    private fun usage(session: LocalChatSession): JSONObject {
+        val usage = tokenUsage(session, configProvider(), estimateTokenCount(tools.toolDescriptions().toString()))
+        return JSONObject()
+            .put("type", "chat.usage")
+            .put("sessionKey", session.key)
+            .put("usage", JSONObject()
+                .put("inputTokens", usage.inputTokens)
+                .put("outputTokens", usage.outputTokens)
+                .put("totalTokens", usage.totalTokens)
+                .put("contextTokens", usage.contextTokens))
+    }
+
+    private fun tokenUsage(session: LocalChatSession, config: AgentConfig, toolTokens: Long): LocalUsage {
+        val promptTokens = estimateTokenCount(config.systemPrompt)
+        var inputTokens = promptTokens + toolTokens
+        var outputTokens = 0L
+        session.messages.forEach { message ->
+            val tokens = estimateTokenCount(message.text)
+            if (message.role == "assistant") {
+                outputTokens += tokens
+            } else {
+                inputTokens += tokens
+            }
+        }
+        return LocalUsage(
+            inputTokens = inputTokens,
+            outputTokens = outputTokens,
+            totalTokens = inputTokens + outputTokens,
+            contextTokens = config.localContextTokens.toLong()
+        )
+    }
+
+    private fun estimateTokenCount(text: String): Long {
+        if (text.isBlank()) return 0L
+        return ((text.length + 3) / 4).toLong()
+    }
 
     private fun history(session: LocalChatSession): JSONObject =
         JSONObject()
