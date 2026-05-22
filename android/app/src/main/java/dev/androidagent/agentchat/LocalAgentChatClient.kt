@@ -9,6 +9,7 @@ import dev.androidagent.localmodel.LocalAgentController
 import dev.androidagent.localmodel.LocalChatSession
 import dev.androidagent.localmodel.LocalChatSessionStore
 import dev.androidagent.localmodel.LocalModelRuntime
+import dev.androidagent.localmodel.LocalPromptBuilder
 import dev.androidagent.localmodel.LocalToolRegistry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -168,9 +169,9 @@ class LocalAgentChatClient(
             .put("selectedSessionKey", selectedKey)
             .put("sessions", JSONArray().also { array ->
                 val config = configProvider()
-                val toolTokens = estimateTokenCount(tools.toolDescriptions().toString())
+                val toolDescriptionsJson = tools.toolDescriptions().toString()
                 store.all().forEach { session ->
-                    val usage = tokenUsage(session, config, toolTokens)
+                    val usage = tokenUsage(session, config, toolDescriptionsJson)
                     array.put(JSONObject()
                         .put("key", session.key)
                         .put("label", session.label)
@@ -187,7 +188,7 @@ class LocalAgentChatClient(
             })
 
     private fun usage(session: LocalChatSession): JSONObject {
-        val usage = tokenUsage(session, configProvider(), estimateTokenCount(tools.toolDescriptions().toString()))
+        val usage = tokenUsage(session, configProvider(), tools.toolDescriptions().toString())
         return JSONObject()
             .put("type", "chat.usage")
             .put("sessionKey", session.key)
@@ -198,9 +199,13 @@ class LocalAgentChatClient(
                 .put("contextTokens", usage.contextTokens))
     }
 
-    private fun tokenUsage(session: LocalChatSession, config: AgentConfig, toolTokens: Long): LocalUsage {
-        val promptTokens = estimateTokenCount(config.systemPrompt)
-        var inputTokens = promptTokens + toolTokens
+    private fun tokenUsage(session: LocalChatSession, config: AgentConfig, toolDescriptionsJson: String): LocalUsage {
+        val promptTokens = estimateTokenCount(LocalPromptBuilder.systemPrompt(
+            basePrompt = config.systemPrompt,
+            toolsAllowed = true,
+            toolDescriptionsJson = toolDescriptionsJson
+        ))
+        var inputTokens = promptTokens
         var outputTokens = 0L
         session.messages.forEach { message ->
             val tokens = estimateTokenCount(message.text)

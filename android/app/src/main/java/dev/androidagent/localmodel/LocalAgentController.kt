@@ -24,6 +24,12 @@ class LocalAgentController(
         val transcript = history.takeLast(16).map { "${it.role}: ${it.text}" }.toMutableList()
         transcript.add("user: $userText")
         val toolsAllowed = shouldAllowTools(userText)
+        val config = configProvider()
+        val systemPrompt = LocalPromptBuilder.systemPrompt(
+            basePrompt = config.systemPrompt,
+            toolsAllowed = toolsAllowed,
+            toolDescriptionsJson = tools.toolDescriptions().toString()
+        )
         var rejectedUnneededTool = false
         var rejectedCommandRequest = false
         var rejectedEmptyTermuxCommand = false
@@ -34,10 +40,8 @@ class LocalAgentController(
         repeat(MAX_TOOL_ROUNDS) toolLoop@{ round ->
             Log.i(TAG, "local turn $runId round=${round + 1} starting")
             emit(reasoning(sessionKey, runId, if (round == 0) "Planning locally..." else "Continuing after tool result...", replace = round == 0))
-            val config = configProvider()
-            val systemPrompt = buildLocalSystemPrompt(config.systemPrompt)
-            val prompt = buildPrompt(transcript, latestScreenshotPath, toolsAllowed)
-            Log.i(TAG, "local turn $runId prompt metrics round=${round + 1} systemChars=${systemPrompt.length} systemTokens=${estimateTokenCount(systemPrompt)} promptChars=${prompt.length} promptTokens=${estimateTokenCount(prompt)}")
+            val prompt = LocalPromptBuilder.roundPrompt(transcript, latestScreenshotPath)
+            Log.i(TAG, "local turn $runId prompt metrics round=${round + 1} systemChars=${systemPrompt.length} systemTokens=${LocalPromptBuilder.estimateTokenCount(systemPrompt)} promptChars=${prompt.length} promptTokens=${LocalPromptBuilder.estimateTokenCount(prompt)}")
             val response = try {
                 withTimeout(MODEL_RESPONSE_TIMEOUT_MS) {
                     runtime.generate(
@@ -164,60 +168,6 @@ class LocalAgentController(
         val message = "I hit the local tool safety limit before finishing."
         emitAssistant(sessionKey, runId, message)
         return message
-    }
-
-    private fun buildPrompt(
-        transcript: List<String>,
-        latestScreenshotPath: String?,
-        toolsAllowed: Boolean
-    ): String {
-        val screenshotInstruction = if (latestScreenshotPath == null) {
-            "No screenshot image is attached to this round."
-        } else {
-            "A screenshot image from the latest phone_take_screenshot call is attached to this round. Do not call phone_observe again before acting. If the requested visual target is visible, call phone_tap_normalized with xPct and yPct coordinates from the top-left corner, where 0.0 is the left/top edge and 1.0 is the right/bottom edge. If the target is not visible or you cannot identify it from the image, explain briefly in normal prose."
-        }
-        val toolInstructions = if (toolsAllowed) {
-            """
-            Use tools only when the user explicitly asks you to interact with the phone UI, inspect the current phone screen, read/write local workspace files, run Termux commands, or perform another action that cannot be answered from conversation alone. If you need a tool, respond with only JSON:
-            {"tool":"phone_observe","args":{}}
-            or
-            {"toolCalls":[{"name":"phone_open_app","args":{"appName":"Settings"}}]}
-
-            If the user asks you to create files, websites, projects, or anything that should open in the phone browser, use termux_command and save it somewhere phone-accessible such as /sdcard/Download/openclaw-project. Choose the shell commands yourself. Do not ask the user for exact commands. Do not use the app-private local workspace for browser-openable HTML.
-
-            For HTML projects, a valid pattern is:
-            {"tool":"termux_command","args":{"command":"mkdir -p /sdcard/Download/openclaw-project && cat > /sdcard/Download/openclaw-project/index.html <<'EOF'\n<!doctype html>\n<html><body>Hello</body></html>\nEOF","timeoutMs":60000}}
-
-            Do not observe the phone just to answer a normal text question. Do not call phone_observe repeatedly. Once you have observed the same app/screen, take an action or explain what you cannot do. Never invent node IDs such as search_icon. Use only node IDs returned by observation. If the accessibility tree lacks a visible control, call phone_take_screenshot once. If an image is attached, use visual evidence from that screenshot to choose phone_tap_normalized coordinates. For example, a target at the top-right of the screenshot is near {"tool":"phone_tap_normalized","args":{"xPct":0.93,"yPct":0.08}}.
-
-            Screenshot context: $screenshotInstruction
-
-            Available tools:
-            ${tools.toolDescriptions()}
-            """.trimIndent()
-        } else {
-            "Tools are not needed for this message. Answer directly in natural language. Do not call phone_observe, phone_take_screenshot, Termux, or file tools."
-        }
-
-        return """
-            You are a helpful assistant running locally on this Android phone.
-
-            Behave like a normal conversational LLM with optional tools. For ordinary questions, explanations, brainstorming, coding help, or general chat, answer directly without calling tools.
-
-            $toolInstructions
-
-            Final answers should read naturally. Do not prefix final answers with TASK_COMPLETE, BLOCKED, or debug labels. If you cannot continue, explain briefly why in normal prose. Do not emit an empty response.
-
-            If no tool is needed, answer normally and concisely.
-
-            Conversation:
-            ${transcript.joinToString("\n")}
-        """.trimIndent()
-    }
-
-    private fun estimateTokenCount(text: String): Int {
-        if (text.isBlank()) return 0
-        return (text.length + 3) / 4
     }
 
     private fun emitAssistant(sessionKey: String, runId: String, text: String) {
