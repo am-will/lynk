@@ -43,6 +43,7 @@ class AnchoredPicker(
         val sublabel: String? = null,
         val iconRes: Int? = null,
         val selected: Boolean = false,
+        val selectable: Boolean = true,
         val destructive: Boolean = false,
         val enabled: Boolean = true,
         val badgeCount: Int = 0,
@@ -507,7 +508,9 @@ class AnchoredPicker(
 
     private fun Row.accessibilityStateDescription(): String {
         return buildList {
-            add(if (selected) "selected" else "not selected")
+            if (selectable || selected) {
+                add(if (selected) "selected" else "not selected")
+            }
             if (!enabled) add("disabled")
         }.joinToString(", ")
     }

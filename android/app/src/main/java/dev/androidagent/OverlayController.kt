@@ -1087,8 +1087,8 @@ class OverlayController(
         if (modelPickerActiveHarnessId != activeHarnessId) {
             expandedModelHarnesses.clear()
             modelPickerActiveHarnessId = activeHarnessId
+            expandedModelHarnesses.add(activeHarnessId)
         }
-        expandedModelHarnesses.add(activeHarnessId)
 
         val groups = merged
             .groupBy { ChatPresentationHelpers.modelHarnessId(it) }
@@ -1101,14 +1101,14 @@ class OverlayController(
             }
             .sortedWith(compareBy<ModelHarnessGroup> { ChatPresentationHelpers.modelHarnessSortOrder(it.id) }.thenBy { it.label })
 
-        val rows = groups.flatMap { group ->
+        val sections = groups.map { group ->
             val expanded = group.id in expandedModelHarnesses
             val harnessRow = AnchoredPicker.Row(
                 id = "model-harness:${group.id}",
                 label = group.label,
                 sublabel = if (group.id == activeHarnessId) "Active harness" else "${group.models.size} model${if (group.models.size == 1) "" else "s"}",
-                iconRes = R.drawable.ic_model,
                 selected = false,
+                selectable = false,
                 trailingIconRes = R.drawable.ic_chevron_right,
                 trailingIconRotation = if (expanded) 90f else 0f,
                 dismissOnSelect = false,
@@ -1121,7 +1121,7 @@ class OverlayController(
                     showModelChoices(replace = true)
                 }
             )
-            if (!expanded) {
+            val rows = if (!expanded) {
                 listOf(harnessRow)
             } else {
                 listOf(harnessRow) + group.models.map { model ->
@@ -1139,11 +1139,12 @@ class OverlayController(
                     )
                 }
             }
+            AnchoredPicker.Section(null, rows)
         }
         showAnchoredPicker(
             anchor = anchor,
             title = "Model",
-            sections = listOf(AnchoredPicker.Section(null, rows)),
+            sections = sections,
             toggleSameAnchor = !replace,
             replaceShowing = replace
         )
