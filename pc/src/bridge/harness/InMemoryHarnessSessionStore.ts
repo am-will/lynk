@@ -87,7 +87,8 @@ export class InMemoryHarnessSessionStore {
         thinkingLevel: session.thinkingLevel ?? null,
         inputTokens: numberFromUsage(session.usage, "input_tokens", "inputTokens"),
         outputTokens: numberFromUsage(session.usage, "output_tokens", "outputTokens"),
-        totalTokens: numberFromUsage(session.usage, "total_tokens", "totalTokens")
+        totalTokens: numberFromUsage(session.usage, "total_tokens", "totalTokens"),
+        contextTokens: numberFromUsage(session.usage, "context_tokens", "contextTokens")
       }));
   }
 

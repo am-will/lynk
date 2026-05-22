@@ -363,7 +363,10 @@ function modelMatchesSession(
   if (sessionHarness && modelHarness && sessionHarness !== modelHarness) {
     return false;
   }
-  return modelIds.some((id) => splitHarnessModel(id).modelId === sessionModelId);
+  return modelIds.some((id) => {
+    const modelId = splitHarnessModel(id).modelId;
+    return modelId === sessionModelId || modelId.endsWith(`:${sessionModelId}`);
+  });
 }
 
 function splitHarnessModel(value: string): { harnessId?: string; modelId: string } {
