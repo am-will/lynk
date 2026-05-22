@@ -10,6 +10,7 @@ import dev.androidagent.localmodel.LocalChatSession
 import dev.androidagent.localmodel.LocalChatSessionStore
 import dev.androidagent.localmodel.LocalModelRuntime
 import dev.androidagent.localmodel.LocalPromptBuilder
+import dev.androidagent.localmodel.LocalResponseTextNormalizer
 import dev.androidagent.localmodel.LocalToolRegistry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -242,7 +243,11 @@ class LocalAgentChatClient(
                     array.put(JSONObject()
                         .put("id", message.id)
                         .put("role", message.role)
-                        .put("text", message.text)
+                        .put("text", if (message.role == "assistant") {
+                            LocalResponseTextNormalizer.normalize(message.text)
+                        } else {
+                            message.text
+                        })
                         .put("timestamp", message.timestamp))
                 }
             })

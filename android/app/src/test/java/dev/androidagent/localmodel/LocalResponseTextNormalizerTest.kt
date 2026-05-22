@@ -46,7 +46,7 @@ class LocalResponseTextNormalizerTest {
     fun repairsLiteRtCasimirFormattingFromRenderedHistory() {
         val normalized = LocalResponseTextNormalizer.normalize(
             """
-            Here is a breakdown of what makes it so interesting:###1. The Quantum VacuumIn classical physics, a vacuum is empty space.###2. The Role of BoundariesWhen you place plates close together.*Outside the plates: Any wavelength.*Between the plates: Only fitting wavelengths. Key Takeaways:**
+            Here is a breakdown of what makes it so interesting:###1. The Quantum VacuumIn classical physics, a vacuum is empty space. "zero-point energy."###2. The Role of BoundariesWhen you place plates close together.*Outside the plates: Any wavelength.*Between the plates: Only fitting wavelengths. Key Takeaways:**
 
             It's a real force:** It has been experimentally verified.*It's incredibly weak: The force is extremely small.
 
@@ -57,6 +57,7 @@ class LocalResponseTextNormalizerTest {
         )
 
         assertTrue(normalized.contains("interesting:\n\n### 1. The Quantum Vacuum\n\nIn classical physics"))
+        assertTrue(normalized.contains("energy.\"\n\n### 2. The Role of Boundaries\n\nWhen you place"))
         assertTrue(normalized.contains("### 2. The Role of Boundaries\n\nWhen you place"))
         assertTrue(normalized.contains("\n\n* Outside the plates: Any wavelength."))
         assertTrue(normalized.contains("\n\n* Between the plates: Only fitting wavelengths."))
