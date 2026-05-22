@@ -192,7 +192,6 @@ class OverlayController(
     private var connectionIndicatorButton: HostConnectionIndicatorButton? = null
     private var connectionPopupView: View? = null
     private var connectionPopupScrimView: View? = null
-    private var plusButton: ImageButton? = null
     private var lastHostConnectionState = HostConnectionState(
         phase = HostConnectionPhase.CONNECTING,
         message = "Checking host connection..."
@@ -522,6 +521,13 @@ class OverlayController(
     }
 
     private fun buildModalHeader(tokens: ThemeTokens, presentation: PanelPresentation): View {
+        val newChatButton = iconButton(
+            tokens = tokens,
+            drawableRes = R.drawable.ic_new_chat,
+            contentDescription = "Start new chat",
+            viewId = R.id.openclaw_new_chat_button,
+            compact = true
+        ) { startNewChatSession() }
         val connectionButton = HostConnectionIndicatorButton(context).apply {
             id = R.id.openclaw_header_host_status_button
             bind(tokens, lastHostConnectionState)
@@ -629,6 +635,7 @@ class OverlayController(
         val actions = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            addView(newChatButton, LinearLayout.LayoutParams(headerSize, headerSize).apply { rightMargin = headerGap })
             addView(connectionButton, LinearLayout.LayoutParams(headerSize, headerSize).apply { rightMargin = headerGap })
             addView(voiceButton, LinearLayout.LayoutParams(headerSize, headerSize).apply { rightMargin = headerGap })
             addView(settingsButton, LinearLayout.LayoutParams(headerSize, headerSize).apply { rightMargin = headerGap })
@@ -786,17 +793,6 @@ class OverlayController(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-
-        plusButton = iconButton(
-            tokens = tokens,
-            drawableRes = R.drawable.ic_new_chat,
-            contentDescription = "Start new chat",
-            viewId = R.id.openclaw_new_chat_button,
-            compact = true
-        ) { startNewChatSession() }.apply {
-            setPadding(dp(4), dp(4), dp(4), dp(4))
-        }
-        controls.addView(plusButton, LinearLayout.LayoutParams(controlSize, controlSize).apply { rightMargin = controlGap })
 
         modelButton = compactPill(tokens, "Model", R.drawable.ic_model).apply {
             exposeToAccessibility(
@@ -2242,7 +2238,6 @@ class OverlayController(
         headerBrandLogo = null
         headerBrandTitle = null
         connectionIndicatorButton = null
-        plusButton = null
         if (dismissedPresentation == PanelPresentation.Fullscreen) {
             restoreBubbleAfterFullscreenDismiss()
         }
