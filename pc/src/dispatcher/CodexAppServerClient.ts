@@ -213,6 +213,7 @@ export class CodexAppServerClient implements AgentClient {
   private initialized = false;
   private readonly pending = new Map<number, PendingRpc>();
   private readonly latestUsageByThread = new Map<string, Record<string, unknown>>();
+  private readonly loadedThreads = new Set<string>();
   private pendingTurn?: PendingTurn;
   private activeSink?: AgentStatusSink;
   private readonly realtimeSessions = new Map<string, ActiveRealtimeSession>();
@@ -230,7 +231,9 @@ export class CodexAppServerClient implements AgentClient {
   ): Promise<AgentRunResult> {
     this.activeSink = sink;
     await this.ensureStarted();
-    const threadId = options.threadId ?? await this.createThread({ model: options.model });
+    const threadId = options.threadId
+      ? await this.resumeThread({ threadId: options.threadId, model: options.model })
+      : await this.createThread({ model: options.model });
     this.audit?.record("codex_turn_starting", undefined, { threadId, text, model: options.model, reasoningEffort: options.reasoningEffort });
     sink.working("Sending request to Codex app-server");
     const result = await this.request("turn/start", {
@@ -308,6 +311,8 @@ export class CodexAppServerClient implements AgentClient {
     this.realtimeSessions.clear();
     this.lines?.close();
     this.child?.kill();
+    this.loadedThreads.clear();
+    this.latestUsageByThread.clear();
   }
 
   async listModels(): Promise<unknown> {
@@ -338,7 +343,27 @@ export class CodexAppServerClient implements AgentClient {
     if (!thread?.id) {
       throw new Error("Codex app-server thread/start returned no thread id");
     }
+    this.loadedThreads.add(thread.id);
     return thread.id;
+  }
+
+  async resumeThread(options: { threadId: string; model?: string }): Promise<string> {
+    await this.ensureStarted();
+    if (this.loadedThreads.has(options.threadId)) {
+      return options.threadId;
+    }
+    const result = await this.request("thread/resume", {
+      threadId: options.threadId,
+      cwd: this.cwd,
+      approvalPolicy: "never",
+      sandbox: "workspace-write",
+      personality: "pragmatic",
+      ...(options.model ? { model: options.model } : {})
+    });
+    const thread = (result as { thread?: { id?: string } }).thread;
+    const threadId = thread?.id ?? options.threadId;
+    this.loadedThreads.add(threadId);
+    return threadId;
   }
 
   async steer(text: string): Promise<void> {
@@ -417,6 +442,8 @@ export class CodexAppServerClient implements AgentClient {
       }
       this.pending.clear();
       this.initialized = false;
+      this.loadedThreads.clear();
+      this.latestUsageByThread.clear();
       this.pendingTurn?.reject(error);
       this.pendingTurn = undefined;
       for (const session of this.realtimeSessions.values()) {
