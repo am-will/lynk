@@ -764,6 +764,7 @@ class OverlayController(
                     if (!suppressComposerAutocomplete) {
                         maybeShowCommandAutocomplete(this@apply)
                     }
+                    renderComposerActionButtons(tokens(), lastChatState, lastTranscriptionState)
                 }
                 override fun afterTextChanged(s: Editable?) {
                     if (!suppressComposerAutocomplete) {
@@ -872,20 +873,18 @@ class OverlayController(
             viewId = R.id.openclaw_send_stop_button,
             accent = true
         ) {
+            val text = input.text.toString().trim()
             if (lastTranscriptionState.isRecording) {
                 onStopTranscription()
                 setStatus("Transcribing audio...")
+            } else if (text.isNotEmpty()) {
+                if (onSubmit(text)) {
+                    input.setText("")
+                    setStatus(brandPresentationFor(lastChatState).copy.sentStatus)
+                }
             } else if (lastChatState.isRunning) {
                 onStop()
                 setStatus("Stop requested")
-            } else {
-                val text = input.text.toString().trim()
-                if (text.isNotEmpty()) {
-                    if (onSubmit(text)) {
-                        input.setText("")
-                        setStatus(brandPresentationFor(lastChatState).copy.sentStatus)
-                    }
-                }
             }
         }
         controls.addView(sendStopButton, LinearLayout.LayoutParams(sendSize, sendSize))
@@ -2340,10 +2339,12 @@ class OverlayController(
         }
 
         sendStopButton?.apply {
-            val shouldShowStop = transcriptionState.isRecording || chatState.isRunning
+            val hasComposerText = composerInput?.text?.toString()?.trim()?.isNotEmpty() == true
+            val shouldShowStop = transcriptionState.isRecording || (chatState.isRunning && !hasComposerText)
             setImageResource(if (shouldShowStop) R.drawable.ic_stop else R.drawable.ic_send)
             updateAccessibilityState(description = when {
                 transcriptionState.isRecording -> "Stop recording and transcribe"
+                chatState.isRunning && hasComposerText -> "Send ${activeSendModeLabel().lowercase()} message"
                 chatState.isRunning -> brandPresentationFor(chatState).copy.stopTurnDescription
                 else -> "Send message"
             })
