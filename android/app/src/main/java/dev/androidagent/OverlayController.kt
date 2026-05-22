@@ -1071,8 +1071,8 @@ class OverlayController(
         popup.pivotY = if (params.topMargin < anchorTop) popupHeight.toFloat() else 0f
     }
 
-    private fun showModelChoices(replace: Boolean = false) {
-        val anchor = modelButton ?: return
+    private fun showModelChoices(anchorOverride: View? = null, replace: Boolean = false) {
+        val anchor = anchorOverride ?: modelButton ?: return
         val localLiteRtAvailable = isExperimentalLocalModelAvailable()
         val merged = ChatPresentationHelpers.mergeModelOptions(lastChatState.models, localLiteRtAvailable)
         if (merged.isEmpty()) {
@@ -1160,8 +1160,8 @@ class OverlayController(
         val models: List<ChatModelOption>
     )
 
-    private fun showReasoningChoices() {
-        val anchor = reasoningButton ?: return
+    private fun showReasoningChoices(anchorOverride: View? = null, replace: Boolean = false) {
+        val anchor = anchorOverride ?: reasoningButton ?: return
         val options = lastChatState.reasoningOptions.ifEmpty { ChatState.defaultReasoningOptions }
         val rows = options.map { option ->
             AnchoredPicker.Row(
@@ -1175,7 +1175,13 @@ class OverlayController(
                 }
             )
         }
-        showAnchoredPicker(anchor, "Reasoning", listOf(AnchoredPicker.Section(null, rows)))
+        showAnchoredPicker(
+            anchor = anchor,
+            title = "Reasoning",
+            sections = listOf(AnchoredPicker.Section(null, rows)),
+            toggleSameAnchor = !replace,
+            replaceShowing = replace
+        )
     }
 
     private fun cycleReasoningChoice() {
@@ -1256,6 +1262,26 @@ class OverlayController(
                 onSelect = { showSessionsMenu(menuAnchor) }
             ))
         }
+        sessionRows.add(AnchoredPicker.Row(
+            id = "picker:model",
+            label = "Model",
+            sublabel = ChatPresentationHelpers.formatModelLabel(
+                model = lastChatState.selectedModel ?: lastChatState.models.firstOrNull()?.id,
+                models = lastChatState.models,
+                localLiteRtAvailable = isExperimentalLocalModelAvailable()
+            ),
+            iconRes = R.drawable.ic_model,
+            dismissOnSelect = false,
+            onSelect = { showModelChoices(anchorOverride = menuAnchor, replace = true) }
+        ))
+        sessionRows.add(AnchoredPicker.Row(
+            id = "picker:reasoning",
+            label = "Reasoning",
+            sublabel = ChatPresentationHelpers.formatReasoningLabel(lastChatState.reasoningEffort),
+            iconRes = R.drawable.ic_reasoning,
+            dismissOnSelect = false,
+            onSelect = { showReasoningChoices(anchorOverride = menuAnchor, replace = true) }
+        ))
 
         val commandRows = mutableListOf<AnchoredPicker.Row>()
         if (commands.isNotEmpty()) {
