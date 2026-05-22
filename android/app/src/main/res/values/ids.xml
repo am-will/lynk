@@ -55,6 +55,7 @@
     <item name="openclaw_composer_container" type="id" />
     <item name="openclaw_composer_input" type="id" />
     <item name="openclaw_new_chat_button" type="id" />
+    <item name="openclaw_composer_menu_button" type="id" />
     <item name="openclaw_model_selector" type="id" />
     <item name="openclaw_reasoning_selector" type="id" />
     <item name="openclaw_context_usage_button" type="id" />

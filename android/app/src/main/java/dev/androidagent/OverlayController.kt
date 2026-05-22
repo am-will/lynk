@@ -794,6 +794,19 @@ class OverlayController(
             gravity = Gravity.CENTER_VERTICAL
         }
 
+        val menuButton = iconButton(
+            tokens = tokens,
+            drawableRes = R.drawable.ic_plus,
+            contentDescription = "Open chat menu",
+            viewId = R.id.openclaw_composer_menu_button,
+            compact = true,
+            onClick = {}
+        ).apply {
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+        }
+        menuButton.setOnClickListener { showPlusMenu(anchorOverride = menuButton) }
+        controls.addView(menuButton, LinearLayout.LayoutParams(controlSize, controlSize).apply { rightMargin = controlGap })
+
         modelButton = compactPill(tokens, "Model", R.drawable.ic_model).apply {
             exposeToAccessibility(
                 viewId = R.id.openclaw_model_selector,
