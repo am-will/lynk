@@ -82,12 +82,12 @@ export class RealtimeTaskManager {
       return;
     }
 
-    if (message.name === REALTIME_TOOL_NAMES.stopPhoneTask || message.name === REALTIME_TOOL_NAMES.stopOpenClawTask) {
+    if (message.name === REALTIME_TOOL_NAMES.stopPhoneTask || message.name === REALTIME_TOOL_NAMES.stopOpenClawTask || message.name === REALTIME_TOOL_NAMES.stopAgentTask) {
       await this.handleStopToolCall(message);
       return;
     }
 
-    if (message.name === REALTIME_TOOL_NAMES.steerPhoneTask || message.name === REALTIME_TOOL_NAMES.steerOpenClawTask) {
+    if (message.name === REALTIME_TOOL_NAMES.steerPhoneTask || message.name === REALTIME_TOOL_NAMES.steerOpenClawTask || message.name === REALTIME_TOOL_NAMES.steerAgentTask) {
       await this.handleSteerToolCall(message);
       return;
     }
@@ -158,8 +158,8 @@ export class RealtimeTaskManager {
       callId: message.callId,
       ok: true,
       status: "completed",
-      output: message.name === REALTIME_TOOL_NAMES.stopOpenClawTask
-        ? "Stopped the active Open Claw task and cleared queued realtime tasks."
+      output: message.name === REALTIME_TOOL_NAMES.stopOpenClawTask || message.name === REALTIME_TOOL_NAMES.stopAgentTask
+        ? "Stopped the active agent task and cleared queued realtime tasks."
         : "Stopped the active phone task and cleared queued realtime phone tasks.",
       createResponse: false
     });
@@ -186,7 +186,7 @@ export class RealtimeTaskManager {
         callId: message.callId,
         instruction: guidance,
         urgency: "normal",
-        kind: message.name === REALTIME_TOOL_NAMES.steerOpenClawTask ? "general" : "phone"
+        kind: message.name === REALTIME_TOOL_NAMES.steerOpenClawTask || message.name === REALTIME_TOOL_NAMES.steerAgentTask ? "general" : "phone"
       };
       state.queue.unshift(task);
       this.sendStatus(message.deviceId);
@@ -198,14 +198,14 @@ export class RealtimeTaskManager {
       await this.steerActiveTurn(
         message.deviceId,
         guidance,
-        message.name === REALTIME_TOOL_NAMES.steerOpenClawTask ? "general" : "phone",
+        message.name === REALTIME_TOOL_NAMES.steerOpenClawTask || message.name === REALTIME_TOOL_NAMES.steerAgentTask ? "general" : "phone",
         message.callId
       );
       this.sendResult(message.deviceId, {
         callId: message.callId,
         ok: true,
         status: "completed",
-        output: message.name === REALTIME_TOOL_NAMES.steerOpenClawTask ? "Steered the active Open Claw task." : "Steered the active phone task.",
+      output: message.name === REALTIME_TOOL_NAMES.steerOpenClawTask || message.name === REALTIME_TOOL_NAMES.steerAgentTask ? "Steered the active agent task." : "Steered the active phone task.",
         createResponse: false
       });
       this.sendStatus(message.deviceId);
@@ -471,7 +471,9 @@ export class RealtimeTaskManager {
   }
 
   private validate(message: RealtimeToolCallMessage): { ok: true; instruction: string; urgency: "normal" | "interrupt"; kind: "general" | "phone" } | { ok: false; error: string } {
-    const kind = message.name === REALTIME_TOOL_NAMES.delegateOpenClawTask ? "general" : message.name === REALTIME_TOOL_NAMES.runPhoneTask ? "phone" : undefined;
+    const kind = message.name === REALTIME_TOOL_NAMES.delegateOpenClawTask || message.name === REALTIME_TOOL_NAMES.delegateAgentTask
+      ? "general"
+      : message.name === REALTIME_TOOL_NAMES.runPhoneTask ? "phone" : undefined;
     if (!kind) {
       return { ok: false, error: `Unsupported realtime tool ${message.name}.` };
     }

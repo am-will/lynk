@@ -322,6 +322,20 @@ test("delegate_openclaw_task routes general realtime work to dispatcher", async 
   assert.equal(results(messages).find((message) => message.callId === "call_general")?.output, "done Summarize my inbox");
 });
 
+test("generic agent realtime tools route general harness work", async () => {
+  const { delegate, manager, messages } = createHarnessWithDelegate();
+
+  await manager.handleToolCall(namedToolCall("call_general", "delegate_agent_task", { instruction: "Summarize my inbox" }));
+  await manager.handleToolCall(namedToolCall("call_steer", "steer_agent_task", { guidance: "Focus on unread messages." }));
+  await manager.handleToolCall(namedToolCall("call_stop", "stop_agent_task", { reason: "User said stop." }));
+  await waitFor(() => results(messages).length === 3);
+
+  assert.deepEqual(delegate.requests[0], { text: "Summarize my inbox", taskKind: "general", callId: "call_general" });
+  assert.equal(results(messages).find((message) => message.callId === "call_general")?.output, "chat done Summarize my inbox");
+  assert.equal(results(messages).find((message) => message.callId === "call_steer")?.status, "completed");
+  assert.equal(results(messages).find((message) => message.callId === "call_stop")?.status, "completed");
+});
+
 test("task delegate receives visible realtime OpenClaw and phone requests", async () => {
   const { delegate, manager, messages } = createHarnessWithDelegate();
 

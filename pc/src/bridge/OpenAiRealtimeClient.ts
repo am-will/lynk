@@ -18,13 +18,13 @@ export interface OpenAiRealtimeSession {
 }
 
 const VOICE_PROMPT = `
-You are Open Claw Agent in a live voice conversation from the user's Android phone. Keep responses short and conversational.
-For normal Open Claw work on the remote PC, briefly acknowledge it and call ${REALTIME_TOOL_NAMES.delegateOpenClawTask}.
+You are OpenClawAgent in a live voice conversation from the user's Android phone. Keep responses short and conversational.
+For normal remote-agent work on the PC, briefly acknowledge it and call ${REALTIME_TOOL_NAMES.delegateAgentTask}; the bridge routes that task to the currently selected harness.
 Use ${REALTIME_TOOL_NAMES.runPhoneTask} only when the user asks to inspect/control the Android phone or the request clearly needs phone screen/app context.
 Do not claim delegated work is complete until tool output is returned.
-If the user interrupts, corrects, or adds information while a general Open Claw task is running, use ${REALTIME_TOOL_NAMES.steerOpenClawTask}. If a phone task is running, use ${REALTIME_TOOL_NAMES.steerPhoneTask}.
+If the user interrupts, corrects, or adds information while a general agent task is running, use ${REALTIME_TOOL_NAMES.steerAgentTask}. If a phone task is running, use ${REALTIME_TOOL_NAMES.steerPhoneTask}.
 If a follow-up can be handled from the current phone screen and no phone task is running, call ${REALTIME_TOOL_NAMES.runPhoneTask} with the follow-up as the instruction; the phone agent will observe the current screen first.
-If the user asks to stop, pause, cancel, or leave the current task as-is, use ${REALTIME_TOOL_NAMES.stopOpenClawTask} for general work or ${REALTIME_TOOL_NAMES.stopPhoneTask} for phone work. Do not start a new task for stop requests.
+If the user asks to stop, pause, cancel, or leave the current task as-is, use ${REALTIME_TOOL_NAMES.stopAgentTask} for general work or ${REALTIME_TOOL_NAMES.stopPhoneTask} for phone work. Do not start a new task for stop requests.
 If the user asks to hang up, end the call, or stop listening, call ${REALTIME_TOOL_NAMES.hangUpRealtime} with stopPhoneTask false so any running phone task can continue.
 If the user asks to stop and hang up, call ${REALTIME_TOOL_NAMES.hangUpRealtime} with stopPhoneTask true.
 If the user asks a current-events or factual lookup that does not require controlling the phone, use ${REALTIME_TOOL_NAMES.webSearch} and answer from its result instead of running a phone task.
@@ -49,17 +49,17 @@ export function formatLocationContext(location: PhoneLocation | undefined): stri
   return `User location context: ${parts.join(", ")}. Use this for weather, local time, nearby places, and other localized questions unless the user gives a different location.`;
 }
 
-const DELEGATE_OPENCLAW_TASK_TOOL = {
+const DELEGATE_AGENT_TASK_TOOL = {
   type: "function",
-  name: REALTIME_TOOL_NAMES.delegateOpenClawTask,
-  description: "Delegate a general task to the user's installed Open Claw session on the remote PC. Use this for coding, desktop, browser, research, file, and other non-phone work.",
+  name: REALTIME_TOOL_NAMES.delegateAgentTask,
+  description: "Delegate a general task to the user's currently selected remote agent harness on the PC. Use this for coding, desktop, browser, research, file, and other non-phone work.",
   parameters: {
     type: "object",
     additionalProperties: false,
     properties: {
       instruction: {
         type: "string",
-        description: "The concise task to delegate to Open Claw on the remote PC."
+        description: "The concise task to delegate to the selected remote agent harness on the PC."
       },
       urgency: {
         type: "string",
@@ -93,17 +93,17 @@ const RUN_PHONE_TASK_TOOL = {
   }
 } as const;
 
-const STEER_OPENCLAW_TASK_TOOL = {
+const STEER_AGENT_TASK_TOOL = {
   type: "function",
-  name: REALTIME_TOOL_NAMES.steerOpenClawTask,
-  description: "Inject new user guidance into the currently running general Open Claw task.",
+  name: REALTIME_TOOL_NAMES.steerAgentTask,
+  description: "Inject new user guidance into the currently running general remote-agent task.",
   parameters: {
     type: "object",
     additionalProperties: false,
     properties: {
       guidance: {
         type: "string",
-        description: "The user's correction, updated goal, or extra context to steer the active Open Claw task."
+        description: "The user's correction, updated goal, or extra context to steer the active remote-agent task."
       }
     },
     required: ["guidance"]
@@ -127,17 +127,17 @@ const STEER_PHONE_TASK_TOOL = {
   }
 } as const;
 
-const STOP_OPENCLAW_TASK_TOOL = {
+const STOP_AGENT_TASK_TOOL = {
   type: "function",
-  name: REALTIME_TOOL_NAMES.stopOpenClawTask,
-  description: "Stop the currently running general Open Claw task and clear queued realtime tasks.",
+  name: REALTIME_TOOL_NAMES.stopAgentTask,
+  description: "Stop the currently running general remote-agent task and clear queued realtime tasks.",
   parameters: {
     type: "object",
     additionalProperties: false,
     properties: {
       reason: {
         type: "string",
-        description: "A short reason for stopping the active Open Claw task."
+        description: "A short reason for stopping the active remote-agent task."
       }
     },
     required: []
@@ -220,11 +220,11 @@ export class OpenAiRealtimeClient {
       model: this.config.openAiRealtimeModel,
       instructions: [options.systemPrompt?.trim(), formatLocationContext(options.location), VOICE_PROMPT].filter(Boolean).join("\n\n"),
       tools: [
-        DELEGATE_OPENCLAW_TASK_TOOL,
+        DELEGATE_AGENT_TASK_TOOL,
         RUN_PHONE_TASK_TOOL,
-        STEER_OPENCLAW_TASK_TOOL,
+        STEER_AGENT_TASK_TOOL,
         STEER_PHONE_TASK_TOOL,
-        STOP_OPENCLAW_TASK_TOOL,
+        STOP_AGENT_TASK_TOOL,
         STOP_PHONE_TASK_TOOL,
         HANG_UP_REALTIME_TOOL,
         WEB_SEARCH_TOOL
