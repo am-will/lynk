@@ -70,6 +70,18 @@ export class OpenClawControlCommandRouter {
       return;
     }
 
+    const deliveryOverride = parseDeliveryOverride(name, parts.join(" "));
+    if (deliveryOverride) {
+      await this.options.send({
+        type: "chat.send",
+        deviceId: message.deviceId,
+        text: deliveryOverride.text,
+        sessionKey: state.sessionKey,
+        delivery: deliveryOverride.delivery
+      });
+      return;
+    }
+
     if (name === "fast") {
       const enabled = typeof message.args.enabled === "boolean"
         ? message.args.enabled
@@ -132,6 +144,17 @@ export class OpenClawControlCommandRouter {
     const [rawName, ...parts] = normalized.slice(1).trim().split(/\s+/);
     const name = rawName?.toLowerCase();
     const firstArg = parts[0]?.toLowerCase();
+    const deliveryOverride = parseDeliveryOverride(name, parts.join(" "));
+    if (deliveryOverride) {
+      await this.options.send({
+        type: "chat.send",
+        deviceId,
+        text: deliveryOverride.text,
+        sessionKey,
+        delivery: deliveryOverride.delivery
+      });
+      return true;
+    }
     if (name !== "reasoning" && name !== "reason") {
       return false;
     }
@@ -156,4 +179,28 @@ export class OpenClawControlCommandRouter {
     );
     return true;
   }
+}
+
+function parseDeliveryOverride(name: string | undefined, rawText: string): { delivery: "queue" | "steer"; text: string } | undefined {
+  const delivery = name === "queue" || name === "steer" ? name : undefined;
+  if (!delivery) {
+    return undefined;
+  }
+  const text = unquote(rawText.trim());
+  if (!text) {
+    return undefined;
+  }
+  return { delivery, text };
+}
+
+function unquote(text: string): string {
+  if (text.length < 2) {
+    return text;
+  }
+  const first = text.at(0);
+  const last = text.at(-1);
+  if ((first === "\"" && last === "\"") || (first === "'" && last === "'")) {
+    return text.slice(1, -1).trim();
+  }
+  return text;
 }

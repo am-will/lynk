@@ -5,10 +5,12 @@ import test from "node:test";
 
 import {
   AGENT_MODEL_IDS,
+  CHAT_SEND_DELIVERIES,
   MCP_PHONE_TOOL_NAME_BY_COMMAND,
   PHONE_COMMANDS,
   REASONING_EFFORTS,
   REALTIME_TOOL_NAMES,
+  chatSendMessageSchema,
   phoneOutboundMessageSchema,
   validatePhoneOutboundMessage
 } from "./messages.js";
@@ -64,6 +66,23 @@ test("shared realtime tool names cover delegated phone and OpenClaw controls", (
     "stop_phone_task",
     "web_search"
   ]);
+});
+
+test("chat send delivery accepts normal queue and steer modes", () => {
+  for (const delivery of CHAT_SEND_DELIVERIES) {
+    assert.equal(chatSendMessageSchema.safeParse({
+      type: "chat.send",
+      deviceId: "pixel",
+      text: "Adjust the current turn",
+      delivery
+    }).success, true);
+  }
+  assert.equal(chatSendMessageSchema.safeParse({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Adjust the current turn",
+    delivery: "later"
+  }).success, false);
 });
 
 test("PC outbound phone messages have validating schemas for dev and tests", () => {

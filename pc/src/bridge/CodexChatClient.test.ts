@@ -8,6 +8,7 @@ import { CodexChatClient } from "./CodexChatClient.js";
 class FakeCodexAppServerClient {
   readonly createdThreads: Array<{ model?: string; baseInstructions?: string }> = [];
   readonly submitted: Array<{ text: string; options: AgentRequestOptions }> = [];
+  readonly steered: string[] = [];
   modelsPayload: unknown = { models: [] };
   capabilitiesPayload: unknown = undefined;
   resultUsage?: Record<string, unknown>;
@@ -42,6 +43,10 @@ class FakeCodexAppServerClient {
   }
 
   async interrupt(): Promise<void> {}
+
+  async steer(text: string): Promise<void> {
+    this.steered.push(text);
+  }
 
   async close(): Promise<void> {}
 }
@@ -144,6 +149,24 @@ test("Codex persists token usage returned from app-server runs", async () => {
   assert.equal(payload.sessions[0]?.outputTokens, 16);
   assert.equal(payload.sessions[0]?.totalTokens, 5_168);
   assert.equal(payload.sessions[0]?.contextTokens, 258_400);
+});
+
+test("Codex chat steering calls app-server turn steer for the active run", async () => {
+  const fake = new FakeCodexAppServerClient();
+  const client = new CodexChatClient(undefined, fake as unknown as CodexAppServerClient, null);
+  await client.createSession({ key: "codex:default", model: "gpt-5.3-codex" });
+  (client as unknown as { active?: { sessionKey: string; runId: string } }).active = {
+    sessionKey: "codex:default",
+    runId: "run_1"
+  };
+
+  await client.steerChat({
+    sessionKey: "codex:default",
+    runId: "run_1",
+    message: "Focus on failing tests"
+  });
+
+  assert.deepEqual(fake.steered, ["Focus on failing tests"]);
 });
 
 test("Codex model list resolves context windows from capabilities", async () => {

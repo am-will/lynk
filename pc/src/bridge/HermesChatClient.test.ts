@@ -24,6 +24,7 @@ const config: BridgeConfig = {
 };
 
 class FakeHermesApiClient {
+  readonly createdRuns: Array<{ input: string; sessionId: string; idempotencyKey?: string }> = [];
   sessionsPayload: unknown = {
     sessions: [{
       session_id: "20260521_211022_1f4f0b",
@@ -68,6 +69,11 @@ class FakeHermesApiClient {
   }
 
   async stopRun(): Promise<void> {}
+
+  async createRun(options: { input: string; sessionId: string; idempotencyKey?: string }): Promise<{ runId: string; sessionId: string }> {
+    this.createdRuns.push(options);
+    return { runId: `steer_${this.createdRuns.length}`, sessionId: options.sessionId };
+  }
 }
 
 test("Hermes lists sessions from dashboard API", async () => {
@@ -108,4 +114,28 @@ test("Hermes history loads messages from dashboard API for selected sessions", a
     role: "assistant",
     text: "Hello back"
   }]);
+});
+
+test("Hermes chat steering uses the active run driver", async () => {
+  const api = new FakeHermesApiClient();
+  const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
+  (client as unknown as { activeRuns: Map<string, { sessionKey: string; active: { runId: string; sessionId: string; controller: AbortController } }> }).activeRuns.set("run_1", {
+    sessionKey: "hermes:chat",
+    active: {
+      runId: "run_1",
+      sessionId: "session_1",
+      controller: new AbortController()
+    }
+  });
+
+  await client.steerChat({
+    sessionKey: "hermes:chat",
+    runId: "run_1",
+    message: "Narrow the scope",
+    idempotencyKey: "steer_1"
+  });
+
+  assert.equal(api.createdRuns[0]?.input, "Additional user guidance for the active Hermes task:\nNarrow the scope");
+  assert.equal(api.createdRuns[0]?.sessionId, "session_1");
+  assert.match(api.createdRuns[0]?.idempotencyKey ?? "", /^hermes-steer-run_1-/);
 });

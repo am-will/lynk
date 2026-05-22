@@ -172,9 +172,16 @@ Android sends user text, optional model, and optional reasoning selection:
   "sessionKey": "agent:main:explicit:open-claw-agent",
   "text": "Summarize my current project status",
   "model": "hermes:gpt-5.5",
-  "reasoningEffort": "high"
+  "reasoningEffort": "high",
+  "delivery": "normal"
 }
 ```
+
+`delivery` is optional and defaults to `"normal"`. Android uses `"queue"` or `"steer"` when the user sends text while a turn is already active:
+
+- `"queue"` keeps the message FIFO and starts it as the next turn after the active run settles.
+- `"steer"` sends the message into the active run at the next supported harness boundary. OpenClaw uses its explicit `/steer` path, Hermes uses active session steering, and Codex app-server uses `turn/steer` with the active turn id.
+- Slash overrides `/queue <prompt>` and `/steer <prompt>` force the delivery for that prompt, regardless of the Android default toggle.
 
 Android can stop active chat work, switch or create sessions, update model/reasoning, and invoke safe UI controls:
 

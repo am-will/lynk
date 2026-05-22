@@ -27,6 +27,7 @@ const config: BridgeConfig = {
 class FakeGatewayClient {
   readonly handlers = new Set<GatewayEventHandler>();
   readonly sent: Array<{ sessionKey: string; message: string; thinking?: string; idempotencyKey?: string }> = [];
+  readonly steered: Array<{ sessionKey: string; runId?: string; message: string; thinking?: string; idempotencyKey?: string }> = [];
   readonly created: Array<{ key?: string; label?: string; model?: string }> = [];
   readonly patched: Array<{ sessionKey: string; patch: Record<string, unknown> }> = [];
   readonly aborted: Array<{ sessionKey: string; runId?: string }> = [];
@@ -53,6 +54,11 @@ class FakeGatewayClient {
     this.runCount += 1;
     this.sent.push(options);
     return { runId: `run_${this.runCount}`, sessionKey: options.sessionKey };
+  }
+
+  async steerChat(options: { sessionKey: string; runId?: string; message: string; thinking?: string; idempotencyKey?: string }): Promise<{ runId: string; sessionKey: string }> {
+    this.steered.push(options);
+    return { runId: options.runId ?? `run_${this.runCount}`, sessionKey: options.sessionKey };
   }
 
   async abort(sessionKey: string, runId?: string): Promise<unknown> {
@@ -303,6 +309,86 @@ test("default gateway chat sessions are scoped per device", async () => {
     defaultSessionKey("pixel"),
     defaultSessionKey("fold")
   ]);
+});
+
+test("queued chat sends wait for the active run to finish", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "First prompt"
+  });
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Next prompt",
+    delivery: "queue"
+  });
+
+  assert.equal(client.sent.length, 1);
+  assert.equal(chatMessages.filter((message) => message.type === "chat.state").at(-1)?.status, "OpenClaw queued message for next turn");
+
+  client.emit({ event: "chat", payload: { sessionKey: client.sent[0]?.sessionKey, runId: "run_1", state: "final", message: "Done first" } });
+  await waitFor(() => client.sent.length === 2);
+
+  assert.equal(client.sent[1]?.message, "Next prompt");
+});
+
+test("steered chat sends target the active harness run", async () => {
+  const { bridge, client } = createHarness();
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "First prompt"
+  });
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Narrow the scope",
+    delivery: "steer"
+  });
+
+  assert.equal(client.sent.length, 1);
+  assert.deepEqual(client.steered.map((entry) => ({
+    sessionKey: entry.sessionKey,
+    runId: entry.runId,
+    message: entry.message
+  })), [{
+    sessionKey: defaultSessionKey("pixel"),
+    runId: "run_1",
+    message: "Narrow the scope"
+  }]);
+});
+
+test("queue and steer slash commands override active delivery mode", async () => {
+  const { bridge, client } = createHarness();
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "First prompt"
+  });
+  await bridge.controlCommand({
+    type: "chat.control_command",
+    deviceId: "pixel",
+    command: "/queue \"Follow up later\"",
+    args: {}
+  });
+  await bridge.controlCommand({
+    type: "chat.control_command",
+    deviceId: "pixel",
+    command: "/steer Refine the active run",
+    args: {}
+  });
+
+  assert.equal(client.sent.length, 1);
+  assert.equal(client.steered[0]?.message, "Refine the active run");
+
+  client.emit({ event: "chat", payload: { sessionKey: client.sent[0]?.sessionKey, runId: "run_1", state: "final", message: "Done first" } });
+  await waitFor(() => client.sent.length === 2);
+  assert.equal(client.sent[1]?.message, "Follow up later");
 });
 
 test("realtime phone requests include fast phone loop guidance in gateway run", async () => {
