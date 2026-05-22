@@ -63,6 +63,7 @@ class AnchoredPicker(
     private var preDrawListener: ViewTreeObserver.OnPreDrawListener? = null
     private var onDismissCallback: (() -> Unit)? = null
     private var currentAnchor: View? = null
+    private var currentPreferAbove = false
     private val rowViewsById = mutableMapOf<String, View>()
 
     val isShowing: Boolean
@@ -70,9 +71,10 @@ class AnchoredPicker(
 
     fun isShowingFor(anchor: View): Boolean = sheetView != null && currentAnchor === anchor
 
-    fun update(title: String? = null, sections: List<Section>, heightFraction: Float? = null) {
+    fun update(title: String? = null, sections: List<Section>, heightFraction: Float? = null, preferAbove: Boolean? = null) {
         val sheet = sheetView as? LinearLayout ?: return
         val scrollY = findBodyScroller(sheet)?.scrollY ?: 0
+        preferAbove?.let { currentPreferAbove = it }
         bindSheetContent(sheet, title, sections)
         applyHeight(sheet, heightFraction)
         sheet.post {
@@ -111,11 +113,13 @@ class AnchoredPicker(
         title: String? = null,
         sections: List<Section>,
         heightFraction: Float? = null,
+        preferAbove: Boolean = false,
         onDismiss: (() -> Unit)? = null
     ) {
         dismiss()
         hostRef = host
         currentAnchor = anchor
+        currentPreferAbove = preferAbove
         onDismissCallback = onDismiss
 
         val scrim = View(context).apply {
@@ -177,6 +181,7 @@ class AnchoredPicker(
         sheetView = null
         scrimView = null
         currentAnchor = null
+        currentPreferAbove = false
         onDismissCallback = null
         preDrawListener?.let {
             sheet?.viewTreeObserver?.removeOnPreDrawListener(it)
@@ -219,7 +224,12 @@ class AnchoredPicker(
 
         val spaceBelow = hostHeight - anchorBottomInHost
         val spaceAbove = anchorTopInHost
-        val placeAbove = spaceBelow < measuredSheetHeight + gap + sideMargin && spaceAbove > spaceBelow
+        val canPlaceAbove = spaceAbove >= minSheetHeight + gap + sideMargin
+        val placeAbove = if (currentPreferAbove && canPlaceAbove) {
+            true
+        } else {
+            spaceBelow < measuredSheetHeight + gap + sideMargin && spaceAbove > spaceBelow
+        }
 
         var effectiveHeight = measuredSheetHeight
         val targetTop: Int

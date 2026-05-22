@@ -966,19 +966,29 @@ class OverlayController(
         toggleSameAnchor: Boolean = true,
         replaceShowing: Boolean = false,
         heightFraction: Float? = null,
+        preferAbove: Boolean = false,
         onDismiss: (() -> Unit)? = null
     ) {
         val host = panelHost ?: return
         val picker = ensurePicker()
+        val shouldPreferAbove = preferAbove || anchor === composerInput
         if (replaceShowing && picker.isShowingFor(anchor)) {
-            picker.update(title, sections, heightFraction = heightFraction)
+            picker.update(title, sections, heightFraction = heightFraction, preferAbove = shouldPreferAbove)
             return
         }
         if (toggleSameAnchor && picker.isShowingFor(anchor)) {
             picker.dismiss()
             return
         }
-        picker.show(host, anchor, title, sections, heightFraction = heightFraction, onDismiss = onDismiss)
+        picker.show(
+            host = host,
+            anchor = anchor,
+            title = title,
+            sections = sections,
+            heightFraction = heightFraction,
+            preferAbove = shouldPreferAbove,
+            onDismiss = onDismiss
+        )
     }
 
     private fun renderHostConnectionState(state: HostConnectionState) {
@@ -1726,7 +1736,8 @@ class OverlayController(
             title = "Commands",
             sections = listOf(AnchoredPicker.Section(null, rows)),
             toggleSameAnchor = false,
-            replaceShowing = true
+            replaceShowing = true,
+            preferAbove = true
         )
     }
 
@@ -1751,7 +1762,8 @@ class OverlayController(
             title = "Skills",
             sections = listOf(AnchoredPicker.Section(null, rows)),
             toggleSameAnchor = false,
-            replaceShowing = true
+            replaceShowing = true,
+            preferAbove = true
         )
     }
 
