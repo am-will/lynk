@@ -955,11 +955,7 @@ class OverlayController(
             setTextColor(if (presentation.usesWhiteTitle) Color.WHITE else tokens.primaryText)
         }
         headerSessionAnchor?.apply {
-            background = if (presentation.brand == ClientBrand.Codex) {
-                Drawables.accentSurface(context, tokens, DesignTokens.Radius.pill)
-            } else {
-                Drawables.pillSurface(context, tokens)
-            }
+            background = Drawables.pillSurface(context, tokens)
             backgroundTintList = null
             contentDescription = "Open ${presentation.title} chat menu"
         }
