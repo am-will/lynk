@@ -11,6 +11,7 @@ import okhttp3.WebSocketListener
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import dev.androidagent.agentchat.ChatSendDelivery
 import dev.androidagent.voice.RealtimeToolCall
 import org.json.JSONArray
 import org.json.JSONObject
@@ -111,11 +112,18 @@ class PhoneWebSocketClient(
         return sendJson(message)
     }
 
-    fun sendChatMessage(text: String, sessionKey: String? = null, model: String? = null, reasoningEffort: String? = null): Boolean {
+    fun sendChatMessage(
+        text: String,
+        sessionKey: String? = null,
+        model: String? = null,
+        reasoningEffort: String? = null,
+        delivery: ChatSendDelivery = ChatSendDelivery.Normal
+    ): Boolean {
         val message = JSONObject()
             .put("type", "chat.send")
             .put("deviceId", config.deviceId)
             .put("text", text)
+            .put("delivery", delivery.key)
         sessionKey?.takeIf { it.isNotBlank() }?.let { message.put("sessionKey", it) }
         model?.takeIf { it.isNotBlank() }?.let { message.put("model", it) }
         reasoningEffort?.takeIf { it.isNotBlank() }?.let { message.put("reasoningEffort", it) }

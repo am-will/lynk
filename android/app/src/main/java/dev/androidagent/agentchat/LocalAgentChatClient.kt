@@ -48,7 +48,7 @@ class LocalAgentChatClient(
         return true
     }
 
-    override fun send(text: String, sessionKey: String?, model: String?, reasoningEffort: String?): Boolean {
+    override fun send(text: String, sessionKey: String?, model: String?, reasoningEffort: String?, delivery: ChatSendDelivery): Boolean {
         val trimmed = text.trim()
         if (trimmed.isBlank()) return false
         if (activeRun?.isActive == true) {

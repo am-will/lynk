@@ -26,6 +26,7 @@ import androidx.core.app.ServiceCompat
 import dev.androidagent.accessibility.AccessibilityCommandExecutor
 import dev.androidagent.accessibility.PhoneAccessibilityService
 import dev.androidagent.agentchat.AgentChatClient
+import dev.androidagent.agentchat.ChatSendDelivery
 import dev.androidagent.agentchat.HostAgentChatClient
 import dev.androidagent.agentchat.LocalAgentChatClient
 import dev.androidagent.avatar.AvatarLibrary
@@ -84,6 +85,47 @@ internal fun isSystemRecentsSurface(packageName: String?, className: String?): B
         combined.contains("overview") ||
         (packageValue.contains("launcher") && classValue.contains("quickstep")) ||
         (packageValue == "com.android.systemui" && classValue.contains("recents"))
+}
+
+internal data class ChatDeliveryOverride(
+    val delivery: ChatSendDelivery,
+    val text: String
+)
+
+internal fun parseChatDeliveryOverride(text: String): ChatDeliveryOverride? {
+    val trimmed = text.trim()
+    if (!trimmed.startsWith("/")) {
+        return null
+    }
+    val body = trimmed.removePrefix("/").trimStart()
+    val command = body.substringBefore(' ').lowercase()
+    val prompt = body.substringAfter(' ', missingDelimiterValue = "").trim()
+    if (prompt.isBlank()) {
+        return null
+    }
+    val delivery = when (command) {
+        "queue" -> ChatSendDelivery.Queue
+        "steer" -> ChatSendDelivery.Steer
+        else -> return null
+    }
+    val unquotedPrompt = unquotePrompt(prompt)
+    if (unquotedPrompt.isBlank()) {
+        return null
+    }
+    return ChatDeliveryOverride(delivery, unquotedPrompt)
+}
+
+private fun unquotePrompt(prompt: String): String {
+    if (prompt.length < 2) {
+        return prompt
+    }
+    val first = prompt.first()
+    val last = prompt.last()
+    return if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+        prompt.substring(1, prompt.length - 1).trim()
+    } else {
+        prompt
+    }
 }
 
 class AgentForegroundService : Service() {
@@ -437,9 +479,17 @@ class AgentForegroundService : Service() {
     }
 
     private fun submitChatText(text: String): Boolean {
+        parseChatDeliveryOverride(text)?.let { override ->
+            return submitChatPrompt(override.text, override.delivery)
+        }
         if (text.trimStart().startsWith("/")) {
             return submitSlashCommand(text)
         }
+        val delivery = activeTurnDelivery(AgentConfigStore.load(this))
+        return submitChatPrompt(text, delivery)
+    }
+
+    private fun submitChatPrompt(text: String, delivery: ChatSendDelivery): Boolean {
         chatState = ChatStateReducer.localUserMessage(chatState, text)
         overlayController?.setChatState(chatState)
         val requestConfig = AgentConfigStore.load(this)
@@ -460,7 +510,8 @@ class AgentForegroundService : Service() {
             text = text,
             sessionKey = sessionKeyForRoute(route),
             model = modelForRoute(selectedModel, route, requestConfig),
-            reasoningEffort = chatState.reasoningEffort ?: requestConfig.reasoningEffort
+            reasoningEffort = chatState.reasoningEffort ?: requestConfig.reasoningEffort,
+            delivery = delivery
         )
         if (sent) {
             lastNotificationText = brandPresentationFor(chatState).copy.sentStatus
@@ -471,6 +522,16 @@ class AgentForegroundService : Service() {
         }
         updateNotification()
         return sent
+    }
+
+    private fun activeTurnDelivery(config: AgentConfig): ChatSendDelivery {
+        if (!chatState.isRunning) {
+            return ChatSendDelivery.Normal
+        }
+        return when (config.activeSendMode) {
+            ChatActiveSendMode.Queue -> ChatSendDelivery.Queue
+            ChatActiveSendMode.Steer -> ChatSendDelivery.Steer
+        }
     }
 
     private fun setChatModelFromUi(model: String) {

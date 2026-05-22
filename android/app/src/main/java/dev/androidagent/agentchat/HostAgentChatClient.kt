@@ -9,8 +9,8 @@ class HostAgentChatClient(
     override fun open(sessionKey: String?): Boolean =
         webSocketClient.sendChatOpen(sessionKey)
 
-    override fun send(text: String, sessionKey: String?, model: String?, reasoningEffort: String?): Boolean =
-        webSocketClient.sendChatMessage(text, sessionKey, model, reasoningEffort)
+    override fun send(text: String, sessionKey: String?, model: String?, reasoningEffort: String?, delivery: ChatSendDelivery): Boolean =
+        webSocketClient.sendChatMessage(text, sessionKey, model, reasoningEffort, delivery)
 
     override fun stop(sessionKey: String?, runId: String?, reason: String) {
         webSocketClient.sendChatStop(sessionKey, runId, reason)
