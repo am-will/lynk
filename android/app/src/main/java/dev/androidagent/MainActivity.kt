@@ -210,10 +210,24 @@ class MainActivity : ComponentActivity() {
         }, stackedParams())
 
         root.addView(card(tokens).apply {
-            addView(sectionHeader("Connection & Config", "Configure the host bridge, system prompt, and optional experimental local models.", tokens))
+            addView(sectionHeader("Connection & Config", "Configure the host bridge and realtime voice key.", tokens))
             addView(actionButton("Open Connection & Config", ButtonTone.Secondary, tokens) {
                 showConnectionConfigMenu()
             }.exposeToAccessibility(R.id.openclaw_connection_config_button, "Open connection and config"), stackedParams(DesignTokens.Spacing.lg))
+        }, stackedParams())
+
+        root.addView(card(tokens).apply {
+            addView(sectionHeader("System Prompt", "Tune the default instructions sent to the selected agent harness.", tokens))
+            addView(actionButton("Open System Prompt", ButtonTone.Secondary, tokens) {
+                showSystemPromptMenu()
+            }.exposeToAccessibility(R.id.openclaw_system_prompt_menu_button, "Open system prompt settings"), stackedParams(DesignTokens.Spacing.lg))
+        }, stackedParams())
+
+        root.addView(card(tokens).apply {
+            addView(sectionHeader("Models & Harness", "Choose which harnesses appear in the model picker.", tokens))
+            addView(actionButton("Open Models & Harness", ButtonTone.Secondary, tokens) {
+                showModelsHarnessMenu()
+            }.exposeToAccessibility(R.id.openclaw_models_harness_button, "Open models and harness settings"), stackedParams(DesignTokens.Spacing.lg))
         }, stackedParams())
 
         root.addView(card(tokens).apply {
@@ -251,7 +265,6 @@ class MainActivity : ComponentActivity() {
 
     private fun showConnectionConfigMenu() {
         val config = AgentConfigStore.load(this)
-        var promptDraft = config.systemPrompt
         val tokens = tokens()
 
         val content = LinearLayout(this).apply {
@@ -281,6 +294,126 @@ class MainActivity : ComponentActivity() {
         ).apply {
             exposeToAccessibility(R.id.openclaw_openai_api_key_field, "OpenAI API key for realtime voice")
         }
+
+        content.addView(fieldLabel("Bridge", tokens))
+        content.addView(hostInput, stackedParams(DesignTokens.Spacing.sm))
+        content.addView(deviceInput, stackedParams(DesignTokens.Spacing.sm + 2))
+        content.addView(tokenInput, stackedParams(DesignTokens.Spacing.sm + 2))
+        content.addView(openAiKeyInput, stackedParams(DesignTokens.Spacing.sm + 2))
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Connection & Config")
+            .setView(ScrollView(this).apply {
+                addView(content, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            })
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                val saved = config.copy(
+                    hostUrl = hostInput.text.toString().trim(),
+                    deviceId = deviceInput.text.toString().trim(),
+                    token = tokenInput.text.toString().trim(),
+                    openAiApiKey = openAiKeyInput.text.toString().trim(),
+                    agentMode = AgentMode.Host
+                )
+                AgentConfigStore.save(this, saved)
+                systemPromptText = saved.systemPrompt
+                refreshStatus()
+            }
+            .create()
+        dialog.setOnShowListener {
+            dialog.window?.setBackgroundDrawable(
+                Drawables.glassSurface(this@MainActivity, tokens, DesignTokens.Radius.xl)
+            )
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(tokens.accent)
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(tokens.secondaryText)
+        }
+        dialog.show()
+    }
+
+    private fun showSystemPromptMenu() {
+        val config = AgentConfigStore.load(this)
+        var promptDraft = config.systemPrompt
+        val tokens = tokens()
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(DesignTokens.Spacing.xl), dp(DesignTokens.Spacing.md), dp(DesignTokens.Spacing.xl), 0)
+        }
+
+        content.addView(fieldLabel("System prompt", tokens))
+        val promptSummary = body(systemPromptPreview(promptDraft), tokens).apply {
+            background = Drawables.glassInset(this@MainActivity, tokens, DesignTokens.Radius.md)
+            setPadding(dp(DesignTokens.Spacing.lg), dp(DesignTokens.Spacing.md + 2), dp(DesignTokens.Spacing.lg), dp(DesignTokens.Spacing.md + 2))
+        }
+        content.addView(promptSummary, stackedParams(DesignTokens.Spacing.sm))
+        content.addView(actionButton("Edit System Prompt", ButtonTone.Secondary, tokens) {
+            showSystemPromptEditor(promptDraft) { updated ->
+                promptDraft = updated
+                promptSummary.text = systemPromptPreview(promptDraft)
+            }
+        }.exposeToAccessibility(R.id.openclaw_system_prompt_button, "Edit system prompt"), stackedParams(DesignTokens.Spacing.sm + 2))
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("System Prompt")
+            .setView(ScrollView(this).apply {
+                addView(content, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            })
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                val saved = config.copy(systemPrompt = promptDraft.trim().ifBlank { DefaultSystemPrompt.text })
+                AgentConfigStore.save(this, saved)
+                systemPromptText = saved.systemPrompt
+                refreshStatus()
+            }
+            .create()
+        dialog.setOnShowListener {
+            dialog.window?.setBackgroundDrawable(
+                Drawables.glassSurface(this@MainActivity, tokens, DesignTokens.Radius.xl)
+            )
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(tokens.accent)
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(tokens.secondaryText)
+        }
+        dialog.show()
+    }
+
+    private fun showModelsHarnessMenu() {
+        val config = AgentConfigStore.load(this)
+        val tokens = tokens()
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(DesignTokens.Spacing.xl), dp(DesignTokens.Spacing.md), dp(DesignTokens.Spacing.xl), 0)
+        }
+
+        val openClawInput = harnessCheckBox(
+            text = "OpenClaw",
+            checked = config.openClawHarnessEnabled,
+            viewId = R.id.openclaw_harness_openclaw_checkbox,
+            description = "Enable OpenClaw harness",
+            tokens = tokens
+        )
+        val hermesInput = harnessCheckBox(
+            text = "Hermes",
+            checked = config.hermesHarnessEnabled,
+            viewId = R.id.openclaw_harness_hermes_checkbox,
+            description = "Enable Hermes harness",
+            tokens = tokens
+        )
+        val codexInput = harnessCheckBox(
+            text = "Codex",
+            checked = config.codexHarnessEnabled,
+            viewId = R.id.openclaw_harness_codex_checkbox,
+            description = "Enable Codex harness",
+            tokens = tokens
+        )
+        val localHarnessInput = harnessCheckBox(
+            text = "Local LiteRT-LLM (experimental)",
+            checked = config.experimentalLocalModelsEnabled,
+            viewId = R.id.openclaw_harness_local_litert_checkbox,
+            description = "Enable local LiteRT LLM harness",
+            tokens = tokens
+        )
+
         val localModelPathInput = configField("Local .litertlm model path", config.localModelPath, tokens).apply {
             exposeToAccessibility(R.id.openclaw_local_model_path_field, "Local LiteRT model path")
         }
@@ -301,80 +434,82 @@ class MainActivity : ComponentActivity() {
         ).apply {
             exposeToAccessibility(R.id.openclaw_local_context_field, "Local context window")
         }
-        val experimentalLocalModelsInput = CheckBox(this).apply {
-            text = "Enable experimental local LiteRT models"
-            isChecked = config.experimentalLocalModelsEnabled
-            setTextColor(tokens.primaryText)
-            buttonTintList = android.content.res.ColorStateList.valueOf(tokens.accent)
-            exposeToAccessibility(R.id.openclaw_experimental_local_models_checkbox, "Enable experimental local LiteRT models")
-        }
-        val localDeveloperToolsInput = CheckBox(this).apply {
-            text = "Enable local workspace and Termux-backed developer tools"
-            isChecked = config.localDeveloperToolsEnabled
-            setTextColor(tokens.primaryText)
-            buttonTintList = android.content.res.ColorStateList.valueOf(tokens.accent)
-            exposeToAccessibility(R.id.openclaw_local_developer_tools_checkbox, "Enable local developer tools")
-        }
+        val localDeveloperToolsInput = harnessCheckBox(
+            text = "Enable local workspace and Termux-backed developer tools",
+            checked = config.localDeveloperToolsEnabled,
+            viewId = R.id.openclaw_local_developer_tools_checkbox,
+            description = "Enable local developer tools",
+            tokens = tokens
+        )
+        val importLocalModelButton = actionButton("Import Local Model", ButtonTone.Secondary, tokens) {
+            localModelPicker.launch(arrayOf("*/*"))
+        }.exposeToAccessibility(R.id.openclaw_local_model_import_button, "Import local LiteRT model")
 
-        content.addView(fieldLabel("Bridge", tokens))
-        content.addView(hostInput, stackedParams(DesignTokens.Spacing.sm))
-        content.addView(deviceInput, stackedParams(DesignTokens.Spacing.sm + 2))
-        content.addView(tokenInput, stackedParams(DesignTokens.Spacing.sm + 2))
-        content.addView(openAiKeyInput, stackedParams(DesignTokens.Spacing.sm + 2))
-
-        content.addView(fieldLabel("Experimental", tokens), stackedParams(DesignTokens.Spacing.lg))
-        content.addView(experimentalLocalModelsInput, stackedParams(DesignTokens.Spacing.sm))
-        content.addView(body("When enabled and a .litertlm model is installed, Local LiteRT appears in the main model picker. Normal models continue to use the host bridge.", tokens).apply {
+        content.addView(fieldLabel("Harnesses", tokens))
+        content.addView(openClawInput, stackedParams(DesignTokens.Spacing.sm))
+        content.addView(hermesInput, stackedParams(DesignTokens.Spacing.sm))
+        content.addView(codexInput, stackedParams(DesignTokens.Spacing.sm))
+        content.addView(localHarnessInput, stackedParams(DesignTokens.Spacing.sm))
+        content.addView(body("Disabled harnesses are hidden from the overlay model picker on this phone.", tokens).apply {
             setPadding(0, dp(DesignTokens.Spacing.xs), 0, 0)
         }, stackedParams(DesignTokens.Spacing.xs))
-        content.addView(fieldLabel("Local LiteRT model", tokens).apply { labelFor(localModelPathInput) }, stackedParams(DesignTokens.Spacing.lg))
+
+        val localHeader = fieldLabel("Local LiteRT model", tokens).apply { labelFor(localModelPathInput) }
+        val localHelp = body("When enabled and a .litertlm model is installed, Local LiteRT appears in the main model picker. Normal models continue to use the host bridge.", tokens).apply {
+            setPadding(0, dp(DesignTokens.Spacing.xs), 0, 0)
+        }
+        val backendLabel = fieldLabel("Local inference backend", tokens).apply { labelFor(localBackendSpinner) }
+        val contextLabel = fieldLabel("Local context window", tokens).apply { labelFor(localContextInput) }
+        content.addView(localHeader, stackedParams(DesignTokens.Spacing.lg))
+        content.addView(localHelp, stackedParams(DesignTokens.Spacing.xs))
         content.addView(localModelPathInput, stackedParams(DesignTokens.Spacing.sm))
-        content.addView(actionButton("Import Local Model", ButtonTone.Secondary, tokens) {
-            localModelPicker.launch(arrayOf("*/*"))
-        }.exposeToAccessibility(R.id.openclaw_local_model_import_button, "Import local LiteRT model"), stackedParams(DesignTokens.Spacing.sm + 2))
-        content.addView(fieldLabel("Local inference backend", tokens).apply { labelFor(localBackendSpinner) }, stackedParams(DesignTokens.Spacing.lg))
+        content.addView(importLocalModelButton, stackedParams(DesignTokens.Spacing.sm + 2))
+        content.addView(backendLabel, stackedParams(DesignTokens.Spacing.lg))
         content.addView(localBackendSpinner, stackedParams(DesignTokens.Spacing.sm + 2))
-        content.addView(fieldLabel("Local context window", tokens).apply { labelFor(localContextInput) }, stackedParams(DesignTokens.Spacing.lg))
+        content.addView(contextLabel, stackedParams(DesignTokens.Spacing.lg))
         content.addView(localContextInput, stackedParams(DesignTokens.Spacing.sm + 2))
         content.addView(localDeveloperToolsInput, stackedParams(DesignTokens.Spacing.sm + 2))
 
-        content.addView(fieldLabel("System prompt", tokens), stackedParams(DesignTokens.Spacing.lg))
-        val promptSummary = body(systemPromptPreview(promptDraft), tokens).apply {
-            background = Drawables.glassInset(this@MainActivity, tokens, DesignTokens.Radius.md)
-            setPadding(dp(DesignTokens.Spacing.lg), dp(DesignTokens.Spacing.md + 2), dp(DesignTokens.Spacing.lg), dp(DesignTokens.Spacing.md + 2))
-        }
-        content.addView(promptSummary, stackedParams(DesignTokens.Spacing.sm))
-        content.addView(actionButton("Edit System Prompt", ButtonTone.Secondary, tokens) {
-            showSystemPromptEditor(promptDraft) { updated ->
-                promptDraft = updated
-                promptSummary.text = systemPromptPreview(promptDraft)
+        val localOptionViews = listOf(
+            localHeader,
+            localHelp,
+            localModelPathInput,
+            importLocalModelButton,
+            backendLabel,
+            localBackendSpinner,
+            contextLabel,
+            localContextInput,
+            localDeveloperToolsInput
+        )
+        fun applyLocalOptionState(enabled: Boolean) {
+            localOptionViews.forEach { view ->
+                view.isEnabled = enabled
+                view.alpha = if (enabled) 1f else 0.45f
             }
-        }.exposeToAccessibility(R.id.openclaw_system_prompt_button, "Edit system prompt"), stackedParams(DesignTokens.Spacing.sm + 2))
+        }
+        applyLocalOptionState(localHarnessInput.isChecked)
+        localHarnessInput.setOnCheckedChangeListener { _, checked ->
+            applyLocalOptionState(checked)
+        }
 
         val dialog = AlertDialog.Builder(this)
-            .setTitle("Connection & Config")
+            .setTitle("Models & Harness")
             .setView(ScrollView(this).apply {
                 addView(content, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             })
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Save") { _, _ ->
-                val saved = AgentConfig(
-                    hostUrl = hostInput.text.toString().trim(),
-                    deviceId = deviceInput.text.toString().trim(),
-                    token = tokenInput.text.toString().trim(),
-                    openAiApiKey = openAiKeyInput.text.toString().trim(),
-                    systemPrompt = promptDraft.trim().ifBlank { DefaultSystemPrompt.text },
-                    model = config.model,
-                    reasoningEffort = config.reasoningEffort,
-                    agentMode = AgentMode.Host,
-                    experimentalLocalModelsEnabled = experimentalLocalModelsInput.isChecked,
+                val saved = config.copy(
+                    openClawHarnessEnabled = openClawInput.isChecked,
+                    hermesHarnessEnabled = hermesInput.isChecked,
+                    codexHarnessEnabled = codexInput.isChecked,
+                    experimentalLocalModelsEnabled = localHarnessInput.isChecked,
                     localModelPath = localModelPathInput.text.toString().trim(),
                     localModelBackend = localBackends.getOrElse(localBackendSpinner.selectedItemPosition) { LocalModelBackend.Cpu },
                     localContextTokens = localContextInput.text.toString().trim().toIntOrNull()?.coerceIn(512, 131_072) ?: config.localContextTokens,
                     localDeveloperToolsEnabled = localDeveloperToolsInput.isChecked
                 )
                 AgentConfigStore.save(this, saved)
-                systemPromptText = saved.systemPrompt
                 refreshStatus()
             }
             .create()
@@ -391,6 +526,22 @@ class MainActivity : ComponentActivity() {
             dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(tokens.secondaryText)
         }
         dialog.show()
+    }
+
+    private fun harnessCheckBox(
+        text: String,
+        checked: Boolean,
+        viewId: Int,
+        description: String,
+        tokens: ThemeTokens
+    ): CheckBox {
+        return CheckBox(this).apply {
+            this.text = text
+            isChecked = checked
+            setTextColor(tokens.primaryText)
+            buttonTintList = android.content.res.ColorStateList.valueOf(tokens.accent)
+            exposeToAccessibility(viewId, description)
+        }
     }
 
     private fun showAppearanceMenu() {
@@ -714,17 +865,24 @@ class MainActivity : ComponentActivity() {
         val tokens = tokens()
         val bridgeTokenReady = config.token.isNotBlank()
         val localModelReady = LocalModelStore.exists(config.localModelPath)
-        val experimentalLine = when {
-            !config.experimentalLocalModelsEnabled -> "Experimental LiteRT: off"
-            localModelReady -> "Experimental LiteRT: ready (${config.localModelBackend.label})"
-            else -> "Experimental LiteRT: enabled, model missing"
+        val localLine = when {
+            !config.experimentalLocalModelsEnabled -> "Local LiteRT-LLM: off"
+            localModelReady -> "Local LiteRT-LLM: ready (${config.localModelBackend.label})"
+            else -> "Local LiteRT-LLM: enabled, model missing"
         }
+        val enabledHarnesses = listOfNotNull(
+            "OpenClaw".takeIf { config.openClawHarnessEnabled },
+            "Hermes".takeIf { config.hermesHarnessEnabled },
+            "Codex".takeIf { config.codexHarnessEnabled },
+            "Local".takeIf { config.experimentalLocalModelsEnabled }
+        ).ifEmpty { listOf("none") }.joinToString(", ")
         val authLine = "Auth token: ${if (bridgeTokenReady) "saved" else "missing"}"
 
         endpointSummary.text = """
             ${config.deviceId} -> ${config.hostUrl}
             $authLine
-            $experimentalLine
+            Harnesses: $enabledHarnesses
+            $localLine
         """.trimIndent()
         endpointSummary.updateAccessibilityState("Connection summary", endpointSummary.text)
 
@@ -740,7 +898,7 @@ class MainActivity : ComponentActivity() {
             "Paste the PC PHONE_AGENT_TOKEN in Connection & Config before starting the bridge session."
         } else if (overlay && microphone && accessibility) {
             if (config.experimentalLocalModelsEnabled && !localModelReady) {
-                "Ready for host models. Import a LiteRT-LM .litertlm model before Local LiteRT appears in the picker."
+                "Ready for host models. Import a LiteRT-LM .litertlm model before Local LiteRT-LLM appears in the picker."
             } else {
                 "Ready. Start the bubble when your Open Claw bridge is listening."
             }
