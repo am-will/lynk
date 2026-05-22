@@ -276,7 +276,7 @@ object ChatStateReducer {
             "chat.sessions" -> reduceSessions(state, message)
             "chat.usage" -> state.copy(
                 sessionKey = message.optNullableString("sessionKey") ?: state.sessionKey,
-                usage = parseUsage(message.optJSONObject("usage")),
+                usage = usageWithModelContext(state, parseUsage(message.optJSONObject("usage")), state.selectedModel),
                 error = null
             )
             else -> state
@@ -495,7 +495,7 @@ object ChatStateReducer {
             .ifEmpty { ChatState.defaultReasoningOptions }
         val selectedReasoning = models.firstOrNull { it.id == selectedModel }?.defaultReasoningEffort
             ?.takeIf { option -> reasoning.any { it.id == option } }
-        return state.copy(
+        val nextState = state.copy(
             models = models,
             modelSource = source,
             hostModels = if (source == ChatModelSource.HOST) models else state.hostModels,
@@ -504,6 +504,7 @@ object ChatStateReducer {
             reasoningOptions = reasoning,
             error = null
         )
+        return nextState.copy(usage = usageWithModelContext(nextState, nextState.usage, nextState.selectedModel))
     }
 
     private fun parseModelSource(message: JSONObject): ChatModelSource? {
@@ -518,26 +519,47 @@ object ChatStateReducer {
         val sessions = parseSessions(message.optJSONArray("sessions"))
         val selectedKey = message.optNullableString("selectedSessionKey") ?: state.sessionKey
         val selected = sessions.firstOrNull { it.key == selectedKey }
+        val selectedModel = state.selectedModel ?: selected?.model
+        val usage = selected?.let {
+            ChatUsageSummary(
+                inputTokens = it.inputTokens,
+                outputTokens = it.outputTokens,
+                totalTokens = it.totalTokens,
+                contextTokens = it.contextTokens,
+                estimatedCostUsd = it.estimatedCostUsd
+            )
+        }?.let { usageWithModelContext(state, it, selectedModel) } ?: state.usage
         return state.copy(
             sessionKey = selectedKey,
             sessions = sessions,
-            selectedModel = state.selectedModel ?: selected?.model,
+            selectedModel = selectedModel,
             reasoningEffort = normalizeReasoningEffort(selected?.thinkingLevel, state.reasoningEffort),
             reasoningStreamEnabled = selected?.reasoningLevel?.let(::reasoningStreamEnabled) ?: state.reasoningStreamEnabled,
             fastMode = selected?.fastMode ?: state.fastMode,
             verboseLevel = selected?.verboseLevel ?: state.verboseLevel,
-            usage = selected?.let {
-                ChatUsageSummary(
-                    inputTokens = it.inputTokens,
-                    outputTokens = it.outputTokens,
-                    totalTokens = it.totalTokens,
-                    contextTokens = it.contextTokens,
-                    estimatedCostUsd = it.estimatedCostUsd
-                )
-            } ?: state.usage,
+            usage = usage,
             unreadReplies = mergeUnreadSessionMetadata(state.unreadReplies, sessions),
             error = null
         )
+    }
+
+    private fun usageWithModelContext(
+        state: ChatState,
+        usage: ChatUsageSummary,
+        selectedModel: String?
+    ): ChatUsageSummary {
+        if (usage.contextTokens != null || usage.totalTokens == null) return usage
+        val contextWindow = contextWindowForModel(state, selectedModel) ?: return usage
+        if (contextWindow <= 0L) return usage
+        return usage.copy(contextTokens = contextWindow)
+    }
+
+    private fun contextWindowForModel(state: ChatState, selectedModel: String?): Long? {
+        val model = selectedModel?.takeIf { it.isNotBlank() } ?: return null
+        val options = state.models + state.hostModels + state.localModels
+        return options.firstOrNull { option ->
+            option.id == model || option.modelId == model
+        }?.contextWindow
     }
 
     private fun mergeUnreadSessionMetadata(
