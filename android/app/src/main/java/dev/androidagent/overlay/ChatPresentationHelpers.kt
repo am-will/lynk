@@ -66,6 +66,9 @@ object ChatPresentationHelpers {
                 id = local.id,
                 label = local.label,
                 provider = null,
+                harnessId = "openclaw",
+                harnessLabel = "OpenClaw",
+                modelId = local.id,
                 contextWindow = null,
                 available = true
             )
@@ -78,6 +81,9 @@ object ChatPresentationHelpers {
                 id = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
                 label = "Local LiteRT-LM",
                 provider = "android",
+                harnessId = "local",
+                harnessLabel = "Local",
+                modelId = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
                 contextWindow = null,
                 available = true
             )
@@ -106,8 +112,19 @@ object ChatPresentationHelpers {
             model
         } ?: return "Model"
         val pretty = models.firstOrNull { it.id == raw }?.label
-            ?: raw.substringAfter("/").ifBlank { raw }
+            ?: raw.substringAfter(":").substringAfter("/").ifBlank { raw }
         return if (pretty.startsWith("gpt-", ignoreCase = true)) pretty.drop(4) else pretty
+    }
+
+    fun modelHarnessLabel(model: ChatModelOption): String {
+        return model.harnessLabel?.takeIf { it.isNotBlank() }
+            ?: when (model.harnessId?.lowercase()) {
+                "openclaw" -> "OpenClaw"
+                "hermes" -> "Hermes"
+                "codex" -> "Codex"
+                "local" -> "Local"
+                else -> model.provider?.takeIf { it.isNotBlank() } ?: "OpenClaw"
+            }
     }
 
     fun formatReasoningLabel(reasoning: String?): String {

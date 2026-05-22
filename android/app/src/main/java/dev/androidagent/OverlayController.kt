@@ -1077,21 +1077,28 @@ class OverlayController(
             return
         }
         val selectedId = ChatPresentationHelpers.selectedModelId(lastChatState.selectedModel, localLiteRtAvailable)
-        val rows = merged.map { model ->
-            AnchoredPicker.Row(
-                id = "model:${model.id}",
-                label = model.label,
-                sublabel = model.provider?.takeIf { it.isNotBlank() },
-                iconRes = R.drawable.ic_model,
-                selected = model.id == selectedId,
-                enabled = model.available != false,
-                onSelect = {
-                    onSetChatModel(model.id)
-                    setStatus("Model: ${model.label}")
-                }
-            )
-        }
-        showAnchoredPicker(anchor, "Model", listOf(AnchoredPicker.Section(null, rows)))
+        val sections = merged
+            .groupBy { ChatPresentationHelpers.modelHarnessLabel(it) }
+            .map { (harnessLabel, models) ->
+                AnchoredPicker.Section(
+                    title = harnessLabel,
+                    rows = models.map { model ->
+                        AnchoredPicker.Row(
+                            id = "model:${model.id}",
+                            label = model.label,
+                            sublabel = model.provider?.takeIf { it.isNotBlank() && it != harnessLabel.lowercase() },
+                            iconRes = R.drawable.ic_model,
+                            selected = model.id == selectedId,
+                            enabled = model.available != false,
+                            onSelect = {
+                                onSetChatModel(model.id)
+                                setStatus("Model: $harnessLabel / ${model.label}")
+                            }
+                        )
+                    }
+                )
+            }
+        showAnchoredPicker(anchor, "Model", sections)
     }
 
     private fun isExperimentalLocalModelAvailable(): Boolean {

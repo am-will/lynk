@@ -24,6 +24,9 @@ class ChatPresentationHelpersTest {
                 id = "gpt-5.5",
                 label = "GPT 5.5 Gateway",
                 provider = "gateway",
+                harnessId = "openclaw",
+                harnessLabel = "OpenClaw",
+                modelId = "gpt-5.5",
                 contextWindow = 200_000,
                 available = false
             )),
@@ -42,6 +45,9 @@ class ChatPresentationHelpersTest {
                 id = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
                 label = "Remote local",
                 provider = "gateway",
+                harnessId = "openclaw",
+                harnessLabel = "OpenClaw",
+                modelId = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
                 contextWindow = null,
                 available = true
             )),
@@ -57,6 +63,9 @@ class ChatPresentationHelpersTest {
             id = "openai/gpt-5.5",
             label = "gpt-5.5",
             provider = "openai",
+            harnessId = "openclaw",
+            harnessLabel = "OpenClaw",
+            modelId = "openai/gpt-5.5",
             contextWindow = null,
             available = true
         ))
@@ -96,6 +105,8 @@ class ChatPresentationHelpersTest {
             sessionId = sessionId,
             label = label,
             displayName = displayName,
+            harnessId = "openclaw",
+            harnessLabel = "OpenClaw",
             updatedAt = null,
             model = null,
             modelProvider = null,

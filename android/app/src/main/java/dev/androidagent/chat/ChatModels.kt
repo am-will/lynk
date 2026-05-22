@@ -40,6 +40,8 @@ data class ChatSessionRow(
     val sessionId: String?,
     val label: String?,
     val displayName: String?,
+    val harnessId: String?,
+    val harnessLabel: String?,
     val updatedAt: Long?,
     val model: String?,
     val modelProvider: String?,
@@ -55,7 +57,16 @@ data class ChatSessionRow(
     val verboseLevel: String?
 )
 
-data class ChatModelOption(val id: String, val label: String, val provider: String?, val contextWindow: Long?, val available: Boolean?)
+data class ChatModelOption(
+    val id: String,
+    val label: String,
+    val provider: String?,
+    val harnessId: String?,
+    val harnessLabel: String?,
+    val modelId: String?,
+    val contextWindow: Long?,
+    val available: Boolean?
+)
 data class ChatReasoningOption(val id: String, val label: String)
 data class ChatCommandOption(val name: String, val description: String?, val category: String?, val aliases: List<String>, val acceptsArgs: Boolean)
 data class ChatToolSummary(val id: String, val label: String?, val description: String?, val source: String?, val group: String?)
@@ -99,6 +110,8 @@ data class ChatState(
     val status: String? = null,
     val error: String? = null,
     val selectedModel: String? = null,
+    val harnessId: String? = null,
+    val harnessLabel: String? = null,
     val reasoningEffort: String? = "medium",
     val reasoningStreamEnabled: Boolean? = null,
     val fastMode: Boolean? = null,
@@ -265,6 +278,8 @@ object ChatStateReducer {
         return state.copy(
             sessionKey = message.optNullableString("sessionKey") ?: state.sessionKey,
             sessionId = message.optNullableString("sessionId") ?: state.sessionId,
+            harnessId = message.optNullableString("harnessId") ?: state.harnessId,
+            harnessLabel = message.optNullableString("harnessLabel") ?: state.harnessLabel,
             activeRunId = message.optNullableString("runId"),
             isRunning = message.optBoolean("isRunning", state.isRunning),
             status = message.optNullableString("status") ?: state.status,
@@ -612,6 +627,8 @@ object ChatStateReducer {
                     sessionId = item.optNullableString("sessionId"),
                     label = item.optNullableString("label"),
                     displayName = item.optNullableString("displayName"),
+                    harnessId = item.optNullableString("harnessId"),
+                    harnessLabel = item.optNullableString("harnessLabel"),
                     updatedAt = item.optNullableLong("updatedAt"),
                     model = item.optNullableString("model"),
                     modelProvider = item.optNullableString("modelProvider"),
@@ -640,6 +657,9 @@ object ChatStateReducer {
                     id = id,
                     label = item.optString("label", id),
                     provider = item.optNullableString("provider"),
+                    harnessId = item.optNullableString("harnessId"),
+                    harnessLabel = item.optNullableString("harnessLabel"),
+                    modelId = item.optNullableString("modelId"),
                     contextWindow = item.optNullableLong("contextWindow"),
                     available = item.optNullableBoolean("available")
                 ))

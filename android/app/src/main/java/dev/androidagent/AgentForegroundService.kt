@@ -38,6 +38,7 @@ import dev.androidagent.net.PhoneWebSocketClient
 import dev.androidagent.overlay.HostConnectionPhase
 import dev.androidagent.overlay.HostConnectionState
 import dev.androidagent.overlay.PanelPresentation
+import dev.androidagent.overlay.ChatPresentationHelpers
 import dev.androidagent.voice.VoiceRuntimeController
 import dev.androidagent.voice.transcription.VoiceTranscriptionManager
 import dev.androidagent.voice.transcription.VoiceTranscriptionState
@@ -377,13 +378,21 @@ class AgentForegroundService : Service() {
         AgentConfigStore.save(this, config.copy(model = model))
         chatState = chatState.copy(
             selectedModel = model,
-            status = if (route == ChatClientRoute.Local) "Model: Local LiteRT-LM" else "Model: ${AgentModelOptions.modelLabel(model)}",
+            status = "Model: ${chatModelDisplayLabel(model, route)}",
             error = null
         )
         overlayController?.setChatState(chatState)
         connectAgentClient(model).setModel(sessionKeyForRoute(route), modelForRoute(model, route, config))
         lastNotificationText = chatState.status ?: lastNotificationText
         updateNotification()
+    }
+
+    private fun chatModelDisplayLabel(model: String, route: ChatClientRoute): String {
+        if (route == ChatClientRoute.Local) return "Local LiteRT-LM"
+        val option = chatState.models.firstOrNull { it.id == model }
+        val harness = option?.let { ChatPresentationHelpers.modelHarnessLabel(it) }
+        val label = option?.label ?: AgentModelOptions.modelLabel(model)
+        return harness?.let { "$it / $label" } ?: label
     }
 
     private fun submitSlashCommand(text: String): Boolean {
