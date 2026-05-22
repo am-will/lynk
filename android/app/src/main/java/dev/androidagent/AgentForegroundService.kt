@@ -96,10 +96,13 @@ class AgentForegroundService : Service() {
             onDismiss = { stopSelf() },
             onStartVoice = {
                 val config = AgentConfigStore.load(this)
-                if (selectedChatModel(config) == AgentModelOptions.LOCAL_LITERT_MODEL_ID) {
+                val model = selectedChatModel(config)
+                if (model.isBlank()) {
+                    overlayController?.setStatus("Enable a host model harness before starting voice.")
+                } else if (model == AgentModelOptions.LOCAL_LITERT_MODEL_ID) {
                     overlayController?.setStatus("Realtime voice still requires a host model.")
                 } else {
-                    connectAgentClient(selectedChatModel(config))
+                    connectAgentClient(model)
                     promoteVoiceForegroundIfAllowed()
                     voiceRuntimeController?.start()
                 }
@@ -121,8 +124,12 @@ class AgentForegroundService : Service() {
             onSetChatReasoning = { reasoning ->
                 val config = AgentConfigStore.load(this)
                 val model = selectedChatModel(config)
-                val route = routeForModel(model, config)
-                connectAgentClient(model).setReasoning(sessionKeyForRoute(route), reasoning)
+                if (model.isBlank()) {
+                    overlayController?.setStatus("Enable a model harness in Models & Harness first.")
+                } else {
+                    val route = routeForModel(model, config)
+                    connectAgentClient(model).setReasoning(sessionKeyForRoute(route), reasoning)
+                }
             },
             onChatControlCommand = { command, args -> submitChatControlCommand(command, args) },
             onToggleChatTool = { eventId ->
@@ -264,15 +271,12 @@ class AgentForegroundService : Service() {
 
     private fun selectedChatModel(config: AgentConfig = AgentConfigStore.load(this)): String {
         val selected = chatState.selectedModel?.takeIf { it.isNotBlank() }
-        val fallback = config.model.takeUnless { it == AgentModelOptions.LOCAL_LITERT_MODEL_ID }
-            ?: AgentModelOptions.models.first().id
-        return when (selected) {
-            AgentModelOptions.LOCAL_LITERT_MODEL_ID -> {
-                if (isExperimentalLocalModelAvailable(config)) selected else fallback
-            }
-            null -> fallback
-            else -> selected
-        }
+        val options = availableChatModels(config)
+        val preferred = listOfNotNull(selected, config.model.takeIf { it.isNotBlank() })
+        return preferred.firstOrNull { candidate -> options.any { it.id == candidate } }
+            ?: options.firstOrNull { it.available != false }?.id
+            ?: options.firstOrNull()?.id
+            ?: ""
     }
 
     private fun routeForModel(model: String, config: AgentConfig = AgentConfigStore.load(this)): ChatClientRoute {
@@ -286,13 +290,19 @@ class AgentForegroundService : Service() {
     private fun isExperimentalLocalModelAvailable(config: AgentConfig = AgentConfigStore.load(this)): Boolean =
         config.experimentalLocalModelsEnabled && LocalModelStore.exists(config.localModelPath)
 
+    private fun availableChatModels(config: AgentConfig = AgentConfigStore.load(this)) =
+        ChatPresentationHelpers.modelPickerOptions(
+            chatState,
+            isExperimentalLocalModelAvailable(config),
+            config.enabledModelHarnessIds()
+        )
+
     private fun modelForRoute(model: String, route: ChatClientRoute, config: AgentConfig): String {
         return when (route) {
             ChatClientRoute.Local -> AgentModelOptions.LOCAL_LITERT_MODEL_ID
-            ChatClientRoute.Host -> model
-                .takeUnless { it == AgentModelOptions.LOCAL_LITERT_MODEL_ID }
-                ?: config.model.takeUnless { it == AgentModelOptions.LOCAL_LITERT_MODEL_ID }
-                ?: AgentModelOptions.models.first().id
+            ChatClientRoute.Host -> model.takeIf { it.isNotBlank() && it != AgentModelOptions.LOCAL_LITERT_MODEL_ID }
+                ?: selectedChatModel(config).takeUnless { it == AgentModelOptions.LOCAL_LITERT_MODEL_ID }
+                ?: ""
         }
     }
 
@@ -349,6 +359,16 @@ class AgentForegroundService : Service() {
         overlayController?.setChatState(chatState)
         val requestConfig = AgentConfigStore.load(this)
         val selectedModel = selectedChatModel(requestConfig)
+        if (selectedModel.isBlank()) {
+            val message = "Enable a model harness in Models & Harness first."
+            chatState = chatState.copy(status = message, isRunning = false)
+            overlayController?.setChatState(chatState)
+            overlayController?.setStatus(message)
+            lastNotificationText = message
+            isAgentTurnActive = false
+            updateNotification()
+            return false
+        }
         val route = routeForModel(selectedModel, requestConfig)
         val client = connectAgentClient(selectedModel)
         val sent = client.send(
@@ -370,8 +390,13 @@ class AgentForegroundService : Service() {
 
     private fun setChatModelFromUi(model: String) {
         val config = AgentConfigStore.load(this)
+        val available = availableChatModels(config)
+        if (available.none { it.id == model }) {
+            overlayController?.setStatus("Enable this harness in Models & Harness first.")
+            return
+        }
         if (model == AgentModelOptions.LOCAL_LITERT_MODEL_ID && !isExperimentalLocalModelAvailable(config)) {
-            overlayController?.setStatus("Enable Experimental and import a LiteRT model first.")
+            overlayController?.setStatus("Enable Local LiteRT-LLM and import a LiteRT model first.")
             return
         }
         val route = routeForModel(model, config)
@@ -389,23 +414,33 @@ class AgentForegroundService : Service() {
 
     private fun chatModelDisplayLabel(model: String, route: ChatClientRoute): String {
         if (route == ChatClientRoute.Local) return "Local LiteRT-LM"
-        val option = chatState.models.firstOrNull { it.id == model }
+        val option = availableChatModels().firstOrNull { it.id == model }
         val harness = option?.let { ChatPresentationHelpers.modelHarnessLabel(it) }
         val label = option?.label ?: AgentModelOptions.modelLabel(model)
         return harness?.let { "$it / $label" } ?: label
     }
 
-    private fun brandPresentationFor(state: ChatState, sessionKey: String? = null) =
-        ChatPresentationHelpers.clientBrandPresentation(
-            selectedModel = state.sessions.firstOrNull { it.key == sessionKey }?.model
+    private fun brandPresentationFor(state: ChatState, sessionKey: String? = null): dev.androidagent.overlay.ClientBrandPresentation {
+        val config = AgentConfigStore.load(this)
+        val models = availableChatModels(config)
+        val localLiteRtAvailable = isExperimentalLocalModelAvailable(config)
+        return ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = ChatPresentationHelpers.selectedModelId(
+                state.sessions.firstOrNull { it.key == sessionKey }?.model
                 ?: state.selectedModel
                 ?: selectedChatModel(),
-            models = state.models,
-            harnessId = state.sessions.firstOrNull { it.key == sessionKey }?.harnessId
-                ?: harnessFromSessionKey(sessionKey)
-                ?: state.harnessId,
-            localLiteRtAvailable = isExperimentalLocalModelAvailable()
+                localLiteRtAvailable,
+                models
+            ),
+            models = models,
+            harnessId = (
+                state.sessions.firstOrNull { it.key == sessionKey }?.harnessId
+                    ?: harnessFromSessionKey(sessionKey)
+                    ?: state.harnessId
+                )?.takeIf { config.isModelHarnessEnabled(it) },
+            localLiteRtAvailable = localLiteRtAvailable
         )
+    }
 
     private fun chatStatusText(rawStatus: String?, state: ChatState): String {
         return ChatPresentationHelpers.chatStatusText(
@@ -478,6 +513,16 @@ class AgentForegroundService : Service() {
         overlayController?.setChatState(chatState)
         val config = AgentConfigStore.load(this)
         val selectedModel = selectedChatModel(config)
+        if (selectedModel.isBlank()) {
+            val message = "Enable a model harness in Models & Harness first."
+            chatState = chatState.copy(status = message, isRunning = false)
+            overlayController?.setChatState(chatState)
+            overlayController?.setStatus(message)
+            lastNotificationText = message
+            isAgentTurnActive = false
+            updateNotification()
+            return
+        }
         val route = routeForModel(selectedModel, config)
         connectAgentClient(selectedModel).newSession(model = modelForRoute(selectedModel, route, config))
         lastNotificationText = "Started a new chat"
@@ -554,6 +599,10 @@ class AgentForegroundService : Service() {
     private fun openActiveChatConnection() {
         val config = AgentConfigStore.load(this)
         val model = selectedChatModel(config)
+        if (model.isBlank()) {
+            overlayController?.setStatus("Enable a model harness in Models & Harness first.")
+            return
+        }
         val route = routeForModel(model, config)
         connectAgentClient(model).open(sessionKeyForRoute(route))
     }

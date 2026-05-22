@@ -127,6 +127,33 @@ class ChatPresentationHelpersTest {
     }
 
     @Test
+    fun modelPickerOptionsHideDisabledHarnesses() {
+        val state = ChatState(
+            models = listOf(
+                model("gpt-5.5", harnessId = "openclaw"),
+                model("hermes:gpt-5.5", harnessId = "hermes"),
+                model("codex:gpt-5.3-codex", harnessId = "codex")
+            ),
+            hostModels = listOf(
+                model("gpt-5.5", harnessId = "openclaw"),
+                model("hermes:gpt-5.5", harnessId = "hermes"),
+                model("codex:gpt-5.3-codex", harnessId = "codex")
+            ),
+            localModels = listOf(model(AgentModelOptions.LOCAL_LITERT_MODEL_ID, harnessId = "local", provider = "android"))
+        )
+
+        val merged = ChatPresentationHelpers.modelPickerOptions(
+            state = state,
+            localLiteRtAvailable = true,
+            enabledHarnessIds = setOf("hermes", "local")
+        )
+
+        assertEquals(listOf("hermes:gpt-5.5", AgentModelOptions.LOCAL_LITERT_MODEL_ID), merged.map { it.id })
+        assertEquals("hermes:gpt-5.5", ChatPresentationHelpers.selectedModelId("gpt-5.5", localLiteRtAvailable = true, models = merged))
+        assertEquals("hermes:gpt-5.5", ChatPresentationHelpers.formatModelLabel("gpt-5.5", merged, localLiteRtAvailable = true))
+    }
+
+    @Test
     fun modelPickerOptionsCombineExplicitHostAndLocalSnapshots() {
         val state = ChatState(
             models = listOf(model(AgentModelOptions.LOCAL_LITERT_MODEL_ID, harnessId = "local", provider = "android")),

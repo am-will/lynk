@@ -3,6 +3,7 @@ package dev.androidagent.overlay
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
+import dev.androidagent.AgentConfig
 import dev.androidagent.AgentModelOptions
 import dev.androidagent.R
 import dev.androidagent.chat.ChatModelOption
@@ -120,33 +121,36 @@ object ChatPresentationHelpers {
     fun mergeModelOptions(
         gatewayModels: List<ChatModelOption>,
         localLiteRtAvailable: Boolean,
-        localModels: List<ChatModelOption> = emptyList()
+        localModels: List<ChatModelOption> = emptyList(),
+        enabledHarnessIds: Set<String> = defaultEnabledHarnessIds()
     ): List<ChatModelOption> {
         val byId = linkedMapOf<String, ChatModelOption>()
-        AgentModelOptions.models.forEach { local ->
-            byId[local.id] = ChatModelOption(
-                id = local.id,
-                label = local.label,
-                provider = null,
-                harnessId = "openclaw",
-                harnessLabel = "OpenClaw",
-                modelId = local.id,
-                contextWindow = null,
-                available = true,
-                reasoningOptions = null,
-                defaultReasoningEffort = null
-            )
+        if (AgentConfig.HARNESS_OPENCLAW in enabledHarnessIds) {
+            AgentModelOptions.models.forEach { local ->
+                byId[local.id] = ChatModelOption(
+                    id = local.id,
+                    label = local.label,
+                    provider = null,
+                    harnessId = AgentConfig.HARNESS_OPENCLAW,
+                    harnessLabel = "OpenClaw",
+                    modelId = local.id,
+                    contextWindow = null,
+                    available = true,
+                    reasoningOptions = null,
+                    defaultReasoningEffort = null
+                )
+            }
         }
-        gatewayModels.forEach { remote ->
+        gatewayModels.filter { modelHarnessId(it) in enabledHarnessIds }.forEach { remote ->
             byId[remote.id] = remote
         }
-        if (localLiteRtAvailable) {
+        if (localLiteRtAvailable && AgentConfig.HARNESS_LOCAL in enabledHarnessIds) {
             byId[AgentModelOptions.LOCAL_LITERT_MODEL_ID] = localModels.firstOrNull { it.id == AgentModelOptions.LOCAL_LITERT_MODEL_ID }
                 ?: ChatModelOption(
                     id = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
                     label = "Local LiteRT-LM",
                     provider = "android",
-                    harnessId = "local",
+                    harnessId = AgentConfig.HARNESS_LOCAL,
                     harnessLabel = "Local",
                     modelId = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
                     contextWindow = null,
@@ -160,23 +164,36 @@ object ChatPresentationHelpers {
         return byId.values.toList()
     }
 
-    fun modelPickerOptions(state: ChatState, localLiteRtAvailable: Boolean): List<ChatModelOption> {
+    fun modelPickerOptions(
+        state: ChatState,
+        localLiteRtAvailable: Boolean,
+        enabledHarnessIds: Set<String> = defaultEnabledHarnessIds()
+    ): List<ChatModelOption> {
         val hostModels = state.hostModels.ifEmpty {
             if (state.modelSource == ChatModelSource.LOCAL) emptyList() else state.models
         }
         return mergeModelOptions(
             gatewayModels = hostModels,
             localLiteRtAvailable = localLiteRtAvailable,
-            localModels = state.localModels
+            localModels = state.localModels,
+            enabledHarnessIds = enabledHarnessIds
         )
     }
 
-    fun selectedModelId(selectedModel: String?, localLiteRtAvailable: Boolean): String {
-        return if (selectedModel == AgentModelOptions.LOCAL_LITERT_MODEL_ID && !localLiteRtAvailable) {
+    fun selectedModelId(
+        selectedModel: String?,
+        localLiteRtAvailable: Boolean,
+        models: List<ChatModelOption> = emptyList()
+    ): String {
+        val normalized = if (selectedModel == AgentModelOptions.LOCAL_LITERT_MODEL_ID && !localLiteRtAvailable) {
             AgentModelOptions.models.firstOrNull()?.id.orEmpty()
         } else {
             selectedModel.orEmpty()
         }
+        if (models.isEmpty()) return normalized
+        return normalized.takeIf { id -> models.any { it.id == id } }
+            ?: models.firstOrNull { it.available != false }?.id
+            ?: models.firstOrNull()?.id.orEmpty()
     }
 
     fun formatModelLabel(
@@ -184,11 +201,15 @@ object ChatPresentationHelpers {
         models: List<ChatModelOption>,
         localLiteRtAvailable: Boolean
     ): String {
-        val raw = if (model == AgentModelOptions.LOCAL_LITERT_MODEL_ID && !localLiteRtAvailable) {
+        val requested = if (model == AgentModelOptions.LOCAL_LITERT_MODEL_ID && !localLiteRtAvailable) {
             AgentModelOptions.models.firstOrNull()?.id
         } else {
             model
         } ?: return "Model"
+        val raw = requested.takeIf { id -> models.isEmpty() || models.any { it.id == id } }
+            ?: models.firstOrNull { it.available != false }?.id
+            ?: models.firstOrNull()?.id
+            ?: requested
         val pretty = models.firstOrNull { it.id == raw }?.label
             ?: raw.substringAfter(":").substringAfter("/").ifBlank { raw }
         return if (pretty.startsWith("gpt-", ignoreCase = true)) pretty.drop(4) else pretty
@@ -330,6 +351,13 @@ object ChatPresentationHelpers {
             else -> 4
         }
     }
+
+    fun defaultEnabledHarnessIds(): Set<String> = setOf(
+        AgentConfig.HARNESS_OPENCLAW,
+        AgentConfig.HARNESS_HERMES,
+        AgentConfig.HARNESS_CODEX,
+        AgentConfig.HARNESS_LOCAL
+    )
 
     fun formatReasoningLabel(reasoning: String?): String {
         val value = reasoning?.takeIf { it.isNotBlank() } ?: return "Reason"

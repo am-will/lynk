@@ -957,12 +957,21 @@ class OverlayController(
         }
     }
 
-    private fun brandPresentationFor(state: ChatState) = ChatPresentationHelpers.clientBrandPresentation(
-        selectedModel = state.selectedModel,
-        models = state.models,
-        harnessId = state.harnessId,
-        localLiteRtAvailable = isExperimentalLocalModelAvailable()
-    )
+    private fun brandPresentationFor(state: ChatState): dev.androidagent.overlay.ClientBrandPresentation {
+        val config = AgentConfigStore.load(context)
+        val localLiteRtAvailable = isExperimentalLocalModelAvailable(config)
+        val modelOptions = ChatPresentationHelpers.modelPickerOptions(
+            state,
+            localLiteRtAvailable,
+            config.enabledModelHarnessIds()
+        )
+        return ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = ChatPresentationHelpers.selectedModelId(state.selectedModel, localLiteRtAvailable, modelOptions),
+            models = modelOptions,
+            harnessId = state.harnessId?.takeIf { config.isModelHarnessEnabled(it) },
+            localLiteRtAvailable = localLiteRtAvailable
+        )
+    }
 
     private fun chatStatusText(rawStatus: String?, state: ChatState): String {
         return ChatPresentationHelpers.chatStatusText(
@@ -1101,13 +1110,18 @@ class OverlayController(
 
     private fun showModelChoices(anchorOverride: View? = null, replace: Boolean = false) {
         val anchor = anchorOverride ?: modelButton ?: return
-        val localLiteRtAvailable = isExperimentalLocalModelAvailable()
-        val merged = ChatPresentationHelpers.modelPickerOptions(lastChatState, localLiteRtAvailable)
+        val config = AgentConfigStore.load(context)
+        val localLiteRtAvailable = isExperimentalLocalModelAvailable(config)
+        val merged = ChatPresentationHelpers.modelPickerOptions(
+            lastChatState,
+            localLiteRtAvailable,
+            config.enabledModelHarnessIds()
+        )
         if (merged.isEmpty()) {
             setStatus("No models available.")
             return
         }
-        val selectedId = ChatPresentationHelpers.selectedModelId(lastChatState.selectedModel, localLiteRtAvailable)
+        val selectedId = ChatPresentationHelpers.selectedModelId(lastChatState.selectedModel, localLiteRtAvailable, merged)
         val selectedModel = merged.firstOrNull { it.id == selectedId }
         val activeHarnessId = selectedModel?.let { ChatPresentationHelpers.modelHarnessId(it) }
             ?: lastChatState.harnessId?.takeIf { it.isNotBlank() }?.lowercase()
@@ -1182,8 +1196,7 @@ class OverlayController(
         )
     }
 
-    private fun isExperimentalLocalModelAvailable(): Boolean {
-        val config = AgentConfigStore.load(context)
+    private fun isExperimentalLocalModelAvailable(config: AgentConfig = AgentConfigStore.load(context)): Boolean {
         return config.experimentalLocalModelsEnabled && LocalModelStore.exists(config.localModelPath)
     }
 
@@ -1300,7 +1313,11 @@ class OverlayController(
             label = "Model",
             sublabel = ChatPresentationHelpers.formatModelLabel(
                 model = lastChatState.selectedModel ?: lastChatState.models.firstOrNull()?.id,
-                models = lastChatState.models,
+                models = ChatPresentationHelpers.modelPickerOptions(
+                    lastChatState,
+                    isExperimentalLocalModelAvailable(),
+                    AgentConfigStore.load(context).enabledModelHarnessIds()
+                ),
                 localLiteRtAvailable = isExperimentalLocalModelAvailable()
             ),
             iconRes = R.drawable.ic_model,
@@ -1607,8 +1624,9 @@ class OverlayController(
         composerInput?.hint = brandPresentationFor(state).copy.composerPlaceholder
         modelButton?.let { btn ->
             val fastModeOn = state.fastMode == true
-            val localLiteRtAvailable = isExperimentalLocalModelAvailable()
-            val modelOptions = ChatPresentationHelpers.modelPickerOptions(state, localLiteRtAvailable)
+            val config = AgentConfigStore.load(context)
+            val localLiteRtAvailable = isExperimentalLocalModelAvailable(config)
+            val modelOptions = ChatPresentationHelpers.modelPickerOptions(state, localLiteRtAvailable, config.enabledModelHarnessIds())
             val modelLabel = ChatPresentationHelpers.formatModelLabel(
                 model = state.selectedModel ?: state.models.firstOrNull()?.id,
                 models = modelOptions,
