@@ -55,6 +55,23 @@ private enum class ChatClientRoute {
     Local
 }
 
+private const val SYSTEM_DIALOG_REASON_HOME_KEY = "homekey"
+private const val SYSTEM_DIALOG_REASON_RECENT_APPS = "recentapps"
+
+internal enum class SystemDialogChromeAction {
+    None,
+    MinimizePanel,
+    HideAgentChrome
+}
+
+internal fun systemDialogChromeAction(reason: String?): SystemDialogChromeAction {
+    return when (reason) {
+        SYSTEM_DIALOG_REASON_HOME_KEY -> SystemDialogChromeAction.MinimizePanel
+        SYSTEM_DIALOG_REASON_RECENT_APPS -> SystemDialogChromeAction.HideAgentChrome
+        else -> SystemDialogChromeAction.None
+    }
+}
+
 class AgentForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var overlayController: OverlayController? = null
@@ -72,8 +89,10 @@ class AgentForegroundService : Service() {
     private val closeSystemDialogsReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != Intent.ACTION_CLOSE_SYSTEM_DIALOGS) return
-            if (intent.getStringExtra(SYSTEM_DIALOG_REASON) == SYSTEM_DIALOG_REASON_HOME_KEY) {
-                overlayController?.minimizePanelFromSystemHome()
+            when (systemDialogChromeAction(intent.getStringExtra(SYSTEM_DIALOG_REASON))) {
+                SystemDialogChromeAction.MinimizePanel -> overlayController?.minimizePanelFromSystemHome()
+                SystemDialogChromeAction.HideAgentChrome -> overlayController?.hideAgentChromeFromSystemRecents()
+                SystemDialogChromeAction.None -> Unit
             }
         }
     }
@@ -918,7 +937,6 @@ class AgentForegroundService : Service() {
         private const val REQUEST_OPEN_CHAT = 2
         private const val DEFAULT_NOTIFICATION_TEXT = "Floating chat bubble is running"
         private const val SYSTEM_DIALOG_REASON = "reason"
-        private const val SYSTEM_DIALOG_REASON_HOME_KEY = "homekey"
         const val ACTION_STATE_CHANGED = "dev.openclawagent.action.AGENT_SERVICE_STATE_CHANGED"
         const val EXTRA_IS_RUNNING = "isRunning"
         const val CHANNEL_ID = "open-claw-agent"

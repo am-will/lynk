@@ -277,6 +277,15 @@ class OverlayController(
         }
     }
 
+    fun hideAgentChromeFromSystemRecents() {
+        mainHandler.post {
+            restoreBubbleAfterFullscreen = false
+            dismissPanel(cancelTranscription = false, force = true)
+            bubbleOverlay.detachForAutomation()
+            confirmationOverlay.dismiss()
+        }
+    }
+
     fun setHostConnectionState(state: HostConnectionState) {
         lastHostConnectionState = state
         mainHandler.post { renderHostConnectionState(state) }
