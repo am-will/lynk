@@ -93,6 +93,17 @@ Realtime voice mode:
 - Preserve the same safety rules as text mode; sensitive OS prompts remain manual.`.trim();
 }
 
+function estimatePromptTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+function promptMetrics(text: string): { chars: number; estimatedTokens: number } {
+  return {
+    chars: text.length,
+    estimatedTokens: estimatePromptTokens(text)
+  };
+}
+
 function isSpeechStartedItem(item: unknown): boolean {
   if (!item || typeof item !== "object") {
     return false;
@@ -236,9 +247,17 @@ export class CodexAppServerClient implements AgentClient {
       : await this.createThread({ model: options.model });
     this.audit?.record("codex_turn_starting", undefined, { threadId, text, model: options.model, reasoningEffort: options.reasoningEffort });
     sink.working("Sending request to Codex app-server");
+    const turnInput = buildPhoneAgentPrompt(text, options.systemPrompt);
+    this.audit?.record("codex_prompt_metrics", options.deviceId, {
+      threadId,
+      path: "dispatcher.submitUserRequest",
+      baseInstructions: promptMetrics((options.systemPrompt?.trim() || PHONE_AGENT_SYSTEM_PROMPT)),
+      userText: promptMetrics(text),
+      turnInput: promptMetrics(turnInput)
+    });
     const result = await this.request("turn/start", {
       threadId,
-      input: [{ type: "text", text: buildPhoneAgentPrompt(text, options.systemPrompt) }],
+      input: [{ type: "text", text: turnInput }],
       cwd: this.cwd,
       approvalPolicy: "never",
       model: options.model,

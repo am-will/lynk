@@ -37,13 +37,24 @@ function arrayField(record: Record<string, unknown> | undefined, key: string): u
   return Array.isArray(value) ? value : [];
 }
 
+function estimatePromptTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+function promptMetrics(text: string): { chars: number; estimatedTokens: number } {
+  return {
+    chars: text.length,
+    estimatedTokens: estimatePromptTokens(text)
+  };
+}
+
 export class CodexChatClient {
   private readonly client: CodexAppServerClient;
   private readonly sessions: InMemoryHarnessSessionStore;
   private readonly handlers = new Set<GatewayEventHandler>();
   private active?: ActiveRun;
 
-  constructor(audit?: AuditLog, client?: CodexAppServerClient, sessionStoragePath: string | null = join(process.cwd(), "state", "codex-sessions.json")) {
+  constructor(private readonly audit?: AuditLog, client?: CodexAppServerClient, sessionStoragePath: string | null = join(process.cwd(), "state", "codex-sessions.json")) {
     this.client = client ?? new CodexAppServerClient(audit);
     this.sessions = new InMemoryHarnessSessionStore("codex", {
       defaultModel: "gpt-5.3-codex",
@@ -75,6 +86,12 @@ export class CodexChatClient {
     this.sessions.setThinkingLevel(session, options.thinking);
     await this.ensureAppServerThread(session);
     this.sessions.appendUserMessage(session, options.message, options.idempotencyKey);
+    this.audit?.record("codex_chat_prompt_metrics", undefined, {
+      path: "bridge.sendChat",
+      sessionKey: session.key,
+      sessionId: session.sessionId,
+      message: promptMetrics(options.message)
+    });
 
     const runId = options.idempotencyKey ?? `codex_${randomUUID()}`;
     this.sessions.setActiveRun(session, runId);

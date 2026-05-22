@@ -34,13 +34,17 @@ class LocalAgentController(
         repeat(MAX_TOOL_ROUNDS) toolLoop@{ round ->
             Log.i(TAG, "local turn $runId round=${round + 1} starting")
             emit(reasoning(sessionKey, runId, if (round == 0) "Planning locally..." else "Continuing after tool result...", replace = round == 0))
+            val config = configProvider()
+            val systemPrompt = buildLocalSystemPrompt(config.systemPrompt)
+            val prompt = buildPrompt(transcript, latestScreenshotPath, toolsAllowed)
+            Log.i(TAG, "local turn $runId prompt metrics round=${round + 1} systemChars=${systemPrompt.length} systemTokens=${estimateTokenCount(systemPrompt)} promptChars=${prompt.length} promptTokens=${estimateTokenCount(prompt)}")
             val response = try {
                 withTimeout(MODEL_RESPONSE_TIMEOUT_MS) {
                     runtime.generate(
                         LocalModelRequest(
-                            prompt = buildPrompt(transcript, latestScreenshotPath, toolsAllowed),
-                            systemPrompt = buildLocalSystemPrompt(configProvider().systemPrompt),
-                            config = configProvider(),
+                            prompt = prompt,
+                            systemPrompt = systemPrompt,
+                            config = config,
                             imagePaths = latestScreenshotPath?.let(::listOf).orEmpty()
                         ),
                         onDelta = {}
@@ -209,6 +213,11 @@ class LocalAgentController(
             Conversation:
             ${transcript.joinToString("\n")}
         """.trimIndent()
+    }
+
+    private fun estimateTokenCount(text: String): Int {
+        if (text.isBlank()) return 0
+        return (text.length + 3) / 4
     }
 
     private fun emitAssistant(sessionKey: String, runId: String, text: String) {
