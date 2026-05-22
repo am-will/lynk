@@ -1,5 +1,6 @@
 package dev.androidagent.chat
 
+import dev.androidagent.AgentModelOptions
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -294,15 +295,23 @@ object ChatStateReducer {
     }
 
     private fun reduceState(state: ChatState, message: JSONObject): ChatState {
+        val sessionKey = message.optNullableString("sessionKey") ?: state.sessionKey
+        val harnessId = normalizeHarnessId(message.optNullableString("harnessId"))
+            ?: harnessFromSessionKey(sessionKey)
+            ?: state.harnessId
         return state.copy(
-            sessionKey = message.optNullableString("sessionKey") ?: state.sessionKey,
+            sessionKey = sessionKey,
             sessionId = message.optNullableString("sessionId") ?: state.sessionId,
-            harnessId = message.optNullableString("harnessId") ?: state.harnessId,
+            harnessId = harnessId,
             harnessLabel = message.optNullableString("harnessLabel") ?: state.harnessLabel,
             activeRunId = message.optNullableString("runId"),
             isRunning = message.optBoolean("isRunning", state.isRunning),
             status = message.optNullableString("status") ?: state.status,
-            selectedModel = state.selectedModel ?: message.optNullableString("model"),
+            selectedModel = selectedModelForActiveHarness(
+                current = state.selectedModel,
+                incoming = message.optNullableString("model"),
+                activeHarnessId = harnessId
+            ),
             reasoningEffort = normalizeReasoningEffort(message.optNullableString("reasoningEffort"), state.reasoningEffort),
             reasoningStreamEnabled = message.optNullableBoolean("reasoningStream") ?: state.reasoningStreamEnabled,
             fastMode = message.optNullableBoolean("fastMode") ?: state.fastMode,
@@ -534,7 +543,14 @@ object ChatStateReducer {
         val sessions = parseSessions(message.optJSONArray("sessions"))
         val selectedKey = message.optNullableString("selectedSessionKey") ?: state.sessionKey
         val selected = sessions.firstOrNull { it.key == selectedKey }
-        val selectedModel = state.selectedModel ?: selected?.model
+        val selectedHarnessId = normalizeHarnessId(selected?.harnessId)
+            ?: harnessFromSessionKey(selectedKey)
+            ?: state.harnessId
+        val selectedModel = selectedModelForActiveHarness(
+            current = state.selectedModel,
+            incoming = selected?.model,
+            activeHarnessId = selectedHarnessId
+        )
         val usage = selected?.let {
             ChatUsageSummary(
                 inputTokens = it.inputTokens,
@@ -548,6 +564,8 @@ object ChatStateReducer {
             sessionKey = selectedKey,
             sessions = sessions,
             selectedModel = selectedModel,
+            harnessId = selectedHarnessId,
+            harnessLabel = selected?.harnessLabel ?: state.harnessLabel,
             reasoningEffort = normalizeReasoningEffort(selected?.thinkingLevel, state.reasoningEffort),
             reasoningStreamEnabled = selected?.reasoningLevel?.let(::reasoningStreamEnabled) ?: state.reasoningStreamEnabled,
             fastMode = selected?.fastMode ?: state.fastMode,
@@ -556,6 +574,74 @@ object ChatStateReducer {
             unreadReplies = mergeUnreadSessionMetadata(state.unreadReplies, sessions),
             error = null
         )
+    }
+
+    private fun selectedModelForActiveHarness(
+        current: String?,
+        incoming: String?,
+        activeHarnessId: String?
+    ): String? {
+        val activeHarness = normalizeHarnessId(activeHarnessId)
+        val currentModel = current?.trim()?.takeIf { it.isNotBlank() }
+        val incomingModel = normalizeModelForHarness(incoming, activeHarness)
+
+        if (incomingModel == null) {
+            return currentModel?.takeUnless { model ->
+                activeHarness != null && harnessForModel(model) != activeHarness
+            }
+        }
+        if (currentModel == null) return incomingModel
+
+        val currentHarness = harnessForModel(currentModel)
+        val incomingHarness = harnessForModel(incomingModel)
+        if (activeHarness != null && currentHarness != activeHarness && incomingHarness == activeHarness) {
+            return incomingModel
+        }
+        if (currentHarness != incomingHarness) {
+            return incomingModel
+        }
+        return currentModel
+    }
+
+    private fun normalizeModelForHarness(model: String?, harnessId: String?): String? {
+        val cleanModel = model?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val harness = normalizeHarnessId(harnessId)
+        if (cleanModel == AgentModelOptions.LOCAL_LITERT_MODEL_ID) return cleanModel
+        if ((harness == "codex" || harness == "hermes") && harnessFromModelPrefix(cleanModel) == null) {
+            return "$harness:$cleanModel"
+        }
+        return cleanModel
+    }
+
+    private fun harnessForModel(model: String): String {
+        if (model == AgentModelOptions.LOCAL_LITERT_MODEL_ID) return "local"
+        return harnessFromModelPrefix(model) ?: "openclaw"
+    }
+
+    private fun harnessFromModelPrefix(model: String): String? {
+        val prefix = model.trim().substringBefore(":", missingDelimiterValue = "")
+            .takeIf { it.isNotBlank() }
+            ?.lowercase()
+        return normalizeHarnessId(prefix)
+    }
+
+    private fun harnessFromSessionKey(sessionKey: String?): String? {
+        val cleanKey = sessionKey?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val prefix = cleanKey.substringBefore(":", missingDelimiterValue = "")
+            .takeIf { it.isNotBlank() }
+            ?.lowercase()
+        return when (prefix) {
+            "codex", "hermes", "local" -> prefix
+            else -> "openclaw"
+        }
+    }
+
+    private fun normalizeHarnessId(harnessId: String?): String? {
+        val cleanHarnessId = harnessId?.trim()?.takeIf { it.isNotBlank() }?.lowercase()
+        return when (cleanHarnessId) {
+            "openclaw", "codex", "hermes", "local" -> cleanHarnessId
+            else -> null
+        }
     }
 
     private fun usageWithModelContext(

@@ -307,6 +307,23 @@ class ChatStateReducerTest {
     }
 
     @Test
+    fun stateSwitchesSelectedModelWhenRestoredHarnessChanges() {
+        val state = ChatStateReducer.reduce(ChatState(
+            selectedModel = "gpt-5.5",
+            harnessId = "openclaw"
+        ), JSONObject()
+            .put("type", "chat.state")
+            .put("sessionKey", "codex:pixel")
+            .put("harnessId", "codex")
+            .put("harnessLabel", "Codex")
+            .put("model", "codex:gpt-5.3-codex"))
+
+        assertEquals("codex:gpt-5.3-codex", state.selectedModel)
+        assertEquals("codex", state.harnessId)
+        assertEquals("Codex", state.harnessLabel)
+    }
+
+    @Test
     fun invalidReasoningEffortFallsBackToLastKnownOrMedium() {
         val initial = ChatStateReducer.reduce(ChatState(), JSONObject()
             .put("type", "chat.state")
@@ -368,6 +385,25 @@ class ChatStateReducerTest {
                 .put("model", "gpt-5.4"))))
 
         assertEquals("openai-codex/gpt-5.5", withSessions.selectedModel)
+    }
+
+    @Test
+    fun sessionsSwitchSelectedModelWhenRestoredHarnessChanges() {
+        val state = ChatStateReducer.reduce(ChatState(
+            selectedModel = "gpt-5.5",
+            harnessId = "openclaw"
+        ), JSONObject()
+            .put("type", "chat.sessions")
+            .put("selectedSessionKey", "codex:pixel")
+            .put("sessions", JSONArray().put(JSONObject()
+                .put("key", "codex:pixel")
+                .put("harnessId", "codex")
+                .put("harnessLabel", "Codex")
+                .put("model", "codex:gpt-5.3-codex"))))
+
+        assertEquals("codex:gpt-5.3-codex", state.selectedModel)
+        assertEquals("codex", state.harnessId)
+        assertEquals("Codex", state.harnessLabel)
     }
 
     @Test
