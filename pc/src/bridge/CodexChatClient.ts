@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { AuditLog } from "./AuditLog.js";
 import type { AgentRunResult, AgentStatusSink } from "../dispatcher/AgentClient.js";
 import { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js";
+import { PHONE_AGENT_SYSTEM_PROMPT } from "../dispatcher/promptPolicy.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "./harness/InMemoryHarnessSessionStore.js";
 import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "./OpenClawGatewayChatClient.js";
 
@@ -204,9 +205,11 @@ export class CodexChatClient {
     try {
       const result = await this.client.submitUserRequest(text, this.statusSink(session.key, runId), {
         threadId: session.sessionId,
+        systemPrompt: PHONE_AGENT_SYSTEM_PROMPT,
         model,
         reasoningEffort,
-        taskKind: "general"
+        taskKind: "general",
+        useSessionInstructions: session.baseInstructionsBound === true
       });
       if (result.threadId) {
         this.sessions.setSessionId(session, result.threadId);
@@ -289,8 +292,12 @@ export class CodexChatClient {
     if (!isLocalCodexSessionId(session.key, session.sessionId)) {
       return;
     }
-    const threadId = await this.client.createThread({ model: model ?? session.model });
+    const threadId = await this.client.createThread({
+      model: model ?? session.model,
+      baseInstructions: PHONE_AGENT_SYSTEM_PROMPT
+    });
     this.sessions.setSessionId(session, threadId);
+    this.sessions.setBaseInstructionsBound(session, true);
   }
 }
 

@@ -23,6 +23,7 @@ export interface AgentRequestOptions {
   reasoningEffort?: string;
   taskKind?: AgentTaskKind;
   threadId?: string;
+  useSessionInstructions?: boolean;
 }
 
 export interface AgentClient {

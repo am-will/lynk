@@ -23,6 +23,7 @@ export interface HarnessStoredSession {
   updatedAt: number;
   activeRunId?: string | null;
   usage?: Record<string, unknown>;
+  baseInstructionsBound?: boolean;
 }
 
 export interface InMemoryHarnessSessionStoreOptions {
@@ -55,7 +56,8 @@ export class InMemoryHarnessSessionStore {
       model: this.options.defaultModel,
       messages: [],
       updatedAt: Date.now(),
-      activeRunId: null
+      activeRunId: null,
+      baseInstructionsBound: false
     };
     this.sessions.set(key, created);
     this.persist();
@@ -169,6 +171,15 @@ export class InMemoryHarnessSessionStore {
     this.persist();
   }
 
+  setBaseInstructionsBound(session: HarnessStoredSession, bound: boolean): void {
+    if (session.baseInstructionsBound === bound) {
+      return;
+    }
+    session.baseInstructionsBound = bound;
+    session.updatedAt = Date.now();
+    this.persist();
+  }
+
   upsertAssistantMessage(session: HarnessStoredSession, runId: string, text: string): void {
     const id = `assistant_${runId}`;
     const existing = session.messages.find((message) => message.id === id);
@@ -256,7 +267,8 @@ function parseStoredSession(value: unknown, defaultModel: string): HarnessStored
     messages: parseStoredMessages(record?.messages),
     updatedAt: numberField(record, "updatedAt") ?? Date.now(),
     activeRunId: null,
-    usage: asRecord(record?.usage)
+    usage: asRecord(record?.usage),
+    baseInstructionsBound: booleanField(record, "baseInstructionsBound") ?? false
   };
 }
 
@@ -295,6 +307,11 @@ function stringField(record: Record<string, unknown> | undefined, key: string): 
 function numberField(record: Record<string, unknown> | undefined, key: string): number | undefined {
   const value = record?.[key];
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function booleanField(record: Record<string, unknown> | undefined, key: string): boolean | undefined {
+  const value = record?.[key];
+  return typeof value === "boolean" ? value : undefined;
 }
 
 function numberFromUsage(usage: Record<string, unknown> | undefined, snakeKey: string, camelKey: string): number | null {

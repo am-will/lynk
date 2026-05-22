@@ -242,16 +242,21 @@ export class CodexAppServerClient implements AgentClient {
   ): Promise<AgentRunResult> {
     this.activeSink = sink;
     await this.ensureStarted();
+    const baseInstructions = options.systemPrompt?.trim() || PHONE_AGENT_SYSTEM_PROMPT;
     const threadId = options.threadId
       ? await this.resumeThread({ threadId: options.threadId, model: options.model })
-      : await this.createThread({ model: options.model });
+      : await this.createThread({
+        model: options.model,
+        ...(options.useSessionInstructions ? { baseInstructions } : {})
+      });
     this.audit?.record("codex_turn_starting", undefined, { threadId, text, model: options.model, reasoningEffort: options.reasoningEffort });
     sink.working("Sending request to Codex app-server");
-    const turnInput = buildPhoneAgentPrompt(text, options.systemPrompt);
+    const turnInput = options.useSessionInstructions ? text : buildPhoneAgentPrompt(text, options.systemPrompt);
     this.audit?.record("codex_prompt_metrics", options.deviceId, {
       threadId,
       path: "dispatcher.submitUserRequest",
-      baseInstructions: promptMetrics((options.systemPrompt?.trim() || PHONE_AGENT_SYSTEM_PROMPT)),
+      baseInstructionDelivery: options.useSessionInstructions ? "thread" : "turn",
+      baseInstructions: promptMetrics(baseInstructions),
       userText: promptMetrics(text),
       turnInput: promptMetrics(turnInput)
     });

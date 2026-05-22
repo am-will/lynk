@@ -53,6 +53,39 @@ test("Codex app-server resumes stored threads before starting turns", async () =
   }
 });
 
+test("Codex app-server can bind instructions to new threads", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "codex-app-server-test-"));
+  const logPath = join(dir, "requests.jsonl");
+  const scriptPath = join(dir, "fake-app-server.mjs");
+  await writeFile(scriptPath, fakeAppServerScript());
+  const previousLogPath = process.env.CODEX_FAKE_LOG;
+  process.env.CODEX_FAKE_LOG = logPath;
+  const client = new CodexAppServerClient(undefined, `"${process.execPath}" "${scriptPath}"`, dir);
+  try {
+    const result = await client.submitUserRequest("Hello", sink, {
+      model: "gpt-5.3-codex",
+      systemPrompt: "Base instructions",
+      useSessionInstructions: true
+    });
+
+    assert.equal(result.threadId, "thread_1");
+    const methods = (await readFile(logPath, "utf8"))
+      .trim()
+      .split(/\n/)
+      .map((line) => JSON.parse(line) as { method: string; params?: Record<string, unknown> });
+    assert.deepEqual(methods.map((entry) => entry.method), ["initialize", "thread/start", "turn/start"]);
+    assert.equal(methods[1]?.params?.baseInstructions, "Base instructions");
+    assert.deepEqual(methods[2]?.params?.input, [{ type: "text", text: "Hello" }]);
+  } finally {
+    await client.close();
+    if (previousLogPath === undefined) {
+      delete process.env.CODEX_FAKE_LOG;
+    } else {
+      process.env.CODEX_FAKE_LOG = previousLogPath;
+    }
+  }
+});
+
 function fakeAppServerScript(): string {
   return `
 import { appendFileSync } from "node:fs";
@@ -73,6 +106,8 @@ for await (const line of lines) {
   }
   if (message.method === "initialize") {
     write({ id: message.id, result: {} });
+  } else if (message.method === "thread/start") {
+    write({ id: message.id, result: { thread: { id: "thread_1" } } });
   } else if (message.method === "thread/resume") {
     write({ id: message.id, result: { thread: { id: message.params.threadId } } });
   } else if (message.method === "turn/start") {
