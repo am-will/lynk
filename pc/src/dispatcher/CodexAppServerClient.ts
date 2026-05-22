@@ -21,6 +21,7 @@ interface PendingTurn {
   threadId: string;
   turnId: string;
   finalMessage: string[];
+  usage?: Record<string, unknown>;
   resolve: (value: AgentRunResult) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
@@ -107,6 +108,73 @@ function itemStringField(item: unknown, key: string): string | undefined {
   }
   const value = (item as Record<string, unknown>)[key];
   return typeof value === "string" ? value : undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
+}
+
+function normalizeCodexUsage(value: unknown): Record<string, unknown> | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  const usage = asRecord(record.usage)
+    ?? asRecord(record.tokenUsage)
+    ?? asRecord(record.token_usage)
+    ?? record;
+  const inputTokens = firstNumberField(usage, [
+    "inputTokens",
+    "input_tokens",
+    "promptTokens",
+    "prompt_tokens",
+    "totalInputTokens",
+    "total_input_tokens"
+  ]);
+  const outputTokens = firstNumberField(usage, [
+    "outputTokens",
+    "output_tokens",
+    "completionTokens",
+    "completion_tokens",
+    "totalOutputTokens",
+    "total_output_tokens"
+  ]);
+  const totalTokens = firstNumberField(usage, [
+    "totalTokens",
+    "total_tokens",
+    "tokensUsed",
+    "tokens_used",
+    "total",
+    "used"
+  ]) ?? sumTokens(inputTokens, outputTokens);
+  const normalized: Record<string, unknown> = {};
+  if (inputTokens !== undefined) {
+    normalized.inputTokens = inputTokens;
+  }
+  if (outputTokens !== undefined) {
+    normalized.outputTokens = outputTokens;
+  }
+  if (totalTokens !== undefined) {
+    normalized.totalTokens = totalTokens;
+  }
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function firstNumberField(record: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function sumTokens(inputTokens: number | undefined, outputTokens: number | undefined): number | undefined {
+  if (inputTokens === undefined && outputTokens === undefined) {
+    return undefined;
+  }
+  return (inputTokens ?? 0) + (outputTokens ?? 0);
 }
 
 export class CodexAppServerClient implements AgentClient {
@@ -279,7 +347,8 @@ export class CodexAppServerClient implements AgentClient {
           threadId: pendingTurn.threadId,
           turnId: pendingTurn.turnId,
           finalMessage: `BLOCKED: ${reason}`,
-          error: reason
+          error: reason,
+          usage: pendingTurn.usage
         });
       }
     }
@@ -549,6 +618,18 @@ export class CodexAppServerClient implements AgentClient {
       return;
     }
 
+    if (message.method === "thread/tokenUsage/updated") {
+      const pendingTurn = this.pendingTurn;
+      const usage = normalizeCodexUsage(message.params);
+      if (pendingTurn && usage) {
+        const threadId = message.params?.threadId;
+        if (typeof threadId !== "string" || threadId === pendingTurn.threadId) {
+          pendingTurn.usage = { ...pendingTurn.usage, ...usage };
+        }
+      }
+      return;
+    }
+
     if (message.method === "turn/started") {
       sink.working("Codex started working");
       return;
@@ -558,6 +639,10 @@ export class CodexAppServerClient implements AgentClient {
       const turnId = message.params?.turn?.id ?? message.params?.turnId;
       const pendingTurn = this.pendingTurn;
       if (pendingTurn && (!turnId || turnId === pendingTurn.turnId)) {
+        const usage = normalizeCodexUsage(message.params?.usage ?? message.params?.turn?.usage ?? message.params?.turn?.tokenUsage);
+        if (usage) {
+          pendingTurn.usage = { ...pendingTurn.usage, ...usage };
+        }
         clearTimeout(pendingTurn.timer);
         this.pendingTurn = undefined;
         const finalMessage = pendingTurn.finalMessage.join("").trim();
@@ -567,7 +652,8 @@ export class CodexAppServerClient implements AgentClient {
           threadId: pendingTurn.threadId,
           turnId: pendingTurn.turnId,
           finalMessage,
-          error: blocked ? finalMessage : undefined
+          error: blocked ? finalMessage : undefined,
+          usage: pendingTurn.usage
         });
         if (blocked) {
           sink.error(finalMessage || "Codex reported the phone task is blocked");

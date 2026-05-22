@@ -11,6 +11,7 @@ export interface AgentRunResult {
   turnId?: string;
   finalMessage?: string;
   error?: string;
+  usage?: Record<string, unknown>;
 }
 
 export type AgentTaskKind = "general" | "phone";

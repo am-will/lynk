@@ -200,6 +200,7 @@ export class CodexChatClient {
       }
       const finalText = finalTextFromResult(result);
       this.sessions.upsertAssistantMessage(session, runId, finalText);
+      this.sessions.setUsage(session, result.usage);
       this.emit("chat", {
         sessionKey: session.key,
         runId,
