@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { HermesApiClient } from "../dispatcher/HermesApiClient.js";
 import { HermesRunDriver, type HermesActiveRun, type HermesRunDriverEvent } from "../dispatcher/HermesRunDriver.js";
+import type { ChatHistoryMessage, ChatSessionSummary } from "../protocol/messages.js";
 import type { BridgeConfig } from "./config.js";
 import { discoverHermesModels } from "./HermesModelDiscovery.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "./harness/InMemoryHarnessSessionStore.js";
@@ -47,6 +48,20 @@ function firstStringField(value: unknown, keys: string[]): string | undefined {
   return undefined;
 }
 
+function firstNumberField(value: unknown, keys: string[]): number | null {
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+  for (const key of keys) {
+    const field = record[key];
+    if (typeof field === "number" && Number.isFinite(field)) {
+      return field;
+    }
+  }
+  return null;
+}
+
 export class HermesChatClient {
   private readonly api: HermesApiClient;
   private readonly driver: HermesRunDriver;
@@ -54,7 +69,11 @@ export class HermesChatClient {
   private readonly handlers = new Set<GatewayEventHandler>();
   private readonly activeRuns = new Map<string, ActiveChatRun>();
 
-  constructor(private readonly config: BridgeConfig, api?: HermesApiClient) {
+  constructor(
+    private readonly config: BridgeConfig,
+    api?: HermesApiClient,
+    sessionStoragePath: string | null = join(process.cwd(), "state", "hermes-sessions.json")
+  ) {
     if (!config.hermesApiKey) {
       throw new Error("HERMES_API_KEY is required to use the Hermes harness.");
     }
@@ -68,7 +87,7 @@ export class HermesChatClient {
     this.sessions = new InMemoryHarnessSessionStore("hermes", {
       defaultModel: config.hermesModel,
       modelProvider: "hermes",
-      storagePath: join(process.cwd(), "state", "hermes-sessions.json")
+      storagePath: sessionStoragePath ?? undefined
     });
   }
 
@@ -78,7 +97,18 @@ export class HermesChatClient {
   }
 
   async history(sessionKey: string): Promise<unknown> {
-    return this.sessions.history(sessionKey);
+    const local = this.sessions.history(sessionKey);
+    const session = this.sessions.ensureSession(sessionKey);
+    const payload = await this.api.listSessionMessages(session.sessionId).catch(() => undefined);
+    const remoteMessages = normalizeHermesMessages(payload);
+    if (remoteMessages.length === 0) {
+      return local;
+    }
+    return {
+      ...local,
+      sessionId: session.sessionId,
+      messages: remoteMessages
+    };
   }
 
   async sendChat(options: {
@@ -159,8 +189,22 @@ export class HermesChatClient {
   }
 
   async listSessions(limit = 50): Promise<unknown> {
+    const remotePayload = await this.api.listSessions().catch(() => undefined);
+    const remoteSessions = normalizeHermesSessions(remotePayload).slice(0, limit);
+    const byKey = new Map<string, ChatSessionSummary>();
+    for (const session of this.sessions.listSessions(limit)) {
+      byKey.set(session.key, session);
+    }
+    for (const session of remoteSessions) {
+      byKey.set(session.key, {
+        ...byKey.get(session.key),
+        ...session
+      });
+    }
     return {
-      sessions: this.sessions.listSessions(limit),
+      sessions: [...byKey.values()]
+        .sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))
+        .slice(0, limit),
       defaults: {
         thinkingLevels: ["low", "medium", "high", "xhigh"]
       }
@@ -264,4 +308,83 @@ export class HermesChatClient {
       handler(gatewayEvent);
     }
   }
+}
+
+function normalizeHermesSessions(payload: unknown): ChatSessionSummary[] {
+  const record = asRecord(payload);
+  const rawSessions = Array.isArray(record?.sessions)
+    ? record.sessions
+    : Array.isArray(record?.data)
+      ? record.data
+      : Array.isArray(payload)
+        ? payload
+        : [];
+  return rawSessions
+    .map(normalizeHermesSession)
+    .filter((session): session is ChatSessionSummary => Boolean(session));
+}
+
+function normalizeHermesSession(value: unknown): ChatSessionSummary | undefined {
+  const record = asRecord(value);
+  const sessionId = firstStringField(record, ["session_id", "sessionId", "id"]);
+  if (!sessionId) {
+    return undefined;
+  }
+  const tokenCounts = asRecord(record?.token_counts) ?? asRecord(record?.tokenCounts);
+  const preview = firstStringField(record, ["preview", "title", "label", "last_message"]);
+  const timestamp = timestampMs(record?.timestamp ?? record?.updated_at ?? record?.created_at);
+  return {
+    key: `hermes:${sessionId}`,
+    sessionId,
+    label: preview ?? sessionId,
+    displayName: preview ?? sessionId,
+    updatedAt: timestamp,
+    model: firstStringField(record, ["model", "model_id", "modelId"]) ?? null,
+    modelProvider: "hermes",
+    inputTokens: firstNumberField(tokenCounts, ["input", "input_tokens", "prompt", "prompt_tokens"]),
+    outputTokens: firstNumberField(tokenCounts, ["output", "output_tokens", "completion", "completion_tokens"]),
+    totalTokens: firstNumberField(tokenCounts, ["total", "total_tokens"])
+  };
+}
+
+function normalizeHermesMessages(payload: unknown): ChatHistoryMessage[] {
+  const record = asRecord(payload);
+  const rawMessages = Array.isArray(record?.messages)
+    ? record.messages
+    : Array.isArray(record?.data)
+      ? record.data
+      : Array.isArray(payload)
+        ? payload
+        : [];
+  return rawMessages
+    .map(normalizeHermesMessage)
+    .filter((message): message is ChatHistoryMessage => Boolean(message));
+}
+
+function normalizeHermesMessage(value: unknown): ChatHistoryMessage | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  const text = firstStringField(record, ["content", "text", "message"]);
+  if (!text) {
+    return undefined;
+  }
+  return {
+    id: firstStringField(record, ["message_id", "messageId", "id"]) ?? null,
+    role: firstStringField(record, ["role", "author", "speaker"]) ?? "assistant",
+    text,
+    timestamp: timestampMs(record.timestamp ?? record.created_at ?? record.updated_at)
+  };
+}
+
+function timestampMs(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value < 10_000_000_000 ? value * 1000 : value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }

@@ -90,12 +90,14 @@ export function parseSseEvents(text: string): HermesSseEvent[] {
 
 export class HermesApiClient {
   private readonly apiBaseUrl: string;
+  private readonly dashboardBaseUrl: string;
 
   constructor(
     private readonly config: HermesApiClientConfig,
     private readonly fetchFn: FetchLike = fetch
   ) {
     this.apiBaseUrl = normalizeBaseUrl(config.apiBaseUrl);
+    this.dashboardBaseUrl = this.apiBaseUrl.replace(/\/v1$/i, "");
   }
 
   async createRun(options: HermesRunCreateOptions): Promise<HermesRunCreateResult> {
@@ -139,6 +141,20 @@ export class HermesApiClient {
 
   async listModels(): Promise<unknown> {
     return await this.requestJson("/models", {
+      method: "GET",
+      headers: this.headers()
+    });
+  }
+
+  async listSessions(): Promise<unknown> {
+    return await this.requestJson("/api/sessions", {
+      method: "GET",
+      headers: this.headers()
+    });
+  }
+
+  async listSessionMessages(sessionId: string): Promise<unknown> {
+    return await this.requestJson(`/api/sessions/${encodeURIComponent(sessionId)}/messages`, {
       method: "GET",
       headers: this.headers()
     });
@@ -225,6 +241,9 @@ export class HermesApiClient {
   }
 
   private url(path: string): string {
+    if (path.startsWith("/api/")) {
+      return `${this.dashboardBaseUrl}${path}`;
+    }
     return `${this.apiBaseUrl}${path}`;
   }
 }
