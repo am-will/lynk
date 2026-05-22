@@ -114,7 +114,7 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
 }
 
-function normalizeCodexUsage(value: unknown): Record<string, unknown> | undefined {
+export function normalizeCodexUsage(value: unknown): Record<string, unknown> | undefined {
   const record = asRecord(value);
   if (!record) {
     return undefined;
@@ -122,8 +122,13 @@ function normalizeCodexUsage(value: unknown): Record<string, unknown> | undefine
   const usage = asRecord(record.usage)
     ?? asRecord(record.tokenUsage)
     ?? asRecord(record.token_usage)
+    ?? asRecord(asRecord(record.msg)?.info)
     ?? record;
-  const inputTokens = firstNumberField(usage, [
+  const totalUsage = asRecord(usage.total)
+    ?? asRecord(usage.totalTokenUsage)
+    ?? asRecord(usage.total_token_usage)
+    ?? usage;
+  const inputTokens = firstNumberField(totalUsage, [
     "inputTokens",
     "input_tokens",
     "promptTokens",
@@ -131,7 +136,7 @@ function normalizeCodexUsage(value: unknown): Record<string, unknown> | undefine
     "totalInputTokens",
     "total_input_tokens"
   ]);
-  const outputTokens = firstNumberField(usage, [
+  const outputTokens = firstNumberField(totalUsage, [
     "outputTokens",
     "output_tokens",
     "completionTokens",
@@ -139,7 +144,7 @@ function normalizeCodexUsage(value: unknown): Record<string, unknown> | undefine
     "totalOutputTokens",
     "total_output_tokens"
   ]);
-  const totalTokens = firstNumberField(usage, [
+  const totalTokens = firstNumberField(totalUsage, [
     "totalTokens",
     "total_tokens",
     "tokensUsed",
@@ -148,6 +153,17 @@ function normalizeCodexUsage(value: unknown): Record<string, unknown> | undefine
     "used"
   ]) ?? sumTokens(inputTokens, outputTokens);
   const contextTokens = firstNumberField(usage, [
+    "modelContextWindow",
+    "model_context_window",
+    "contextTokens",
+    "context_tokens",
+    "contextWindow",
+    "context_window",
+    "contextLength",
+    "context_length",
+    "maxInputTokens",
+    "max_input_tokens"
+  ]) ?? firstNumberField(totalUsage, [
     "contextTokens",
     "context_tokens",
     "contextWindow",
@@ -196,6 +212,7 @@ export class CodexAppServerClient implements AgentClient {
   private nextId = 1;
   private initialized = false;
   private readonly pending = new Map<number, PendingRpc>();
+  private readonly latestUsageByThread = new Map<string, Record<string, unknown>>();
   private pendingTurn?: PendingTurn;
   private activeSink?: AgentStatusSink;
   private readonly realtimeSessions = new Map<string, ActiveRealtimeSession>();
@@ -369,7 +386,7 @@ export class CodexAppServerClient implements AgentClient {
           turnId: pendingTurn.turnId,
           finalMessage: `BLOCKED: ${reason}`,
           error: reason,
-          usage: pendingTurn.usage
+          usage: pendingTurn.usage ?? this.latestUsageByThread.get(pendingTurn.threadId)
         });
       }
     }
@@ -626,6 +643,19 @@ export class CodexAppServerClient implements AgentClient {
       return;
     }
 
+    if (message.method === "thread/tokenUsage/updated") {
+      const pendingTurn = this.pendingTurn;
+      const usage = normalizeCodexUsage(message.params);
+      const threadId = typeof message.params?.threadId === "string" ? message.params.threadId : undefined;
+      if (threadId && usage) {
+        this.latestUsageByThread.set(threadId, usage);
+      }
+      if (pendingTurn && usage && (!threadId || threadId === pendingTurn.threadId)) {
+        pendingTurn.usage = { ...pendingTurn.usage, ...usage };
+      }
+      return;
+    }
+
     const sink = this.activeSink;
     if (!sink || !message.method) {
       return;
@@ -635,18 +665,6 @@ export class CodexAppServerClient implements AgentClient {
       const text = message.params?.delta ?? message.params?.textDelta;
       if (typeof text === "string" && text.trim()) {
         this.pendingTurn?.finalMessage.push(text);
-      }
-      return;
-    }
-
-    if (message.method === "thread/tokenUsage/updated") {
-      const pendingTurn = this.pendingTurn;
-      const usage = normalizeCodexUsage(message.params);
-      if (pendingTurn && usage) {
-        const threadId = message.params?.threadId;
-        if (typeof threadId !== "string" || threadId === pendingTurn.threadId) {
-          pendingTurn.usage = { ...pendingTurn.usage, ...usage };
-        }
       }
       return;
     }
@@ -667,15 +685,9 @@ export class CodexAppServerClient implements AgentClient {
         clearTimeout(pendingTurn.timer);
         this.pendingTurn = undefined;
         const finalMessage = pendingTurn.finalMessage.join("").trim();
+        this.resolveCompletedTurn(pendingTurn, finalMessage);
         const blocked = isBlockedFinalMessage(finalMessage);
         const complete = isCompleteFinalMessage(finalMessage);
-        pendingTurn.resolve({
-          threadId: pendingTurn.threadId,
-          turnId: pendingTurn.turnId,
-          finalMessage,
-          error: blocked ? finalMessage : undefined,
-          usage: pendingTurn.usage
-        });
         if (blocked) {
           sink.error(finalMessage || "Codex reported the phone task is blocked");
         } else if (complete) {
@@ -695,5 +707,23 @@ export class CodexAppServerClient implements AgentClient {
         sink.tool(`${item.server ?? "mcp"}.${item.tool ?? "tool"} ${item.status ?? ""}`.trim());
       }
     }
+  }
+
+  private resolveCompletedTurn(pendingTurn: PendingTurn, finalMessage: string): void {
+    const resolve = () => {
+      const blocked = isBlockedFinalMessage(finalMessage);
+      pendingTurn.resolve({
+        threadId: pendingTurn.threadId,
+        turnId: pendingTurn.turnId,
+        finalMessage,
+        error: blocked ? finalMessage : undefined,
+        usage: pendingTurn.usage ?? this.latestUsageByThread.get(pendingTurn.threadId)
+      });
+    };
+    if (pendingTurn.usage ?? this.latestUsageByThread.get(pendingTurn.threadId)) {
+      resolve();
+      return;
+    }
+    setTimeout(resolve, Number.parseInt(process.env.CODEX_TOKEN_USAGE_GRACE_MS ?? "150", 10));
   }
 }

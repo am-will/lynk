@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentRequestOptions, AgentRunResult, AgentStatusSink } from "../dispatcher/AgentClient.js";
+import { normalizeCodexUsage } from "../dispatcher/CodexAppServerClient.js";
 import type { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js";
 import { CodexChatClient } from "./CodexChatClient.js";
 
@@ -102,7 +103,27 @@ test("Codex sends from implicit sessions create a durable thread first", async (
 
 test("Codex persists token usage returned from app-server runs", async () => {
   const fake = new FakeCodexAppServerClient();
-  fake.resultUsage = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
+  fake.resultUsage = normalizeCodexUsage({
+    threadId: "thread_1",
+    turnId: "turn_1",
+    tokenUsage: {
+      last: {
+        cachedInputTokens: 3_072,
+        inputTokens: 5_152,
+        outputTokens: 16,
+        reasoningOutputTokens: 0,
+        totalTokens: 5_168
+      },
+      modelContextWindow: 258_400,
+      total: {
+        cachedInputTokens: 3_072,
+        inputTokens: 5_152,
+        outputTokens: 16,
+        reasoningOutputTokens: 0,
+        totalTokens: 5_168
+      }
+    }
+  });
   const client = new CodexChatClient(undefined, fake as unknown as CodexAppServerClient, null);
 
   await client.sendChat({
@@ -113,9 +134,10 @@ test("Codex persists token usage returned from app-server runs", async () => {
   await waitFor(() => fake.submitted.length === 1);
 
   const payload = await client.listSessions() as { sessions: Array<Record<string, unknown>> };
-  assert.equal(payload.sessions[0]?.inputTokens, 10);
-  assert.equal(payload.sessions[0]?.outputTokens, 5);
-  assert.equal(payload.sessions[0]?.totalTokens, 15);
+  assert.equal(payload.sessions[0]?.inputTokens, 5_152);
+  assert.equal(payload.sessions[0]?.outputTokens, 16);
+  assert.equal(payload.sessions[0]?.totalTokens, 5_168);
+  assert.equal(payload.sessions[0]?.contextTokens, 258_400);
 });
 
 test("Codex model list resolves context windows from capabilities", async () => {
