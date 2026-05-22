@@ -68,4 +68,35 @@ class LocalResponseTextNormalizerTest {
         assertTrue(normalized.contains("**Nanotechnology:** It influences nanoscale systems."))
         assertTrue(normalized.contains("\n\n* Quantum Computing: It is relevant"))
     }
+
+    @Test
+    fun repairsGluedNumberedKesslerListFromRenderedHistory() {
+        val normalized = LocalResponseTextNormalizer.normalize(
+            """
+            Kessler Syndrome, also known as the Kessler-Snyder Syndrome, is a term used in the field of astrophysics and planetary science to describe a specific type of catastrophic event involving the debris field of a destroyed celestial body, such as an asteroid or comet. Here is a detailed explanation:
+
+            What is Kessler Syndrome?In its most common context, Kessler Syndrome refers to a cascading chain reaction of collisions in a crowded orbital environment, such as Earth's low Earth orbit (LEO).1.*
+
+            * The Initial Event:** A large object enters orbit.2.**The Collision:** This object collides with another object in orbit.3.**Debris Generation:** The collision shatters both objects.4.**The Cascade:** Smaller pieces travel at high velocities.5.**The Feedback Loop:** This process repeats exponentially.
+
+            ### ImplicationsThe primary concern with Kessler Syndrome is orbital congestion.
+
+            ### The "Kessler-Snyder" Context (Astrophysics)While the orbital debris context is the most common usage.
+
+            ### SummaryIn short, Kessler Syndrome is a runaway chain reaction.
+            """.trimIndent()
+        )
+
+        assertTrue(normalized.contains("Kessler Syndrome? In its most common context"))
+        assertTrue(normalized.contains("\n\n1. **The Initial Event:** A large object enters orbit."))
+        assertTrue(normalized.contains("\n\n2. **The Collision:** This object collides"))
+        assertTrue(normalized.contains("\n\n3. **Debris Generation:** The collision shatters"))
+        assertTrue(normalized.contains("\n\n4. **The Cascade:** Smaller pieces"))
+        assertTrue(normalized.contains("\n\n5. **The Feedback Loop:** This process repeats"))
+        assertTrue(normalized.contains("### Implications\n\nThe primary concern"))
+        assertTrue(normalized.contains("### The \"Kessler-Snyder\" Context (Astrophysics)\n\nWhile"))
+        assertTrue(normalized.contains("### Summary\n\nIn short"))
+        assertFalse(normalized.contains("LEO).1."))
+        assertFalse(normalized.contains("orbit.2."))
+    }
 }
