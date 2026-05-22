@@ -4,25 +4,28 @@ import type { UserRequestMessage } from "../protocol/messages.js";
 import type { AgentClient, AgentRequestOptions, AgentRunResult, AgentStatusSink } from "./AgentClient.js";
 import { CodexAppServerClient } from "./CodexAppServerClient.js";
 import { FallbackAgentClient } from "./FallbackAgentClient.js";
+import { HermesSessionClient } from "./HermesSessionClient.js";
 import { OpenClawSessionClient } from "./OpenClawSessionClient.js";
 
-export type DispatcherKind = "openclaw" | "codex" | "fallback";
+export type DispatcherKind = "openclaw" | "hermes" | "codex" | "fallback";
 
 function dispatcherKindFromEnv(): DispatcherKind {
   if (process.env.PHONE_AGENT_USE_FALLBACK === "1") {
     return "fallback";
   }
   const raw = (process.env.PHONE_AGENT_DISPATCHER ?? "openclaw").trim().toLowerCase();
-  if (raw === "openclaw" || raw === "codex" || raw === "fallback") {
+  if (raw === "openclaw" || raw === "hermes" || raw === "codex" || raw === "fallback") {
     return raw;
   }
-  throw new Error(`Unsupported PHONE_AGENT_DISPATCHER "${raw}". Expected openclaw, codex, or fallback.`);
+  throw new Error(`Unsupported PHONE_AGENT_DISPATCHER "${raw}". Expected openclaw, hermes, codex, or fallback.`);
 }
 
 export function createAgentClient(kind: DispatcherKind, audit?: AuditLog): AgentClient {
   switch (kind) {
     case "openclaw":
       return new OpenClawSessionClient(audit);
+    case "hermes":
+      return new HermesSessionClient(undefined, audit);
     case "codex":
       return new CodexAppServerClient(audit);
     case "fallback":
