@@ -28,6 +28,8 @@ export class HarnessDeviceStateStore extends DeviceChatStateStore {
     state.sessionId = null;
     state.runId = null;
     state.pendingRuns.clear();
+    state.queuedSends = [];
+    state.drainingQueuedSends = false;
     state.pendingFirstMessageDisplayName = false;
     state.lastRealtimeRequestAt = null;
     state.model = this.selectedModelForActiveHarness(state);

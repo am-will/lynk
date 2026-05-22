@@ -1,4 +1,4 @@
-import type { ChatModelOption, ChatSessionSummary } from "../protocol/messages.js";
+import type { ChatModelOption, ChatSendMessage, ChatSessionSummary } from "../protocol/messages.js";
 import type { HarnessId } from "./AgentHarness.js";
 import type { BridgeConfig } from "./config.js";
 import type { GatewayChatSendResult, GatewayEventHandler } from "./OpenClawGatewayChatClient.js";
@@ -20,6 +20,8 @@ export interface DeviceChatState {
   modelsByHarness: Map<HarnessId, string | null>;
   modelOptions: Map<string, ChatModelOption>;
   pendingRuns: Map<string, PendingChatRun>;
+  queuedSends: ChatSendMessage[];
+  drainingQueuedSends?: boolean;
   sessionSummaries: Map<string, ChatSessionSummary>;
 }
 
@@ -35,6 +37,14 @@ export interface GatewayChatClient {
   sendChat(options: {
     sessionKey: string;
     sessionId?: string;
+    message: string;
+    thinking?: string;
+    idempotencyKey?: string;
+  }): Promise<GatewayChatSendResult>;
+  steerChat?(options: {
+    sessionKey: string;
+    sessionId?: string;
+    runId?: string;
     message: string;
     thinking?: string;
     idempotencyKey?: string;
@@ -75,6 +85,7 @@ export class DeviceChatStateStore {
       modelsByHarness: new Map(),
       modelOptions: new Map(),
       pendingRuns: new Map(),
+      queuedSends: [],
       sessionSummaries: new Map()
     };
     this.devices.set(deviceId, created);

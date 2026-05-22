@@ -18,6 +18,7 @@ interface GatewayEventRouterOptions {
   sendState(deviceId: string, status?: string): void;
   sendReasoningClear(deviceId: string, sessionKey: string, runId?: string | null): void;
   settleRun(message: Extract<ChatOutboundMessage, { type: "chat.final" | "chat.error" }>): void;
+  drainQueuedSends(deviceId: string): void;
   sendReplyAvailable(
     deviceId: string,
     message: ChatFinalMessage | ChatErrorMessage,
@@ -87,6 +88,7 @@ export class OpenClawGatewayEventRouter {
       if (isSelectedSession) {
         void this.options.sendHistory(deviceId);
       }
+      this.options.drainQueuedSends(deviceId);
     }
 
     return true;
@@ -139,6 +141,7 @@ export class OpenClawGatewayEventRouter {
         this.options.sendState(deviceId, "OpenClaw finished");
         void this.options.refreshMetadata(deviceId);
         void this.options.sendHistory(deviceId);
+        this.options.drainQueuedSends(deviceId);
       }
     }
   }

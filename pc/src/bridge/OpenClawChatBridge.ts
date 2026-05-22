@@ -104,6 +104,7 @@ export class OpenClawChatBridge {
       sendState: (deviceId, status) => this.sendState(deviceId, status),
       sendReasoningClear: (deviceId, sessionKey, runId) => this.sendReasoningClear(deviceId, sessionKey, runId),
       settleRun: (message) => this.runWaiters.settleRun(message),
+      drainQueuedSends: (deviceId) => this.drainQueuedSends(deviceId),
       sendReplyAvailable: (deviceId, message, sessionKey, pendingRun) => this.sendReplyAvailable(deviceId, message, sessionKey, pendingRun),
       refreshMetadata: (deviceId) => this.refreshMetadata(deviceId),
       sendHistory: (deviceId) => this.sendHistory(deviceId)
@@ -144,6 +145,26 @@ export class OpenClawChatBridge {
       return;
     }
     const taskKind = isExplicitPhoneTask(text) ? "phone" : "general";
+    const delivery = message.delivery ?? "normal";
+    if (delivery === "queue" && state.runId) {
+      state.queuedSends.push({
+        ...message,
+        idempotencyKey,
+        delivery: "normal"
+      });
+      this.audit?.record("chat_send_queued", message.deviceId, {
+        sessionKey: state.sessionKey,
+        runId: state.runId,
+        queued: state.queuedSends.length,
+        length: text.length
+      });
+      this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} queued message for next turn`);
+      return;
+    }
+    if (delivery === "steer" && state.runId) {
+      await this.steerChatMessage(message, state, text, idempotencyKey, taskKind);
+      return;
+    }
     try {
       state.reasoningEffort = normalizeThinkingLevel(message.reasoningEffort, state.reasoningEffort);
       const requestedModel = this.states.rawModelForSelection(message.model);
@@ -220,7 +241,67 @@ export class OpenClawChatBridge {
         state.pendingRuns.delete(runId);
       }
       this.sendState(message.deviceId, "Stop requested");
+      this.drainQueuedSends(message.deviceId);
     }
+  }
+
+  private async steerChatMessage(
+    message: ChatSendMessage,
+    state: DeviceChatState,
+    text: string,
+    idempotencyKey: string,
+    taskKind: AgentTaskKind
+  ): Promise<void> {
+    try {
+      state.reasoningEffort = normalizeThinkingLevel(message.reasoningEffort, state.reasoningEffort);
+      if (this.client.steerChat) {
+        await this.client.steerChat({
+          sessionKey: state.sessionKey,
+          sessionId: message.sessionId ?? state.sessionId ?? undefined,
+          runId: state.runId ?? undefined,
+          message: messageForGateway(text, taskKind),
+          thinking: state.reasoningEffort ?? undefined,
+          idempotencyKey
+        });
+      } else {
+        await this.client.sendChat({
+          sessionKey: state.sessionKey,
+          sessionId: message.sessionId ?? state.sessionId ?? undefined,
+          message: `/steer ${messageForGateway(text, taskKind)}`,
+          thinking: state.reasoningEffort ?? undefined,
+          idempotencyKey
+        });
+      }
+      this.audit?.record("chat_send_steered", message.deviceId, {
+        sessionKey: state.sessionKey,
+        runId: state.runId,
+        length: text.length
+      });
+      this.sendState(message.deviceId, `Steered ${harnessLabel(state.harnessId)}`);
+    } catch (error) {
+      this.sendChatError(message.deviceId, state.sessionKey, error);
+    }
+  }
+
+  private drainQueuedSends(deviceId: string): void {
+    const state = this.stateFor(deviceId);
+    if (state.drainingQueuedSends || state.runId || state.queuedSends.length === 0) {
+      return;
+    }
+    const next = state.queuedSends.shift();
+    if (!next) {
+      return;
+    }
+    state.drainingQueuedSends = true;
+    void this.send({
+      ...next,
+      delivery: "normal"
+    }).finally(() => {
+      state.drainingQueuedSends = false;
+      if (!state.runId) {
+        this.drainQueuedSends(deviceId);
+      }
+    });
   }
 
   async handleRealtimeRequest(
