@@ -967,13 +967,20 @@ class OverlayController(
         replaceShowing: Boolean = false,
         heightFraction: Float? = null,
         preferAbove: Boolean = false,
+        revealRowId: String? = null,
         onDismiss: (() -> Unit)? = null
     ) {
         val host = panelHost ?: return
         val picker = ensurePicker()
         val shouldPreferAbove = preferAbove || anchor === composerInput
         if (replaceShowing && picker.isShowingFor(anchor)) {
-            picker.update(title, sections, heightFraction = heightFraction, preferAbove = shouldPreferAbove)
+            picker.update(
+                title = title,
+                sections = sections,
+                heightFraction = heightFraction,
+                preferAbove = shouldPreferAbove,
+                revealRowId = revealRowId
+            )
             return
         }
         if (toggleSameAnchor && picker.isShowingFor(anchor)) {
@@ -1160,7 +1167,11 @@ class OverlayController(
         popup.pivotY = if (params.topMargin < anchorTop) popupHeight.toFloat() else 0f
     }
 
-    private fun showModelChoices(anchorOverride: View? = null, replace: Boolean = false) {
+    private fun showModelChoices(
+        anchorOverride: View? = null,
+        replace: Boolean = false,
+        revealFirstModelForHarnessId: String? = null
+    ) {
         val anchor = anchorOverride ?: modelButton ?: return
         val config = AgentConfigStore.load(context)
         val localLiteRtAvailable = isExperimentalLocalModelAvailable(config)
@@ -1214,7 +1225,10 @@ class OverlayController(
                     } else {
                         expandedModelHarnesses.add(group.id)
                     }
-                    showModelChoices(replace = true)
+                    showModelChoices(
+                        replace = true,
+                        revealFirstModelForHarnessId = if (expanded) null else group.id
+                    )
                 }
             )
             val rows = if (!expanded) {
@@ -1238,13 +1252,22 @@ class OverlayController(
             AnchoredPicker.Section(null, rows)
         }
         val hasExpandedHarness = groups.any { group -> group.id in expandedModelHarnesses }
+        val firstModelRevealRowId = revealFirstModelForHarnessId
+            ?.let { harnessId ->
+                groups.firstOrNull { group -> group.id == harnessId }
+                    ?.models
+                    ?.firstOrNull()
+                    ?.id
+            }
+            ?.let { modelId -> "model:$modelId" }
         showAnchoredPicker(
             anchor = anchor,
             title = "Model",
             sections = sections,
             toggleSameAnchor = !replace,
             replaceShowing = replace,
-            heightFraction = if (hasExpandedHarness) 0.65f else null
+            heightFraction = if (hasExpandedHarness) 0.65f else null,
+            revealRowId = firstModelRevealRowId
         )
     }
 

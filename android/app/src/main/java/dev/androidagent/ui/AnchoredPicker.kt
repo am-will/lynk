@@ -3,7 +3,6 @@ package dev.androidagent.ui
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
@@ -71,15 +70,28 @@ class AnchoredPicker(
 
     fun isShowingFor(anchor: View): Boolean = sheetView != null && currentAnchor === anchor
 
-    fun update(title: String? = null, sections: List<Section>, heightFraction: Float? = null, preferAbove: Boolean? = null) {
+    fun update(
+        title: String? = null,
+        sections: List<Section>,
+        heightFraction: Float? = null,
+        preferAbove: Boolean? = null,
+        revealRowId: String? = null
+    ) {
         val sheet = sheetView as? LinearLayout ?: return
         val scrollY = findBodyScroller(sheet)?.scrollY ?: 0
         preferAbove?.let { currentPreferAbove = it }
         bindSheetContent(sheet, title, sections)
         applyHeight(sheet, heightFraction)
         sheet.post {
-            reposition()
+            val host = hostRef
+            val anchor = currentAnchor
+            if (host != null && anchor != null && sheet.parent === host && anchor.isAttachedToWindow) {
+                positionSheet(host, sheet, anchor)
+            }
             findBodyScroller(sheet)?.scrollTo(0, scrollY)
+            revealRowId?.let { rowId ->
+                sheet.post { revealRowFullyIfNeeded(rowId) }
+            }
         }
     }
 
@@ -383,6 +395,41 @@ class AnchoredPicker(
             }
         }
         return null
+    }
+
+    private fun revealRowFullyIfNeeded(rowId: String) {
+        val sheet = sheetView as? LinearLayout ?: return
+        val scroller = findBodyScroller(sheet) ?: return
+        val row = rowViewsById[rowId] ?: return
+        if (!row.isAttachedToWindow || row.height <= 0 || scroller.height <= 0) return
+
+        val content = scroller.getChildAt(0) ?: return
+        val rowTop = row.topInAncestor(content) ?: return
+        val rowBottom = rowTop + row.height
+        val visibleTop = scroller.scrollY + scroller.paddingTop
+        val visibleBottom = scroller.scrollY + scroller.height - scroller.paddingBottom
+        val targetScrollY = when {
+            rowTop < visibleTop -> rowTop - scroller.paddingTop
+            rowBottom > visibleBottom -> rowBottom - scroller.height + scroller.paddingBottom
+            else -> null
+        } ?: return
+
+        val contentHeight = scroller.getChildAt(0)?.height ?: 0
+        val viewportHeight = (scroller.height - scroller.paddingTop - scroller.paddingBottom).coerceAtLeast(0)
+        val maxScrollY = (contentHeight - viewportHeight).coerceAtLeast(0)
+        scroller.smoothScrollTo(0, targetScrollY.coerceIn(0, maxScrollY))
+    }
+
+    private fun View.topInAncestor(ancestor: View): Int? {
+        var current: View = this
+        var topInAncestor = current.top
+        var parentView = current.parent as? View ?: return null
+        while (parentView !== ancestor) {
+            topInAncestor += parentView.top - parentView.scrollY
+            current = parentView
+            parentView = current.parent as? View ?: return null
+        }
+        return topInAncestor
     }
 
     private fun View.maxHeight(maxPx: Int) {
