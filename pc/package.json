@@ -10,6 +10,7 @@
     "bridge": "tsx --env-file-if-exists=.env.local src/bridge/server.ts",
     "mcp": "tsx --env-file-if-exists=.env.local src/mcp/androidPhoneServer.ts",
     "openclaw:mcp": "tsx --env-file-if-exists=.env.local src/scripts/configureOpenClawMcp.ts",
+    "hermes:mcp": "tsx --env-file-if-exists=.env.local src/scripts/configureHermesMcp.ts",
     "phone:usb": "adb reverse tcp:8788 tcp:8788 && adb shell am start -n dev.openclawagent/dev.androidagent.MainActivity --ez startAgent true",
     "phone:tailscale": "tsx --env-file-if-exists=.env.local src/scripts/printTailscalePairing.ts",
     "phone:health": "curl -sS http://127.0.0.1:8788/health",

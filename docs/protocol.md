@@ -143,11 +143,13 @@ Android can ask the bridge to stop the active phone-control turn. The same messa
 }
 ```
 
-## Gateway Chat
+## Harness Chat
 
-The large Android overlay uses explicit `chat.*` messages for OpenClaw Gateway-backed session chat. The legacy `user_request` message remains available for compatibility, but normal typed overlay submissions use `chat.send`.
+The large Android overlay uses explicit `chat.*` messages for harness-backed session chat. OpenClaw Gateway remains the default harness, while Hermes and Codex can be selected through model-picker entries when they are configured on the bridge. The legacy `user_request` message remains available for compatibility, but normal typed overlay submissions use `chat.send`.
 
 Local phone mode mirrors these outbound event types locally: `chat.models`, `chat.sessions`, `chat.history`, `chat.state`, `chat.delta`, `chat.final`, `chat.error`, `chat.tool_event`, and `chat.tools`. Local session keys use the `local:` prefix, and the local model id is currently `local-litertlm`.
+
+Host harnesses are selected by model id. OpenClaw keeps its existing bare model ids for backward compatibility, while non-default harness models are namespaced as `<harness>:<model>`, for example `hermes:gpt-5.5` or `codex:gpt-5.3-codex`. The bridge emits optional `harnessId`, `harnessLabel`, and `modelId` metadata on model, session, and state messages so Android can group the picker and keep previous chats scoped to the active harness.
 
 Android opens or refreshes the selected Gateway session after registration:
 
@@ -167,7 +169,7 @@ Android sends user text, optional model, and optional reasoning selection:
   "deviceId": "openclaw-agent",
   "sessionKey": "agent:main:explicit:open-claw-agent",
   "text": "Summarize my current project status",
-  "model": "openai-codex/gpt-5.5",
+  "model": "hermes:gpt-5.5",
   "reasoningEffort": "high"
 }
 ```
@@ -187,7 +189,7 @@ Android can stop active chat work, switch or create sessions, update model/reaso
 ```
 
 ```json
-{ "type": "chat.set_model", "deviceId": "openclaw-agent", "sessionKey": "agent:main:main", "model": "openai-codex/gpt-5.5" }
+{ "type": "chat.set_model", "deviceId": "openclaw-agent", "sessionKey": "agent:main:main", "model": "codex:gpt-5.3-codex" }
 ```
 
 ```json
@@ -211,6 +213,8 @@ The bridge returns session state, history, metadata, stream deltas, final text, 
   "type": "chat.state",
   "deviceId": "openclaw-agent",
   "sessionKey": "agent:main:explicit:open-claw-agent",
+  "harnessId": "openclaw",
+  "harnessLabel": "OpenClaw",
   "runId": "run_123",
   "isRunning": true,
   "status": "OpenClaw is working",
@@ -317,7 +321,7 @@ Android treats unread state as local and per session. Opening the modal while th
 }
 ```
 
-Metadata messages are `chat.models`, `chat.commands`, `chat.tools`, `chat.sessions`, and `chat.usage`. The Android UI treats all of them as replaceable snapshots for its local chat state.
+Metadata messages are `chat.models`, `chat.commands`, `chat.tools`, `chat.sessions`, and `chat.usage`. The Android UI treats all of them as replaceable snapshots for its local chat state. `chat.models` may contain duplicate human-readable model names across harnesses; use `id` as the selection value and show `harnessLabel` next to the model. `chat.sessions` is scoped to the active harness, so histories do not mix between OpenClaw, Hermes, Codex, and Local LiteRT.
 
 ## Realtime Voice
 
@@ -396,14 +400,14 @@ Raw non-audio realtime items are forwarded for Android-side normalization or deb
 
 Realtime voice sessions expose high-level OpenAI function tools. Android parses function-call events from the WebRTC data channel and relays the completed call to the PC bridge.
 
-Use `delegate_openclaw_task` for general work that should happen in OpenClaw on the remote PC:
+Use `delegate_agent_task` for general work that should happen in the currently selected host harness on the remote PC:
 
 ```json
 {
   "type": "realtime.tool_call",
   "deviceId": "openclaw-agent",
   "callId": "call_general",
-  "name": "delegate_openclaw_task",
+  "name": "delegate_agent_task",
   "arguments": {
     "instruction": "Summarize my current project status",
     "urgency": "normal"
@@ -411,7 +415,7 @@ Use `delegate_openclaw_task` for general work that should happen in OpenClaw on 
 }
 ```
 
-The bridge validates that `name` is `delegate_openclaw_task`, rejects empty or oversized instructions, and routes the task through the Gateway-backed chat session as a general OpenClaw task. The delegated instruction is also emitted as `chat.message` with `role: "user"` so it appears in the Android viewfinder before the Gateway stream starts.
+The bridge validates that `name` is `delegate_agent_task`, rejects empty or oversized instructions, and routes the task through the visible chat session as a general task for the selected harness. `delegate_openclaw_task` remains accepted as a compatibility alias. The delegated instruction is also emitted as `chat.message` with `role: "user"` so it appears in the Android viewfinder before the harness stream starts.
 
 Use `run_phone_task` for new actionable phone tasks:
 
@@ -429,9 +433,9 @@ Use `run_phone_task` for new actionable phone tasks:
 }
 ```
 
-The bridge validates that `name` is `run_phone_task`, rejects empty or oversized instructions, and routes the task through the same visible Gateway chat session. Only one realtime task runs per device. Later calls queue FIFO up to the bridge limit; calls with `"urgency": "interrupt"` interrupt the active task before starting the new task.
+The bridge validates that `name` is `run_phone_task`, rejects empty or oversized instructions, and routes the task through the same visible chat session. Only one realtime task runs per device. Later calls queue FIFO up to the bridge limit; calls with `"urgency": "interrupt"` interrupt the active task before starting the new task.
 
-Realtime chat reuses the previous realtime Gateway session for 15 minutes after the last accepted realtime task, steer, or stop. If the window has expired, the bridge starts a fresh chat before sending the realtime request so the viewfinder shows a clean task thread.
+Realtime chat reuses the previous realtime session for 15 minutes after the last accepted realtime task, steer, or stop. If the window has expired, the bridge starts a fresh chat before sending the realtime request so the viewfinder shows a clean task thread.
 
 Use `steer_phone_task` when the user corrects or adds information while a phone task is running. The bridge sends the guidance into the active Gateway chat as a visible user message:
 
@@ -447,7 +451,7 @@ Use `steer_phone_task` when the user corrects or adds information while a phone 
 }
 ```
 
-Use `steer_openclaw_task` the same way for a general OpenClaw task.
+Use `steer_agent_task` the same way for a general selected-harness task. `steer_openclaw_task` remains accepted as a compatibility alias.
 
 Use `stop_phone_task` when the user says to stop, pause, cancel, or leave the phone as-is. The bridge cancels queued realtime tasks, aborts the active Gateway chat run, and appends the stop reason as a visible user message:
 
@@ -463,7 +467,7 @@ Use `stop_phone_task` when the user says to stop, pause, cancel, or leave the ph
 }
 ```
 
-Use `stop_openclaw_task` the same way for a general OpenClaw task.
+Use `stop_agent_task` the same way for a general selected-harness task. `stop_openclaw_task` remains accepted as a compatibility alias.
 
 Use `hang_up_realtime` when the user says to hang up, end the call, or stop listening. By default it closes only the realtime voice session and lets any running phone task continue. Set `stopPhoneTask` only when the user explicitly asks to stop the phone task and hang up:
 
