@@ -182,6 +182,44 @@ class ChatPresentationHelpersTest {
     }
 
     @Test
+    fun modelPickerOptionsSeedsHostHarnessesWhenLocalSnapshotArrivesFirst() {
+        val state = ChatState(
+            models = listOf(ChatModelOption(
+                id = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
+                label = "Local LiteRT-LM",
+                provider = "android",
+                harnessId = null,
+                harnessLabel = null,
+                modelId = null,
+                contextWindow = 4096,
+                available = true,
+                reasoningOptions = null,
+                defaultReasoningEffort = null
+            )),
+            modelSource = ChatModelSource.LOCAL,
+            localModels = listOf(ChatModelOption(
+                id = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
+                label = "Local LiteRT-LM",
+                provider = "android",
+                harnessId = null,
+                harnessLabel = null,
+                modelId = null,
+                contextWindow = 4096,
+                available = true,
+                reasoningOptions = null,
+                defaultReasoningEffort = null
+            ))
+        )
+
+        val merged = ChatPresentationHelpers.modelPickerOptions(state, localLiteRtAvailable = true)
+
+        assertTrue(merged.any { it.id == "hermes:hermes-agent" })
+        assertTrue(merged.any { it.id == "codex:gpt-5.3-codex" })
+        assertEquals("Local", ChatPresentationHelpers.modelHarnessLabel(merged.first { it.id == AgentModelOptions.LOCAL_LITERT_MODEL_ID }))
+        assertEquals("local", ChatPresentationHelpers.modelHarnessId(merged.first { it.id == AgentModelOptions.LOCAL_LITERT_MODEL_ID }))
+    }
+
+    @Test
     fun resolvesClientBrandFromSelectedModelHarness() {
         val models = listOf(
             model("hermes:gpt-5.5", harnessId = "hermes"),

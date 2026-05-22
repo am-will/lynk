@@ -146,6 +146,12 @@ object ChatPresentationHelpers {
         }
         if (localLiteRtAvailable && AgentConfig.HARNESS_LOCAL in enabledHarnessIds) {
             byId[AgentModelOptions.LOCAL_LITERT_MODEL_ID] = localModels.firstOrNull { it.id == AgentModelOptions.LOCAL_LITERT_MODEL_ID }
+                ?.copy(
+                    provider = "android",
+                    harnessId = AgentConfig.HARNESS_LOCAL,
+                    harnessLabel = "Local",
+                    modelId = AgentModelOptions.LOCAL_LITERT_MODEL_ID
+                )
                 ?: ChatModelOption(
                     id = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
                     label = "Local LiteRT-LM",
@@ -170,7 +176,7 @@ object ChatPresentationHelpers {
         enabledHarnessIds: Set<String> = defaultEnabledHarnessIds()
     ): List<ChatModelOption> {
         val hostModels = state.hostModels.ifEmpty {
-            if (state.modelSource == ChatModelSource.LOCAL) emptyList() else state.models
+            if (state.modelSource == ChatModelSource.LOCAL) fallbackHostModels(enabledHarnessIds) else state.models
         }
         return mergeModelOptions(
             gatewayModels = hostModels,
@@ -178,6 +184,51 @@ object ChatPresentationHelpers {
             localModels = state.localModels,
             enabledHarnessIds = enabledHarnessIds
         )
+    }
+
+    private fun fallbackHostModels(enabledHarnessIds: Set<String>): List<ChatModelOption> {
+        return buildList {
+            if (AgentConfig.HARNESS_HERMES in enabledHarnessIds) {
+                add(ChatModelOption(
+                    id = "hermes:hermes-agent",
+                    label = "Hermes Agent",
+                    provider = AgentConfig.HARNESS_HERMES,
+                    harnessId = AgentConfig.HARNESS_HERMES,
+                    harnessLabel = "Hermes",
+                    modelId = "hermes-agent",
+                    contextWindow = null,
+                    available = true,
+                    reasoningOptions = null,
+                    defaultReasoningEffort = null
+                ))
+            }
+            if (AgentConfig.HARNESS_CODEX in enabledHarnessIds) {
+                add(ChatModelOption(
+                    id = "codex:gpt-5.3-codex",
+                    label = "gpt-5.3-codex",
+                    provider = AgentConfig.HARNESS_CODEX,
+                    harnessId = AgentConfig.HARNESS_CODEX,
+                    harnessLabel = "Codex",
+                    modelId = "gpt-5.3-codex",
+                    contextWindow = 400_000,
+                    available = true,
+                    reasoningOptions = null,
+                    defaultReasoningEffort = null
+                ))
+                add(ChatModelOption(
+                    id = "codex:gpt-5.3-codex-spark",
+                    label = "GPT-5.3-Codex-Spark",
+                    provider = AgentConfig.HARNESS_CODEX,
+                    harnessId = AgentConfig.HARNESS_CODEX,
+                    harnessLabel = "Codex",
+                    modelId = "gpt-5.3-codex-spark",
+                    contextWindow = 400_000,
+                    available = true,
+                    reasoningOptions = null,
+                    defaultReasoningEffort = null
+                ))
+            }
+        }
     }
 
     fun selectedModelId(
