@@ -144,6 +144,27 @@ class ChatStateReducerTest {
     }
 
     @Test
+    fun commandSnapshotsPreserveSkillSource() {
+        val state = ChatStateReducer.reduce(ChatState(), JSONObject()
+            .put("type", "chat.commands")
+            .put("commands", JSONArray()
+                .put(JSONObject()
+                    .put("name", "status")
+                    .put("description", "Show status")
+                    .put("textAliases", JSONArray().put("/status")))
+                .put(JSONObject()
+                    .put("name", "commit-message")
+                    .put("description", "Draft a commit message")
+                    .put("source", "skill"))))
+
+        assertEquals(listOf("status", "commit-message"), state.commands.map { it.name })
+        assertEquals(null, state.commands[0].source)
+        assertEquals(false, state.commands[0].isSkill)
+        assertEquals("skill", state.commands[1].source)
+        assertEquals(true, state.commands[1].isSkill)
+    }
+
+    @Test
     fun modelSnapshotsStayScopedToExplicitSource() {
         val hostModels = ChatStateReducer.reduce(ChatState(), JSONObject()
             .put("type", "chat.models")

@@ -19,6 +19,18 @@ class SlashCommandAutocompleteTest {
     }
 
     @Test
+    fun currentSkillTokenFindsDollarSkillAtCursor() {
+        assertEquals(
+            SlashToken(start = 0, end = 3, query = "co"),
+            SlashCommandAutocomplete.currentSkillToken("\$co", 3)
+        )
+        assertEquals(
+            SlashToken(start = 6, end = 13, query = "commit"),
+            SlashCommandAutocomplete.currentSkillToken("use a \$commit", 13)
+        )
+    }
+
+    @Test
     fun currentTokenIgnoresNonSlashAndArgumentText() {
         assertNull(SlashCommandAutocomplete.currentToken("hello", 5))
         assertNull(SlashCommandAutocomplete.currentToken("/queue steer", 12))
@@ -30,7 +42,8 @@ class SlashCommandAutocompleteTest {
         val commands = listOf(
             command("status", aliases = listOf("/stat")),
             command("queue", aliases = listOf("/q")),
-            command("reasoning", aliases = listOf("/think"))
+            command("reasoning", aliases = listOf("/think")),
+            command("commit-message", isSkill = true)
         )
 
         assertEquals(listOf("status"), SlashCommandAutocomplete.matchingCommands(commands, "sta").map { it.name })
@@ -40,9 +53,30 @@ class SlashCommandAutocompleteTest {
     }
 
     @Test
+    fun matchingSkillsMatchesOnlySkillNames() {
+        val commands = listOf(
+            command("commands"),
+            command("commit-message", isSkill = true),
+            command("code-review", isSkill = true),
+            command("summarize", isSkill = true)
+        )
+
+        assertEquals(
+            listOf("commit-message", "code-review"),
+            SlashCommandAutocomplete.matchingSkills(commands, "co").map { it.name }
+        )
+        assertEquals(listOf("commit-message"), SlashCommandAutocomplete.matchingSkills(commands, "com").map { it.name })
+    }
+
+    @Test
     fun commandTextUsesFirstAliasOnlyWhenItIsSlashPrefixed() {
         assertEquals("/stat", SlashCommandAutocomplete.commandText(command("status", aliases = listOf("/stat", "stat"))))
         assertEquals("/status", SlashCommandAutocomplete.commandText(command("status", aliases = listOf("stat"))))
+    }
+
+    @Test
+    fun skillTextUsesDollarPrefix() {
+        assertEquals("\$commit-message", SlashCommandAutocomplete.skillText(command("commit-message", isSkill = true)))
     }
 
     @Test
@@ -57,13 +91,26 @@ class SlashCommandAutocompleteTest {
         assertEquals("hello /status ".length, result.cursor)
     }
 
-    private fun command(name: String, aliases: List<String> = emptyList()): ChatCommandOption {
+    @Test
+    fun applyAutocompleteReplacesDollarSkillToken() {
+        val result = SlashCommandAutocomplete.applyAutocomplete(
+            text = "use \$co for this",
+            token = SlashToken(start = 4, end = 7, query = "co"),
+            commandText = "\$code-review"
+        )
+
+        assertEquals("use \$code-review  for this", result.text)
+        assertEquals("use \$code-review ".length, result.cursor)
+    }
+
+    private fun command(name: String, aliases: List<String> = emptyList(), isSkill: Boolean = false): ChatCommandOption {
         return ChatCommandOption(
             name = name,
             description = null,
             category = null,
             aliases = aliases,
-            acceptsArgs = false
+            acceptsArgs = false,
+            source = if (isSkill) "skill" else null
         )
     }
 }
