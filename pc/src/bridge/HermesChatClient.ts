@@ -1,28 +1,8 @@
-import { randomUUID } from "node:crypto";
 import { HermesApiClient, type HermesSseEvent } from "../dispatcher/HermesApiClient.js";
 import type { BridgeConfig } from "./config.js";
 import { discoverHermesModels } from "./HermesModelDiscovery.js";
+import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "./harness/InMemoryHarnessSessionStore.js";
 import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "./OpenClawGatewayChatClient.js";
-
-interface StoredMessage {
-  id: string;
-  role: "user" | "assistant" | "system";
-  text: string;
-  timestamp: number;
-}
-
-interface StoredSession {
-  key: string;
-  sessionId: string;
-  label: string;
-  displayName?: string;
-  model?: string;
-  thinkingLevel?: string;
-  messages: StoredMessage[];
-  updatedAt: number;
-  activeRunId?: string | null;
-  usage?: Record<string, unknown>;
-}
 
 interface ActiveChatRun {
   sessionKey: string;
@@ -83,13 +63,9 @@ function eventStatus(value: unknown): string | undefined {
   return typeof status === "string" && status.trim() ? status.trim() : undefined;
 }
 
-function sanitizeSessionId(value: string): string {
-  return value.replace(/[^a-zA-Z0-9_.:-]+/g, "-").replace(/^-+|-+$/g, "") || "default";
-}
-
 export class HermesChatClient {
   private readonly api: HermesApiClient;
-  private readonly sessions = new Map<string, StoredSession>();
+  private readonly sessions: InMemoryHarnessSessionStore;
   private readonly handlers = new Set<GatewayEventHandler>();
   private readonly activeRuns = new Map<string, ActiveChatRun>();
 
@@ -103,6 +79,10 @@ export class HermesChatClient {
       model: config.hermesModel,
       runTimeoutMs: config.hermesRunTimeoutMs
     });
+    this.sessions = new InMemoryHarnessSessionStore("hermes", {
+      defaultModel: config.hermesModel,
+      modelProvider: "hermes"
+    });
   }
 
   addEventListener(handler: GatewayEventHandler): () => void {
@@ -111,17 +91,7 @@ export class HermesChatClient {
   }
 
   async history(sessionKey: string): Promise<unknown> {
-    const session = this.ensureSession(sessionKey);
-    return {
-      sessionId: session.sessionId,
-      thinkingLevel: session.thinkingLevel,
-      messages: session.messages.map((message) => ({
-        id: message.id,
-        role: message.role,
-        text: message.text,
-        timestamp: message.timestamp
-      }))
-    };
+    return this.sessions.history(sessionKey);
   }
 
   async sendChat(options: {
@@ -131,15 +101,9 @@ export class HermesChatClient {
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
-    const session = this.ensureSession(options.sessionKey, options.sessionId);
-    session.thinkingLevel = options.thinking ?? session.thinkingLevel;
-    session.messages.push({
-      id: `user_${options.idempotencyKey ?? randomUUID()}`,
-      role: "user",
-      text: options.message,
-      timestamp: Date.now()
-    });
-    session.updatedAt = Date.now();
+    const session = this.sessions.ensureSession(options.sessionKey, options.sessionId);
+    this.sessions.setThinkingLevel(session, options.thinking);
+    this.sessions.appendUserMessage(session, options.message, options.idempotencyKey);
 
     const created = await this.api.createRun({
       input: options.message,
@@ -149,7 +113,7 @@ export class HermesChatClient {
     });
     const runId = created.runId;
     const controller = new AbortController();
-    session.activeRunId = runId;
+    this.sessions.setActiveRun(session, runId);
     this.activeRuns.set(runId, {
       sessionKey: session.key,
       controller,
@@ -210,25 +174,8 @@ export class HermesChatClient {
   }
 
   async listSessions(limit = 50): Promise<unknown> {
-    const sessions = [...this.sessions.values()]
-      .sort((left, right) => right.updatedAt - left.updatedAt)
-      .slice(0, limit)
-      .map((session) => ({
-        key: session.key,
-        sessionId: session.sessionId,
-        label: session.label,
-        displayName: session.displayName ?? session.label,
-        model: session.model ?? this.config.hermesModel,
-        modelProvider: "hermes",
-        updatedAt: session.updatedAt,
-        hasActiveRun: Boolean(session.activeRunId),
-        thinkingLevel: session.thinkingLevel ?? null,
-        inputTokens: Number(asRecord(session.usage)?.input_tokens ?? asRecord(session.usage)?.inputTokens) || null,
-        outputTokens: Number(asRecord(session.usage)?.output_tokens ?? asRecord(session.usage)?.outputTokens) || null,
-        totalTokens: Number(asRecord(session.usage)?.total_tokens ?? asRecord(session.usage)?.totalTokens) || null
-      }));
     return {
-      sessions,
+      sessions: this.sessions.listSessions(limit),
       defaults: {
         thinkingLevels: ["low", "medium", "high", "xhigh"]
       }
@@ -236,32 +183,11 @@ export class HermesChatClient {
   }
 
   async createSession(options: { key?: string; label?: string; model?: string }): Promise<unknown> {
-    const key = options.key?.trim() || `hermes:${randomUUID()}`;
-    const session = this.ensureSession(key);
-    session.label = options.label?.trim() || session.label;
-    session.displayName = options.label?.trim() || session.displayName;
-    session.model = options.model?.trim() || session.model;
-    session.updatedAt = Date.now();
-    return {
-      key: session.key,
-      sessionId: session.sessionId,
-      label: session.label,
-      displayName: session.displayName
-    };
+    return this.sessions.createSession(options);
   }
 
   async patchSession(sessionKey: string, patch: Record<string, unknown>): Promise<unknown> {
-    const session = this.ensureSession(sessionKey);
-    if (typeof patch.model === "string" && patch.model.trim()) {
-      session.model = patch.model.trim();
-    }
-    if (typeof patch.thinking === "string" && patch.thinking.trim()) {
-      session.thinkingLevel = patch.thinking.trim();
-    }
-    if (typeof patch.displayName === "string" && patch.displayName.trim()) {
-      session.displayName = patch.displayName.trim();
-    }
-    session.updatedAt = Date.now();
+    this.sessions.patchSession(sessionKey, patch);
     return { ok: true };
   }
 
@@ -291,28 +217,8 @@ export class HermesChatClient {
     this.activeRuns.clear();
   }
 
-  private ensureSession(sessionKey: string, sessionId?: string): StoredSession {
-    const key = sessionKey.trim() || `hermes:${randomUUID()}`;
-    const existing = this.sessions.get(key);
-    if (existing) {
-      return existing;
-    }
-    const cleanSessionId = sanitizeSessionId(sessionId ?? key.replace(/^hermes:/, ""));
-    const created: StoredSession = {
-      key,
-      sessionId: cleanSessionId,
-      label: cleanSessionId,
-      model: this.config.hermesModel,
-      messages: [],
-      updatedAt: Date.now(),
-      activeRunId: null
-    };
-    this.sessions.set(key, created);
-    return created;
-  }
-
   private async processRun(sessionKey: string, runId: string, controller: AbortController): Promise<void> {
-    const session = this.ensureSession(sessionKey);
+    const session = this.sessions.ensureSession(sessionKey);
     let latestText = "";
     try {
       await this.api.streamRunEvents(runId, (event) => {
@@ -325,11 +231,10 @@ export class HermesChatClient {
       }
       const finalText = outputText(final.output) ?? outputText(final.raw) ?? latestText;
       if (finalText.trim()) {
-        this.upsertAssistantMessage(session, runId, finalText);
+        this.sessions.upsertAssistantMessage(session, runId, finalText);
       }
-      session.activeRunId = null;
-      session.usage = asRecord(final.raw)?.usage as Record<string, unknown> | undefined;
-      session.updatedAt = Date.now();
+      this.sessions.clearActiveRun(session, runId);
+      this.sessions.setUsage(session, asRecord(final.raw)?.usage as Record<string, unknown> | undefined);
       this.emit("chat", {
         sessionKey,
         runId,
@@ -347,13 +252,11 @@ export class HermesChatClient {
       }
     } finally {
       this.activeRuns.delete(runId);
-      if (session.activeRunId === runId) {
-        session.activeRunId = null;
-      }
+      this.sessions.clearActiveRun(session, runId);
     }
   }
 
-  private handleRunEvent(session: StoredSession, runId: string, event: HermesSseEvent, latestText: string): string {
+  private handleRunEvent(session: HarnessStoredSession, runId: string, event: HermesSseEvent, latestText: string): string {
     const toolName = eventToolName(event.data);
     if (toolName || event.event.toLowerCase().includes("tool")) {
       this.emit("agent", {
@@ -370,7 +273,7 @@ export class HermesChatClient {
       return latestText;
     }
     const next = latestText + delta;
-    this.upsertAssistantMessage(session, runId, next);
+    this.sessions.upsertAssistantMessage(session, runId, next);
     this.emit("chat", {
       sessionKey: session.key,
       runId,
@@ -378,23 +281,6 @@ export class HermesChatClient {
       delta
     });
     return next;
-  }
-
-  private upsertAssistantMessage(session: StoredSession, runId: string, text: string): void {
-    const id = `assistant_${runId}`;
-    const existing = session.messages.find((message) => message.id === id);
-    if (existing) {
-      existing.text = text;
-      existing.timestamp = Date.now();
-    } else {
-      session.messages.push({
-        id,
-        role: "assistant",
-        text,
-        timestamp: Date.now()
-      });
-    }
-    session.updatedAt = Date.now();
   }
 
   private emit(event: string, payload: unknown): void {
