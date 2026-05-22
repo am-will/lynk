@@ -81,7 +81,7 @@ class PanelChrome(
         val host = PanelHost(context).apply {
             exposeToAccessibility(
                 viewId = R.id.openclaw_panel_host,
-                description = "OpenClaw chat panel",
+                description = "Chat panel",
                 focusable = true
             )
             isFocusableInTouchMode = true
@@ -103,7 +103,7 @@ class PanelChrome(
         val scrim = View(context).apply {
             exposeToAccessibility(
                 viewId = R.id.openclaw_panel_scrim,
-                description = "Dismiss OpenClaw chat panel"
+                description = "Dismiss chat panel"
             )
             setBackgroundColor(tokens.scrim)
             setOnClickListener { callbacks.onScrimClicked() }
@@ -140,7 +140,7 @@ class PanelChrome(
         return LinearLayout(context).apply {
             exposeToAccessibility(
                 viewId = R.id.openclaw_panel_content,
-                description = "OpenClaw chat controls",
+                description = "Chat controls",
                 focusable = true
             )
             orientation = LinearLayout.VERTICAL

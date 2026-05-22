@@ -15,10 +15,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.text.Editable
-import android.text.SpannableString
-import android.text.Spanned
 import android.text.TextWatcher
-import android.text.style.ForegroundColorSpan
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
@@ -43,7 +40,6 @@ import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.overlay.BubbleOverlay
 import dev.androidagent.overlay.ChatPresentationHelpers
 import dev.androidagent.overlay.ChatTimelineBinder
-import dev.androidagent.overlay.ClientBrand
 import dev.androidagent.overlay.ConfirmationOverlay
 import dev.androidagent.overlay.HostConnectionCopy
 import dev.androidagent.overlay.HostConnectionIndicatorButton
@@ -270,7 +266,7 @@ class OverlayController(
     }
 
     fun setStatus(text: String) {
-        statusText?.setText(text)
+        statusText?.setText(chatStatusText(text, lastChatState))
     }
 
     fun minimizePanelFromSystemHome() {
@@ -424,7 +420,7 @@ class OverlayController(
         val tokens = tokens()
         val input = buildComposerInput(tokens)
         val status = StatusUpdateView(context, tokens).apply {
-            setText(lastChatState.status ?: "OpenClaw chat ready.")
+            setText(chatStatusText(lastChatState.status, lastChatState))
             setActive(lastChatState.isRunning)
         }
         statusText = status
@@ -568,7 +564,7 @@ class OverlayController(
                 rightMargin = dp(DesignTokens.Spacing.xs)
             })
             addView(TextView(context).apply {
-                text = openClawTitle(tokens)
+                text = ChatPresentationHelpers.headerTitleText(brandPresentationFor(lastChatState), tokens)
                 textSize = 18f
                 setTextColor(tokens.primaryText)
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -697,7 +693,7 @@ class OverlayController(
                 viewId = R.id.openclaw_composer_input,
                 description = "Message composer"
             )
-            hint = "Message OpenClaw"
+            hint = brandPresentationFor(lastChatState).copy.composerPlaceholder
             minLines = 1
             maxLines = 5
             minHeight = dp(DesignTokens.Sizes.compactAction)
@@ -836,7 +832,7 @@ class OverlayController(
                 if (text.isNotEmpty()) {
                     if (onSubmit(text)) {
                         input.setText("")
-                        setStatus("Sent to OpenClaw")
+                        setStatus(brandPresentationFor(lastChatState).copy.sentStatus)
                     }
                 }
             }
@@ -949,10 +945,10 @@ class OverlayController(
 
     private fun renderHeaderBrand(tokens: ThemeTokens, state: ChatState) {
         val presentation = brandPresentationFor(state)
-        headerBrandLogo?.setImageResource(brandLogoRes(presentation.brand))
+        headerBrandLogo?.setImageResource(presentation.logoRes)
         headerBrandTitle?.apply {
-            text = if (presentation.brand == ClientBrand.OpenClaw) openClawTitle(tokens) else presentation.title
-            setTextColor(if (presentation.usesWhiteTitle) Color.WHITE else tokens.primaryText)
+            text = ChatPresentationHelpers.headerTitleText(presentation, tokens)
+            setTextColor(ChatPresentationHelpers.headerTitleColor(presentation, tokens))
         }
         headerSessionAnchor?.apply {
             background = Drawables.pillSurface(context, tokens)
@@ -968,19 +964,12 @@ class OverlayController(
         localLiteRtAvailable = isExperimentalLocalModelAvailable()
     )
 
-    private fun brandLogoRes(brand: ClientBrand): Int {
-        return when (brand) {
-            ClientBrand.OpenClaw -> R.drawable.openclaw_bubble_logo
-            ClientBrand.Hermes -> R.drawable.hermes_nous_logo
-            ClientBrand.Codex -> R.drawable.codex_bubble_logo
-            ClientBrand.Local -> R.drawable.huggingface_logo
-        }
-    }
-
-    private fun openClawTitle(tokens: ThemeTokens): SpannableString {
-        return SpannableString("OpenClaw").apply {
-            setSpan(ForegroundColorSpan(tokens.danger), 4, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        }
+    private fun chatStatusText(rawStatus: String?, state: ChatState): String {
+        return ChatPresentationHelpers.chatStatusText(
+            rawStatus = rawStatus,
+            isRunning = state.isRunning,
+            presentation = brandPresentationFor(state)
+        )
     }
 
     private fun showHostConnectionPopup(anchor: View) {
@@ -1615,6 +1604,7 @@ class OverlayController(
         val tokens = tokens()
         renderHeaderBrand(tokens, state)
         renderComposerActionButtons(tokens, state, lastTranscriptionState)
+        composerInput?.hint = brandPresentationFor(state).copy.composerPlaceholder
         modelButton?.let { btn ->
             val fastModeOn = state.fastMode == true
             val localLiteRtAvailable = isExperimentalLocalModelAvailable()
@@ -1652,7 +1642,7 @@ class OverlayController(
         }
         contextUsageView?.bind(tokens, state.usage.contextRatio)
         statusText?.let { sv ->
-            state.status?.let { sv.setText(it) }
+            sv.setText(chatStatusText(state.status, state))
             sv.setActive(state.isRunning)
         }
         bubbleOverlay.renderUnreadBadge(state)
@@ -2061,7 +2051,7 @@ class OverlayController(
             setImageResource(if (shouldShowStop) R.drawable.ic_stop else R.drawable.ic_send)
             updateAccessibilityState(description = when {
                 transcriptionState.isRecording -> "Stop recording and transcribe"
-                chatState.isRunning -> "Stop OpenClaw turn"
+                chatState.isRunning -> brandPresentationFor(chatState).copy.stopTurnDescription
                 else -> "Send message"
             })
             background = Drawables.accentSurface(context, tokens, DesignTokens.Radius.pill)

@@ -269,7 +269,7 @@ class AnchoredPicker(
         val container = LinearLayout(context).apply {
             exposeToAccessibility(
                 viewId = R.id.openclaw_picker_sheet,
-                description = title?.let { "$it menu" } ?: "OpenClaw menu"
+                description = title?.let { "$it menu" } ?: "Chat menu"
             )
             orientation = LinearLayout.VERTICAL
             background = Drawables.dropdownSheet(context, tokens)

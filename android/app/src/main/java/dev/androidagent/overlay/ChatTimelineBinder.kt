@@ -116,7 +116,7 @@ class ChatTimelineBinder(
             setPadding(dp(DesignTokens.Spacing.xxl), dp(48), dp(DesignTokens.Spacing.xxl), dp(48))
 
             addView(ImageView(context).apply {
-                setImageResource(brandLogoRes(brand.brand))
+                setImageResource(brand.logoRes)
                 alpha = 0.65f
                 hideFromAccessibility()
             }, LinearLayout.LayoutParams(dp(72), dp(72)).apply {
@@ -136,7 +136,7 @@ class ChatTimelineBinder(
             })
 
             addView(TextView(context).apply {
-                text = "${brand.title} is ready. Say something or pick a previous chat from the title menu."
+                text = brand.copy.emptyHistoryText
                 Typography.applyBody(this, tokens, secondary = true)
                 gravity = Gravity.CENTER
             }, LinearLayout.LayoutParams(
@@ -146,15 +146,6 @@ class ChatTimelineBinder(
                 topMargin = dp(DesignTokens.Spacing.sm)
                 gravity = Gravity.CENTER_HORIZONTAL
             })
-        }
-    }
-
-    private fun brandLogoRes(brand: ClientBrand): Int {
-        return when (brand) {
-            ClientBrand.OpenClaw -> R.drawable.openclaw_bubble_logo
-            ClientBrand.Hermes -> R.drawable.hermes_nous_logo
-            ClientBrand.Codex -> R.drawable.codex_bubble_logo
-            ClientBrand.Local -> R.drawable.huggingface_logo
         }
     }
 

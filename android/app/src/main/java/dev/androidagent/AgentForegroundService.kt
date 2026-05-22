@@ -83,11 +83,11 @@ class AgentForegroundService : Service() {
         isRunning = true
         broadcastRunningState()
         createChannel()
-        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), foregroundServiceType(includeMicrophone = false))
         AgentConfigStore.load(this).also { config ->
             chatState = chatState.copy(selectedModel = selectedChatModel(config))
             AvatarLibrary.scanOnBoot(applicationContext, config.hostUrl, config.token)
         }
+        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), foregroundServiceType(includeMicrophone = false))
         voiceTranscriptionManager = VoiceTranscriptionManager(onStateChanged = ::handleTranscriptionState)
         overlayController = OverlayController(
             context = this,
@@ -358,7 +358,7 @@ class AgentForegroundService : Service() {
             reasoningEffort = chatState.reasoningEffort ?: requestConfig.reasoningEffort
         )
         if (sent) {
-            lastNotificationText = if (route == ChatClientRoute.Local) "Sent to local model" else "Sent to OpenClaw"
+            lastNotificationText = brandPresentationFor(chatState).copy.sentStatus
             isAgentTurnActive = true
         } else {
             lastNotificationText = if (route == ChatClientRoute.Local) "Local model is not ready" else "Bridge is not connected"
@@ -383,7 +383,7 @@ class AgentForegroundService : Service() {
         )
         overlayController?.setChatState(chatState)
         connectAgentClient(model).setModel(sessionKeyForRoute(route), modelForRoute(model, route, config))
-        lastNotificationText = chatState.status ?: lastNotificationText
+        lastNotificationText = chatStatusText(chatState.status, chatState)
         updateNotification()
     }
 
@@ -393,6 +393,34 @@ class AgentForegroundService : Service() {
         val harness = option?.let { ChatPresentationHelpers.modelHarnessLabel(it) }
         val label = option?.label ?: AgentModelOptions.modelLabel(model)
         return harness?.let { "$it / $label" } ?: label
+    }
+
+    private fun brandPresentationFor(state: ChatState, sessionKey: String? = null) =
+        ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = state.sessions.firstOrNull { it.key == sessionKey }?.model
+                ?: state.selectedModel
+                ?: selectedChatModel(),
+            models = state.models,
+            harnessId = state.sessions.firstOrNull { it.key == sessionKey }?.harnessId
+                ?: harnessFromSessionKey(sessionKey)
+                ?: state.harnessId,
+            localLiteRtAvailable = isExperimentalLocalModelAvailable()
+        )
+
+    private fun chatStatusText(rawStatus: String?, state: ChatState): String {
+        return ChatPresentationHelpers.chatStatusText(
+            rawStatus = rawStatus,
+            isRunning = state.isRunning,
+            presentation = brandPresentationFor(state)
+        )
+    }
+
+    private fun harnessFromSessionKey(sessionKey: String?): String? {
+        val prefix = sessionKey?.substringBefore(":", missingDelimiterValue = "")?.lowercase()
+        return when (prefix) {
+            "hermes", "codex", "local" -> prefix
+            else -> null
+        }
     }
 
     private fun submitSlashCommand(text: String): Boolean {
@@ -484,7 +512,7 @@ class AgentForegroundService : Service() {
                 chatState = chatState.copy(timeline = emptyList(), usage = ChatUsageSummary())
             }
             overlayController?.setChatState(chatState)
-            chatState.status?.takeIf { it.isNotBlank() }?.let { lastNotificationText = it }
+            chatState.status?.takeIf { it.isNotBlank() }?.let { lastNotificationText = chatStatusText(it, chatState) }
             isAgentTurnActive = chatState.isRunning
             syncReplyNotifications()
             updateNotification()
@@ -633,7 +661,8 @@ class AgentForegroundService : Service() {
     private fun handleBridgeStatus(text: String, status: String) {
         serviceScope.launch {
             overlayController?.setStatus(text)
-            lastNotificationText = text.ifBlank { DEFAULT_NOTIFICATION_TEXT }
+            lastNotificationText = text.takeIf { it.isNotBlank() }?.let { chatStatusText(it, chatState) }
+                ?: brandPresentationFor(chatState).copy.defaultNotificationText
             isAgentTurnActive = when (status) {
                 "working", "tool" -> true
                 "done", "error" -> false
@@ -715,9 +744,9 @@ class AgentForegroundService : Service() {
     private fun createChannel() {
         if (Build.VERSION.SDK_INT >= 26) {
             val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Open Claw Agent", NotificationManager.IMPORTANCE_LOW))
-            manager.createNotificationChannel(NotificationChannel(REPLY_CHANNEL_ID, "OpenClaw replies", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = "Per-session reply notifications from OpenClaw"
+            manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Agent chat", NotificationManager.IMPORTANCE_LOW))
+            manager.createNotificationChannel(NotificationChannel(REPLY_CHANNEL_ID, "Chat replies", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = "Per-session reply notifications from the selected chat client"
             })
         }
     }
@@ -760,8 +789,9 @@ class AgentForegroundService : Service() {
             flags
         )
         val unreadCount = chatState.totalUnreadReplies
+        val copy = brandPresentationFor(chatState).copy
         val notificationText = if (unreadCount > 0) {
-            "$unreadCount unread OpenClaw ${if (unreadCount == 1) "reply" else "replies"}"
+            copy.unreadReplies(unreadCount)
         } else {
             lastNotificationText
         }
@@ -769,9 +799,9 @@ class AgentForegroundService : Service() {
             .setSmallIcon(R.drawable.ic_notification_bubble)
             .setColor(0xFF245BFF.toInt())
             .setContentTitle(when {
-                isAgentTurnActive -> "Open Claw Agent working"
-                unreadCount > 0 -> "Open Claw Agent replied"
-                else -> "Open Claw Agent active"
+                isAgentTurnActive -> "${copy.name} working"
+                unreadCount > 0 -> "${copy.name} replied"
+                else -> "${copy.name} active"
             })
             .setContentText(notificationText)
             .setStyle(NotificationCompat.BigTextStyle().bigText(notificationText))
@@ -792,12 +822,13 @@ class AgentForegroundService : Service() {
         val contentIntent = PendingIntent.getService(this, replyNotificationId(sessionKey), openIntent, flags)
         val label = unread.displayNameFor(sessionKey)
         val count = unread.count
+        val copy = brandPresentationFor(chatState, sessionKey).copy
         val text = unread.latestPreview
-            ?: if (unread.latestStatus == "failed") "OpenClaw failed. Tap to view details." else "Tap to view the reply."
+            ?: if (unread.latestStatus == "failed") copy.failedReplyFallback() else "Tap to view the reply."
         return NotificationCompat.Builder(this, REPLY_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_bubble)
             .setColor(0xFF245BFF.toInt())
-            .setContentTitle(if (count > 1) "$count unread replies in $label" else "OpenClaw replied in $label")
+            .setContentTitle(if (count > 1) "$count unread replies in $label" else copy.repliedIn(label))
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(contentIntent)
@@ -836,7 +867,7 @@ class AgentForegroundService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val REPLY_NOTIFICATION_ID_BASE = 10_000
         private const val REQUEST_OPEN_CHAT = 2
-        private const val DEFAULT_NOTIFICATION_TEXT = "Floating bubble and Open Claw bridge are running"
+        private const val DEFAULT_NOTIFICATION_TEXT = "Floating chat bubble is running"
         private const val SYSTEM_DIALOG_REASON = "reason"
         private const val SYSTEM_DIALOG_REASON_HOME_KEY = "homekey"
         const val ACTION_STATE_CHANGED = "dev.openclawagent.action.AGENT_SERVICE_STATE_CHANGED"

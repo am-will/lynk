@@ -1,6 +1,7 @@
 package dev.androidagent.overlay
 
 import dev.androidagent.AgentModelOptions
+import dev.androidagent.R
 import dev.androidagent.chat.ChatModelOption
 import dev.androidagent.chat.ChatModelSource
 import dev.androidagent.chat.ChatSessionRow
@@ -181,12 +182,15 @@ class ChatPresentationHelpersTest {
 
         assertEquals(ClientBrand.Hermes, hermes.brand)
         assertEquals("Hermes", hermes.title)
-        assertFalse(hermes.usesWhiteTitle)
+        assertEquals(R.drawable.hermes_nous_logo, hermes.logoRes)
+        assertEquals(BrandTitleTreatment.PLAIN, hermes.titleTreatment)
         assertEquals(ClientBrand.Codex, codex.brand)
         assertEquals("Codex", codex.title)
-        assertTrue(codex.usesWhiteTitle)
+        assertEquals(R.drawable.codex_bubble_logo, codex.logoRes)
+        assertEquals(BrandTitleTreatment.PLAIN, codex.titleTreatment)
         assertEquals(ClientBrand.Local, local.brand)
         assertEquals("LiteRT-LLM", local.title)
+        assertEquals(R.drawable.huggingface_logo, local.logoRes)
     }
 
     @Test
@@ -214,6 +218,46 @@ class ChatPresentationHelpersTest {
         assertEquals(ClientBrand.Codex, fallback.brand)
         assertEquals(ClientBrand.OpenClaw, default.brand)
         assertEquals("OpenClaw", default.title)
+        assertEquals(R.drawable.openclaw_bubble_logo, default.logoRes)
+        assertEquals(BrandTitleTreatment.OPENCLAW_ACCENT, default.titleTreatment)
+    }
+
+    @Test
+    fun chatStatusCopyUsesSelectedClientBrand() {
+        val hermes = ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = "hermes:qwen",
+            models = emptyList(),
+            harnessId = "openclaw",
+            localLiteRtAvailable = false
+        )
+        val codex = ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = "codex:gpt-5.3-codex",
+            models = emptyList(),
+            harnessId = "openclaw",
+            localLiteRtAvailable = false
+        )
+
+        assertEquals("Message Hermes", hermes.copy.composerPlaceholder)
+        assertEquals("Loading Hermes Chat", ChatPresentationHelpers.chatStatusText("Loading OpenClaw chat", isRunning = false, hermes))
+        assertEquals("Hermes is thinking", ChatPresentationHelpers.chatStatusText("OpenClaw is responding", isRunning = true, hermes))
+        assertEquals("Hermes finished", ChatPresentationHelpers.chatStatusText("Codex finished", isRunning = false, hermes))
+        assertEquals("Message Codex", codex.copy.composerPlaceholder)
+        assertEquals("Stop Codex turn", codex.copy.stopTurnDescription)
+    }
+
+    @Test
+    fun localChatCopyUsesLiteRtBrand() {
+        val local = ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
+            models = listOf(model(AgentModelOptions.LOCAL_LITERT_MODEL_ID, harnessId = "local", provider = "android")),
+            harnessId = "openclaw",
+            localLiteRtAvailable = true
+        )
+
+        assertEquals("LiteRT-LLM", local.title)
+        assertEquals("Message LiteRT", local.copy.composerPlaceholder)
+        assertEquals("LiteRT is thinking", ChatPresentationHelpers.chatStatusText("Local model is working", isRunning = true, local))
+        assertEquals("Sent to LiteRT", ChatPresentationHelpers.chatStatusText("Sent to OpenClaw", isRunning = false, local))
     }
 
     @Test

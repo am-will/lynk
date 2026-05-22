@@ -34,7 +34,7 @@ class StatusUpdateView(context: Context, private var tokens: ThemeTokens) : Line
     init {
         exposeToAccessibility(
             viewId = R.id.openclaw_status_line,
-            description = "OpenClaw status",
+            description = "Chat status",
             liveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         )
         orientation = HORIZONTAL
@@ -56,7 +56,7 @@ class StatusUpdateView(context: Context, private var tokens: ThemeTokens) : Line
         Typography.applyCaption(label, tokens, emphasis = false)
         label.exposeToAccessibility(
             viewId = R.id.openclaw_status_line_label,
-            description = "OpenClaw status text",
+            description = "Chat status text",
             liveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         )
         label.maxLines = 1
@@ -75,7 +75,7 @@ class StatusUpdateView(context: Context, private var tokens: ThemeTokens) : Line
     fun setText(text: CharSequence?) {
         label.text = text ?: ""
         updateAccessibilityState(
-            description = "OpenClaw status",
+            description = "Chat status",
             stateDescription = label.text
         )
     }

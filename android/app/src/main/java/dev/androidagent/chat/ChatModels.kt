@@ -171,7 +171,7 @@ object ChatStateReducer {
                 text = trimmed,
                 timestamp = System.currentTimeMillis()
             ),
-            status = "Sent to OpenClaw",
+            status = "Sent",
             error = null
         )
     }
@@ -345,7 +345,7 @@ object ChatStateReducer {
             sessionKey = sessionKey,
             activeRunId = runId,
             isRunning = true,
-            status = "OpenClaw is reasoning",
+            status = "Thinking",
             reasoningStreamEnabled = true,
             timeline = upsertTimeline(state.timeline, ChatTimelineItem(
                 id = itemId,
@@ -380,7 +380,7 @@ object ChatStateReducer {
             sessionKey = sessionKey,
             activeRunId = runId,
             isRunning = true,
-            status = "OpenClaw is responding",
+            status = "Thinking",
             timeline = upsertTimeline(timeline, ChatTimelineItem(
                 id = itemId,
                 kind = ChatTimelineKind.MESSAGE,
@@ -402,7 +402,7 @@ object ChatStateReducer {
             sessionKey = message.optNullableString("sessionKey") ?: state.sessionKey,
             activeRunId = null,
             isRunning = false,
-            status = "OpenClaw finished",
+            status = "Finished",
             timeline = upsertTimeline(timeline, ChatTimelineItem(
                 id = itemId,
                 kind = ChatTimelineKind.MESSAGE,
@@ -422,7 +422,7 @@ object ChatStateReducer {
             sessionKey = message.optNullableString("sessionKey") ?: state.sessionKey,
             activeRunId = null,
             isRunning = false,
-            status = "OpenClaw failed",
+            status = "Failed",
             error = text,
             timeline = markReasoningClearing(state.timeline, runId) + ChatTimelineItem(
                 id = "error_${UUID.randomUUID()}",
