@@ -302,16 +302,21 @@ object ChatStateReducer {
     }
 
     private fun reduceHistory(state: ChatState, message: JSONObject): ChatState {
-        val localStatusMessages = state.timeline.filter { item ->
-            item.kind == ChatTimelineKind.MESSAGE && (
-                item.id.startsWith("system_") ||
-                    (item.id.startsWith("local_") && item.role == "user" && item.text.trimStart().startsWith("/"))
-                )
+        val incomingSessionKey = message.optNullableString("sessionKey") ?: state.sessionKey
+        val localStatusMessages = if (incomingSessionKey != null && incomingSessionKey == state.sessionKey) {
+            state.timeline.filter { item ->
+                item.kind == ChatTimelineKind.MESSAGE && (
+                    item.id.startsWith("system_") ||
+                        (item.id.startsWith("local_") && item.role == "user" && item.text.trimStart().startsWith("/"))
+                    )
+            }
+        } else {
+            emptyList()
         }
         val history = parseHistory(message.optJSONArray("messages"))
         val historyIds = history.map { it.id }.toSet()
         return state.copy(
-            sessionKey = message.optNullableString("sessionKey") ?: state.sessionKey,
+            sessionKey = incomingSessionKey,
             sessionId = message.optNullableString("sessionId") ?: state.sessionId,
             timeline = mergeHistoryWithLocalStatus(
                 current = state.timeline,

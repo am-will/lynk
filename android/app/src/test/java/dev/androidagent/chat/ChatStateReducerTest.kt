@@ -78,6 +78,22 @@ class ChatStateReducerTest {
     }
 
     @Test
+    fun historyDoesNotCarryLocalSlashCommandsAcrossSessions() {
+        val withSlash = ChatStateReducer.localUserMessage(
+            ChatState(sessionKey = "codex:first"),
+            "/compact"
+        )
+        val switched = ChatStateReducer.reduce(withSlash, JSONObject()
+            .put("type", "chat.history")
+            .put("sessionKey", "codex:second")
+            .put("messages", JSONArray()
+                .put(JSONObject().put("id", "a1").put("role", "assistant").put("text", "Older thread"))))
+
+        assertEquals("codex:second", switched.sessionKey)
+        assertEquals(listOf("Older thread"), switched.timeline.map { it.text })
+    }
+
+    @Test
     fun historyMergesLocalStatusMessagesChronologicallyWhenTimestampsExist() {
         val withNotice = ChatStateReducer.reduce(ChatState(), JSONObject()
             .put("type", "chat.message")
