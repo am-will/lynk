@@ -1440,19 +1440,8 @@ class OverlayController(
             onDismiss = onDismiss
         )
 
-        val modeRows = listOf(
+        val modesAndSettingsRows = listOf(
             plusFastModeRow(),
-            plusVerboseRow(),
-            AnchoredPicker.Row(
-                id = "status:refresh",
-                label = "Refresh status",
-                iconRes = R.drawable.ic_usage,
-                onSelect = { onChatControlCommand("status", JSONObject()); setStatus("Refreshing status") }
-            )
-        )
-
-        val voiceRows = listOf(
-            plusReasoningStreamRow(),
             plusToolCallsRow(),
             AnchoredPicker.Row(
                 id = "voice:start",
@@ -1479,8 +1468,7 @@ class OverlayController(
         val sections = mutableListOf<AnchoredPicker.Section>()
         sections.add(AnchoredPicker.Section("Session", sessionRows))
         if (commandSkillRows.isNotEmpty()) sections.add(AnchoredPicker.Section("Commands & Skills", commandSkillRows))
-        sections.add(AnchoredPicker.Section("Run mode", modeRows))
-        sections.add(AnchoredPicker.Section("More", voiceRows))
+        sections.add(AnchoredPicker.Section("Modes & Settings", modesAndSettingsRows))
 
         showAnchoredPicker(
             menuAnchor,
@@ -1603,43 +1591,6 @@ class OverlayController(
         )
     }
 
-    private fun plusVerboseRow(): AnchoredPicker.Row {
-        val verboseMode = ChatPresentationHelpers.normalizedVerboseLevel(lastChatState.verboseLevel)
-        val nextVerboseMode = ChatPresentationHelpers.nextVerboseLevel(verboseMode)
-        return AnchoredPicker.Row(
-            id = PLUS_ROW_VERBOSE,
-            label = "Verbose: ${verboseMode.replaceFirstChar { it.uppercase() }}",
-            sublabel = "Tap for ${nextVerboseMode.replaceFirstChar { it.uppercase() }}",
-            iconRes = R.drawable.ic_command,
-            selected = verboseMode != "off",
-            dismissOnSelect = false,
-            onSelect = {
-                val nextLevel = ChatPresentationHelpers.nextVerboseLevel(
-                    ChatPresentationHelpers.normalizedVerboseLevel(lastChatState.verboseLevel)
-                )
-                onChatControlCommand("verbose", JSONObject().put("level", nextLevel))
-                setStatus("Verbose: $nextLevel")
-                updatePlusMenuToggleRow(plusVerboseRow())
-            }
-        )
-    }
-
-    private fun plusReasoningStreamRow(): AnchoredPicker.Row {
-        val reasoningStreamOn = lastChatState.reasoningStreamEnabled == true
-        return AnchoredPicker.Row(
-            id = PLUS_ROW_REASONING_STREAM,
-            label = "Reasoning Stream: ${if (reasoningStreamOn) "On" else "Off"}",
-            sublabel = if (reasoningStreamOn) "Tap to hide reasoning stream" else "Tap to stream reasoning updates",
-            iconRes = R.drawable.ic_reasoning,
-            selected = reasoningStreamOn,
-            dismissOnSelect = false,
-            onSelect = {
-                toggleReasoningStream()
-                updatePlusMenuToggleRow(plusReasoningStreamRow())
-            }
-        )
-    }
-
     private fun plusToolCallsRow(): AnchoredPicker.Row {
         return AnchoredPicker.Row(
             id = PLUS_ROW_TOOL_CALLS,
@@ -1695,12 +1646,6 @@ class OverlayController(
         }
         AgentConfigStore.save(context, config.copy(activeSendMode = next))
         setStatus("Active send: ${next.label}")
-    }
-
-    private fun toggleReasoningStream() {
-        val nextEnabled = lastChatState.reasoningStreamEnabled != true
-        onChatControlCommand("reasoning", JSONObject().put("level", if (nextEnabled) "stream" else "off"))
-        setStatus("Reasoning Stream: ${if (nextEnabled) "On" else "Off"}")
     }
 
     private fun showSessionsMenu(anchorOverride: View? = null) {
@@ -1765,9 +1710,9 @@ class OverlayController(
             ),
             AnchoredPicker.Row(
                 id = "usage:refresh",
-                label = "Refresh",
+                label = "Refresh status",
                 iconRes = R.drawable.ic_bolt,
-                onSelect = { onChatControlCommand("status", JSONObject()) }
+                onSelect = { onChatControlCommand("status", JSONObject()); setStatus("Refreshing status") }
             )
         )
         showAnchoredPicker(anchor, "Usage", listOf(AnchoredPicker.Section(null, rows)), toggleSameAnchor = false)
@@ -2481,8 +2426,6 @@ class OverlayController(
         private const val KEYBOARD_COMPOSER_GAP_DP = 4
         private const val FULLSCREEN_KEYBOARD_BOTTOM_CLEARANCE_DP = 28
         private const val PLUS_ROW_FAST_MODE = "plus_fast_mode"
-        private const val PLUS_ROW_VERBOSE = "plus_verbose"
-        private const val PLUS_ROW_REASONING_STREAM = "plus_reasoning_stream"
         private const val PLUS_ROW_TOOL_CALLS = "plus_tool_calls"
         private const val PLUS_ROW_ACTIVE_SEND_MODE = "plus_active_send_mode"
         private const val COMMAND_GROUP_COMMANDS = "commands"
