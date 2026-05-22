@@ -5,7 +5,7 @@ import type { RealtimeTaskManager } from "./RealtimeTaskManager.js";
 import type { Dispatcher } from "../dispatcher/dispatcher.js";
 import type { BridgeConfig } from "./config.js";
 import type { PhoneHub } from "./PhoneHub.js";
-import { inboundPhoneMessageSchema } from "../protocol/messages.js";
+import { REALTIME_TOOL_NAMES, inboundPhoneMessageSchema } from "../protocol/messages.js";
 import type { BridgeRealtime } from "./bridgeRealtime.js";
 
 export interface PhoneWebSocketDependencies {
@@ -188,7 +188,7 @@ export function bindPhoneSocket(socket: WebSocket, deps: PhoneWebSocketDependenc
           deps.realtime.sendRealtimeError(deviceId, `realtime.tool_call deviceId ${message.deviceId} does not match registered device ${deviceId}`);
           return;
         }
-        if (message.name === "hang_up_realtime") {
+        if (message.name === REALTIME_TOOL_NAMES.hangUpRealtime) {
           deps.realtime.handleRealtimeHangUpToolCall(message, deviceId).catch((error) => {
             deps.realtime.sendRealtimeError(message.deviceId, error instanceof Error ? error.message : String(error));
           });
@@ -235,7 +235,9 @@ export function bindPhoneSocket(socket: WebSocket, deps: PhoneWebSocketDependenc
     const disconnectedDeviceId = deviceId;
     deps.hub.unregister(socket);
     if (disconnectedDeviceId) {
-      deps.realtimeTaskManager.failDevice(disconnectedDeviceId, "Phone WebSocket disconnected");
+      void Promise.resolve(deps.realtimeTaskManager.failDevice(disconnectedDeviceId, "Phone WebSocket disconnected")).catch((error) => {
+        deps.realtime.sendRealtimeError(disconnectedDeviceId, error instanceof Error ? error.message : String(error));
+      });
       deps.realtime.disconnectDevice(disconnectedDeviceId);
     }
   });

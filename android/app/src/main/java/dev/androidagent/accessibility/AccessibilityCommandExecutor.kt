@@ -22,6 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
@@ -404,10 +405,15 @@ class AccessibilityCommandExecutor(
     }
 
     private suspend fun askUserConfirmation(service: PhoneAccessibilityService?, args: JSONObject): CommandResult {
-        val confirmed = overlayController
+        val deferred = overlayController
             ?.askConfirmation(args.getString("message"), args.optString("preview").takeIf { it.isNotBlank() })
-            ?.await()
-            ?: false
+        val confirmed = deferred?.let {
+            val result = withTimeoutOrNull(CONFIRMATION_TIMEOUT_MS) { it.await() }
+            if (result == null) {
+                overlayController.dismissConfirmation()
+            }
+            result ?: false
+        } ?: false
         return CommandResult(
             ok = confirmed,
             observation = service?.let { observer.observe(it) },
@@ -452,6 +458,10 @@ class AccessibilityCommandExecutor(
 
     private suspend fun waitMs(ms: Long) {
         kotlinx.coroutines.delay(ms.coerceIn(0, 120_000))
+    }
+
+    private companion object {
+        private const val CONFIRMATION_TIMEOUT_MS = 120_000L
     }
 }
 

@@ -100,19 +100,24 @@ class LocalAgentController(
                 } else {
                     repeatedObserveCount = 0
                 }
-                if (call.name == "termux_command" && shouldReplaceTermuxCommand(userText, call.args)) {
-                    val fallbackArgs = buildFallbackTermuxCommand(userText)
-                    if (fallbackArgs != null) {
-                        transcript.add("assistant tool request: ${JSONObject().put("tool", call.name).put("args", call.args)}")
-                        transcript.add("system: The model supplied an unreliable Termux command for an HTML/browser task. OpenClaw replaced it with a known-good command for the requested project.")
-                        callToExecute = LocalToolCall("termux_command", fallbackArgs)
-                    }
+                var demoFallbackTargetPath: String? = null
+                val replacementFallback = if (call.name == "termux_command") {
+                    DemoHtmlTermuxFallbackPolicy.replacementFor(userText, call.args)
+                } else {
+                    null
+                }
+                if (replacementFallback != null) {
+                    transcript.add("assistant tool request: ${JSONObject().put("tool", call.name).put("args", call.args)}")
+                    transcript.add("system: ${replacementFallback.reason}")
+                    callToExecute = LocalToolCall("termux_command", replacementFallback.args)
+                    demoFallbackTargetPath = replacementFallback.targetPath
                 } else if (call.name == "termux_command" && termuxCommandText(call.args).isBlank()) {
-                    val fallbackArgs = buildFallbackTermuxCommand(userText)
-                    if (fallbackArgs != null) {
+                    val emptyCommandFallback = DemoHtmlTermuxFallbackPolicy.fallbackForEmptyCommand(userText)
+                    if (emptyCommandFallback != null) {
                         transcript.add("assistant tool request: ${JSONObject().put("tool", call.name).put("args", call.args)}")
-                        transcript.add("system: The model called termux_command without a command. OpenClaw supplied a concrete Termux command for the user's requested HTML project.")
-                        callToExecute = LocalToolCall("termux_command", fallbackArgs)
+                        transcript.add("system: ${emptyCommandFallback.reason}")
+                        callToExecute = LocalToolCall("termux_command", emptyCommandFallback.args)
+                        demoFallbackTargetPath = emptyCommandFallback.targetPath
                     } else if (!rejectedEmptyTermuxCommand) {
                         rejectedEmptyTermuxCommand = true
                         val rejected = JSONObject()
@@ -128,7 +133,7 @@ class LocalAgentController(
                     latestScreenshotPath = path
                 }
                 if (callToExecute.name == "termux_command" && result.optBoolean("ok", false) && callToExecute !== call) {
-                    val target = fallbackTargetPath(userText)
+                    val target = demoFallbackTargetPath ?: "/sdcard/Download/openclaw-project"
                     val message = "Done. I created the HTML project at `$target/index.html` and opened it in the browser."
                     emitAssistant(sessionKey, runId, message)
                     return message
@@ -376,188 +381,6 @@ class LocalAgentController(
         args.optString("command")
             .ifBlank { args.optString("cmd") }
             .ifBlank { args.optString("script") }
-
-    private fun buildFallbackTermuxCommand(userText: String): JSONObject? {
-        val text = userText.lowercase()
-        val isHtmlProject = listOf("html", "website", "project", "index.html").any { text.contains(it) }
-        val wantsTermuxOrSharedStorage = listOf("termux", "terminal", "shell", "/sdcard/").any { text.contains(it) }
-        if (!isHtmlProject || !wantsTermuxOrSharedStorage) return null
-
-        val targetDir = fallbackTargetPath(userText)
-        val html = if (text.contains("calculator")) calculatorHtml() else genericHtml(userText)
-        val indexPath = "$targetDir/index.html"
-        val command = listOf(
-            "mkdir -p ${shellQuote(targetDir)}",
-            "cat > ${shellQuote(indexPath)} <<'EOF'",
-            html,
-            "EOF",
-            "/system/bin/am start -a android.intent.action.VIEW -d ${shellQuote("file://$indexPath")} -t text/html"
-        ).joinToString("\n")
-        return JSONObject()
-            .put("command", command)
-            .put("timeoutMs", 120_000L)
-    }
-
-    private fun shouldReplaceTermuxCommand(userText: String, args: JSONObject): Boolean {
-        val user = userText.lowercase()
-        val command = termuxCommandText(args).lowercase()
-        val asksForCalculatorHtml = user.contains("calculator") && user.contains("html")
-        val asksToOpenBrowser = user.contains("browser") || user.contains("open it") || user.contains("open the website")
-        val commandOpensBrowser = command.contains("am start") || command.contains("termux-open") || command.contains("xdg-open")
-        return asksForCalculatorHtml || (asksToOpenBrowser && command.isNotBlank() && !commandOpensBrowser)
-    }
-
-    private fun fallbackTargetPath(userText: String): String =
-        Regex("""(/sdcard/[^\s"'`]+)""")
-            .find(userText)
-            ?.value
-            ?.trimEnd(',', '.', ';', ':', ')')
-            ?: "/sdcard/Download/openclaw-project"
-
-    private fun shellQuote(value: String): String =
-        "'${value.replace("'", "'\"'\"'")}'"
-
-    private fun calculatorHtml(): String =
-        """
-        <!doctype html>
-        <html lang="en">
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>OpenClaw Calculator</title>
-          <style>
-            * { box-sizing: border-box; }
-            body {
-              margin: 0;
-              min-height: 100vh;
-              display: grid;
-              place-items: center;
-              font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-              background: linear-gradient(135deg, #101827, #25324a);
-              color: white;
-            }
-            .calculator {
-              width: min(92vw, 380px);
-              padding: 20px;
-              border-radius: 24px;
-              background: rgba(255,255,255,0.08);
-              box-shadow: 0 24px 70px rgba(0,0,0,0.35);
-              backdrop-filter: blur(16px);
-            }
-            .display {
-              width: 100%;
-              min-height: 82px;
-              margin-bottom: 16px;
-              padding: 18px;
-              border: 0;
-              border-radius: 18px;
-              background: rgba(0,0,0,0.35);
-              color: white;
-              font-size: 2.1rem;
-              text-align: right;
-            }
-            .keys {
-              display: grid;
-              grid-template-columns: repeat(4, 1fr);
-              gap: 10px;
-            }
-            button {
-              min-height: 62px;
-              border: 0;
-              border-radius: 16px;
-              font-size: 1.25rem;
-              color: white;
-              background: rgba(255,255,255,0.14);
-            }
-            button:active { transform: scale(0.97); }
-            .op { background: #3867ff; }
-            .danger { background: #e5484d; }
-            .equals { background: #26a269; grid-column: span 2; }
-          </style>
-        </head>
-        <body>
-          <main class="calculator" aria-label="Calculator">
-            <input id="display" class="display" value="0" readonly>
-            <section class="keys">
-              <button class="danger" data-action="clear">C</button>
-              <button data-action="backspace">DEL</button>
-              <button data-value="%">%</button>
-              <button class="op" data-value="/">/</button>
-              <button data-value="7">7</button>
-              <button data-value="8">8</button>
-              <button data-value="9">9</button>
-              <button class="op" data-value="*">*</button>
-              <button data-value="4">4</button>
-              <button data-value="5">5</button>
-              <button data-value="6">6</button>
-              <button class="op" data-value="-">-</button>
-              <button data-value="1">1</button>
-              <button data-value="2">2</button>
-              <button data-value="3">3</button>
-              <button class="op" data-value="+">+</button>
-              <button data-value="0">0</button>
-              <button data-value=".">.</button>
-              <button class="equals" data-action="equals">=</button>
-            </section>
-          </main>
-          <script>
-            const display = document.querySelector('#display');
-            let expression = '';
-            function render() { display.value = expression || '0'; }
-            document.querySelector('.keys').addEventListener('click', event => {
-              const button = event.target.closest('button');
-              if (!button) return;
-              if (button.dataset.value) {
-                expression += button.dataset.value;
-                render();
-                return;
-              }
-              if (button.dataset.action === 'clear') {
-                expression = '';
-                render();
-                return;
-              }
-              if (button.dataset.action === 'backspace') {
-                expression = expression.slice(0, -1);
-                render();
-                return;
-              }
-              if (button.dataset.action === 'equals') {
-                try {
-                  const result = Function('"use strict"; return (' + expression + ')')();
-                  expression = Number.isFinite(result) ? String(result) : 'Error';
-                } catch (_) {
-                  expression = 'Error';
-                }
-                render();
-              }
-            });
-          </script>
-        </body>
-        </html>
-        """.trimIndent()
-
-    private fun genericHtml(userText: String): String =
-        """
-        <!doctype html>
-        <html lang="en">
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>OpenClaw Project</title>
-          <style>
-            body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: system-ui, sans-serif; background: #101827; color: white; }
-            main { max-width: 720px; padding: 32px; }
-          </style>
-        </head>
-        <body>
-          <main>
-            <h1>OpenClaw Project</h1>
-            <p>${userText.take(500)}</p>
-          </main>
-        </body>
-        </html>
-        """.trimIndent()
 
     companion object {
         private const val TAG = "LocalAgentController"

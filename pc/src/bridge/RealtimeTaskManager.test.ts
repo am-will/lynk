@@ -253,6 +253,27 @@ test("stop_phone_task cancels active and queued realtime phone tasks", async () 
   first.resolve({ finalMessage: "Settings opened late" });
 });
 
+test("failDevice stops active realtime work and emits failed results", async () => {
+  const first = new Deferred<AgentRunResult>();
+  const { dispatcher, manager, messages } = createHarness();
+  dispatcher.results = [first.promise];
+
+  await manager.handleToolCall(toolCall("call_1", "Open Settings"));
+  await manager.handleToolCall(toolCall("call_2", "Open Messages"));
+  await manager.failDevice("pixel", "Phone WebSocket disconnected");
+
+  assert.deepEqual(dispatcher.stopReasons, ["Phone WebSocket disconnected"]);
+  assert.equal(results(messages).find((message) => message.callId === "call_1")?.status, "failed");
+  assert.equal(results(messages).find((message) => message.callId === "call_2")?.status, "failed");
+  assert.equal(messages.filter((message) => message.type === "realtime.task_status").at(-1)?.running, false);
+  assert.equal(messages.filter((message) => message.type === "realtime.task_status").at(-1)?.queued, 0);
+
+  const resultCount = results(messages).length;
+  first.resolve({ finalMessage: "Settings opened late" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(results(messages).length, resultCount);
+});
+
 test("steer_phone_task injects guidance into active turn", async () => {
   const first = new Deferred<AgentRunResult>();
   const { dispatcher, manager, messages } = createHarness();

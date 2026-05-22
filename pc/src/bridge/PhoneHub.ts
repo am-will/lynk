@@ -10,7 +10,8 @@ import {
   type RegisterMessage,
   type RealtimeOutboundMessage,
   type ResultMessage,
-  newCommandId
+  newCommandId,
+  validatePhoneOutboundMessage
 } from "../protocol/messages.js";
 import type { AuditLog } from "./AuditLog.js";
 
@@ -77,6 +78,7 @@ export class PhoneHub {
     if (!phone || phone.socket.readyState !== WebSocket.OPEN) {
       throw new Error(`Phone ${deviceId} is not connected`);
     }
+    validatePhoneOutboundMessage(message);
     phone.socket.send(JSON.stringify(message));
   }
 
@@ -94,6 +96,7 @@ export class PhoneHub {
       command: request.command,
       args: request.args ?? {}
     };
+    validatePhoneOutboundMessage(message);
 
     const timeoutMs = request.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.audit?.record("phone_command_sent", deviceId, {
@@ -170,11 +173,13 @@ export class PhoneHub {
     const targets = deviceId ? [this.phones.get(deviceId)].filter(Boolean) : [...this.phones.values()];
     for (const phone of targets) {
       if (phone && phone.socket.readyState === WebSocket.OPEN) {
+        const statusMessage = {
+          type: "agent_status",
+          ...message
+        } satisfies AgentStatusMessage;
+        validatePhoneOutboundMessage(statusMessage);
         phone.socket.send(
-          JSON.stringify({
-            type: "agent_status",
-            ...message
-          } satisfies AgentStatusMessage)
+          JSON.stringify(statusMessage)
         );
       }
     }

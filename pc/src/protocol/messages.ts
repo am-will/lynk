@@ -22,6 +22,57 @@ export const PHONE_COMMANDS = [
 export const phoneCommandSchema = z.enum(PHONE_COMMANDS);
 export type PhoneCommand = z.infer<typeof phoneCommandSchema>;
 
+export const MCP_PHONE_TOOL_NAMES = {
+  observe: "phone_observe",
+  openApp: "phone_open_app",
+  tapNode: "phone_tap_node",
+  tapXy: "phone_tap_xy",
+  tapNormalized: "phone_tap_normalized",
+  longPressNode: "phone_long_press_node",
+  typeText: "phone_type_text",
+  submitText: "phone_submit_text",
+  scroll: "phone_scroll",
+  swipe: "phone_swipe",
+  pressBack: "phone_press_back",
+  pressHome: "phone_press_home",
+  openRecents: "phone_open_recents",
+  takeScreenshot: "phone_take_screenshot",
+  askUserConfirmation: "phone_ask_user_confirmation",
+  wait: "phone_wait"
+} as const;
+
+export const MCP_PHONE_TOOL_NAME_BY_COMMAND = {
+  observe_screen: MCP_PHONE_TOOL_NAMES.observe,
+  open_app: MCP_PHONE_TOOL_NAMES.openApp,
+  tap_node: MCP_PHONE_TOOL_NAMES.tapNode,
+  tap_xy: MCP_PHONE_TOOL_NAMES.tapXy,
+  tap_normalized: MCP_PHONE_TOOL_NAMES.tapNormalized,
+  long_press_node: MCP_PHONE_TOOL_NAMES.longPressNode,
+  type_text: MCP_PHONE_TOOL_NAMES.typeText,
+  submit_text: MCP_PHONE_TOOL_NAMES.submitText,
+  scroll: MCP_PHONE_TOOL_NAMES.scroll,
+  swipe: MCP_PHONE_TOOL_NAMES.swipe,
+  press_back: MCP_PHONE_TOOL_NAMES.pressBack,
+  press_home: MCP_PHONE_TOOL_NAMES.pressHome,
+  open_recents: MCP_PHONE_TOOL_NAMES.openRecents,
+  take_screenshot: MCP_PHONE_TOOL_NAMES.takeScreenshot,
+  ask_user_confirmation: MCP_PHONE_TOOL_NAMES.askUserConfirmation,
+  wait: MCP_PHONE_TOOL_NAMES.wait
+} as const satisfies Record<PhoneCommand, string>;
+
+export const REALTIME_TOOL_NAMES = {
+  delegateOpenClawTask: "delegate_openclaw_task",
+  runPhoneTask: "run_phone_task",
+  steerOpenClawTask: "steer_openclaw_task",
+  steerPhoneTask: "steer_phone_task",
+  stopOpenClawTask: "stop_openclaw_task",
+  stopPhoneTask: "stop_phone_task",
+  hangUpRealtime: "hang_up_realtime",
+  webSearch: "web_search"
+} as const;
+
+export type RealtimeToolName = typeof REALTIME_TOOL_NAMES[keyof typeof REALTIME_TOOL_NAMES];
+
 export const AGENT_MODEL_IDS = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.2"] as const;
 export const REASONING_EFFORTS = ["low", "medium", "high", "xhigh"] as const;
 
@@ -506,6 +557,321 @@ export type ChatOutboundMessage =
   | ChatUsageMessage;
 
 export type PhoneOutboundMessage = CommandMessage | AgentStatusMessage | RealtimeOutboundMessage | ChatOutboundMessage;
+
+export const realtimeSdpMessageSchema = z.object({
+  type: z.literal("realtime.sdp"),
+  deviceId: z.string().min(1),
+  sdp: z.string().min(1)
+});
+
+export const realtimeTranscriptDeltaMessageSchema = z.object({
+  type: z.literal("realtime.transcript_delta"),
+  deviceId: z.string().min(1),
+  role: z.string().min(1),
+  delta: z.string(),
+  text: z.string().optional(),
+  isFinal: z.boolean(),
+  itemId: z.string().optional().nullable()
+});
+
+export const realtimeItemAddedMessageSchema = z.object({
+  type: z.literal("realtime.item_added"),
+  deviceId: z.string().min(1),
+  item: z.unknown()
+});
+
+export const realtimeSpeechStartedMessageSchema = z.object({
+  type: z.literal("realtime.speech_started"),
+  deviceId: z.string().min(1),
+  role: z.string().optional(),
+  itemId: z.string().optional().nullable()
+});
+
+export const realtimeErrorMessageSchema = z.object({
+  type: z.literal("realtime.error"),
+  deviceId: z.string().min(1),
+  message: z.string()
+});
+
+export const realtimeClosedMessageSchema = z.object({
+  type: z.literal("realtime.closed"),
+  deviceId: z.string().min(1),
+  reason: z.string().nullable()
+});
+
+export const realtimeToolResultMessageSchema = z.object({
+  type: z.literal("realtime.tool_result"),
+  deviceId: z.string().min(1),
+  callId: z.string().min(1),
+  ok: z.boolean(),
+  output: z.string().optional(),
+  error: z.string().optional(),
+  status: z.enum(["completed", "failed", "timeout", "cancelled"]),
+  createResponse: z.boolean().optional()
+});
+
+export const realtimeTaskStatusMessageSchema = z.object({
+  type: z.literal("realtime.task_status"),
+  deviceId: z.string().min(1),
+  running: z.boolean(),
+  queued: z.number().int().nonnegative(),
+  currentTask: z.string().optional().nullable(),
+  completed: z.number().int().nonnegative().optional(),
+  failed: z.number().int().nonnegative().optional()
+});
+
+export const realtimeOutboundMessageSchema = z.discriminatedUnion("type", [
+  realtimeSdpMessageSchema,
+  realtimeTranscriptDeltaMessageSchema,
+  realtimeItemAddedMessageSchema,
+  realtimeSpeechStartedMessageSchema,
+  realtimeErrorMessageSchema,
+  realtimeClosedMessageSchema,
+  realtimeToolResultMessageSchema,
+  realtimeTaskStatusMessageSchema
+]);
+
+export const chatHistoryMessageSchema = z.object({
+  id: z.string().optional().nullable(),
+  role: z.string().min(1),
+  text: z.string(),
+  timestamp: z.number().optional().nullable()
+});
+
+export const chatSessionSummarySchema = z.object({
+  key: z.string().min(1),
+  sessionId: z.string().optional().nullable(),
+  label: z.string().optional().nullable(),
+  displayName: z.string().optional().nullable(),
+  updatedAt: z.number().optional().nullable(),
+  model: z.string().optional().nullable(),
+  modelProvider: z.string().optional().nullable(),
+  contextTokens: z.number().optional().nullable(),
+  inputTokens: z.number().optional().nullable(),
+  outputTokens: z.number().optional().nullable(),
+  totalTokens: z.number().optional().nullable(),
+  estimatedCostUsd: z.number().optional().nullable(),
+  fastMode: z.boolean().optional().nullable(),
+  hasActiveRun: z.boolean().optional().nullable(),
+  thinkingLevel: z.string().optional().nullable(),
+  reasoningLevel: z.string().optional().nullable(),
+  verboseLevel: z.string().optional().nullable()
+});
+
+export const chatModelOptionSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  provider: z.string().optional().nullable(),
+  contextWindow: z.number().optional().nullable(),
+  available: z.boolean().optional().nullable()
+});
+
+export const chatReasoningOptionSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1)
+});
+
+export const chatCommandOptionSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional().nullable(),
+  category: z.string().optional().nullable(),
+  textAliases: z.array(z.string()).optional(),
+  source: z.string().optional().nullable(),
+  acceptsArgs: z.boolean().optional(),
+  args: z.array(z.object({
+    name: z.string().min(1),
+    description: z.string().optional().nullable(),
+    type: z.string().optional().nullable(),
+    required: z.boolean().optional().nullable()
+  })).optional()
+});
+
+export const chatToolSummarySchema = z.object({
+  id: z.string().min(1),
+  label: z.string().optional().nullable(),
+  description: z.string().optional().nullable(),
+  source: z.string().optional().nullable(),
+  group: z.string().optional().nullable()
+});
+
+export const chatUsageSummarySchema = z.object({
+  inputTokens: z.number().optional().nullable(),
+  outputTokens: z.number().optional().nullable(),
+  totalTokens: z.number().optional().nullable(),
+  contextTokens: z.number().optional().nullable(),
+  estimatedCostUsd: z.number().optional().nullable()
+});
+
+export const chatStateMessageSchema = z.object({
+  type: z.literal("chat.state"),
+  deviceId: z.string().min(1),
+  sessionKey: z.string().min(1),
+  sessionId: z.string().optional().nullable(),
+  runId: z.string().optional().nullable(),
+  isRunning: z.boolean(),
+  status: z.string().optional().nullable(),
+  model: z.string().optional().nullable(),
+  reasoningEffort: z.string().optional().nullable(),
+  reasoningStream: z.boolean().optional().nullable(),
+  fastMode: z.boolean().optional().nullable(),
+  verboseLevel: z.string().optional().nullable()
+});
+
+export const chatHistoryOutboundMessageSchema = z.object({
+  type: z.literal("chat.history"),
+  deviceId: z.string().min(1),
+  sessionKey: z.string().min(1),
+  sessionId: z.string().optional().nullable(),
+  messages: z.array(chatHistoryMessageSchema)
+});
+
+export const chatMessageOutboundMessageSchema = z.object({
+  type: z.literal("chat.message"),
+  deviceId: z.string().min(1),
+  sessionKey: z.string().min(1),
+  sessionId: z.string().optional().nullable(),
+  message: chatHistoryMessageSchema
+});
+
+export const chatDeltaMessageSchema = z.object({
+  type: z.literal("chat.delta"),
+  deviceId: z.string().min(1),
+  sessionKey: z.string().min(1),
+  runId: z.string().min(1),
+  delta: z.string(),
+  replace: z.boolean().optional()
+});
+
+export const chatReasoningDeltaMessageSchema = z.object({
+  type: z.literal("chat.reasoning_delta"),
+  deviceId: z.string().min(1),
+  sessionKey: z.string().min(1),
+  runId: z.string().min(1),
+  delta: z.string(),
+  replace: z.boolean().optional()
+});
+
+export const chatReasoningClearMessageSchema = z.object({
+  type: z.literal("chat.reasoning_clear"),
+  deviceId: z.string().min(1),
+  sessionKey: z.string().min(1),
+  runId: z.string().optional().nullable()
+});
+
+export const chatFinalMessageSchema = z.object({
+  type: z.literal("chat.final"),
+  deviceId: z.string().min(1),
+  sessionKey: z.string().min(1),
+  runId: z.string().min(1),
+  text: z.string(),
+  usage: z.unknown().optional()
+});
+
+export const chatErrorMessageSchema = z.object({
+  type: z.literal("chat.error"),
+  deviceId: z.string().min(1),
+  sessionKey: z.string().optional(),
+  runId: z.string().optional(),
+  message: z.string()
+});
+
+export const chatReplyAvailableMessageSchema = z.object({
+  type: z.literal("chat.reply_available"),
+  deviceId: z.string().min(1),
+  sessionKey: z.string().min(1),
+  runId: z.string().min(1),
+  status: z.enum(["completed", "failed"]),
+  textPreview: z.string().optional().nullable(),
+  sessionId: z.string().optional().nullable(),
+  sessionLabel: z.string().optional().nullable(),
+  sessionDisplayName: z.string().optional().nullable()
+});
+
+export const chatToolEventMessageSchema = z.object({
+  type: z.literal("chat.tool_event"),
+  deviceId: z.string().min(1),
+  sessionKey: z.string().min(1),
+  runId: z.string().optional().nullable(),
+  eventId: z.string().min(1),
+  toolName: z.string().min(1),
+  title: z.string(),
+  status: z.enum(["running", "completed", "failed", "blocked", "info"]),
+  summary: z.string().optional().nullable(),
+  args: z.unknown().optional(),
+  output: z.unknown().optional(),
+  error: z.string().optional().nullable(),
+  raw: z.unknown().optional()
+});
+
+export const chatModelsMessageSchema = z.object({
+  type: z.literal("chat.models"),
+  deviceId: z.string().min(1),
+  models: z.array(chatModelOptionSchema),
+  reasoningOptions: z.array(chatReasoningOptionSchema)
+});
+
+export const chatCommandsMessageSchema = z.object({
+  type: z.literal("chat.commands"),
+  deviceId: z.string().min(1),
+  commands: z.array(chatCommandOptionSchema)
+});
+
+export const chatToolsMessageSchema = z.object({
+  type: z.literal("chat.tools"),
+  deviceId: z.string().min(1),
+  sessionKey: z.string().min(1),
+  tools: z.array(chatToolSummarySchema)
+});
+
+export const chatSessionsMessageSchema = z.object({
+  type: z.literal("chat.sessions"),
+  deviceId: z.string().min(1),
+  sessions: z.array(chatSessionSummarySchema),
+  selectedSessionKey: z.string().min(1)
+});
+
+export const chatUsageMessageSchema = z.object({
+  type: z.literal("chat.usage"),
+  deviceId: z.string().min(1),
+  sessionKey: z.string().min(1),
+  usage: chatUsageSummarySchema
+});
+
+export const chatOutboundMessageSchema = z.discriminatedUnion("type", [
+  chatStateMessageSchema,
+  chatHistoryOutboundMessageSchema,
+  chatMessageOutboundMessageSchema,
+  chatDeltaMessageSchema,
+  chatReasoningDeltaMessageSchema,
+  chatReasoningClearMessageSchema,
+  chatFinalMessageSchema,
+  chatErrorMessageSchema,
+  chatReplyAvailableMessageSchema,
+  chatToolEventMessageSchema,
+  chatModelsMessageSchema,
+  chatCommandsMessageSchema,
+  chatToolsMessageSchema,
+  chatSessionsMessageSchema,
+  chatUsageMessageSchema
+]);
+
+export const phoneOutboundMessageSchema = z.union([
+  commandMessageSchema,
+  agentStatusMessageSchema,
+  realtimeOutboundMessageSchema,
+  chatOutboundMessageSchema
+]);
+
+export function validatePhoneOutboundMessage(message: PhoneOutboundMessage): void {
+  if (process.env.NODE_ENV === "production" || process.env.PHONE_AGENT_VALIDATE_OUTBOUND === "0") {
+    return;
+  }
+  const result = phoneOutboundMessageSchema.safeParse(message);
+  if (!result.success) {
+    const issues = result.error.issues.map((issue) => `${issue.path.join(".") || "<root>"}: ${issue.message}`).join("; ");
+    throw new Error(`Invalid outbound phone message: ${issues}`);
+  }
+}
 
 export interface PhoneCommandRequest {
   deviceId?: string;

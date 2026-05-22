@@ -109,8 +109,8 @@ class AgentForegroundService : Service() {
             onStopTranscription = { stopComposerTranscription() },
             onCancelTranscription = { cancelComposerTranscription() },
             onSelectChatSession = { sessionKey ->
-                connectAgentClient()
-                chatClient?.selectSession(sessionKey)
+                val route = routeForSessionKey(sessionKey)
+                connectAgentClient(routeOverride = route).selectSession(sessionKey)
                 markChatSessionRead(sessionKey)
             },
             onNewChatSession = { startNewChatFromUi() },
@@ -118,8 +118,10 @@ class AgentForegroundService : Service() {
                 setChatModelFromUi(model)
             },
             onSetChatReasoning = { reasoning ->
-                connectAgentClient()
-                chatClient?.setReasoning(chatState.sessionKey, reasoning)
+                val config = AgentConfigStore.load(this)
+                val model = selectedChatModel(config)
+                val route = routeForModel(model, config)
+                connectAgentClient(model).setReasoning(sessionKeyForRoute(route), reasoning)
             },
             onChatControlCommand = { command, args -> submitChatControlCommand(command, args) },
             onToggleChatTool = { eventId ->
@@ -192,15 +194,19 @@ class AgentForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun connectAgentClient(modelOverride: String? = null): AgentChatClient? {
+    private fun connectAgentClient(
+        modelOverride: String? = null,
+        routeOverride: ChatClientRoute? = null
+    ): AgentChatClient {
         val config = AgentConfigStore.load(this)
-        val route = routeForModel(modelOverride ?: selectedChatModel(config), config)
-        if (chatClient != null && chatClientRoute == route) {
-            return chatClient
+        val route = routeOverride ?: routeForModel(modelOverride ?: selectedChatModel(config), config)
+        val currentClient = chatClient
+        if (currentClient != null && chatClientRoute == route) {
+            return currentClient
         }
         chatClientRoute = route
-        chatClient?.close()
-        chatClient = when (route) {
+        currentClient?.close()
+        val nextClient = when (route) {
             ChatClientRoute.Host -> HostAgentChatClient(connectWebSocket(config))
             ChatClientRoute.Local -> {
                 webSocketClient?.close()
@@ -216,7 +222,8 @@ class AgentForegroundService : Service() {
                 ).also { it.open(sessionKeyForRoute(ChatClientRoute.Local)) }
             }
         }
-        return chatClient
+        chatClient = nextClient
+        return nextClient
     }
 
     private fun connectWebSocket(config: AgentConfig = AgentConfigStore.load(this)): PhoneWebSocketClient {
@@ -296,6 +303,24 @@ class AgentForegroundService : Service() {
         }
     }
 
+    private fun routeForSessionKey(
+        sessionKey: String,
+        config: AgentConfig = AgentConfigStore.load(this)
+    ): ChatClientRoute {
+        return if (sessionKey.startsWith("local:") && isExperimentalLocalModelAvailable(config)) {
+            ChatClientRoute.Local
+        } else {
+            ChatClientRoute.Host
+        }
+    }
+
+    private fun activeChatRoute(config: AgentConfig = AgentConfigStore.load(this)): ChatClientRoute {
+        chatState.sessionKey?.takeIf { it.isNotBlank() }?.let { sessionKey ->
+            return routeForSessionKey(sessionKey, config)
+        }
+        return routeForModel(selectedChatModel(config), config)
+    }
+
     private fun commandExecutor(): AccessibilityCommandExecutor {
         return commandExecutor ?: AccessibilityCommandExecutor(this, overlayController).also {
             commandExecutor = it
@@ -325,12 +350,12 @@ class AgentForegroundService : Service() {
         val selectedModel = selectedChatModel(requestConfig)
         val route = routeForModel(selectedModel, requestConfig)
         val client = connectAgentClient(selectedModel)
-        val sent = client?.send(
+        val sent = client.send(
             text = text,
             sessionKey = sessionKeyForRoute(route),
             model = modelForRoute(selectedModel, route, requestConfig),
             reasoningEffort = chatState.reasoningEffort ?: requestConfig.reasoningEffort
-        ) == true
+        )
         if (sent) {
             lastNotificationText = if (route == ChatClientRoute.Local) "Sent to local model" else "Sent to OpenClaw"
             isAgentTurnActive = true
@@ -356,7 +381,7 @@ class AgentForegroundService : Service() {
             error = null
         )
         overlayController?.setChatState(chatState)
-        connectAgentClient(model)?.setModel(sessionKeyForRoute(route), modelForRoute(model, route, config))
+        connectAgentClient(model).setModel(sessionKeyForRoute(route), modelForRoute(model, route, config))
         lastNotificationText = chatState.status ?: lastNotificationText
         updateNotification()
     }
@@ -376,7 +401,7 @@ class AgentForegroundService : Service() {
             status = "Running $slashText"
         )
         overlayController?.setChatState(chatState)
-        chatClient?.controlCommand(slashText, JSONObject())
+        connectAgentClient(routeOverride = activeChatRoute()).controlCommand(slashText, JSONObject())
         lastNotificationText = "Running $slashText"
         isAgentTurnActive = command != "status"
         updateNotification()
@@ -391,8 +416,7 @@ class AgentForegroundService : Service() {
             lastNotificationText = notice
             updateNotification()
         }
-        connectAgentClient()
-        chatClient?.controlCommand(command, args)
+        connectAgentClient(routeOverride = activeChatRoute()).controlCommand(command, args)
     }
 
     private fun startNewChatFromUi() {
@@ -418,8 +442,7 @@ class AgentForegroundService : Service() {
         val config = AgentConfigStore.load(this)
         val selectedModel = selectedChatModel(config)
         val route = routeForModel(selectedModel, config)
-        connectAgentClient(selectedModel)
-        chatClient?.newSession(model = modelForRoute(selectedModel, route, config))
+        connectAgentClient(selectedModel).newSession(model = modelForRoute(selectedModel, route, config))
         lastNotificationText = "Started a new chat"
         isAgentTurnActive = false
         updateNotification()
@@ -495,15 +518,15 @@ class AgentForegroundService : Service() {
         val config = AgentConfigStore.load(this)
         val model = selectedChatModel(config)
         val route = routeForModel(model, config)
-        connectAgentClient(model)?.open(sessionKeyForRoute(route))
+        connectAgentClient(model).open(sessionKeyForRoute(route))
     }
 
     private fun openChatSessionFromNotification(
         sessionKey: String,
         presentation: PanelPresentation
     ) {
-        connectAgentClient()
-        chatClient?.selectSession(sessionKey)
+        val route = routeForSessionKey(sessionKey)
+        connectAgentClient(routeOverride = route).selectSession(sessionKey)
         markChatSessionRead(sessionKey)
         cancelReplyNotification(sessionKey)
         if (Settings.canDrawOverlays(this)) {
@@ -612,12 +635,13 @@ class AgentForegroundService : Service() {
     }
 
     private fun requestStopTurn(reason: String) {
-        connectAgentClient()
+        val route = activeChatRoute()
+        val client = connectAgentClient(routeOverride = route)
         overlayController?.setStatus("Stop requested")
         lastNotificationText = "Stopping active turn..."
         isAgentTurnActive = true
         updateNotification()
-        chatClient?.stop(sessionKeyForRoute(chatClientRoute ?: ChatClientRoute.Host), chatState.activeRunId, reason)
+        client.stop(sessionKeyForRoute(route), chatState.activeRunId, reason)
         if (chatClientRoute != ChatClientRoute.Local) {
             webSocketClient?.sendStopRequest(reason)
         }

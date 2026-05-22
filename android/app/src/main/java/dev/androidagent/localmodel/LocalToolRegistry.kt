@@ -17,41 +17,9 @@ class LocalToolRegistry(
 ) {
     private val termuxRunner = TermuxCommandRunner(context.applicationContext)
 
-    private val phoneTools = mapOf(
-        "phone_observe" to "observe_screen",
-        "phone_open_app" to "open_app",
-        "phone_tap_node" to "tap_node",
-        "phone_tap_xy" to "tap_xy",
-        "phone_tap_normalized" to "tap_normalized",
-        "phone_long_press_node" to "long_press_node",
-        "phone_type_text" to "type_text",
-        "phone_scroll" to "scroll",
-        "phone_swipe" to "swipe",
-        "phone_press_back" to "press_back",
-        "phone_press_home" to "press_home",
-        "phone_open_recents" to "open_recents",
-        "phone_take_screenshot" to "take_screenshot",
-        "phone_submit_text" to "submit_text",
-        "phone_ask_user_confirmation" to "ask_user_confirmation",
-        "phone_wait" to "wait"
-    )
+    private val phoneTools = LocalToolSpecs.phoneCommandsByToolId
 
-    fun toolDescriptions(): JSONArray = JSONArray()
-        .put(tool("phone_observe", "Observe the current Android screen.", "phone"))
-        .put(tool("phone_open_app", "Open an Android app. Args: packageName for an exact package, or appName for a launcher label.", "phone"))
-        .put(tool("phone_tap_node", "Tap an observed accessibility node by nodeId.", "phone"))
-        .put(tool("phone_tap_normalized", "Tap a visual screen coordinate from a screenshot. Args: xPct and yPct as 0.0-1.0 fractions from the top-left corner.", "phone"))
-        .put(tool("phone_tap_xy", "Tap an absolute screen coordinate in pixels. Args: x and y.", "phone"))
-        .put(tool("phone_type_text", "Type text into the focused field.", "phone"))
-        .put(tool("phone_scroll", "Scroll the active screen up, down, left, or right.", "phone"))
-        .put(tool("phone_take_screenshot", "Capture an Android screenshot. In local mode, the latest screenshot image is attached to the next model round when the selected model supports vision.", "phone"))
-        .put(tool("phone_submit_text", "Submit the focused search/text field using IME enter or a keyboard fallback tap.", "phone"))
-        .put(tool("phone_ask_user_confirmation", "Ask the user to confirm a sensitive action.", "phone"))
-        .put(tool("local_list_files", "List files in the local app workspace.", "workspace"))
-        .put(tool("local_read_file", "Read a UTF-8 text file from the local app-private workspace. Args: path.", "workspace"))
-        .put(tool("local_write_file", "Write a UTF-8 text file in the local app-private workspace. Args: path and non-empty text. Do not use this for files the user wants to open in another phone app or browser.", "workspace"))
-        .put(tool("local_search_files", "Search UTF-8 files in the local app workspace.", "workspace"))
-        .put(tool("termux_command", "Run a shell command in Termux. Args: command, optional workdir/cwd, optional timeoutMs. Use this for browser-openable files and phone-accessible projects; choose the shell command yourself.", "developer"))
+    fun toolDescriptions() = LocalToolSpecs.descriptions()
 
     suspend fun execute(call: LocalToolCall): JSONObject {
         val phoneCommand = phoneTools[call.name]
@@ -209,6 +177,4 @@ class LocalToolRegistry(
         return file.canonicalFile.relativeTo(root).path.ifBlank { "." }
     }
 
-    private fun tool(id: String, description: String, group: String): JSONObject =
-        JSONObject().put("id", id).put("label", id).put("description", description).put("source", "local").put("group", group)
 }

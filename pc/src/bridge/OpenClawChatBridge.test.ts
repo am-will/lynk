@@ -30,6 +30,7 @@ class FakeGatewayClient {
   models: Array<Record<string, unknown>> = [];
   commands: Array<Record<string, unknown>> = [];
   readonly duplicateLabels = new Set<string>();
+  sendError?: Error;
   private runCount = 0;
 
   addEventListener(handler: GatewayEventHandler): () => void {
@@ -42,6 +43,9 @@ class FakeGatewayClient {
   }
 
   async sendChat(options: { sessionKey: string; message: string; thinking?: string; idempotencyKey?: string }): Promise<{ runId: string; sessionKey: string }> {
+    if (this.sendError) {
+      throw this.sendError;
+    }
     this.runCount += 1;
     this.sent.push(options);
     return { runId: `run_${this.runCount}`, sessionKey: options.sessionKey };
@@ -112,6 +116,10 @@ function createHarness() {
   const client = new FakeGatewayClient();
   const bridge = new OpenClawChatBridge(config, hub, dispatcher, undefined, client);
   return { bridge, chatMessages, client, fallbackCalls };
+}
+
+function defaultSessionKey(deviceId: string): string {
+  return `agent:main:explicit:open-claw-agent-${deviceId}`;
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {
@@ -242,6 +250,40 @@ test("explicit phone chat uses gateway session so session fast mode applies", as
   assert.equal(client.sent[0]?.thinking, "low");
 });
 
+test("gateway fallback preserves explicit phone task kind", async () => {
+  const { bridge, client, fallbackCalls } = createHarness();
+  client.sendError = new Error("gateway unavailable");
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Open the Settings app on my phone"
+  });
+
+  assert.equal(fallbackCalls.length, 1);
+  assert.deepEqual((fallbackCalls[0] as unknown[])[1], { taskKind: "phone" });
+});
+
+test("default gateway chat sessions are scoped per device", async () => {
+  const { bridge, client } = createHarness();
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Summarize my project"
+  });
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "fold",
+    text: "Summarize my project"
+  });
+
+  assert.deepEqual(client.sent.map((entry) => entry.sessionKey), [
+    defaultSessionKey("pixel"),
+    defaultSessionKey("fold")
+  ]);
+});
+
 test("realtime phone requests include fast phone loop guidance in gateway run", async () => {
   const { bridge, client } = createHarness();
 
@@ -327,7 +369,7 @@ test("reasoning and model changes do not append chat messages", async () => {
 test("model metadata refresh does not clobber selected model override", async () => {
   const { bridge, chatMessages, client } = createHarness();
   client.sessions = [{
-    key: config.openClawChatSessionKey,
+    key: defaultSessionKey("pixel"),
     sessionId: "session_1",
     model: "gpt-5.5"
   }];
@@ -364,7 +406,7 @@ test("model metadata does not override the selected session model by list order"
     available: true
   }];
   client.sessions = [{
-    key: config.openClawChatSessionKey,
+    key: defaultSessionKey("pixel"),
     sessionId: "session_1",
     model: "gpt-5.4"
   }];
@@ -381,7 +423,7 @@ test("model metadata does not override the selected session model by list order"
 test("static Android fallback model does not override connected model id", async () => {
   const { bridge, client } = createHarness();
   client.sessions = [{
-    key: config.openClawChatSessionKey,
+    key: defaultSessionKey("pixel"),
     sessionId: "session_1",
     model: "openai-codex/gpt-5.5"
   }];

@@ -1,5 +1,6 @@
 import type { AgentRunResult, AgentTaskKind } from "../dispatcher/AgentClient.js";
 import type { Dispatcher } from "../dispatcher/dispatcher.js";
+import { REALTIME_TOOL_NAMES } from "../protocol/messages.js";
 import type { PhoneLocation, RealtimeOutboundMessage, RealtimeToolCallMessage, RealtimeToolResultMessage, UserRequestMessage } from "../protocol/messages.js";
 import type { AuditLog } from "./AuditLog.js";
 
@@ -81,17 +82,17 @@ export class RealtimeTaskManager {
       return;
     }
 
-    if (message.name === "stop_phone_task" || message.name === "stop_openclaw_task") {
+    if (message.name === REALTIME_TOOL_NAMES.stopPhoneTask || message.name === REALTIME_TOOL_NAMES.stopOpenClawTask) {
       await this.handleStopToolCall(message);
       return;
     }
 
-    if (message.name === "steer_phone_task" || message.name === "steer_openclaw_task") {
+    if (message.name === REALTIME_TOOL_NAMES.steerPhoneTask || message.name === REALTIME_TOOL_NAMES.steerOpenClawTask) {
       await this.handleSteerToolCall(message);
       return;
     }
 
-    if (message.name === "web_search") {
+    if (message.name === REALTIME_TOOL_NAMES.webSearch) {
       await this.handleWebSearchToolCall(message);
       return;
     }
@@ -157,7 +158,7 @@ export class RealtimeTaskManager {
       callId: message.callId,
       ok: true,
       status: "completed",
-      output: message.name === "stop_openclaw_task"
+      output: message.name === REALTIME_TOOL_NAMES.stopOpenClawTask
         ? "Stopped the active Open Claw task and cleared queued realtime tasks."
         : "Stopped the active phone task and cleared queued realtime phone tasks.",
       createResponse: false
@@ -185,7 +186,7 @@ export class RealtimeTaskManager {
         callId: message.callId,
         instruction: guidance,
         urgency: "normal",
-        kind: message.name === "steer_openclaw_task" ? "general" : "phone"
+        kind: message.name === REALTIME_TOOL_NAMES.steerOpenClawTask ? "general" : "phone"
       };
       state.queue.unshift(task);
       this.sendStatus(message.deviceId);
@@ -197,14 +198,14 @@ export class RealtimeTaskManager {
       await this.steerActiveTurn(
         message.deviceId,
         guidance,
-        message.name === "steer_openclaw_task" ? "general" : "phone",
+        message.name === REALTIME_TOOL_NAMES.steerOpenClawTask ? "general" : "phone",
         message.callId
       );
       this.sendResult(message.deviceId, {
         callId: message.callId,
         ok: true,
         status: "completed",
-        output: message.name === "steer_openclaw_task" ? "Steered the active Open Claw task." : "Steered the active phone task.",
+        output: message.name === REALTIME_TOOL_NAMES.steerOpenClawTask ? "Steered the active Open Claw task." : "Steered the active phone task.",
         createResponse: false
       });
       this.sendStatus(message.deviceId);
@@ -303,12 +304,13 @@ export class RealtimeTaskManager {
     this.sendStatus(deviceId);
   }
 
-  failDevice(deviceId: string, reason: string): void {
+  async failDevice(deviceId: string, reason: string): Promise<void> {
     const state = this.states.get(deviceId);
     if (!state) {
       return;
     }
-    const tasks = [...(state.active ? [state.active] : []), ...state.queue];
+    const active = state.active;
+    const tasks = [...(active ? [active] : []), ...state.queue];
     state.active = undefined;
     state.queue = [];
     for (const task of tasks) {
@@ -316,8 +318,24 @@ export class RealtimeTaskManager {
         callId: task.callId,
         reason
       });
+      this.sendResult(deviceId, {
+        callId: task.callId,
+        ok: false,
+        status: "failed",
+        error: reason
+      });
     }
-    this.states.delete(deviceId);
+    if (active) {
+      try {
+        await this.stopActiveTurn(deviceId, reason);
+      } catch (error) {
+        this.options.audit?.record("realtime_task_stop_failed", deviceId, {
+          callId: active.callId,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+    this.sendStatus(deviceId);
   }
 
   private async interruptActiveTask(state: DeviceTaskState, nextTask: QueuedTask): Promise<void> {
@@ -453,7 +471,7 @@ export class RealtimeTaskManager {
   }
 
   private validate(message: RealtimeToolCallMessage): { ok: true; instruction: string; urgency: "normal" | "interrupt"; kind: "general" | "phone" } | { ok: false; error: string } {
-    const kind = message.name === "delegate_openclaw_task" ? "general" : message.name === "run_phone_task" ? "phone" : undefined;
+    const kind = message.name === REALTIME_TOOL_NAMES.delegateOpenClawTask ? "general" : message.name === REALTIME_TOOL_NAMES.runPhoneTask ? "phone" : undefined;
     if (!kind) {
       return { ok: false, error: `Unsupported realtime tool ${message.name}.` };
     }

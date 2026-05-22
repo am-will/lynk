@@ -1,0 +1,83 @@
+import type { AgentTaskKind } from "../dispatcher/AgentClient.js";
+
+const FAST_PHONE_LOOP_INSTRUCTION = [
+  "Phone-control speed policy:",
+  "- Use the observation already returned by phone action tools as the next screen state.",
+  "- Avoid extra phone_observe calls unless current context is missing, ambiguous, or stale.",
+  "- Avoid screenshots unless the accessibility tree is insufficient or coordinates must come from pixels.",
+  "- Use phone_wait only for visible loading/animation; prefer 300-1000 ms and avoid longer waits unless the screen is clearly still changing."
+].join("\n");
+
+const ALLOWED_THINKING_LEVELS = new Set(["low", "medium", "high", "xhigh"]);
+
+export function isSameModelSelection(requestedModel: string, currentModel?: string | null): boolean {
+  if (!currentModel) {
+    return false;
+  }
+  return requestedModel === currentModel || currentModel.endsWith(`/${requestedModel}`);
+}
+
+export function messageForGateway(text: string, taskKind: AgentTaskKind): string {
+  if (taskKind !== "phone") {
+    return text;
+  }
+  return `${FAST_PHONE_LOOP_INSTRUCTION}\n\nUser request:\n${text}`;
+}
+
+export function isExplicitPhoneTask(text: string): boolean {
+  const normalized = text.toLowerCase();
+  return /\b(android|phone|device|screen|tap|swipe|scroll|keyboard|notification|settings app|facebook app|instagram app|messages app|sms)\b/.test(normalized)
+    && !/\b(mac|desktop|pc|laptop|browser|terminal|repo|codebase)\b/.test(normalized);
+}
+
+export function firstMessageDisplayName(text: string): string | undefined {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return undefined;
+  }
+  return normalized.length <= 64 ? normalized : `${normalized.slice(0, 61).trimEnd()}...`;
+}
+
+export function realtimeSessionLabel(text: string): string {
+  return firstMessageDisplayName(text) ?? "Realtime voice";
+}
+
+export function numberedLabel(baseLabel: string, attempt: number): string {
+  const suffix = attempt <= 0 ? "" : ` ${attempt + 1}`;
+  const maxBaseLength = 64 - suffix.length;
+  const base = baseLabel.length <= maxBaseLength
+    ? baseLabel
+    : baseLabel.slice(0, maxBaseLength).trimEnd();
+  return `${base}${suffix}`;
+}
+
+export function isDuplicateSessionLabelError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /label|name|display/i.test(message) && /already|duplicate|exists|unique|used/i.test(message);
+}
+
+export function normalizeThinkingLevel(incoming?: string | null, current?: string | null): string {
+  const normalizedIncoming = incoming?.trim().toLowerCase();
+  if (normalizedIncoming && ALLOWED_THINKING_LEVELS.has(normalizedIncoming)) {
+    return normalizedIncoming;
+  }
+  const normalizedCurrent = current?.trim().toLowerCase();
+  if (normalizedCurrent && ALLOWED_THINKING_LEVELS.has(normalizedCurrent)) {
+    return normalizedCurrent;
+  }
+  return "medium";
+}
+
+export function reasoningStreamEnabled(level: string | null | undefined): boolean | null {
+  if (!level) {
+    return null;
+  }
+  const normalized = level.toLowerCase();
+  if (normalized === "stream") {
+    return true;
+  }
+  if (normalized === "off" || normalized === "false") {
+    return false;
+  }
+  return null;
+}

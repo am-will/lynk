@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { PhoneToolClient, screenshotDirectory } from "./phoneToolClient.js";
+import { MCP_PHONE_TOOL_NAMES } from "../protocol/messages.js";
 
 type ToolHandlerArgs = Record<string, unknown>;
 
@@ -48,12 +49,12 @@ function register(
 }
 
 export function registerPhoneTools(server: McpServer, client = new PhoneToolClient()): void {
-  register(server, client, "phone_observe", "Observe the current Android screen.", {}, "observe_screen");
+  register(server, client, MCP_PHONE_TOOL_NAMES.observe, "Observe the current Android screen.", {}, "observe_screen");
 
   register(
     server,
     client,
-    "phone_open_app",
+    MCP_PHONE_TOOL_NAMES.openApp,
     "Open an Android app by package name or visible app label.",
     {
       packageName: z.string().optional(),
@@ -62,21 +63,21 @@ export function registerPhoneTools(server: McpServer, client = new PhoneToolClie
     "open_app"
   );
 
-  register(server, client, "phone_tap_node", "Tap an observed accessibility node. The result includes a fresh post-tap observation; do not call phone_observe again unless the result is ambiguous or stale.", { nodeId: z.string() }, "tap_node");
-  register(server, client, "phone_tap_xy", "Tap screen coordinates. The result includes a fresh post-tap observation; do not call phone_observe again unless the result is ambiguous or stale.", { x: z.number(), y: z.number() }, "tap_xy");
+  register(server, client, MCP_PHONE_TOOL_NAMES.tapNode, "Tap an observed accessibility node. The result includes a fresh post-tap observation; do not call phone_observe again unless the result is ambiguous or stale.", { nodeId: z.string() }, "tap_node");
+  register(server, client, MCP_PHONE_TOOL_NAMES.tapXy, "Tap screen coordinates. The result includes a fresh post-tap observation; do not call phone_observe again unless the result is ambiguous or stale.", { x: z.number(), y: z.number() }, "tap_xy");
   register(
     server,
     client,
-    "phone_tap_normalized",
+    MCP_PHONE_TOOL_NAMES.tapNormalized,
     "Tap normalized full-screen coordinates from 0 to 1. Use this for coordinates derived from a screenshot shown at a scaled size. The result includes a fresh post-tap observation.",
     { xPct: z.number().min(0).max(1), yPct: z.number().min(0).max(1) },
     "tap_normalized"
   );
-  register(server, client, "phone_long_press_node", "Long press an observed accessibility node. The result includes a fresh post-action observation.", { nodeId: z.string() }, "long_press_node");
+  register(server, client, MCP_PHONE_TOOL_NAMES.longPressNode, "Long press an observed accessibility node. The result includes a fresh post-action observation.", { nodeId: z.string() }, "long_press_node");
   register(
     server,
     client,
-    "phone_type_text",
+    MCP_PHONE_TOOL_NAMES.typeText,
     "Type text into the focused field. The Android client first tries Accessibility ACTION_SET_TEXT and falls back to clipboard paste for apps that reject direct text setting. The result includes a fresh post-type observation.",
     { text: z.string() },
     "type_text"
@@ -84,7 +85,7 @@ export function registerPhoneTools(server: McpServer, client = new PhoneToolClie
   register(
     server,
     client,
-    "phone_submit_text",
+    MCP_PHONE_TOOL_NAMES.submitText,
     "Submit the focused Android text field using IME enter or a keyboard fallback tap. The result includes a fresh post-submit observation.",
     {},
     "submit_text"
@@ -92,7 +93,7 @@ export function registerPhoneTools(server: McpServer, client = new PhoneToolClie
   register(
     server,
     client,
-    "phone_scroll",
+    MCP_PHONE_TOOL_NAMES.scroll,
     "Scroll the active Android screen. The result includes a fresh post-scroll observation.",
     { direction: z.enum(["up", "down", "left", "right"]) },
     "scroll"
@@ -100,7 +101,7 @@ export function registerPhoneTools(server: McpServer, client = new PhoneToolClie
   register(
     server,
     client,
-    "phone_swipe",
+    MCP_PHONE_TOOL_NAMES.swipe,
     "Swipe between two screen coordinates.",
     {
       startX: z.number(),
@@ -111,10 +112,10 @@ export function registerPhoneTools(server: McpServer, client = new PhoneToolClie
     },
     "swipe"
   );
-  register(server, client, "phone_press_back", "Press Android Back.", {}, "press_back");
-  register(server, client, "phone_press_home", "Press Android Home.", {}, "press_home");
-  register(server, client, "phone_open_recents", "Open Android recents.", {}, "open_recents");
-  server.tool("phone_take_screenshot", "Take an Android screenshot if supported and save it as a local PNG file.", {}, async () => {
+  register(server, client, MCP_PHONE_TOOL_NAMES.pressBack, "Press Android Back.", {}, "press_back");
+  register(server, client, MCP_PHONE_TOOL_NAMES.pressHome, "Press Android Home.", {}, "press_home");
+  register(server, client, MCP_PHONE_TOOL_NAMES.openRecents, "Open Android recents.", {}, "open_recents");
+  server.tool(MCP_PHONE_TOOL_NAMES.takeScreenshot, "Take an Android screenshot if supported and save it as a local PNG file.", {}, async () => {
     try {
       const result = await client.command("take_screenshot", {});
       if (!result.screenshotBase64) {
@@ -137,7 +138,7 @@ export function registerPhoneTools(server: McpServer, client = new PhoneToolClie
   register(
     server,
     client,
-    "phone_ask_user_confirmation",
+    MCP_PHONE_TOOL_NAMES.askUserConfirmation,
     "Ask the user to confirm a sensitive phone action.",
     {
       message: z.string(),
@@ -145,5 +146,5 @@ export function registerPhoneTools(server: McpServer, client = new PhoneToolClie
     },
     "ask_user_confirmation"
   );
-  register(server, client, "phone_wait", "Wait on the Android device, then observe. Use only for visible loading/animation; prefer 300-1000 ms and avoid multi-second waits unless the screen is clearly still changing.", { ms: z.number().int().min(0).max(120_000) }, "wait");
+  register(server, client, MCP_PHONE_TOOL_NAMES.wait, "Wait on the Android device, then observe. Use only for visible loading/animation; prefer 300-1000 ms and avoid multi-second waits unless the screen is clearly still changing.", { ms: z.number().int().min(0).max(120_000) }, "wait");
 }

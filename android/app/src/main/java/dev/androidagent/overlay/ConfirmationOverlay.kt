@@ -23,14 +23,15 @@ class ConfirmationOverlay(
 ) {
     private var confirmationView: View? = null
     private var confirmationScrimView: View? = null
+    private val lifecycle = ConfirmationLifecycle()
 
     fun ask(message: String, preview: String?): CompletableDeferred<Boolean> {
-        val deferred = CompletableDeferred<Boolean>()
+        val deferred = lifecycle.begin()
         if (!Settings.canDrawOverlays(context)) {
-            deferred.complete(false)
+            lifecycle.cancel()
             return deferred
         }
-        dismiss()
+        detachViews()
         val tokens = DesignTokens.resolve(context)
 
         val card = LinearLayout(context).apply {
@@ -97,8 +98,8 @@ class ConfirmationOverlay(
             background = Drawables.pillSurface(context, tokens)
             backgroundTintList = null
             setOnClickListener {
-                dismiss()
-                deferred.complete(false)
+                lifecycle.cancel()
+                detachViews()
             }
         }
         val allowButton = Button(context).apply {
@@ -114,8 +115,8 @@ class ConfirmationOverlay(
             background = Drawables.accentSurface(context, tokens, DesignTokens.Radius.pill)
             backgroundTintList = null
             setOnClickListener {
-                dismiss()
-                deferred.complete(true)
+                lifecycle.allow()
+                detachViews()
             }
         }
         val buttons = LinearLayout(context).apply {
@@ -135,8 +136,8 @@ class ConfirmationOverlay(
             )
             setBackgroundColor(tokens.scrim)
             setOnClickListener {
-                dismiss()
-                deferred.complete(false)
+                lifecycle.cancel()
+                detachViews()
             }
         }
         val scrimParams = overlayParams(
@@ -165,6 +166,11 @@ class ConfirmationOverlay(
     }
 
     fun dismiss() {
+        lifecycle.dismiss()
+        detachViews()
+    }
+
+    private fun detachViews() {
         detachOverlayView(windowManager, confirmationView)
         detachOverlayView(windowManager, confirmationScrimView)
         confirmationView = null

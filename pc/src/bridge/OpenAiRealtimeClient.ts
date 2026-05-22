@@ -1,4 +1,5 @@
 import type { BridgeConfig } from "./config.js";
+import { REALTIME_TOOL_NAMES } from "../protocol/messages.js";
 import type { PhoneLocation } from "../protocol/messages.js";
 
 export interface OpenAiRealtimeStartOptions {
@@ -18,15 +19,15 @@ export interface OpenAiRealtimeSession {
 
 const VOICE_PROMPT = `
 You are Open Claw Agent in a live voice conversation from the user's Android phone. Keep responses short and conversational.
-For normal Open Claw work on the remote PC, briefly acknowledge it and call delegate_openclaw_task.
-Use run_phone_task only when the user asks to inspect/control the Android phone or the request clearly needs phone screen/app context.
+For normal Open Claw work on the remote PC, briefly acknowledge it and call ${REALTIME_TOOL_NAMES.delegateOpenClawTask}.
+Use ${REALTIME_TOOL_NAMES.runPhoneTask} only when the user asks to inspect/control the Android phone or the request clearly needs phone screen/app context.
 Do not claim delegated work is complete until tool output is returned.
-If the user interrupts, corrects, or adds information while a general Open Claw task is running, use steer_openclaw_task. If a phone task is running, use steer_phone_task.
-If a follow-up can be handled from the current phone screen and no phone task is running, call run_phone_task with the follow-up as the instruction; the phone agent will observe the current screen first.
-If the user asks to stop, pause, cancel, or leave the current task as-is, use stop_openclaw_task for general work or stop_phone_task for phone work. Do not start a new task for stop requests.
-If the user asks to hang up, end the call, or stop listening, call hang_up_realtime with stopPhoneTask false so any running phone task can continue.
-If the user asks to stop and hang up, call hang_up_realtime with stopPhoneTask true.
-If the user asks a current-events or factual lookup that does not require controlling the phone, use web_search and answer from its result instead of running a phone task.
+If the user interrupts, corrects, or adds information while a general Open Claw task is running, use ${REALTIME_TOOL_NAMES.steerOpenClawTask}. If a phone task is running, use ${REALTIME_TOOL_NAMES.steerPhoneTask}.
+If a follow-up can be handled from the current phone screen and no phone task is running, call ${REALTIME_TOOL_NAMES.runPhoneTask} with the follow-up as the instruction; the phone agent will observe the current screen first.
+If the user asks to stop, pause, cancel, or leave the current task as-is, use ${REALTIME_TOOL_NAMES.stopOpenClawTask} for general work or ${REALTIME_TOOL_NAMES.stopPhoneTask} for phone work. Do not start a new task for stop requests.
+If the user asks to hang up, end the call, or stop listening, call ${REALTIME_TOOL_NAMES.hangUpRealtime} with stopPhoneTask false so any running phone task can continue.
+If the user asks to stop and hang up, call ${REALTIME_TOOL_NAMES.hangUpRealtime} with stopPhoneTask true.
+If the user asks a current-events or factual lookup that does not require controlling the phone, use ${REALTIME_TOOL_NAMES.webSearch} and answer from its result instead of running a phone task.
 Ask a short clarification question when the instruction is ambiguous.
 Confirm only when an action is risky or irreversible, and never bypass Android or desktop-agent safety confirmations.
 `.trim();
@@ -50,7 +51,7 @@ export function formatLocationContext(location: PhoneLocation | undefined): stri
 
 const DELEGATE_OPENCLAW_TASK_TOOL = {
   type: "function",
-  name: "delegate_openclaw_task",
+  name: REALTIME_TOOL_NAMES.delegateOpenClawTask,
   description: "Delegate a general task to the user's installed Open Claw session on the remote PC. Use this for coding, desktop, browser, research, file, and other non-phone work.",
   parameters: {
     type: "object",
@@ -72,7 +73,7 @@ const DELEGATE_OPENCLAW_TASK_TOOL = {
 
 const RUN_PHONE_TASK_TOOL = {
   type: "function",
-  name: "run_phone_task",
+  name: REALTIME_TOOL_NAMES.runPhoneTask,
   description: "Execute an actionable instruction on the connected Android phone using the phone automation agent.",
   parameters: {
     type: "object",
@@ -94,7 +95,7 @@ const RUN_PHONE_TASK_TOOL = {
 
 const STEER_OPENCLAW_TASK_TOOL = {
   type: "function",
-  name: "steer_openclaw_task",
+  name: REALTIME_TOOL_NAMES.steerOpenClawTask,
   description: "Inject new user guidance into the currently running general Open Claw task.",
   parameters: {
     type: "object",
@@ -111,7 +112,7 @@ const STEER_OPENCLAW_TASK_TOOL = {
 
 const STEER_PHONE_TASK_TOOL = {
   type: "function",
-  name: "steer_phone_task",
+  name: REALTIME_TOOL_NAMES.steerPhoneTask,
   description: "Inject new user guidance into the currently running Android phone automation task without restarting it.",
   parameters: {
     type: "object",
@@ -128,7 +129,7 @@ const STEER_PHONE_TASK_TOOL = {
 
 const STOP_OPENCLAW_TASK_TOOL = {
   type: "function",
-  name: "stop_openclaw_task",
+  name: REALTIME_TOOL_NAMES.stopOpenClawTask,
   description: "Stop the currently running general Open Claw task and clear queued realtime tasks.",
   parameters: {
     type: "object",
@@ -145,7 +146,7 @@ const STOP_OPENCLAW_TASK_TOOL = {
 
 const STOP_PHONE_TASK_TOOL = {
   type: "function",
-  name: "stop_phone_task",
+  name: REALTIME_TOOL_NAMES.stopPhoneTask,
   description: "Stop the currently running Android phone automation task and clear any queued realtime phone tasks.",
   parameters: {
     type: "object",
@@ -162,7 +163,7 @@ const STOP_PHONE_TASK_TOOL = {
 
 const HANG_UP_REALTIME_TOOL = {
   type: "function",
-  name: "hang_up_realtime",
+  name: REALTIME_TOOL_NAMES.hangUpRealtime,
   description: "End the live realtime voice session. By default this only stops listening and lets any running phone task continue.",
   parameters: {
     type: "object",
@@ -183,7 +184,7 @@ const HANG_UP_REALTIME_TOOL = {
 
 const WEB_SEARCH_TOOL = {
   type: "function",
-  name: "web_search",
+  name: REALTIME_TOOL_NAMES.webSearch,
   description: "Search the web for current information when a question can be answered without using the Android phone.",
   parameters: {
     type: "object",

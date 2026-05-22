@@ -187,7 +187,7 @@ class PhoneWebSocketClient(
         val sent = sendJson(message)
         Log.i(TAG, "sendRealtimeStart sent=$sent sdpLength=${sdp.length}")
         if (!sent) {
-            onRealtimeError(JSONObject().put("type", "realtime.error").put("message", "Phone WebSocket is not connected for realtime voice."))
+            dispatchRealtimeError("Phone WebSocket is not connected for realtime voice.")
         }
     }
 
@@ -199,7 +199,7 @@ class PhoneWebSocketClient(
         val sent = sendJson(message)
         Log.i(TAG, "sendRealtimeStop sent=$sent")
         if (!sent) {
-            onRealtimeError(JSONObject().put("type", "realtime.error").put("message", "Phone WebSocket is not connected for realtime voice."))
+            dispatchRealtimeError("Phone WebSocket is not connected for realtime voice.")
         }
     }
 
@@ -214,11 +214,15 @@ class PhoneWebSocketClient(
         val sent = sendJson(message)
         Log.i(TAG, "sendRealtimeToolCall sent=$sent callId=${call.callId} name=${call.name}")
         if (!sent) {
-            onRealtimeError(JSONObject().put("type", "realtime.error").put("message", "Phone WebSocket is not connected for realtime tool calls."))
+            dispatchRealtimeError("Phone WebSocket is not connected for realtime tool calls.")
         }
     }
 
     override fun onOpen(webSocket: WebSocket, response: Response) {
+        runOnMain { handleOpen(webSocket) }
+    }
+
+    private fun handleOpen(webSocket: WebSocket) {
         if (webSocket != socket) {
             webSocket.close(1000, "stale connection")
             return
@@ -245,7 +249,18 @@ class PhoneWebSocketClient(
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
-        val message = JSONObject(text)
+        runOnMain { handleMessage(webSocket, text) }
+    }
+
+    private fun handleMessage(webSocket: WebSocket, text: String) {
+        if (webSocket != socket) return
+        val message = BridgeIncomingMessageParser.parse(text).getOrElse { error ->
+            val statusText = "Ignored malformed bridge message: ${error.message ?: error::class.java.simpleName}"
+            Log.w(TAG, statusText)
+            onStatus(statusText, "error")
+            reportBridgeChatError("Bridge sent malformed JSON; ignored the message.")
+            return
+        }
         if (message.optString("type").startsWith("realtime.")) {
             Log.i(TAG, "received ${message.optString("type")}")
         }
@@ -292,6 +307,10 @@ class PhoneWebSocketClient(
     }
 
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+        runOnMain { handleFailure(webSocket, t) }
+    }
+
+    private fun handleFailure(webSocket: WebSocket, t: Throwable) {
         if (webSocket != socket) return
         socket = null
         connected = false
@@ -305,6 +324,10 @@ class PhoneWebSocketClient(
     }
 
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+        runOnMain { handleClosed(webSocket, code, reason) }
+    }
+
+    private fun handleClosed(webSocket: WebSocket, code: Int, reason: String) {
         if (webSocket != socket) return
         socket = null
         connected = false
@@ -334,20 +357,24 @@ class PhoneWebSocketClient(
         Log.i(TAG, "send $type sent=$sent connected=$connected registered=$registered")
         if (!sent) {
             val error = "Bridge is not registered. Check the PC bridge at ${config.hostUrl}; reconnecting..."
-            onStatus(error, "error")
-            onConnectionState(BridgeConnectionState(BridgeConnectionPhase.ERROR, error))
-            if (reportChatError) {
-                reportBridgeChatError(error)
+            runOnMain {
+                onStatus(error, "error")
+                onConnectionState(BridgeConnectionState(BridgeConnectionPhase.ERROR, error))
+                if (reportChatError) {
+                    reportBridgeChatError(error)
+                }
             }
         }
         return sent
     }
 
     private fun reportBridgeChatError(message: String) {
-        onChatMessage(JSONObject()
-            .put("type", "chat.error")
-            .put("deviceId", config.deviceId)
-            .put("message", message))
+        runOnMain {
+            onChatMessage(JSONObject()
+                .put("type", "chat.error")
+                .put("deviceId", config.deviceId)
+                .put("message", message))
+        }
     }
 
     private fun scheduleReconnect(longBackoff: Boolean = false) {
@@ -406,8 +433,12 @@ class PhoneWebSocketClient(
     }
 
     private fun handleCommand(webSocket: WebSocket, message: JSONObject) {
-        val id = message.getString("id")
-        val command = message.getString("command")
+        val id = message.optString("id").takeIf { it.isNotBlank() }
+        val command = message.optString("command").takeIf { it.isNotBlank() }
+        if (id == null || command == null) {
+            reportBridgeChatError("Bridge sent a malformed command message; ignored it.")
+            return
+        }
         val args = message.optJSONObject("args") ?: JSONObject()
         commandExecutor.execute(command, args) { result ->
             val response = JSONObject()
@@ -419,6 +450,20 @@ class PhoneWebSocketClient(
             result.screenshotBase64?.let { response.put("screenshotBase64", it) }
             result.screenshot?.let { response.put("screenshot", it) }
             webSocket.send(response.toString())
+        }
+    }
+
+    private fun dispatchRealtimeError(message: String) {
+        runOnMain {
+            onRealtimeError(JSONObject().put("type", "realtime.error").put("message", message))
+        }
+    }
+
+    private fun runOnMain(block: () -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            block()
+        } else {
+            mainHandler.post(block)
         }
     }
 

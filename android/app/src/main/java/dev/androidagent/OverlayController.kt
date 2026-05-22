@@ -37,11 +37,10 @@ import android.widget.LinearLayout
 import android.widget.Space
 import android.widget.TextView
 import android.widget.FrameLayout
-import dev.androidagent.chat.ChatModelOption
-import dev.androidagent.chat.ChatSessionRow
 import dev.androidagent.chat.ChatState
 import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.overlay.BubbleOverlay
+import dev.androidagent.overlay.ChatPresentationHelpers
 import dev.androidagent.overlay.ChatTimelineBinder
 import dev.androidagent.overlay.ConfirmationOverlay
 import dev.androidagent.overlay.HostConnectionCopy
@@ -52,6 +51,8 @@ import dev.androidagent.overlay.PanelBounds
 import dev.androidagent.overlay.PanelChrome
 import dev.androidagent.overlay.PanelKeyboardLayout
 import dev.androidagent.overlay.PanelPresentation
+import dev.androidagent.overlay.SlashCommandAutocomplete
+import dev.androidagent.overlay.SlashToken
 import dev.androidagent.overlay.VoicePanel
 import dev.androidagent.overlay.detachOverlayView
 import dev.androidagent.overlay.hostConnectionColor
@@ -186,8 +187,6 @@ class OverlayController(
         phase = HostConnectionPhase.CONNECTING,
         message = "Checking host connection..."
     )
-
-    private data class SlashToken(val start: Int, val end: Int, val query: String)
 
     fun show() {
         showInternal(allowDuringFullscreenPanel = false)
@@ -387,6 +386,10 @@ class OverlayController(
 
     fun askConfirmation(message: String, preview: String?): CompletableDeferred<Boolean> {
         return confirmationOverlay.ask(message, preview)
+    }
+
+    fun dismissConfirmation() {
+        confirmationOverlay.dismiss()
     }
 
     fun openPanel(presentation: PanelPresentation = PanelPresentation.Popup) {
@@ -1067,16 +1070,13 @@ class OverlayController(
 
     private fun showModelChoices() {
         val anchor = modelButton ?: return
-        val merged = mergeModelOptions(lastChatState.models)
+        val localLiteRtAvailable = isExperimentalLocalModelAvailable()
+        val merged = ChatPresentationHelpers.mergeModelOptions(lastChatState.models, localLiteRtAvailable)
         if (merged.isEmpty()) {
             setStatus("No models available.")
             return
         }
-        val selectedId = if (lastChatState.selectedModel == AgentModelOptions.LOCAL_LITERT_MODEL_ID && !isExperimentalLocalModelAvailable()) {
-            AgentModelOptions.models.firstOrNull()?.id.orEmpty()
-        } else {
-            lastChatState.selectedModel.orEmpty()
-        }
+        val selectedId = ChatPresentationHelpers.selectedModelId(lastChatState.selectedModel, localLiteRtAvailable)
         val rows = merged.map { model ->
             AnchoredPicker.Row(
                 id = "model:${model.id}",
@@ -1092,86 +1092,6 @@ class OverlayController(
             )
         }
         showAnchoredPicker(anchor, "Model", listOf(AnchoredPicker.Section(null, rows)))
-    }
-
-    private fun isAgentInternalTool(id: String, label: String?): Boolean {
-        val needle = (label ?: id).lowercase().trim()
-        val rawId = id.lowercase().trim()
-        val hiddenExact = setOf(
-            "apply_patch", "apply-patch", "applypatch",
-            "exec",
-            "edit",
-            "process",
-            "read",
-            "session_history", "session-history", "sessionhistory",
-            "send",
-            "status",
-            "list",
-            "spawn",
-            "session_send", "session-send", "sessionsend",
-            "session_status", "session-status", "sessionstatus",
-            "session_list", "session-list", "sessionlist",
-            "session_spawn", "session-spawn", "sessionspawn",
-            "update_plan", "update-plan", "updateplan",
-            "web_fetch", "web-fetch", "webfetch",
-            "web_search", "web-search", "websearch",
-            "subagent", "sub_agent", "sub-agent",
-            "subagents", "sub_agents", "sub-agents"
-        )
-        if (rawId in hiddenExact || needle in hiddenExact) return true
-        val hiddenPrefixes = listOf(
-            "apply patch",
-            "apply_patch",
-            "session history",
-            "session_history",
-            "session send",
-            "session_send",
-            "session status",
-            "session_status",
-            "session list",
-            "session_list",
-            "session spawn",
-            "session_spawn",
-            "update plan",
-            "update_plan",
-            "web fetch",
-            "web_fetch",
-            "web search",
-            "web_search",
-            "subagent",
-            "sub_agent",
-            "sub-agent"
-        )
-        if (hiddenPrefixes.any { needle.startsWith(it) || rawId.startsWith(it) }) return true
-        return false
-    }
-
-    private fun mergeModelOptions(gatewayModels: List<ChatModelOption>): List<ChatModelOption> {
-        val byId = linkedMapOf<String, ChatModelOption>()
-        AgentModelOptions.models.forEach { local ->
-            byId[local.id] = ChatModelOption(
-                id = local.id,
-                label = local.label,
-                provider = null,
-                contextWindow = null,
-                available = true
-            )
-        }
-        gatewayModels.forEach { remote ->
-            byId[remote.id] = remote
-        }
-        if (isExperimentalLocalModelAvailable()) {
-            byId[AgentModelOptions.LOCAL_LITERT_MODEL_ID] = ChatModelOption(
-                id = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
-                label = "Local LiteRT-LM",
-                provider = "android",
-                contextWindow = null,
-                available = true
-            )
-        } else {
-            byId.remove(AgentModelOptions.LOCAL_LITERT_MODEL_ID)
-        }
-        return byId.values.toList()
     }
 
     private fun isExperimentalLocalModelAvailable(): Boolean {
@@ -1227,7 +1147,7 @@ class OverlayController(
 
     private fun sessionPickerRows(limit: Int = 30): List<AnchoredPicker.Row> {
         return lastChatState.sessions.take(limit).map { session ->
-            val label = sessionLabel(session)
+            val label = ChatPresentationHelpers.sessionLabel(session)
             AnchoredPicker.Row(
                 id = "session:${session.key}",
                 label = label.take(40),
@@ -1368,11 +1288,6 @@ class OverlayController(
             dismissOnSelect = false,
             onSelect = {
                 val nextEnabled = lastChatState.fastMode != true
-                lastChatState = lastChatState.copy(
-                    fastMode = nextEnabled,
-                    status = if (nextEnabled) "Fast mode enabled" else "Fast mode disabled"
-                )
-                renderChatState(lastChatState)
                 onChatControlCommand("fast", JSONObject().put("enabled", nextEnabled))
                 setStatus(if (nextEnabled) "Fast mode enabled" else "Fast mode disabled")
                 updatePlusMenuToggleRow(plusFastModeRow())
@@ -1381,8 +1296,8 @@ class OverlayController(
     }
 
     private fun plusVerboseRow(): AnchoredPicker.Row {
-        val verboseMode = normalizedVerboseLevel(lastChatState.verboseLevel)
-        val nextVerboseMode = nextVerboseLevel(verboseMode)
+        val verboseMode = ChatPresentationHelpers.normalizedVerboseLevel(lastChatState.verboseLevel)
+        val nextVerboseMode = ChatPresentationHelpers.nextVerboseLevel(verboseMode)
         return AnchoredPicker.Row(
             id = PLUS_ROW_VERBOSE,
             label = "Verbose: ${verboseMode.replaceFirstChar { it.uppercase() }}",
@@ -1391,9 +1306,9 @@ class OverlayController(
             selected = verboseMode != "off",
             dismissOnSelect = false,
             onSelect = {
-                val nextLevel = nextVerboseLevel(normalizedVerboseLevel(lastChatState.verboseLevel))
-                lastChatState = lastChatState.copy(verboseLevel = nextLevel, status = "Verbose: $nextLevel")
-                renderChatState(lastChatState)
+                val nextLevel = ChatPresentationHelpers.nextVerboseLevel(
+                    ChatPresentationHelpers.normalizedVerboseLevel(lastChatState.verboseLevel)
+                )
                 onChatControlCommand("verbose", JSONObject().put("level", nextLevel))
                 setStatus("Verbose: $nextLevel")
                 updatePlusMenuToggleRow(plusVerboseRow())
@@ -1436,29 +1351,8 @@ class OverlayController(
 
     private fun toggleReasoningStream() {
         val nextEnabled = lastChatState.reasoningStreamEnabled != true
-        lastChatState = lastChatState.copy(
-            reasoningStreamEnabled = nextEnabled,
-            status = "Reasoning Stream: ${if (nextEnabled) "On" else "Off"}"
-        )
-        renderChatState(lastChatState)
         onChatControlCommand("reasoning", JSONObject().put("level", if (nextEnabled) "stream" else "off"))
         setStatus("Reasoning Stream: ${if (nextEnabled) "On" else "Off"}")
-    }
-
-    private fun normalizedVerboseLevel(level: String?): String {
-        return when (level?.lowercase()?.trim()) {
-            "on", "full" -> level.lowercase().trim()
-            "high", "true" -> "on"
-            else -> "off"
-        }
-    }
-
-    private fun nextVerboseLevel(current: String): String {
-        return when (current) {
-            "off" -> "on"
-            "on" -> "full"
-            else -> "off"
-        }
     }
 
     private fun showSessionsMenu(anchorOverride: View? = null) {
@@ -1482,10 +1376,6 @@ class OverlayController(
         if (anchor === headerSessionAnchor) {
             animateHeaderSessionChevron(expanded = true)
         }
-    }
-
-    private fun sessionLabel(session: ChatSessionRow): String {
-        return session.displayName ?: session.label ?: session.sessionId ?: session.key.substringAfterLast(":")
     }
 
     private fun showUsageControls() {
@@ -1545,14 +1435,17 @@ class OverlayController(
     }
 
     private fun maybeShowSlashCommands(input: EditText) {
-        val token = currentSlashToken(input)
+        val token = SlashCommandAutocomplete.currentToken(
+            text = input.text?.toString().orEmpty(),
+            cursorIndex = input.selectionStart
+        )
         if (token == null) {
             if (anchoredPicker?.isShowingFor(input) == true) {
                 anchoredPicker?.dismiss()
             }
             return
         }
-        val commands = matchingSlashCommands(token.query)
+        val commands = SlashCommandAutocomplete.matchingCommands(lastChatState.commands, token.query)
         if (commands.isEmpty()) {
             if (anchoredPicker?.isShowingFor(input) == true) {
                 anchoredPicker?.dismiss()
@@ -1560,7 +1453,7 @@ class OverlayController(
             return
         }
         val rows = commands.map { command ->
-            val text = slashCommandText(command)
+            val text = SlashCommandAutocomplete.commandText(command)
             AnchoredPicker.Row(
                 id = "slash:${command.name}",
                 label = text,
@@ -1577,46 +1470,12 @@ class OverlayController(
         )
     }
 
-    private fun currentSlashToken(input: EditText): SlashToken? {
-        val text = input.text?.toString().orEmpty()
-        val cursor = input.selectionStart.coerceAtLeast(0).coerceAtMost(text.length)
-        val start = text.lastIndexOfAny(charArrayOf(' ', '\n', '\t'), (cursor - 1).coerceAtLeast(0))
-            .let { if (it < 0) 0 else it + 1 }
-        if (start >= text.length || text.getOrNull(start) != '/') return null
-        val end = cursor
-        if (end < start + 1) return null
-        val token = text.substring(start, end)
-        if (token.drop(1).any { it.isWhitespace() }) return null
-        return SlashToken(start = start, end = end, query = token.drop(1))
-    }
-
-    private fun matchingSlashCommands(query: String): List<dev.androidagent.chat.ChatCommandOption> {
-        val normalized = query.trimStart('/').lowercase()
-        return lastChatState.commands
-            .filter { command ->
-                if (normalized.isBlank()) {
-                    true
-                } else {
-                    command.name.lowercase().startsWith(normalized) ||
-                        command.aliases.any { alias -> alias.trimStart('/').lowercase().startsWith(normalized) }
-                }
-            }
-            .take(20)
-    }
-
-    private fun slashCommandText(command: dev.androidagent.chat.ChatCommandOption): String {
-        return command.aliases.firstOrNull()?.takeIf { it.startsWith("/") } ?: "/${command.name}"
-    }
-
     private fun autocompleteSlashCommand(input: EditText, token: SlashToken, commandText: String) {
         val current = input.text?.toString().orEmpty()
-        val safeStart = token.start.coerceIn(0, current.length)
-        val safeEnd = token.end.coerceIn(safeStart, current.length)
-        val replacement = "$commandText "
-        val next = current.replaceRange(safeStart, safeEnd, replacement)
+        val result = SlashCommandAutocomplete.applyAutocomplete(current, token, commandText)
         suppressSlashAutocomplete = true
-        input.setText(next)
-        input.setSelection((safeStart + replacement.length).coerceAtMost(next.length))
+        input.setText(result.text)
+        input.setSelection(result.cursor)
         suppressSlashAutocomplete = false
         input.requestFocus()
     }
@@ -1626,7 +1485,11 @@ class OverlayController(
         renderComposerActionButtons(tokens, state, lastTranscriptionState)
         modelButton?.let { btn ->
             val fastModeOn = state.fastMode == true
-            val modelLabel = formatModelLabel(state.selectedModel ?: state.models.firstOrNull()?.id)
+            val modelLabel = ChatPresentationHelpers.formatModelLabel(
+                model = state.selectedModel ?: state.models.firstOrNull()?.id,
+                models = state.models,
+                localLiteRtAvailable = isExperimentalLocalModelAvailable()
+            )
             btn.text = modelLabel
             btn.updateAccessibilityState(
                 description = "Model selector",
@@ -1646,7 +1509,7 @@ class OverlayController(
             btn.setCompoundDrawables(left, null, chevron, null)
         }
         reasoningButton?.let { btn ->
-            val reasoningLabel = formatReasoningLabel(state.reasoningEffort)
+            val reasoningLabel = ChatPresentationHelpers.formatReasoningLabel(state.reasoningEffort)
             btn.text = reasoningLabel
             btn.updateAccessibilityState(
                 description = "Reasoning selector",
@@ -1695,23 +1558,6 @@ class OverlayController(
                 showInternal(allowDuringFullscreenPanel = true)
             }
         }
-    }
-
-    private fun formatModelLabel(model: String?): String {
-        val raw = if (model == AgentModelOptions.LOCAL_LITERT_MODEL_ID && !isExperimentalLocalModelAvailable()) {
-            AgentModelOptions.models.firstOrNull()?.id
-        } else {
-            model
-        } ?: return "Model"
-        val pretty = lastChatState.models.firstOrNull { it.id == raw }?.label
-            ?: raw.substringAfter("/").ifBlank { raw }
-        return if (pretty.startsWith("gpt-", ignoreCase = true)) pretty.drop(4) else pretty
-    }
-
-    private fun formatReasoningLabel(reasoning: String?): String {
-        val value = reasoning?.takeIf { it.isNotBlank() } ?: return "Reason"
-        if (value.equals("medium", ignoreCase = true)) return "Med"
-        return value.replaceFirstChar { it.uppercase() }
     }
 
     private fun renderTimeline(state: ChatState) {
