@@ -948,12 +948,7 @@ class OverlayController(
     }
 
     private fun renderHeaderBrand(tokens: ThemeTokens, state: ChatState) {
-        val presentation = ChatPresentationHelpers.clientBrandPresentation(
-            selectedModel = state.selectedModel,
-            models = state.models,
-            harnessId = state.harnessId,
-            localLiteRtAvailable = isExperimentalLocalModelAvailable()
-        )
+        val presentation = brandPresentationFor(state)
         headerBrandLogo?.setImageResource(brandLogoRes(presentation.brand))
         headerBrandTitle?.apply {
             text = if (presentation.brand == ClientBrand.OpenClaw) openClawTitle(tokens) else presentation.title
@@ -969,6 +964,13 @@ class OverlayController(
             contentDescription = "Open ${presentation.title} chat menu"
         }
     }
+
+    private fun brandPresentationFor(state: ChatState) = ChatPresentationHelpers.clientBrandPresentation(
+        selectedModel = state.selectedModel,
+        models = state.models,
+        harnessId = state.harnessId,
+        localLiteRtAvailable = isExperimentalLocalModelAvailable()
+    )
 
     private fun brandLogoRes(brand: ClientBrand): Int {
         return when (brand) {
@@ -1695,7 +1697,7 @@ class OverlayController(
     }
 
     private fun renderTimeline(state: ChatState) {
-        chatTimelineBinder.render(state, showToolCalls)
+        chatTimelineBinder.render(state, showToolCalls, brandPresentationFor(state))
     }
 
     private data class RevealCenter(val cx: Int, val cy: Int, val bubbleRadius: Float)
