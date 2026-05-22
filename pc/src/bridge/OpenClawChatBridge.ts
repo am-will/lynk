@@ -26,7 +26,7 @@ import type {
 } from "../protocol/messages.js";
 import type { AuditLog } from "./AuditLog.js";
 import type { BridgeConfig } from "./config.js";
-import { HarnessGatewayChatClient } from "./HarnessGatewayChatClient.js";
+import { HarnessChatRouter } from "./harness/HarnessChatRouter.js";
 import { OpenClawControlCommandRouter } from "./OpenClawControlCommands.js";
 import {
   firstMessageDisplayName,
@@ -78,7 +78,7 @@ export class OpenClawChatBridge {
     private readonly audit?: AuditLog,
     client?: GatewayChatClient
   ) {
-    this.client = client ?? new HarnessGatewayChatClient(config, audit);
+    this.client = client ?? new HarnessChatRouter(config, audit);
     this.states = new DeviceChatStateStore(config);
     this.commandRouter = new OpenClawControlCommandRouter({
       stateFor: (deviceId) => this.stateFor(deviceId),

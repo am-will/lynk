@@ -343,7 +343,27 @@ function commandArgs(record: Record<string, unknown> | undefined): ChatCommandOp
 }
 
 export function normalizeTools(value: unknown): ChatToolSummary[] {
-  const groups = Array.isArray(asRecord(value)?.groups) ? asRecord(value)?.groups as unknown[] : [];
+  const root = asRecord(value);
+  const directTools = Array.isArray(root?.tools) ? root.tools as unknown[] : [];
+  if (directTools.length > 0) {
+    const normalized: ChatToolSummary[] = [];
+    for (const item of directTools) {
+      const record = asRecord(item);
+      const id = stringField(record, "id");
+      if (!id) {
+        continue;
+      }
+      normalized.push({
+        id,
+        label: stringField(record, "label") ?? id,
+        description: stringField(record, "description") ?? stringField(record, "rawDescription") ?? null,
+        source: stringField(record, "source") ?? null,
+        group: stringField(record, "group") ?? null
+      });
+    }
+    return normalized;
+  }
+  const groups = Array.isArray(root?.groups) ? root.groups as unknown[] : [];
   const normalized: ChatToolSummary[] = [];
   for (const groupValue of groups) {
     const group = asRecord(groupValue);

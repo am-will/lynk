@@ -87,21 +87,6 @@ function sanitizeSessionId(value: string): string {
   return value.replace(/[^a-zA-Z0-9_.:-]+/g, "-").replace(/^-+|-+$/g, "") || "default";
 }
 
-function mergeHermesModels(primary: unknown[], fallback: unknown[]): unknown[] {
-  const seen = new Set<string>();
-  const result: unknown[] = [];
-  for (const model of [...primary, ...fallback]) {
-    const record = asRecord(model);
-    const id = firstStringField(record, ["id", "key", "name"]);
-    if (!id || seen.has(id)) {
-      continue;
-    }
-    seen.add(id);
-    result.push(model);
-  }
-  return result;
-}
-
 export class HermesChatClient {
   private readonly api: HermesApiClient;
   private readonly sessions = new Map<string, StoredSession>();
@@ -219,7 +204,8 @@ export class HermesChatClient {
         provider: "hermes",
         available: true
       }];
-    const models = mergeHermesModels(discoverHermesModels(this.config.hermesModel), apiModels);
+    const discoveredModels = discoverHermesModels(this.config.hermesModel);
+    const models = discoveredModels.length > 0 ? discoveredModels : apiModels;
     return { models };
   }
 
