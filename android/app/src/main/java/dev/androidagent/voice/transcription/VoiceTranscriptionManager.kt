@@ -203,7 +203,7 @@ class VoiceTranscriptionManager(
     private fun readAudioLoop(recorder: AudioRecord, minBufferSize: Int, onSilenceDetected: () -> Unit) {
         val buffer = ShortArray((minBufferSize / 2).coerceAtLeast(1))
         var heardSpeech = false
-        var lastSpeechAt = System.currentTimeMillis()
+        var lastAboveSilenceFloorAt = System.currentTimeMillis()
         while (recording) {
             val read = runCatching { recorder.read(buffer, 0, buffer.size) }.getOrDefault(0)
             if (read <= 0) {
@@ -217,11 +217,11 @@ class VoiceTranscriptionManager(
             updateState(currentState().copy(isRecording = true, audioLevel = level, error = null))
 
             val now = System.currentTimeMillis()
-            if (level >= SPEECH_LEVEL_THRESHOLD) {
+            if (level > SILENCE_LEVEL_FLOOR) {
                 heardSpeech = true
                 heardSpeechDuringSession = true
-                lastSpeechAt = now
-            } else if (heardSpeech && now - lastSpeechAt >= SILENCE_AUTO_STOP_MS && !silenceStopRequested) {
+                lastAboveSilenceFloorAt = now
+            } else if (heardSpeech && now - lastAboveSilenceFloorAt >= SILENCE_AUTO_STOP_MS && !silenceStopRequested) {
                 silenceStopRequested = true
                 mainHandler.post(onSilenceDetected)
             }
@@ -291,7 +291,7 @@ class VoiceTranscriptionManager(
         private const val OPENAI_TRANSCRIPTION_URL = "https://api.openai.com/v1/audio/transcriptions"
         private const val OPENAI_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
         private const val SILENCE_AUTO_STOP_MS = 1_500L
-        private const val SPEECH_LEVEL_THRESHOLD = 0.035f
+        private const val SILENCE_LEVEL_FLOOR = 0.02f
         private val WAV_MEDIA_TYPE = "audio/wav".toMediaType()
     }
 }
