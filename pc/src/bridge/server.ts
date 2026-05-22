@@ -10,6 +10,7 @@ import { PhoneHub } from "./PhoneHub.js";
 import { createBridgeHttpHandler } from "./bridgeHttp.js";
 import { BridgeRealtime } from "./bridgeRealtime.js";
 import { createPhoneWebSocketServer } from "./phoneWebSocket.js";
+import { startAdbReverseMonitor } from "./AdbReverseMonitor.js";
 
 const config = getBridgeConfig();
 const audit = new AuditLog();
@@ -18,6 +19,7 @@ const dispatcher = new Dispatcher(hub, audit);
 const chatBridge = new OpenClawChatBridge(config, hub, dispatcher, audit);
 const realtimeClient = new OpenAiRealtimeClient(config);
 const webSearchClient = new OpenAiWebSearchClient(config);
+const adbReverseMonitor = startAdbReverseMonitor({ port: config.port });
 
 let realtimeTaskManager: RealtimeTaskManager;
 
@@ -78,4 +80,21 @@ server.on("upgrade", (req, socket, head) => {
 server.listen(config.port, config.host, () => {
   console.log(`open-claw-agent bridge listening on ws://${config.host}:${config.port}/phone`);
   console.log(`HTTP API listening on ${config.bridgeUrl}`);
+});
+
+function shutdown(): void {
+  adbReverseMonitor.stop();
+  server.close();
+  wss.close();
+  chatBridge.close();
+}
+
+process.once("SIGINT", () => {
+  shutdown();
+  process.exit(130);
+});
+
+process.once("SIGTERM", () => {
+  shutdown();
+  process.exit(143);
 });

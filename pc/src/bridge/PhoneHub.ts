@@ -21,6 +21,12 @@ interface ConnectedPhone {
   connectedAt: number;
 }
 
+export interface ConnectedPhoneSummary {
+  deviceId: string;
+  capabilities: string[];
+  connectedAt: number;
+}
+
 interface PendingCommand {
   deviceId: string;
   resolve: (result: PhoneCommandResult) => void;
@@ -62,9 +68,10 @@ export class PhoneHub {
     }
   }
 
-  listPhones(): Array<RegisterMessage & { connectedAt: number }> {
+  listPhones(): ConnectedPhoneSummary[] {
     return [...this.phones.values()].map((phone) => ({
-      ...phone.registration,
+      deviceId: phone.registration.deviceId,
+      capabilities: phone.registration.capabilities,
       connectedAt: phone.connectedAt
     }));
   }

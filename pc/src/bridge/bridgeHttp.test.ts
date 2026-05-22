@@ -15,7 +15,7 @@ class FakeHub {
   readonly commands: PhoneCommandRequest[] = [];
 
   listPhones(): unknown[] {
-    return [{ type: "register", deviceId: "phone", token, capabilities: [], connectedAt: 1 }];
+    return [{ deviceId: "phone", capabilities: [], connectedAt: 1 }];
   }
 
   async sendCommand(request: PhoneCommandRequest): Promise<{ id: string; deviceId: string; ok: boolean }> {
@@ -103,7 +103,7 @@ test("bridge HTTP serves health without auth and protects api routes", async () 
     assert.equal(health.status, 200);
     assert.deepEqual(await health.json(), {
       ok: true,
-      phones: [{ type: "register", deviceId: "phone", token, capabilities: [], connectedAt: 1 }]
+      phones: [{ deviceId: "phone", capabilities: [], connectedAt: 1 }]
     });
 
     const protectedResponse = await fetch(`${baseUrl}/api/phones`);
