@@ -583,6 +583,8 @@ class OverlayController(
             null
         }
 
+        val titleLogoSize = dp(25)
+        val titleChevronSize = dp(17)
         val titleChevron = ImageView(context).apply {
             setImageResource(R.drawable.ic_chevron_down)
             setColorFilter(tokens.secondaryText)
@@ -598,27 +600,28 @@ class OverlayController(
             background = Drawables.pillSurface(context, tokens)
             backgroundTintList = null
             contentDescription = "Open chat menu"
-            setPadding(dp(DesignTokens.Spacing.sm), dp(3), dp(DesignTokens.Spacing.sm), dp(3))
+            setPadding(dp(6), dp(3), dp(6), dp(3))
             addView(ImageView(context).apply {
                 setImageResource(R.drawable.openclaw_bubble_logo)
                 scaleType = ImageView.ScaleType.CENTER_INSIDE
                 hideFromAccessibility()
                 headerBrandLogo = this
-            }, LinearLayout.LayoutParams(dp(28), dp(28)).apply {
+            }, LinearLayout.LayoutParams(titleLogoSize, titleLogoSize).apply {
                 rightMargin = dp(DesignTokens.Spacing.xs)
             })
             addView(TextView(context).apply {
                 text = ChatPresentationHelpers.headerTitleText(brandPresentationFor(lastChatState), tokens)
-                textSize = 18f
+                textSize = 17f
                 setTextColor(tokens.primaryText)
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 includeFontPadding = false
                 isSingleLine = true
+                maxWidth = dp(128)
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 hideFromAccessibility()
                 headerBrandTitle = this
             }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-            addView(titleChevron, LinearLayout.LayoutParams(dp(18), dp(18)).apply {
+            addView(titleChevron, LinearLayout.LayoutParams(titleChevronSize, titleChevronSize).apply {
                 leftMargin = dp(DesignTokens.Spacing.xs)
             })
             exposeToAccessibility(
@@ -655,7 +658,9 @@ class OverlayController(
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, dp(DesignTokens.Spacing.xs), 0, dp(DesignTokens.Spacing.xs))
-                addView(titleStack, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+                addView(titleStack, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    rightMargin = dp(DesignTokens.Spacing.xs)
+                })
                 addView(Space(context), LinearLayout.LayoutParams(0, 1, 1f))
                 addView(actions)
             }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
