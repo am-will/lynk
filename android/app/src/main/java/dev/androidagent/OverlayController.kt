@@ -29,6 +29,7 @@ import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.DecelerateInterpolator
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -986,6 +987,9 @@ class OverlayController(
         val host = panelHost ?: return
         val picker = ensurePicker()
         val shouldPreferAbove = preferAbove || anchor === composerInput
+        if (anchor !== composerInput) {
+            hideComposerKeyboard()
+        }
         if (replaceShowing && picker.isShowingFor(anchor)) {
             picker.update(
                 title = title,
@@ -1009,6 +1013,15 @@ class OverlayController(
             preferAbove = shouldPreferAbove,
             onDismiss = onDismiss
         )
+    }
+
+    private fun hideComposerKeyboard() {
+        val input = composerInput ?: return
+        suppressKeyboardFallback()
+        input.clearFocus()
+        panelView?.requestFocus()
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        imm?.hideSoftInputFromWindow(input.windowToken, 0)
     }
 
     private fun renderHostConnectionState(state: HostConnectionState) {
