@@ -182,7 +182,7 @@ class ChatPresentationHelpersTest {
     }
 
     @Test
-    fun modelPickerOptionsSeedsHostHarnessesWhenLocalSnapshotArrivesFirst() {
+    fun modelPickerOptionsDoesNotFakeHostModelsWhenLocalSnapshotArrivesFirst() {
         val state = ChatState(
             models = listOf(ChatModelOption(
                 id = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
@@ -213,8 +213,8 @@ class ChatPresentationHelpersTest {
 
         val merged = ChatPresentationHelpers.modelPickerOptions(state, localLiteRtAvailable = true)
 
-        assertTrue(merged.any { it.id == "hermes:hermes-agent" })
-        assertTrue(merged.any { it.id == "codex:gpt-5.3-codex" })
+        assertFalse(merged.any { it.id.startsWith("hermes:") })
+        assertFalse(merged.any { it.id.startsWith("codex:") })
         assertEquals("Local", ChatPresentationHelpers.modelHarnessLabel(merged.first { it.id == AgentModelOptions.LOCAL_LITERT_MODEL_ID }))
         assertEquals("local", ChatPresentationHelpers.modelHarnessId(merged.first { it.id == AgentModelOptions.LOCAL_LITERT_MODEL_ID }))
     }

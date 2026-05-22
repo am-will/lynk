@@ -260,8 +260,7 @@ class AgentForegroundService : Service() {
         val nextClient = when (route) {
             ChatClientRoute.Host -> HostAgentChatClient(connectWebSocket(config))
             ChatClientRoute.Local -> {
-                webSocketClient?.close()
-                webSocketClient = null
+                connectWebSocket(config)
                 handleBridgeConnectionState(BridgeConnectionState(BridgeConnectionPhase.CONNECTED, "Local phone model mode"))
                 LocalAgentChatClient(
                     context = this,
@@ -304,6 +303,8 @@ class AgentForegroundService : Service() {
             onChatMessage = {
                 if (chatClientRoute == ChatClientRoute.Host) {
                     handleChatMessage(it)
+                } else if (it.optString("type") == "chat.models") {
+                    handleHostModelSnapshot(it)
                 }
             }
         ).also {
@@ -649,6 +650,13 @@ class AgentForegroundService : Service() {
                 overlayController?.show()
                 overlayController?.openChatPanel(presentation = PanelPresentation.Popup)
             }
+        }
+    }
+
+    private fun handleHostModelSnapshot(message: JSONObject) {
+        serviceScope.launch {
+            chatState = ChatStateReducer.reduce(chatState, message)
+            overlayController?.setChatState(chatState)
         }
     }
 

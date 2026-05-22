@@ -1869,6 +1869,9 @@ class OverlayController(
             sv.setText(chatStatusText(state.status, state))
             sv.setActive(state.isRunning)
         }
+        modelButton?.takeIf { anchoredPicker?.isShowingFor(it) == true }?.let { anchor ->
+            showModelChoices(anchorOverride = anchor, replace = true)
+        }
         bubbleOverlay.renderUnreadBadge(state)
         renderTimeline(state)
     }
