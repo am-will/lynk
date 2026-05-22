@@ -10,6 +10,10 @@ data class LocalModelRequest(
 )
 
 interface LocalModelRuntime {
-    suspend fun generate(request: LocalModelRequest, onDelta: suspend (String) -> Unit): String
+    suspend fun generate(
+        request: LocalModelRequest,
+        onDelta: suspend (String) -> Unit,
+        onStatus: suspend (String) -> Unit = {}
+    ): String
     fun close()
 }

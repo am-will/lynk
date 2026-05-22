@@ -3,6 +3,7 @@ package dev.androidagent.localmodel
 import dev.androidagent.AgentConfig
 import dev.androidagent.AgentModelOptions
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
@@ -51,11 +52,23 @@ class LocalAgentController(
                             config = config,
                             imagePaths = latestScreenshotPath?.let(::listOf).orEmpty()
                         ),
-                        onDelta = {}
+                        onDelta = {},
+                        onStatus = { status ->
+                            emit(state(sessionKey, runId, isRunning = true, status = status))
+                        }
                     )
                 }.trim()
             } catch (_: TimeoutCancellationException) {
                 val message = "Local model timed out while deciding the next step."
+                emitAssistant(sessionKey, runId, message)
+                return message
+            } catch (error: Throwable) {
+                if (error is CancellationException) throw error
+                val message = "Local model failed while loading or generating: ${error.message ?: error::class.java.simpleName}"
+                emit(JSONObject()
+                    .put("type", "chat.reasoning_clear")
+                    .put("sessionKey", sessionKey)
+                    .put("runId", runId))
                 emitAssistant(sessionKey, runId, message)
                 return message
             }
@@ -295,10 +308,7 @@ class LocalAgentController(
     }
 
     private fun cleanFinalText(text: String): String {
-        return text.trim()
-            .replace(Regex("""(?i)^TASK_COMPLETE\s*:?\s*"""), "")
-            .replace(Regex("""(?i)^BLOCKED\s*:?\s*"""), "")
-            .ifBlank { "Done." }
+        return LocalResponseTextNormalizer.normalize(text)
     }
 
     private fun buildLocalSystemPrompt(basePrompt: String): String {

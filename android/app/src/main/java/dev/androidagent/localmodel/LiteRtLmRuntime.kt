@@ -19,9 +19,14 @@ class LiteRtLmRuntime(
     private var loadedKey: String? = null
     private var engine: Engine? = null
 
-    override suspend fun generate(request: LocalModelRequest, onDelta: suspend (String) -> Unit): String =
+    override suspend fun generate(
+        request: LocalModelRequest,
+        onDelta: suspend (String) -> Unit,
+        onStatus: suspend (String) -> Unit
+    ): String =
         withContext(Dispatchers.IO) {
-            val activeEngine = engineFor(request.config, visionEnabled = request.imagePaths.isNotEmpty())
+            val activeEngine = engineFor(request.config, visionEnabled = request.imagePaths.isNotEmpty(), onStatus = onStatus)
+            onStatus("Local model is generating a response")
             val conversation = activeEngine.createConversation(
                 ConversationConfig(
                     systemInstruction = Contents.of(request.systemPrompt)
@@ -53,7 +58,11 @@ class LiteRtLmRuntime(
         loadedKey = null
     }
 
-    private fun engineFor(config: AgentConfig, visionEnabled: Boolean): Engine {
+    private suspend fun engineFor(
+        config: AgentConfig,
+        visionEnabled: Boolean,
+        onStatus: suspend (String) -> Unit
+    ): Engine {
         val path = config.localModelPath.trim()
         if (!LocalModelStore.exists(path)) {
             throw IllegalStateException("Local LiteRT-LM model is not configured. Import a .litertlm model in Connection & Config.")
@@ -62,6 +71,7 @@ class LiteRtLmRuntime(
         val key = listOf(path, config.localModelBackend.key, maxNumTokens, "vision=$visionEnabled").joinToString("|")
         engine?.takeIf { loadedKey == key }?.let { return it }
         close()
+        onStatus("Loading Local LiteRT-LM model into memory")
         val next = Engine(
             EngineConfig(
                 modelPath = path,
@@ -72,9 +82,15 @@ class LiteRtLmRuntime(
                 cacheDir = context.cacheDir.absolutePath
             )
         )
-        next.initialize()
+        try {
+            next.initialize()
+        } catch (error: Throwable) {
+            runCatching { next.close() }
+            throw error
+        }
         engine = next
         loadedKey = key
+        onStatus("Local LiteRT-LM model loaded")
         return next
     }
 
