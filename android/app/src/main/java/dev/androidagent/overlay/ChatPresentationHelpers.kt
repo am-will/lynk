@@ -4,6 +4,19 @@ import dev.androidagent.AgentModelOptions
 import dev.androidagent.chat.ChatModelOption
 import dev.androidagent.chat.ChatSessionRow
 
+enum class ClientBrand {
+    OpenClaw,
+    Hermes,
+    Codex,
+    Local
+}
+
+data class ClientBrandPresentation(
+    val brand: ClientBrand,
+    val title: String,
+    val usesWhiteTitle: Boolean = false
+)
+
 object ChatPresentationHelpers {
     fun isAgentInternalTool(id: String, label: String?): Boolean {
         val needle = (label ?: id).lowercase().trim()
@@ -120,6 +133,47 @@ object ChatPresentationHelpers {
         return if (pretty.startsWith("gpt-", ignoreCase = true)) pretty.drop(4) else pretty
     }
 
+    fun clientBrandPresentation(
+        selectedModel: String?,
+        models: List<ChatModelOption>,
+        harnessId: String?,
+        localLiteRtAvailable: Boolean
+    ): ClientBrandPresentation {
+        val brand = clientBrand(selectedModel, models, harnessId, localLiteRtAvailable)
+        return when (brand) {
+            ClientBrand.OpenClaw -> ClientBrandPresentation(brand, "OpenClaw")
+            ClientBrand.Hermes -> ClientBrandPresentation(brand, "Hermes")
+            ClientBrand.Codex -> ClientBrandPresentation(brand, "Codex", usesWhiteTitle = true)
+            ClientBrand.Local -> ClientBrandPresentation(brand, "LiteRT-LLM")
+        }
+    }
+
+    private fun clientBrand(
+        selectedModel: String?,
+        models: List<ChatModelOption>,
+        harnessId: String?,
+        localLiteRtAvailable: Boolean
+    ): ClientBrand {
+        val modelId = selectedModelId(selectedModel, localLiteRtAvailable)
+            .ifBlank { models.firstOrNull()?.id.orEmpty() }
+        if (modelId == AgentModelOptions.LOCAL_LITERT_MODEL_ID && localLiteRtAvailable) {
+            return ClientBrand.Local
+        }
+
+        val selected = models.firstOrNull { it.id == modelId }
+        val resolvedHarness = selected?.let(::modelHarnessId)
+            ?: harnessFromModelId(modelId)
+            ?: harnessId?.takeIf { it.isNotBlank() }?.lowercase()
+            ?: "openclaw"
+
+        return when (resolvedHarness) {
+            "hermes" -> ClientBrand.Hermes
+            "codex" -> ClientBrand.Codex
+            "local" -> ClientBrand.Local
+            else -> ClientBrand.OpenClaw
+        }
+    }
+
     fun modelHarnessLabel(model: ChatModelOption): String {
         return model.harnessLabel?.takeIf { it.isNotBlank() }
             ?: when (model.harnessId?.lowercase()) {
@@ -129,6 +183,16 @@ object ChatPresentationHelpers {
                 "local" -> "Local"
                 else -> model.provider?.takeIf { it.isNotBlank() } ?: "OpenClaw"
             }
+    }
+
+    private fun harnessFromModelId(modelId: String): String? {
+        val prefix = modelId.substringBefore(":", missingDelimiterValue = "")
+            .takeIf { it.isNotBlank() }
+            ?.lowercase()
+        return when (prefix) {
+            "hermes", "codex", "local" -> prefix
+            else -> null
+        }
     }
 
     fun modelHarnessId(model: ChatModelOption): String {
