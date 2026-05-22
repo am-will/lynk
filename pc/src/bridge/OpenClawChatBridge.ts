@@ -176,17 +176,28 @@ export class OpenClawChatBridge {
       this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} is working`);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.sendChat(message.deviceId, {
-        type: "chat.error",
-        deviceId: message.deviceId,
-        sessionKey: state.sessionKey,
-        runId: idempotencyKey,
-        message: errorMessage
-      });
-      if (state.harnessId === "openclaw") {
-        await this.fallbackSender.send(message, idempotencyKey, taskKind);
-      }
+      await this.handleSendFailure(message, state, idempotencyKey, taskKind, errorMessage);
     }
+  }
+
+  private async handleSendFailure(
+    message: ChatSendMessage,
+    state: DeviceChatState,
+    idempotencyKey: string,
+    taskKind: "general" | "phone",
+    errorMessage: string
+  ): Promise<void> {
+    this.sendChat(message.deviceId, {
+      type: "chat.error",
+      deviceId: message.deviceId,
+      sessionKey: state.sessionKey,
+      runId: idempotencyKey,
+      message: errorMessage
+    });
+    if (state.harnessId !== "openclaw") {
+      return;
+    }
+    await this.fallbackSender.send(message, idempotencyKey, taskKind);
   }
 
   async stop(message: ChatStopMessage): Promise<void> {
