@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ChatModelOption, ChatSessionSummary } from "../../protocol/messages.js";
+import type { ChatCommandOption, ChatModelOption, ChatSessionSummary } from "../../protocol/messages.js";
 import type { HarnessId } from "../AgentHarness.js";
 import type { BridgeConfig } from "../config.js";
 import type { GatewayChatSendResult, GatewayEventHandler } from "../OpenClawGatewayChatClient.js";
@@ -31,6 +31,7 @@ class FakeAdapter implements HarnessChatAdapter {
   readonly sent: Array<{ sessionKey: string; message: string }> = [];
   readonly sessions: ChatSessionSummary[] = [];
   readonly models: ChatModelOption[] = [];
+  readonly commands: ChatCommandOption[] = [];
 
   constructor(readonly harnessId: HarnessId) {}
 
@@ -68,8 +69,8 @@ class FakeAdapter implements HarnessChatAdapter {
     return {};
   }
 
-  async listCommands(): Promise<[]> {
-    return [];
+  async listCommands(): Promise<ChatCommandOption[]> {
+    return this.commands;
   }
 
   async effectiveTools(): Promise<[]> {
@@ -138,5 +139,33 @@ test("harness router rejects disabled Hermes session keys clearly", async () => 
   await assert.rejects(
     router.sendChat({ sessionKey: "hermes:chat", message: "Use Hermes" }),
     /hermes harness is not configured/
+  );
+});
+
+test("harness router shares OpenClaw skills with Hermes and Codex command lists", async () => {
+  const { router, openclaw, hermes, codex } = createRouter();
+  openclaw.commands.push(
+    { name: "status", description: "Show OpenClaw status", textAliases: ["/status"], acceptsArgs: false },
+    { name: "commit-message", description: "Draft a commit message", source: "skill", acceptsArgs: true },
+    { name: "code-review", description: "Review code", source: "skill", acceptsArgs: true }
+  );
+  hermes.commands.push(
+    { name: "status", description: "Show Hermes status", textAliases: ["/status"], acceptsArgs: false }
+  );
+  codex.commands.push(
+    { name: "help", description: "Show Codex help", textAliases: ["/help"], acceptsArgs: false },
+    { name: "code-review", description: "Codex native review", source: "skill", acceptsArgs: true }
+  );
+
+  const hermesPayload = await router.listCommands("hermes:chat") as { commands: ChatCommandOption[] };
+  const codexPayload = await router.listCommands("codex:chat") as { commands: ChatCommandOption[] };
+
+  assert.deepEqual(
+    hermesPayload.commands.filter((command) => command.source === "skill").map((command) => command.name),
+    ["commit-message", "code-review"]
+  );
+  assert.deepEqual(
+    codexPayload.commands.filter((command) => command.source === "skill").map((command) => command.name),
+    ["code-review", "commit-message"]
   );
 });

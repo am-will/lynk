@@ -12,6 +12,7 @@ import {
 } from "../AgentHarness.js";
 import { CodexChatClient } from "../CodexChatClient.js";
 import type { BridgeConfig } from "../config.js";
+import type { ChatCommandOption } from "../../protocol/messages.js";
 import { HermesChatClient } from "../HermesChatClient.js";
 import type { GatewayChatClient } from "../OpenClawChatTypes.js";
 import { OpenClawGatewayChatClient, type GatewayChatSendResult, type GatewayEventHandler } from "../OpenClawGatewayChatClient.js";
@@ -117,7 +118,12 @@ export class HarnessChatRouter implements GatewayChatClient {
   }
 
   async listCommands(sessionKey?: string): Promise<unknown> {
-    return { commands: await this.adapterForSession(sessionKey).listCommands(sessionKey) };
+    const harnessId = harnessForSessionKey(sessionKey);
+    const commands = await this.adapterForHarness(harnessId).listCommands(sessionKey);
+    if (harnessId === "openclaw") {
+      return { commands };
+    }
+    return { commands: await this.withOpenClawSkills(commands) };
   }
 
   async effectiveTools(sessionKey: string): Promise<unknown> {
@@ -161,6 +167,30 @@ export class HarnessChatRouter implements GatewayChatClient {
     return adapter;
   }
 
+  private async withOpenClawSkills(commands: ChatCommandOption[]): Promise<ChatCommandOption[]> {
+    const openclaw = this.adapters.get("openclaw");
+    if (!openclaw) {
+      return commands;
+    }
+    const openclawCommands = await openclaw.listCommands().catch(() => []);
+    const existingSkillNames = new Set(
+      commands
+        .filter(isSkillCommand)
+        .map((command) => command.name.toLowerCase())
+    );
+    const sharedSkills = openclawCommands
+      .filter(isSkillCommand)
+      .filter((command) => {
+        const key = command.name.toLowerCase();
+        if (existingSkillNames.has(key)) {
+          return false;
+        }
+        existingSkillNames.add(key);
+        return true;
+      });
+    return [...commands, ...sharedSkills];
+  }
+
   private keyForHarness(harnessId: HarnessId, key: string | undefined): string | undefined {
     if (!key || harnessId === "openclaw" || key.startsWith(`${harnessId}:`)) {
       return key;
@@ -180,6 +210,10 @@ export class HarnessChatRouter implements GatewayChatClient {
       harnessLabel: harnessInfos(this.config).find((info) => info.id === harnessId)?.label
     };
   }
+}
+
+function isSkillCommand(command: ChatCommandOption): boolean {
+  return command.source?.toLowerCase() === "skill";
 }
 
 function explicitHarnessForSessionKey(sessionKey: string | undefined): HarnessId | undefined {
