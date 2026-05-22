@@ -1443,12 +1443,7 @@ class OverlayController(
                 iconRes = R.drawable.ic_voice,
                 onSelect = { startVoiceAndMinimizePanel() }
             ),
-            AnchoredPicker.Row(
-                id = "queue:steer",
-                label = "Queue steer",
-                iconRes = R.drawable.ic_steer,
-                onSelect = { insertComposerText("/queue steer ") }
-            ),
+            activeSendModeRow(),
             AnchoredPicker.Row(
                 id = "usage:open",
                 label = "Usage",
@@ -1643,6 +1638,46 @@ class OverlayController(
                 updatePlusMenuToggleRow(plusToolCallsRow())
             }
         )
+    }
+
+    private fun activeSendModeRow(): AnchoredPicker.Row {
+        return AnchoredPicker.Row(
+            id = PLUS_ROW_ACTIVE_SEND_MODE,
+            label = "Active send: ${activeSendModeLabel()}",
+            sublabel = activeSendModeSublabel(),
+            iconRes = R.drawable.ic_steer,
+            selected = activeSendMode() == ChatActiveSendMode.Steer,
+            dismissOnSelect = false,
+            onSelect = {
+                toggleActiveSendMode()
+                updatePlusMenuToggleRow(activeSendModeRow())
+            }
+        )
+    }
+
+    private fun activeSendMode(): ChatActiveSendMode {
+        return AgentConfigStore.load(context).activeSendMode
+    }
+
+    private fun activeSendModeLabel(): String {
+        return activeSendMode().label
+    }
+
+    private fun activeSendModeSublabel(): String {
+        return when (activeSendMode()) {
+            ChatActiveSendMode.Queue -> "Typed messages wait for the next turn"
+            ChatActiveSendMode.Steer -> "Typed messages steer after the next tool call"
+        }
+    }
+
+    private fun toggleActiveSendMode() {
+        val config = AgentConfigStore.load(context)
+        val next = when (config.activeSendMode) {
+            ChatActiveSendMode.Queue -> ChatActiveSendMode.Steer
+            ChatActiveSendMode.Steer -> ChatActiveSendMode.Queue
+        }
+        AgentConfigStore.save(context, config.copy(activeSendMode = next))
+        setStatus("Active send: ${next.label}")
     }
 
     private fun toggleReasoningStream() {
@@ -2430,6 +2465,7 @@ class OverlayController(
         private const val PLUS_ROW_VERBOSE = "plus_verbose"
         private const val PLUS_ROW_REASONING_STREAM = "plus_reasoning_stream"
         private const val PLUS_ROW_TOOL_CALLS = "plus_tool_calls"
+        private const val PLUS_ROW_ACTIVE_SEND_MODE = "plus_active_send_mode"
         private const val COMMAND_GROUP_COMMANDS = "commands"
         private const val COMMAND_GROUP_SKILLS = "skills"
         const val MIN_BUBBLE_SIZE_DP = AppearancePrefs.MIN_BUBBLE_SIZE_DP

@@ -19,6 +19,12 @@ class AgentConfigModeTest {
     }
 
     @Test
+    fun unknownActiveSendModeDefaultsToSteer() {
+        assertEquals(ChatActiveSendMode.Steer, ChatActiveSendMode.fromKey("unexpected"))
+        assertEquals(ChatActiveSendMode.Steer, ChatActiveSendMode.fromKey(null))
+    }
+
+    @Test
     fun experimentalLocalModelsAreDisabledByDefault() {
         val config = AgentConfig(
             hostUrl = "ws://127.0.0.1:8788/phone",
@@ -31,6 +37,7 @@ class AgentConfigModeTest {
         )
 
         assertFalse(config.experimentalLocalModelsEnabled)
+        assertEquals(ChatActiveSendMode.Steer, config.activeSendMode)
     }
 
     @Test

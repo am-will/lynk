@@ -23,6 +23,16 @@ enum class LocalModelBackend(val key: String, val label: String) {
     }
 }
 
+enum class ChatActiveSendMode(val key: String, val label: String) {
+    Queue("queue", "Queue"),
+    Steer("steer", "Steer");
+
+    companion object {
+        fun fromKey(value: String?): ChatActiveSendMode =
+            values().firstOrNull { it.key == value } ?: Steer
+    }
+}
+
 data class AgentConfig(
     val hostUrl: String,
     val deviceId: String,
@@ -39,7 +49,8 @@ data class AgentConfig(
     val localDeveloperToolsEnabled: Boolean = false,
     val openClawHarnessEnabled: Boolean = true,
     val hermesHarnessEnabled: Boolean = true,
-    val codexHarnessEnabled: Boolean = true
+    val codexHarnessEnabled: Boolean = true,
+    val activeSendMode: ChatActiveSendMode = ChatActiveSendMode.Steer
 ) {
     fun enabledModelHarnessIds(): Set<String> {
         val ids = mutableSetOf<String>()
@@ -87,6 +98,7 @@ object AgentConfigStore {
     private const val OPENCLAW_HARNESS_ENABLED = "openclaw_harness_enabled"
     private const val HERMES_HARNESS_ENABLED = "hermes_harness_enabled"
     private const val CODEX_HARNESS_ENABLED = "codex_harness_enabled"
+    private const val ACTIVE_SEND_MODE = "active_send_mode"
     private const val DEFAULT_LOCAL_CONTEXT_TOKENS = 4096
 
     fun load(context: Context): AgentConfig {
@@ -112,7 +124,8 @@ object AgentConfigStore {
             localDeveloperToolsEnabled = prefs.getBoolean(LOCAL_DEVELOPER_TOOLS_ENABLED, false),
             openClawHarnessEnabled = prefs.getBoolean(OPENCLAW_HARNESS_ENABLED, true),
             hermesHarnessEnabled = prefs.getBoolean(HERMES_HARNESS_ENABLED, true),
-            codexHarnessEnabled = prefs.getBoolean(CODEX_HARNESS_ENABLED, true)
+            codexHarnessEnabled = prefs.getBoolean(CODEX_HARNESS_ENABLED, true),
+            activeSendMode = ChatActiveSendMode.fromKey(prefs.getString(ACTIVE_SEND_MODE, ChatActiveSendMode.Steer.key))
         )
     }
 
@@ -135,6 +148,7 @@ object AgentConfigStore {
             .putBoolean(OPENCLAW_HARNESS_ENABLED, config.openClawHarnessEnabled)
             .putBoolean(HERMES_HARNESS_ENABLED, config.hermesHarnessEnabled)
             .putBoolean(CODEX_HARNESS_ENABLED, config.codexHarnessEnabled)
+            .putString(ACTIVE_SEND_MODE, config.activeSendMode.key)
             .apply()
     }
 
