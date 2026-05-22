@@ -78,6 +78,7 @@ export type RealtimeToolName = typeof REALTIME_TOOL_NAMES[keyof typeof REALTIME_
 
 export const AGENT_MODEL_IDS = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.2"] as const;
 export const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
+export const CHAT_SEND_DELIVERIES = ["normal", "queue", "steer"] as const;
 
 export const registerMessageSchema = z.object({
   type: z.literal("register"),
@@ -181,7 +182,8 @@ export const chatSendMessageSchema = z.object({
   sessionId: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   reasoningEffort: z.string().min(1).optional(),
-  idempotencyKey: z.string().min(1).optional()
+  idempotencyKey: z.string().min(1).optional(),
+  delivery: z.enum(CHAT_SEND_DELIVERIES).optional()
 });
 
 export const chatStopMessageSchema = z.object({
