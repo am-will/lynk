@@ -74,7 +74,17 @@ enum class ChatModelSource {
     HOST,
     LOCAL
 }
-data class ChatCommandOption(val name: String, val description: String?, val category: String?, val aliases: List<String>, val acceptsArgs: Boolean)
+data class ChatCommandOption(
+    val name: String,
+    val description: String?,
+    val category: String?,
+    val aliases: List<String>,
+    val acceptsArgs: Boolean,
+    val source: String? = null
+) {
+    val isSkill: Boolean
+        get() = source.equals("skill", ignoreCase = true)
+}
 data class ChatToolSummary(val id: String, val label: String?, val description: String?, val source: String?, val group: String?)
 
 data class ChatUsageSummary(
@@ -745,7 +755,8 @@ object ChatStateReducer {
                     description = item.optNullableString("description"),
                     category = item.optNullableString("category"),
                     aliases = item.optJSONArray("textAliases").toStringList(),
-                    acceptsArgs = item.optBoolean("acceptsArgs", false)
+                    acceptsArgs = item.optBoolean("acceptsArgs", false),
+                    source = item.optNullableString("source")
                 ))
             }
         }
