@@ -1444,6 +1444,12 @@ class OverlayController(
             plusFastModeRow(),
             plusToolCallsRow(),
             AnchoredPicker.Row(
+                id = "realtime:start",
+                label = "Realtime Agent",
+                iconRes = R.drawable.ic_voice_wave,
+                onSelect = { startVoiceAndMinimizePanel() }
+            ),
+            AnchoredPicker.Row(
                 id = "voice:start",
                 label = "Voice mode",
                 iconRes = R.drawable.ic_voice,
