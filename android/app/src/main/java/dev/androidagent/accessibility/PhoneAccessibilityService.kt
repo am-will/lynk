@@ -6,6 +6,8 @@ import android.view.accessibility.AccessibilityEvent
 class PhoneAccessibilityService : AccessibilityService() {
     var lastActivityClassName: String? = null
         private set
+    var lastPackageName: String? = null
+        private set
 
     override fun onServiceConnected() {
         instance = this
@@ -15,6 +17,10 @@ class PhoneAccessibilityService : AccessibilityService() {
         val className = event?.className?.toString()
         if (!className.isNullOrBlank()) {
             lastActivityClassName = className
+        }
+        val packageName = event?.packageName?.toString()
+        if (!packageName.isNullOrBlank()) {
+            lastPackageName = packageName
         }
     }
 

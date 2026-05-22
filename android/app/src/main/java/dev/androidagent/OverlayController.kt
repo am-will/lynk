@@ -168,6 +168,8 @@ class OverlayController(
     private var restorePanelScrimAfterAutomation = false
     private var restorePanelFocusAfterAutomation = false
     private var restoreComposerFocusAfterAutomation = false
+    private var recentsSuppressionActive = false
+    private var restoreBubbleAfterRecents = false
     private var keyboardFallbackSuppressed = false
     private var stableKeyboardFrameObserved = false
     private var activePanelPresentation = PanelPresentation.Popup
@@ -210,6 +212,8 @@ class OverlayController(
         automationSuppressionDepth = 0
         restoreBubbleAfterAutomation = false
         restoreBubbleAfterFullscreen = false
+        recentsSuppressionActive = false
+        restoreBubbleAfterRecents = false
         bubbleOverlay.hide()
         dismissPanel()
         confirmationOverlay.dismiss()
@@ -277,12 +281,31 @@ class OverlayController(
         }
     }
 
-    fun hideAgentChromeFromSystemRecents() {
+    fun suppressAgentChromeForSystemRecents() {
         mainHandler.post {
+            if (recentsSuppressionActive) {
+                return@post
+            }
+            recentsSuppressionActive = true
+            restoreBubbleAfterRecents = bubbleOverlay.isVisible || restoreBubbleAfterFullscreen
             restoreBubbleAfterFullscreen = false
             dismissPanel(cancelTranscription = false, force = true)
             bubbleOverlay.detachForAutomation()
             confirmationOverlay.dismiss()
+        }
+    }
+
+    fun restoreAgentChromeAfterSystemRecents() {
+        mainHandler.post {
+            if (!recentsSuppressionActive) {
+                return@post
+            }
+            val shouldRestoreBubble = restoreBubbleAfterRecents
+            recentsSuppressionActive = false
+            restoreBubbleAfterRecents = false
+            if (shouldRestoreBubble && Settings.canDrawOverlays(context) && automationSuppressionDepth == 0 && !bubbleOverlay.isVisible) {
+                show()
+            }
         }
     }
 

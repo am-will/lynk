@@ -10,13 +10,21 @@ class SystemDialogChromeActionTest {
     }
 
     @Test
-    fun recentsSystemDialogHidesAgentChrome() {
-        assertEquals(SystemDialogChromeAction.HideAgentChrome, systemDialogChromeAction("recentapps"))
+    fun recentsSystemDialogTemporarilySuppressesAgentChrome() {
+        assertEquals(SystemDialogChromeAction.SuppressAgentChrome, systemDialogChromeAction("recentapps"))
     }
 
     @Test
     fun unknownSystemDialogDoesNotChangeChrome() {
         assertEquals(SystemDialogChromeAction.None, systemDialogChromeAction(null))
         assertEquals(SystemDialogChromeAction.None, systemDialogChromeAction("assist"))
+    }
+
+    @Test
+    fun recentsSurfaceDetectionMatchesCommonOverviewClasses() {
+        assertEquals(true, isSystemRecentsSurface("com.android.systemui", "com.android.systemui.recents.RecentsActivity"))
+        assertEquals(true, isSystemRecentsSurface("com.google.android.apps.nexuslauncher", "com.android.quickstep.RecentsActivity"))
+        assertEquals(false, isSystemRecentsSurface("dev.openclawagent", "dev.androidagent.MainActivity"))
+        assertEquals(false, isSystemRecentsSurface("com.google.android.apps.nexuslauncher", "com.google.android.apps.nexuslauncher.NexusLauncherActivity"))
     }
 }

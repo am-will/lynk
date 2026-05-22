@@ -14,13 +14,17 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.app.ServiceCompat
 import dev.androidagent.accessibility.AccessibilityCommandExecutor
+import dev.androidagent.accessibility.PhoneAccessibilityService
 import dev.androidagent.agentchat.AgentChatClient
 import dev.androidagent.agentchat.HostAgentChatClient
 import dev.androidagent.agentchat.LocalAgentChatClient
@@ -61,19 +65,30 @@ private const val SYSTEM_DIALOG_REASON_RECENT_APPS = "recentapps"
 internal enum class SystemDialogChromeAction {
     None,
     MinimizePanel,
-    HideAgentChrome
+    SuppressAgentChrome
 }
 
 internal fun systemDialogChromeAction(reason: String?): SystemDialogChromeAction {
     return when (reason) {
         SYSTEM_DIALOG_REASON_HOME_KEY -> SystemDialogChromeAction.MinimizePanel
-        SYSTEM_DIALOG_REASON_RECENT_APPS -> SystemDialogChromeAction.HideAgentChrome
+        SYSTEM_DIALOG_REASON_RECENT_APPS -> SystemDialogChromeAction.SuppressAgentChrome
         else -> SystemDialogChromeAction.None
     }
 }
 
+internal fun isSystemRecentsSurface(packageName: String?, className: String?): Boolean {
+    val packageValue = packageName.orEmpty().lowercase()
+    val classValue = className.orEmpty().lowercase()
+    val combined = "$packageValue $classValue"
+    return combined.contains("recents") ||
+        combined.contains("overview") ||
+        (packageValue.contains("launcher") && classValue.contains("quickstep")) ||
+        (packageValue == "com.android.systemui" && classValue.contains("recents"))
+}
+
 class AgentForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var overlayController: OverlayController? = null
     private var webSocketClient: PhoneWebSocketClient? = null
     private var chatClient: AgentChatClient? = null
@@ -86,12 +101,14 @@ class AgentForegroundService : Service() {
     private var chatState = ChatState()
     private var pendingNewChat = false
     private var notifiedReplySessions = emptySet<String>()
+    private var recentsSuppressionStartedAtMs = 0L
+    private var recentsRestoreCheck: Runnable? = null
     private val closeSystemDialogsReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != Intent.ACTION_CLOSE_SYSTEM_DIALOGS) return
             when (systemDialogChromeAction(intent.getStringExtra(SYSTEM_DIALOG_REASON))) {
-                SystemDialogChromeAction.MinimizePanel -> overlayController?.minimizePanelFromSystemHome()
-                SystemDialogChromeAction.HideAgentChrome -> overlayController?.hideAgentChromeFromSystemRecents()
+                SystemDialogChromeAction.MinimizePanel -> handleSystemHomePressed()
+                SystemDialogChromeAction.SuppressAgentChrome -> handleSystemRecentsOpened()
                 SystemDialogChromeAction.None -> Unit
             }
         }
@@ -212,11 +229,18 @@ class AgentForegroundService : Service() {
         serviceScope.cancel()
         chatClient?.close()
         webSocketClient?.close()
+        recentsRestoreCheck?.let(mainHandler::removeCallbacks)
+        recentsRestoreCheck = null
         unregisterCloseSystemDialogsReceiver()
         overlayController?.hide()
         isRunning = false
         broadcastRunningState()
         super.onDestroy()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -368,6 +392,47 @@ class AgentForegroundService : Service() {
 
     private fun unregisterCloseSystemDialogsReceiver() {
         runCatching { unregisterReceiver(closeSystemDialogsReceiver) }
+    }
+
+    private fun handleSystemHomePressed() {
+        overlayController?.minimizePanelFromSystemHome()
+        restoreAgentChromeAfterRecents()
+    }
+
+    private fun handleSystemRecentsOpened() {
+        overlayController?.suppressAgentChromeForSystemRecents()
+        recentsSuppressionStartedAtMs = SystemClock.uptimeMillis()
+        scheduleRecentsRestoreCheck()
+    }
+
+    private fun scheduleRecentsRestoreCheck() {
+        recentsRestoreCheck?.let(mainHandler::removeCallbacks)
+        val runnable = Runnable { maybeRestoreAgentChromeAfterRecents() }
+        recentsRestoreCheck = runnable
+        mainHandler.postDelayed(runnable, RECENTS_RESTORE_CHECK_MS)
+    }
+
+    private fun maybeRestoreAgentChromeAfterRecents() {
+        val elapsedMs = SystemClock.uptimeMillis() - recentsSuppressionStartedAtMs
+        val accessibility = PhoneAccessibilityService.instance
+        val shouldKeepSuppressed = when {
+            elapsedMs < RECENTS_MIN_SUPPRESSION_MS -> true
+            accessibility == null -> elapsedMs < RECENTS_RESTORE_WITHOUT_ACCESSIBILITY_MS
+            accessibility.lastPackageName == null && accessibility.lastActivityClassName == null ->
+                elapsedMs < RECENTS_RESTORE_WITHOUT_ACCESSIBILITY_MS
+            else -> isSystemRecentsSurface(accessibility.lastPackageName, accessibility.lastActivityClassName)
+        }
+        if (shouldKeepSuppressed) {
+            scheduleRecentsRestoreCheck()
+        } else {
+            restoreAgentChromeAfterRecents()
+        }
+    }
+
+    private fun restoreAgentChromeAfterRecents() {
+        recentsRestoreCheck?.let(mainHandler::removeCallbacks)
+        recentsRestoreCheck = null
+        overlayController?.restoreAgentChromeAfterSystemRecents()
     }
 
     private fun submitChatText(text: String): Boolean {
@@ -607,6 +672,7 @@ class AgentForegroundService : Service() {
     }
 
     private fun openChatFromIntent(intent: Intent?) {
+        restoreAgentChromeAfterRecents()
         openActiveChatConnection()
         val presentation = panelPresentationFrom(intent)
         if (presentation == PanelPresentation.Popup) {
@@ -630,6 +696,7 @@ class AgentForegroundService : Service() {
         sessionKey: String,
         presentation: PanelPresentation
     ) {
+        restoreAgentChromeAfterRecents()
         val route = routeForSessionKey(sessionKey)
         connectAgentClient(routeOverride = route).selectSession(sessionKey)
         markChatSessionRead(sessionKey)
@@ -937,6 +1004,9 @@ class AgentForegroundService : Service() {
         private const val REQUEST_OPEN_CHAT = 2
         private const val DEFAULT_NOTIFICATION_TEXT = "Floating chat bubble is running"
         private const val SYSTEM_DIALOG_REASON = "reason"
+        private const val RECENTS_RESTORE_CHECK_MS = 350L
+        private const val RECENTS_MIN_SUPPRESSION_MS = 700L
+        private const val RECENTS_RESTORE_WITHOUT_ACCESSIBILITY_MS = 2_500L
         const val ACTION_STATE_CHANGED = "dev.openclawagent.action.AGENT_SERVICE_STATE_CHANGED"
         const val EXTRA_IS_RUNNING = "isRunning"
         const val CHANNEL_ID = "open-claw-agent"
