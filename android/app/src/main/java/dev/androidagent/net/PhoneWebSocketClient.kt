@@ -80,15 +80,17 @@ class PhoneWebSocketClient(
         client.dispatcher.executorService.shutdown()
     }
 
-    fun sendUserRequest(text: String, requestConfig: AgentConfig = config) {
+    fun sendUserRequest(text: String, requestConfig: AgentConfig = config, includeSystemPrompt: Boolean = false) {
         val message = JSONObject()
             .put("type", "user_request")
             .put("deviceId", requestConfig.deviceId)
             .put("inputType", "text")
             .put("text", text)
-            .put("systemPrompt", requestConfig.systemPrompt)
             .put("model", requestConfig.model)
             .put("reasoningEffort", requestConfig.reasoningEffort)
+        if (includeSystemPrompt) {
+            message.put("systemPrompt", requestConfig.systemPrompt)
+        }
         sendJson(message, reportChatError = true)
     }
 

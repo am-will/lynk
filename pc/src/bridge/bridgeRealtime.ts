@@ -61,7 +61,8 @@ export class BridgeRealtime {
       this.deps.audit.record("openai_realtime_starting", message.deviceId, {
         model: this.deps.config.openAiRealtimeModel,
         voice: this.deps.config.openAiRealtimeVoice,
-        sdpLength: message.sdp.length
+        sdpLength: message.sdp.length,
+        systemPromptChars: message.systemPrompt?.length ?? 0
       });
       const { answerSdp, session } = await this.deps.realtimeClient.start({
         deviceId: message.deviceId,

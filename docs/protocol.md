@@ -147,6 +147,8 @@ Android can ask the bridge to stop the active phone-control turn. The same messa
 
 The large Android overlay uses explicit `chat.*` messages for harness-backed session chat. OpenClaw Gateway remains the default harness, while Hermes and Codex can be selected through model-picker entries when they are configured on the bridge. The legacy `user_request` message remains available for compatibility, but normal typed overlay submissions use `chat.send`.
 
+Prompt policy is session-oriented where the selected harness supports it. Normal `chat.send` messages do not carry the Android settings `systemPrompt`; the bridge sends only user text plus a short phone-task hint when the request is explicitly about phone control. Legacy `user_request` callers may still include `systemPrompt`, but Android does not send it by default.
+
 Local phone mode mirrors these outbound event types locally: `chat.models`, `chat.sessions`, `chat.history`, `chat.state`, `chat.delta`, `chat.final`, `chat.error`, `chat.tool_event`, and `chat.tools`. Local session keys use the `local:` prefix, and the local model id is currently `local-litertlm`.
 
 Host harnesses are selected by model id. OpenClaw keeps its existing bare model ids for backward compatibility, while non-default harness models are namespaced as `<harness>:<model>`, for example `hermes:gpt-5.5` or `codex:gpt-5.3-codex`. The bridge emits optional `harnessId`, `harnessLabel`, and `modelId` metadata on model, session, and state messages so Android can group the picker and keep previous chats scoped to the active harness.
@@ -351,7 +353,7 @@ Android sends:
 }
 ```
 
-Optional fields: `systemPrompt`, `model`, `reasoningEffort`, `location`, and `openAiApiKey`. Android sends `location` only when the user has granted location permission and the device has a recent best-effort location available. The bridge uses it as context for localized realtime answers and web searches.
+Optional fields: `systemPrompt`, `model`, `reasoningEffort`, `location`, and `openAiApiKey`. `systemPrompt` is applied once when the realtime session starts; it is not resent per utterance or delegated task. Android sends `location` only when the user has granted location permission and the device has a recent best-effort location available. The bridge uses it as context for localized realtime answers and web searches.
 
 The bridge replies with the remote SDP answer:
 
