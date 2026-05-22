@@ -2,6 +2,7 @@ package dev.androidagent.ui
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
@@ -44,6 +45,7 @@ class AnchoredPicker(
         val iconRes: Int? = null,
         val selected: Boolean = false,
         val selectable: Boolean = true,
+        val emphasizeSublabel: Boolean = false,
         val destructive: Boolean = false,
         val enabled: Boolean = true,
         val badgeCount: Int = 0,
@@ -68,10 +70,11 @@ class AnchoredPicker(
 
     fun isShowingFor(anchor: View): Boolean = sheetView != null && currentAnchor === anchor
 
-    fun update(title: String? = null, sections: List<Section>) {
+    fun update(title: String? = null, sections: List<Section>, heightFraction: Float? = null) {
         val sheet = sheetView as? LinearLayout ?: return
         val scrollY = findBodyScroller(sheet)?.scrollY ?: 0
         bindSheetContent(sheet, title, sections)
+        applyHeight(sheet, heightFraction)
         sheet.post {
             reposition()
             findBodyScroller(sheet)?.scrollTo(0, scrollY)
@@ -107,6 +110,7 @@ class AnchoredPicker(
         anchor: View,
         title: String? = null,
         sections: List<Section>,
+        heightFraction: Float? = null,
         onDismiss: (() -> Unit)? = null
     ) {
         dismiss()
@@ -129,10 +133,10 @@ class AnchoredPicker(
         )
         scrimView = scrim
 
-        val sheet = buildSheet(title, sections)
+        val sheet = buildSheet(title, sections, heightFraction)
         val sheetParams = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.WRAP_CONTENT,
-            FrameLayout.LayoutParams.WRAP_CONTENT
+            heightPx(heightFraction) ?: FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             val sideMargin = dp(context, DesignTokens.Spacing.md)
@@ -253,7 +257,7 @@ class AnchoredPicker(
         sheet.pivotY = if (placeAbove) effectiveHeight.toFloat() else 0f
     }
 
-    private fun buildSheet(title: String?, sections: List<Section>): View {
+    private fun buildSheet(title: String?, sections: List<Section>, heightFraction: Float?): View {
         val padOuter = dp(context, DesignTokens.Spacing.sm)
         val padTop = dp(context, DesignTokens.Spacing.sm)
         val padBottom = dp(context, DesignTokens.Spacing.sm)
@@ -277,7 +281,11 @@ class AnchoredPicker(
         }
 
         bindSheetContent(container, title, sections)
-        container.maxHeight(maxHeight)
+        if (heightFraction == null) {
+            container.maxHeight(maxHeight)
+        } else {
+            applyHeight(container, heightFraction)
+        }
         return container
     }
 
@@ -381,6 +389,17 @@ class AnchoredPicker(
         })
     }
 
+    private fun applyHeight(sheet: View, heightFraction: Float?) {
+        val params = sheet.layoutParams ?: return
+        params.height = heightPx(heightFraction) ?: ViewGroup.LayoutParams.WRAP_CONTENT
+        sheet.layoutParams = params
+    }
+
+    private fun heightPx(heightFraction: Float?): Int? {
+        return heightFraction
+            ?.let { fraction -> (context.resources.displayMetrics.heightPixels * fraction.coerceIn(0.1f, 0.9f)).toInt() }
+    }
+
     private fun buildRow(row: Row): View {
         val rowView = LinearLayout(context).apply {
             exposeToAccessibility(
@@ -461,6 +480,10 @@ class AnchoredPicker(
             labels.addView(TextView(context).apply {
                 text = sub
                 Typography.applyCaption(this, tokens)
+                if (row.emphasizeSublabel) {
+                    setTextColor(tokens.accent)
+                    setTypeface(typeface, Typeface.BOLD)
+                }
                 setPadding(0, dp(context, 2), 0, 0)
                 isSingleLine = true
             })

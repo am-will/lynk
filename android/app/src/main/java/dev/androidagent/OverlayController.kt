@@ -925,19 +925,20 @@ class OverlayController(
         sections: List<AnchoredPicker.Section>,
         toggleSameAnchor: Boolean = true,
         replaceShowing: Boolean = false,
+        heightFraction: Float? = null,
         onDismiss: (() -> Unit)? = null
     ) {
         val host = panelHost ?: return
         val picker = ensurePicker()
         if (replaceShowing && picker.isShowingFor(anchor)) {
-            picker.update(title, sections)
+            picker.update(title, sections, heightFraction = heightFraction)
             return
         }
         if (toggleSameAnchor && picker.isShowingFor(anchor)) {
             picker.dismiss()
             return
         }
-        picker.show(host, anchor, title, sections, onDismiss = onDismiss)
+        picker.show(host, anchor, title, sections, heightFraction = heightFraction, onDismiss = onDismiss)
     }
 
     private fun renderHostConnectionState(state: HostConnectionState) {
@@ -1103,12 +1104,14 @@ class OverlayController(
 
         val sections = groups.map { group ->
             val expanded = group.id in expandedModelHarnesses
+            val isActiveHarness = group.id == activeHarnessId
             val harnessRow = AnchoredPicker.Row(
                 id = "model-harness:${group.id}",
                 label = group.label,
-                sublabel = if (group.id == activeHarnessId) "Active harness" else "${group.models.size} model${if (group.models.size == 1) "" else "s"}",
+                sublabel = if (isActiveHarness) "Active harness" else "${group.models.size} model${if (group.models.size == 1) "" else "s"}",
                 selected = false,
                 selectable = false,
+                emphasizeSublabel = isActiveHarness,
                 trailingIconRes = R.drawable.ic_chevron_right,
                 trailingIconRotation = if (expanded) 90f else 0f,
                 dismissOnSelect = false,
@@ -1141,12 +1144,14 @@ class OverlayController(
             }
             AnchoredPicker.Section(null, rows)
         }
+        val hasExpandedHarness = groups.any { group -> group.id in expandedModelHarnesses }
         showAnchoredPicker(
             anchor = anchor,
             title = "Model",
             sections = sections,
             toggleSameAnchor = !replace,
-            replaceShowing = replace
+            replaceShowing = replace,
+            heightFraction = if (hasExpandedHarness) 0.65f else null
         )
     }
 
