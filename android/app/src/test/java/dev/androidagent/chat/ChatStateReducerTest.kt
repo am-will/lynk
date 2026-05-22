@@ -352,6 +352,44 @@ class ChatStateReducerTest {
     }
 
     @Test
+    fun usageFallsBackToSelectedModelContextWindow() {
+        val withModels = ChatStateReducer.reduce(ChatState(selectedModel = "codex:gpt-5.3-codex"), JSONObject()
+            .put("type", "chat.models")
+            .put("models", JSONArray().put(JSONObject()
+                .put("id", "codex:gpt-5.3-codex")
+                .put("label", "Codex")
+                .put("contextWindow", 400_000))))
+        val withUsage = ChatStateReducer.reduce(withModels, JSONObject()
+            .put("type", "chat.usage")
+            .put("sessionKey", "codex:main")
+            .put("usage", JSONObject()
+                .put("totalTokens", 32_000)))
+
+        assertEquals(32_000L, withUsage.usage.totalTokens)
+        assertEquals(400_000L, withUsage.usage.contextTokens)
+        assertEquals(0.08f, withUsage.usage.contextRatio)
+    }
+
+    @Test
+    fun localUsagePayloadProvidesContextRatio() {
+        val state = ChatStateReducer.reduce(ChatState(), JSONObject()
+            .put("type", "chat.sessions")
+            .put("selectedSessionKey", "local:main")
+            .put("sessions", JSONArray().put(JSONObject()
+                .put("key", "local:main")
+                .put("model", AgentModelOptions.LOCAL_LITERT_MODEL_ID)
+                .put("inputTokens", 64)
+                .put("outputTokens", 32)
+                .put("totalTokens", 96)
+                .put("contextTokens", 4096))))
+
+        assertEquals(AgentModelOptions.LOCAL_LITERT_MODEL_ID, state.selectedModel)
+        assertEquals(96L, state.usage.totalTokens)
+        assertEquals(4096L, state.usage.contextTokens)
+        assertEquals(96f / 4096f, state.usage.contextRatio)
+    }
+
+    @Test
     fun replyAvailableAddsUnreadPerSessionAndDedupesRunIds() {
         val first = ChatStateReducer.reduce(ChatState(), JSONObject()
             .put("type", "chat.reply_available")

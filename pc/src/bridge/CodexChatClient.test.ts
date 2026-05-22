@@ -7,6 +7,9 @@ import { CodexChatClient } from "./CodexChatClient.js";
 class FakeCodexAppServerClient {
   readonly createdThreads: Array<{ model?: string; baseInstructions?: string }> = [];
   readonly submitted: Array<{ text: string; options: AgentRequestOptions }> = [];
+  modelsPayload: unknown = { models: [] };
+  capabilitiesPayload: unknown = undefined;
+  resultUsage?: Record<string, unknown>;
   private nextThread = 1;
 
   async createThread(options: { model?: string; baseInstructions?: string } = {}): Promise<string> {
@@ -24,12 +27,17 @@ class FakeCodexAppServerClient {
     return {
       threadId: options.threadId,
       turnId: "turn_1",
-      finalMessage: "done"
+      finalMessage: "done",
+      usage: this.resultUsage
     };
   }
 
   async listModels(): Promise<unknown> {
-    return { models: [] };
+    return this.modelsPayload;
+  }
+
+  async readModelProviderCapabilities(): Promise<unknown> {
+    return this.capabilitiesPayload;
   }
 
   async interrupt(): Promise<void> {}
@@ -90,4 +98,39 @@ test("Codex sends from implicit sessions create a durable thread first", async (
   assert.deepEqual(payload.sessions.map((session) => [session.key, session.sessionId]), [
     ["codex:default", "thread_1"]
   ]);
+});
+
+test("Codex persists token usage returned from app-server runs", async () => {
+  const fake = new FakeCodexAppServerClient();
+  fake.resultUsage = { inputTokens: 10, outputTokens: 5, totalTokens: 15 };
+  const client = new CodexChatClient(undefined, fake as unknown as CodexAppServerClient, null);
+
+  await client.sendChat({
+    sessionKey: "codex:default",
+    message: "Hello",
+    idempotencyKey: "run_1"
+  });
+  await waitFor(() => fake.submitted.length === 1);
+
+  const payload = await client.listSessions() as { sessions: Array<Record<string, unknown>> };
+  assert.equal(payload.sessions[0]?.inputTokens, 10);
+  assert.equal(payload.sessions[0]?.outputTokens, 5);
+  assert.equal(payload.sessions[0]?.totalTokens, 15);
+});
+
+test("Codex model list resolves context windows from capabilities", async () => {
+  const fake = new FakeCodexAppServerClient();
+  fake.modelsPayload = {
+    data: [{
+      id: "gpt-5.3-codex",
+      displayName: "GPT-5.3 Codex",
+      supportedReasoningEfforts: ["medium"]
+    }]
+  };
+  fake.capabilitiesPayload = { limits: { maxInputTokens: 300_000 } };
+  const client = new CodexChatClient(undefined, fake as unknown as CodexAppServerClient, null);
+
+  const payload = await client.listModels() as { models: Array<Record<string, unknown>> };
+
+  assert.equal(payload.models[0]?.contextWindow, 300_000);
 });

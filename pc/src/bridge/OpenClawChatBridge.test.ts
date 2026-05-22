@@ -441,6 +441,38 @@ test("model metadata does not override the selected session model by list order"
   assert.equal(latestState?.model, "gpt-5.4");
 });
 
+test("usage metadata uses matching model context window", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+  const sessionKey = "hermes:hermes-agent-pixel";
+  client.models = [{
+    id: "hermes:local-minimax:MiniMax-M2.7",
+    modelId: "local-minimax:MiniMax-M2.7",
+    harnessId: "hermes",
+    label: "Local MiniMax",
+    contextWindow: 149_429,
+    available: true
+  }];
+  client.sessions = [{
+    key: sessionKey,
+    sessionId: "hermes-agent-pixel",
+    harnessId: "hermes",
+    model: "hermes:MiniMax-M2.7",
+    totalTokens: 12_000
+  }];
+
+  await bridge.setModel({
+    type: "chat.set_model",
+    deviceId: "pixel",
+    model: "hermes:local-minimax:MiniMax-M2.7"
+  });
+
+  const usage = chatMessages.filter((message) => message.type === "chat.usage").at(-1);
+  const sessions = chatMessages.filter((message) => message.type === "chat.sessions").at(-1);
+  assert.equal(usage?.usage.contextTokens, 149_429);
+  assert.equal(usage?.usage.totalTokens, 12_000);
+  assert.equal(sessions?.sessions[0]?.contextTokens, 149_429);
+});
+
 test("static Android fallback model does not override connected model id", async () => {
   const { bridge, client } = createHarness();
   client.sessions = [{
