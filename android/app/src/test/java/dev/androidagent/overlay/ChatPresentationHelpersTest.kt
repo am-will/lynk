@@ -151,6 +151,7 @@ class ChatPresentationHelpersTest {
         assertEquals(listOf("hermes:gpt-5.5", AgentModelOptions.LOCAL_LITERT_MODEL_ID), merged.map { it.id })
         assertEquals("hermes:gpt-5.5", ChatPresentationHelpers.selectedModelId("gpt-5.5", localLiteRtAvailable = true, models = merged))
         assertEquals("hermes:gpt-5.5", ChatPresentationHelpers.formatModelLabel("gpt-5.5", merged, localLiteRtAvailable = true))
+        assertEquals("LiteRT-LLM", ChatPresentationHelpers.modelProviderSublabel(merged.last(), "Local"))
     }
 
     @Test

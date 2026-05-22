@@ -1172,7 +1172,7 @@ class OverlayController(
                     AnchoredPicker.Row(
                         id = "model:${model.id}",
                         label = model.label,
-                        sublabel = model.provider?.takeIf { it.isNotBlank() && it != group.label.lowercase() },
+                        sublabel = ChatPresentationHelpers.modelProviderSublabel(model, group.label),
                         iconRes = R.drawable.ic_model,
                         selected = model.id == selectedId,
                         enabled = model.available != false,

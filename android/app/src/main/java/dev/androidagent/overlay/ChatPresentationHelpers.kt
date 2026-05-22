@@ -322,6 +322,14 @@ object ChatPresentationHelpers {
             }
     }
 
+    fun modelProviderSublabel(model: ChatModelOption, groupLabel: String): String? {
+        val providerLabel = when (modelHarnessId(model)) {
+            AgentConfig.HARNESS_LOCAL -> "LiteRT-LLM"
+            else -> model.provider?.takeIf { it.isNotBlank() }
+        }
+        return providerLabel?.takeUnless { it.equals(groupLabel, ignoreCase = true) }
+    }
+
     private fun harnessFromModelId(modelId: String): String? {
         val prefix = modelId.substringBefore(":", missingDelimiterValue = "")
             .takeIf { it.isNotBlank() }
