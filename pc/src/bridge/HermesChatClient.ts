@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { HermesApiClient } from "../dispatcher/HermesApiClient.js";
 import { HermesRunDriver, type HermesActiveRun, type HermesRunDriverEvent } from "../dispatcher/HermesRunDriver.js";
 import type { BridgeConfig } from "./config.js";
@@ -66,7 +67,8 @@ export class HermesChatClient {
     this.driver = new HermesRunDriver(this.api, config.hermesRunTimeoutMs);
     this.sessions = new InMemoryHarnessSessionStore("hermes", {
       defaultModel: config.hermesModel,
-      modelProvider: "hermes"
+      modelProvider: "hermes",
+      storagePath: join(process.cwd(), "state", "hermes-sessions.json")
     });
   }
 

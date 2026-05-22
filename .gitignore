@@ -25,3 +25,4 @@ pc/audit/*.jsonl
 pc/src/generated/codex-app-server/
 *.log
 pc/audit/
+pc/state/
