@@ -46,6 +46,8 @@ class AnchoredPicker(
         val destructive: Boolean = false,
         val enabled: Boolean = true,
         val badgeCount: Int = 0,
+        val trailingIconRes: Int? = null,
+        val trailingIconRotation: Float = 0f,
         val dismissOnSelect: Boolean = true,
         val onSelect: () -> Unit
     )
@@ -469,6 +471,18 @@ class AnchoredPicker(
                 setImageResource(R.drawable.ic_check)
                 setColorFilter(tokens.accent)
                 scaleType = ImageView.ScaleType.CENTER_INSIDE
+                hideFromAccessibility()
+            }, LinearLayout.LayoutParams(dp(context, 18), dp(context, 18)).apply {
+                leftMargin = dp(context, DesignTokens.Spacing.md)
+            })
+        }
+
+        row.trailingIconRes?.let { iconRes ->
+            rowView.addView(ImageView(context).apply {
+                setImageResource(iconRes)
+                setColorFilter(tokens.secondaryText)
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
+                rotation = row.trailingIconRotation
                 hideFromAccessibility()
             }, LinearLayout.LayoutParams(dp(context, 18), dp(context, 18)).apply {
                 leftMargin = dp(context, DesignTokens.Spacing.md)

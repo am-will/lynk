@@ -131,6 +131,26 @@ object ChatPresentationHelpers {
             }
     }
 
+    fun modelHarnessId(model: ChatModelOption): String {
+        return model.harnessId?.takeIf { it.isNotBlank() }?.lowercase()
+            ?: when (model.provider?.lowercase()) {
+                "hermes" -> "hermes"
+                "codex" -> "codex"
+                "android" -> "local"
+                else -> "openclaw"
+            }
+    }
+
+    fun modelHarnessSortOrder(harnessId: String): Int {
+        return when (harnessId.lowercase()) {
+            "openclaw" -> 0
+            "hermes" -> 1
+            "codex" -> 2
+            "local" -> 3
+            else -> 4
+        }
+    }
+
     fun formatReasoningLabel(reasoning: String?): String {
         val value = reasoning?.takeIf { it.isNotBlank() } ?: return "Reason"
         if (value.equals("medium", ignoreCase = true)) return "Med"

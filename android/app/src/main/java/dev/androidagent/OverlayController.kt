@@ -38,6 +38,7 @@ import android.widget.Space
 import android.widget.TextView
 import android.widget.FrameLayout
 import dev.androidagent.chat.ChatState
+import dev.androidagent.chat.ChatModelOption
 import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.overlay.BubbleOverlay
 import dev.androidagent.overlay.ChatPresentationHelpers
@@ -177,6 +178,8 @@ class OverlayController(
     private var panelHost: FrameLayout? = null
     private var panelContent: LinearLayout? = null
     private var anchoredPicker: AnchoredPicker? = null
+    private val expandedModelHarnesses = mutableSetOf<String>()
+    private var modelPickerActiveHarnessId: String? = null
     private var headerSessionAnchor: View? = null
     private var headerSessionChevron: ImageView? = null
     private var connectionIndicatorButton: HostConnectionIndicatorButton? = null
@@ -1068,7 +1071,7 @@ class OverlayController(
         popup.pivotY = if (params.topMargin < anchorTop) popupHeight.toFloat() else 0f
     }
 
-    private fun showModelChoices() {
+    private fun showModelChoices(replace: Boolean = false) {
         val anchor = modelButton ?: return
         val localLiteRtAvailable = isExperimentalLocalModelAvailable()
         val merged = ChatPresentationHelpers.mergeModelOptions(lastChatState.models, localLiteRtAvailable)
@@ -1077,34 +1080,85 @@ class OverlayController(
             return
         }
         val selectedId = ChatPresentationHelpers.selectedModelId(lastChatState.selectedModel, localLiteRtAvailable)
-        val sections = merged
-            .groupBy { ChatPresentationHelpers.modelHarnessLabel(it) }
-            .map { (harnessLabel, models) ->
-                AnchoredPicker.Section(
-                    title = harnessLabel,
-                    rows = models.map { model ->
-                        AnchoredPicker.Row(
-                            id = "model:${model.id}",
-                            label = model.label,
-                            sublabel = model.provider?.takeIf { it.isNotBlank() && it != harnessLabel.lowercase() },
-                            iconRes = R.drawable.ic_model,
-                            selected = model.id == selectedId,
-                            enabled = model.available != false,
-                            onSelect = {
-                                onSetChatModel(model.id)
-                                setStatus("Model: $harnessLabel / ${model.label}")
-                            }
-                        )
-                    }
+        val selectedModel = merged.firstOrNull { it.id == selectedId }
+        val activeHarnessId = selectedModel?.let { ChatPresentationHelpers.modelHarnessId(it) }
+            ?: lastChatState.harnessId?.takeIf { it.isNotBlank() }?.lowercase()
+            ?: "openclaw"
+        if (modelPickerActiveHarnessId != activeHarnessId) {
+            expandedModelHarnesses.clear()
+            modelPickerActiveHarnessId = activeHarnessId
+        }
+        expandedModelHarnesses.add(activeHarnessId)
+
+        val groups = merged
+            .groupBy { ChatPresentationHelpers.modelHarnessId(it) }
+            .map { (harnessId, models) ->
+                ModelHarnessGroup(
+                    id = harnessId,
+                    label = models.firstOrNull()?.let { ChatPresentationHelpers.modelHarnessLabel(it) } ?: harnessId,
+                    models = models
                 )
             }
-        showAnchoredPicker(anchor, "Model", sections)
+            .sortedWith(compareBy<ModelHarnessGroup> { ChatPresentationHelpers.modelHarnessSortOrder(it.id) }.thenBy { it.label })
+
+        val rows = groups.flatMap { group ->
+            val expanded = group.id in expandedModelHarnesses
+            val harnessRow = AnchoredPicker.Row(
+                id = "model-harness:${group.id}",
+                label = group.label,
+                sublabel = if (group.id == activeHarnessId) "Active harness" else "${group.models.size} model${if (group.models.size == 1) "" else "s"}",
+                iconRes = R.drawable.ic_model,
+                selected = false,
+                trailingIconRes = R.drawable.ic_chevron_right,
+                trailingIconRotation = if (expanded) 90f else 0f,
+                dismissOnSelect = false,
+                onSelect = {
+                    if (expanded) {
+                        expandedModelHarnesses.remove(group.id)
+                    } else {
+                        expandedModelHarnesses.add(group.id)
+                    }
+                    showModelChoices(replace = true)
+                }
+            )
+            if (!expanded) {
+                listOf(harnessRow)
+            } else {
+                listOf(harnessRow) + group.models.map { model ->
+                    AnchoredPicker.Row(
+                        id = "model:${model.id}",
+                        label = model.label,
+                        sublabel = model.provider?.takeIf { it.isNotBlank() && it != group.label.lowercase() },
+                        iconRes = R.drawable.ic_model,
+                        selected = model.id == selectedId,
+                        enabled = model.available != false,
+                        onSelect = {
+                            onSetChatModel(model.id)
+                            setStatus("Model: ${group.label} / ${model.label}")
+                        }
+                    )
+                }
+            }
+        }
+        showAnchoredPicker(
+            anchor = anchor,
+            title = "Model",
+            sections = listOf(AnchoredPicker.Section(null, rows)),
+            toggleSameAnchor = !replace,
+            replaceShowing = replace
+        )
     }
 
     private fun isExperimentalLocalModelAvailable(): Boolean {
         val config = AgentConfigStore.load(context)
         return config.experimentalLocalModelsEnabled && LocalModelStore.exists(config.localModelPath)
     }
+
+    private data class ModelHarnessGroup(
+        val id: String,
+        val label: String,
+        val models: List<ChatModelOption>
+    )
 
     private fun showReasoningChoices() {
         val anchor = reasoningButton ?: return
