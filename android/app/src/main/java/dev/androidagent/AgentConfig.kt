@@ -36,8 +36,37 @@ data class AgentConfig(
     val localModelPath: String = "",
     val localModelBackend: LocalModelBackend = LocalModelBackend.Cpu,
     val localContextTokens: Int = 4096,
-    val localDeveloperToolsEnabled: Boolean = false
-)
+    val localDeveloperToolsEnabled: Boolean = false,
+    val openClawHarnessEnabled: Boolean = true,
+    val hermesHarnessEnabled: Boolean = true,
+    val codexHarnessEnabled: Boolean = true
+) {
+    fun enabledModelHarnessIds(): Set<String> {
+        val ids = mutableSetOf<String>()
+        if (openClawHarnessEnabled) ids.add(HARNESS_OPENCLAW)
+        if (hermesHarnessEnabled) ids.add(HARNESS_HERMES)
+        if (codexHarnessEnabled) ids.add(HARNESS_CODEX)
+        if (experimentalLocalModelsEnabled) ids.add(HARNESS_LOCAL)
+        return ids
+    }
+
+    fun isModelHarnessEnabled(harnessId: String?): Boolean {
+        return when (harnessId?.lowercase()) {
+            HARNESS_OPENCLAW -> openClawHarnessEnabled
+            HARNESS_HERMES -> hermesHarnessEnabled
+            HARNESS_CODEX -> codexHarnessEnabled
+            HARNESS_LOCAL -> experimentalLocalModelsEnabled
+            else -> true
+        }
+    }
+
+    companion object {
+        const val HARNESS_OPENCLAW = "openclaw"
+        const val HARNESS_HERMES = "hermes"
+        const val HARNESS_CODEX = "codex"
+        const val HARNESS_LOCAL = "local"
+    }
+}
 
 object AgentConfigStore {
     private const val KNOWN_WEAK_DEFAULT_TOKEN = "12345678"
@@ -55,6 +84,9 @@ object AgentConfigStore {
     private const val LOCAL_MODEL_BACKEND = "local_model_backend"
     private const val LOCAL_CONTEXT_TOKENS = "local_context_tokens"
     private const val LOCAL_DEVELOPER_TOOLS_ENABLED = "local_developer_tools_enabled"
+    private const val OPENCLAW_HARNESS_ENABLED = "openclaw_harness_enabled"
+    private const val HERMES_HARNESS_ENABLED = "hermes_harness_enabled"
+    private const val CODEX_HARNESS_ENABLED = "codex_harness_enabled"
     private const val DEFAULT_LOCAL_CONTEXT_TOKENS = 4096
 
     fun load(context: Context): AgentConfig {
@@ -77,7 +109,10 @@ object AgentConfigStore {
             localModelPath = prefs.getString(LOCAL_MODEL_PATH, "") ?: "",
             localModelBackend = LocalModelBackend.fromKey(prefs.getString(LOCAL_MODEL_BACKEND, LocalModelBackend.Cpu.key)),
             localContextTokens = prefs.getInt(LOCAL_CONTEXT_TOKENS, DEFAULT_LOCAL_CONTEXT_TOKENS).coerceIn(512, 131_072),
-            localDeveloperToolsEnabled = prefs.getBoolean(LOCAL_DEVELOPER_TOOLS_ENABLED, false)
+            localDeveloperToolsEnabled = prefs.getBoolean(LOCAL_DEVELOPER_TOOLS_ENABLED, false),
+            openClawHarnessEnabled = prefs.getBoolean(OPENCLAW_HARNESS_ENABLED, true),
+            hermesHarnessEnabled = prefs.getBoolean(HERMES_HARNESS_ENABLED, true),
+            codexHarnessEnabled = prefs.getBoolean(CODEX_HARNESS_ENABLED, true)
         )
     }
 
@@ -97,6 +132,9 @@ object AgentConfigStore {
             .putString(LOCAL_MODEL_BACKEND, config.localModelBackend.key)
             .putInt(LOCAL_CONTEXT_TOKENS, config.localContextTokens.coerceIn(512, 131_072))
             .putBoolean(LOCAL_DEVELOPER_TOOLS_ENABLED, config.localDeveloperToolsEnabled)
+            .putBoolean(OPENCLAW_HARNESS_ENABLED, config.openClawHarnessEnabled)
+            .putBoolean(HERMES_HARNESS_ENABLED, config.hermesHarnessEnabled)
+            .putBoolean(CODEX_HARNESS_ENABLED, config.codexHarnessEnabled)
             .apply()
     }
 

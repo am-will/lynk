@@ -2,6 +2,7 @@ package dev.androidagent
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AgentConfigModeTest {
@@ -30,5 +31,26 @@ class AgentConfigModeTest {
         )
 
         assertFalse(config.experimentalLocalModelsEnabled)
+    }
+
+    @Test
+    fun hostHarnessesAreEnabledByDefault() {
+        val config = AgentConfig(
+            hostUrl = "ws://127.0.0.1:8788/phone",
+            deviceId = "openclaw-agent",
+            token = "",
+            openAiApiKey = "",
+            systemPrompt = "prompt",
+            model = "gpt-5.5",
+            reasoningEffort = "medium"
+        )
+
+        assertTrue(config.openClawHarnessEnabled)
+        assertTrue(config.hermesHarnessEnabled)
+        assertTrue(config.codexHarnessEnabled)
+        assertTrue(config.isModelHarnessEnabled("openclaw"))
+        assertTrue(config.isModelHarnessEnabled("hermes"))
+        assertTrue(config.isModelHarnessEnabled("codex"))
+        assertFalse(config.isModelHarnessEnabled("local"))
     }
 }
