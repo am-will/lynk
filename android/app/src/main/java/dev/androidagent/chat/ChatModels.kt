@@ -1,5 +1,6 @@
 package dev.androidagent.chat
 
+import dev.androidagent.AgentModelOptions
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -477,7 +478,10 @@ object ChatStateReducer {
     }
 
     private fun reduceModels(state: ChatState, message: JSONObject): ChatState {
-        val models = parseModels(message.optJSONArray("models"))
+        val models = mergeLocalModelsWithExistingHost(
+            incoming = parseModels(message.optJSONArray("models")),
+            existing = state.models
+        )
         val selectedModel = state.selectedModel
         val modelReasoning = models.firstOrNull { it.id == selectedModel }?.reasoningOptions
             ?.filter { it.id in ChatState.allowedReasoningIds }
@@ -493,6 +497,22 @@ object ChatStateReducer {
             reasoningOptions = reasoning,
             error = null
         )
+    }
+
+    private fun mergeLocalModelsWithExistingHost(
+        incoming: List<ChatModelOption>,
+        existing: List<ChatModelOption>
+    ): List<ChatModelOption> {
+        if (incoming.isEmpty() || !incoming.all(::isLocalModelOption)) return incoming
+        val hostModels = existing.filterNot(::isLocalModelOption)
+        if (hostModels.isEmpty()) return incoming
+        return (hostModels + incoming).distinctBy { it.id }
+    }
+
+    private fun isLocalModelOption(model: ChatModelOption): Boolean {
+        return model.id == AgentModelOptions.LOCAL_LITERT_MODEL_ID ||
+            model.harnessId?.equals("local", ignoreCase = true) == true ||
+            model.provider?.equals("android", ignoreCase = true) == true
     }
 
     private fun reduceSessions(state: ChatState, message: JSONObject): ChatState {

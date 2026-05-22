@@ -1,5 +1,6 @@
 package dev.androidagent.chat
 
+import dev.androidagent.AgentModelOptions
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -124,6 +125,29 @@ class ChatStateReducerTest {
         assertEquals("Verbose mode set to high", verbose.status)
         assertEquals(false, reasoningOff.reasoningStreamEnabled)
         assertEquals("Reasoning Stream disabled", reasoningOff.status)
+    }
+
+    @Test
+    fun localModelRefreshKeepsHostHarnessModelsAvailable() {
+        val hostModels = ChatStateReducer.reduce(ChatState(), JSONObject()
+            .put("type", "chat.models")
+            .put("models", JSONArray()
+                .put(model("gpt-5.5", "OpenClaw", "openclaw", "openclaw"))
+                .put(model("hermes:gpt-5.5", "Hermes", "hermes", "hermes"))
+                .put(model("codex:gpt-5.3-codex", "Codex", "codex", "codex"))))
+        val localRefresh = ChatStateReducer.reduce(hostModels, JSONObject()
+            .put("type", "chat.models")
+            .put("models", JSONArray()
+                .put(JSONObject()
+                    .put("id", AgentModelOptions.LOCAL_LITERT_MODEL_ID)
+                    .put("label", "Local LiteRT-LM")
+                    .put("provider", "android")
+                    .put("available", true))))
+
+        assertEquals(
+            listOf("gpt-5.5", "hermes:gpt-5.5", "codex:gpt-5.3-codex", AgentModelOptions.LOCAL_LITERT_MODEL_ID),
+            localRefresh.models.map { it.id }
+        )
     }
 
     @Test
@@ -381,5 +405,15 @@ class ChatStateReducerTest {
         val unread = withSessions.unreadReplies["agent:main:first"]
         assertEquals("Project notes", unread?.sessionDisplayName)
         assertEquals("Project notes", unread?.displayNameFor("agent:main:first"))
+    }
+
+    private fun model(id: String, label: String, provider: String, harnessId: String): JSONObject {
+        return JSONObject()
+            .put("id", id)
+            .put("label", label)
+            .put("provider", provider)
+            .put("harnessId", harnessId)
+            .put("harnessLabel", label)
+            .put("available", true)
     }
 }
