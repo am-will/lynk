@@ -95,7 +95,7 @@ export class HarnessChatRouter implements GatewayChatClient {
 
   async createSession(options: { key?: string; label?: string; model?: string }): Promise<unknown> {
     const selection = parseHarnessModel(options.model);
-    const harnessId = selection?.harnessId ?? harnessForSessionKey(options.key);
+    const harnessId = explicitHarnessForSessionKey(options.key) ?? selection?.harnessId ?? harnessForSessionKey(options.key);
     const adapter = this.adapterForHarness(harnessId);
     const key = this.keyForHarness(harnessId, options.key);
     const created = await adapter.createSession({
@@ -180,4 +180,9 @@ export class HarnessChatRouter implements GatewayChatClient {
       harnessLabel: harnessInfos(this.config).find((info) => info.id === harnessId)?.label
     };
   }
+}
+
+function explicitHarnessForSessionKey(sessionKey: string | undefined): HarnessId | undefined {
+  const harnessId = harnessForSessionKey(sessionKey);
+  return harnessId === DEFAULT_HARNESS_ID ? undefined : harnessId;
 }

@@ -103,6 +103,21 @@ test("harness router routes bare and namespaced model selections", async () => {
   assert.deepEqual(codex.created.map((entry) => entry.model), ["gpt-5.5"]);
 });
 
+test("harness router lets explicit non-default session keys choose the harness", async () => {
+  const { router, openclaw, codex } = createRouter();
+
+  const created = await router.createSession({
+    key: "codex:phone-pixel-123",
+    model: "gpt-5.3-codex"
+  }) as HarnessCreatedSession;
+
+  assert.equal(openclaw.created.length, 0);
+  assert.equal(codex.created.length, 1);
+  assert.equal(codex.created[0]?.key, "codex:phone-pixel-123");
+  assert.equal(codex.created[0]?.model, "gpt-5.3-codex");
+  assert.equal(created.key, "codex:phone-pixel-123");
+});
+
 test("harness router scopes session lists to the active harness", async () => {
   const { router, openclaw, hermes, codex } = createRouter();
   openclaw.sessions.push({ key: "agent:main:openclaw", label: "OpenClaw" });
