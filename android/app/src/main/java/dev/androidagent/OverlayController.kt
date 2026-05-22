@@ -43,6 +43,7 @@ import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.overlay.BubbleOverlay
 import dev.androidagent.overlay.ChatPresentationHelpers
 import dev.androidagent.overlay.ChatTimelineBinder
+import dev.androidagent.overlay.ClientBrand
 import dev.androidagent.overlay.ConfirmationOverlay
 import dev.androidagent.overlay.HostConnectionCopy
 import dev.androidagent.overlay.HostConnectionIndicatorButton
@@ -182,6 +183,8 @@ class OverlayController(
     private var modelPickerActiveHarnessId: String? = null
     private var headerSessionAnchor: View? = null
     private var headerSessionChevron: ImageView? = null
+    private var headerBrandLogo: ImageView? = null
+    private var headerBrandTitle: TextView? = null
     private var connectionIndicatorButton: HostConnectionIndicatorButton? = null
     private var connectionPopupView: View? = null
     private var connectionPopupScrimView: View? = null
@@ -540,9 +543,6 @@ class OverlayController(
             null
         }
 
-        val brandedTitle = SpannableString("OpenClaw").apply {
-            setSpan(ForegroundColorSpan(tokens.danger), 4, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        }
         val titleChevron = ImageView(context).apply {
             setImageResource(R.drawable.ic_chevron_down)
             setColorFilter(tokens.secondaryText)
@@ -563,11 +563,12 @@ class OverlayController(
                 setImageResource(R.drawable.openclaw_bubble_logo)
                 scaleType = ImageView.ScaleType.CENTER_INSIDE
                 hideFromAccessibility()
+                headerBrandLogo = this
             }, LinearLayout.LayoutParams(dp(28), dp(28)).apply {
                 rightMargin = dp(DesignTokens.Spacing.xs)
             })
             addView(TextView(context).apply {
-                text = brandedTitle
+                text = openClawTitle(tokens)
                 textSize = 18f
                 setTextColor(tokens.primaryText)
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -575,6 +576,7 @@ class OverlayController(
                 isSingleLine = true
                 ellipsize = android.text.TextUtils.TruncateAt.END
                 hideFromAccessibility()
+                headerBrandTitle = this
             }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
             addView(titleChevron, LinearLayout.LayoutParams(dp(18), dp(18)).apply {
                 leftMargin = dp(DesignTokens.Spacing.xs)
@@ -943,6 +945,44 @@ class OverlayController(
 
     private fun renderHostConnectionState(state: HostConnectionState) {
         connectionIndicatorButton?.bind(tokens(), state)
+    }
+
+    private fun renderHeaderBrand(tokens: ThemeTokens, state: ChatState) {
+        val presentation = ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = state.selectedModel,
+            models = state.models,
+            harnessId = state.harnessId,
+            localLiteRtAvailable = isExperimentalLocalModelAvailable()
+        )
+        headerBrandLogo?.setImageResource(brandLogoRes(presentation.brand))
+        headerBrandTitle?.apply {
+            text = if (presentation.brand == ClientBrand.OpenClaw) openClawTitle(tokens) else presentation.title
+            setTextColor(if (presentation.usesWhiteTitle) Color.WHITE else tokens.primaryText)
+        }
+        headerSessionAnchor?.apply {
+            background = if (presentation.brand == ClientBrand.Codex) {
+                Drawables.accentSurface(context, tokens, DesignTokens.Radius.pill)
+            } else {
+                Drawables.pillSurface(context, tokens)
+            }
+            backgroundTintList = null
+            contentDescription = "Open ${presentation.title} chat menu"
+        }
+    }
+
+    private fun brandLogoRes(brand: ClientBrand): Int {
+        return when (brand) {
+            ClientBrand.OpenClaw -> R.drawable.openclaw_bubble_logo
+            ClientBrand.Hermes -> R.drawable.hermes_nous_logo
+            ClientBrand.Codex -> R.drawable.codex_bubble_logo
+            ClientBrand.Local -> R.drawable.huggingface_logo
+        }
+    }
+
+    private fun openClawTitle(tokens: ThemeTokens): SpannableString {
+        return SpannableString("OpenClaw").apply {
+            setSpan(ForegroundColorSpan(tokens.danger), 4, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
     }
 
     private fun showHostConnectionPopup(anchor: View) {
@@ -1575,6 +1615,7 @@ class OverlayController(
 
     private fun renderChatState(state: ChatState) {
         val tokens = tokens()
+        renderHeaderBrand(tokens, state)
         renderComposerActionButtons(tokens, state, lastTranscriptionState)
         modelButton?.let { btn ->
             val fastModeOn = state.fastMode == true
@@ -1958,6 +1999,8 @@ class OverlayController(
         contextUsageView = null
         headerSessionAnchor = null
         headerSessionChevron = null
+        headerBrandLogo = null
+        headerBrandTitle = null
         connectionIndicatorButton = null
         plusButton = null
         if (dismissedPresentation == PanelPresentation.Fullscreen) {
