@@ -18,6 +18,35 @@ import type { GatewayChatClient } from "../OpenClawChatTypes.js";
 import { OpenClawGatewayChatClient, type GatewayChatSendResult, type GatewayEventHandler } from "../OpenClawGatewayChatClient.js";
 import { NormalizedHarnessAdapter, type HarnessChatAdapter, type HarnessCreatedSession } from "./HarnessChatAdapter.js";
 
+const OPENCLAW_BRIDGE_COMMANDS: ChatCommandOption[] = [
+  {
+    name: "verbose",
+    description: "Set OpenClaw verbose output level",
+    category: "Options",
+    textAliases: ["/verbose"],
+    acceptsArgs: true,
+    args: [{
+      name: "level",
+      description: "on, off, or full",
+      type: "string",
+      required: false
+    }]
+  },
+  {
+    name: "reasoning",
+    description: "Set OpenClaw reasoning stream visibility",
+    category: "Options",
+    textAliases: ["/reasoning"],
+    acceptsArgs: true,
+    args: [{
+      name: "level",
+      description: "stream/on to show reasoning, off to hide it",
+      type: "string",
+      required: false
+    }]
+  }
+];
+
 export class HarnessChatRouter implements GatewayChatClient {
   private readonly adapters = new Map<HarnessId, HarnessChatAdapter>();
 
@@ -136,7 +165,7 @@ export class HarnessChatRouter implements GatewayChatClient {
     const harnessId = harnessForSessionKey(sessionKey);
     const commands = await this.adapterForHarness(harnessId).listCommands(sessionKey);
     if (harnessId === "openclaw") {
-      return { commands };
+      return { commands: withOpenClawBridgeCommands(commands) };
     }
     return { commands: await this.withOpenClawSkills(commands) };
   }
@@ -229,6 +258,19 @@ export class HarnessChatRouter implements GatewayChatClient {
 
 function isSkillCommand(command: ChatCommandOption): boolean {
   return command.source?.toLowerCase() === "skill";
+}
+
+function withOpenClawBridgeCommands(commands: ChatCommandOption[]): ChatCommandOption[] {
+  const existingNames = new Set(commands.map((command) => command.name.toLowerCase()));
+  const bridgeCommands = OPENCLAW_BRIDGE_COMMANDS.filter((command) => {
+    const key = command.name.toLowerCase();
+    if (existingNames.has(key)) {
+      return false;
+    }
+    existingNames.add(key);
+    return true;
+  });
+  return [...commands, ...bridgeCommands];
 }
 
 function explicitHarnessForSessionKey(sessionKey: string | undefined): HarnessId | undefined {

@@ -169,3 +169,20 @@ test("harness router shares OpenClaw skills with Hermes and Codex command lists"
     ["code-review", "commit-message"]
   );
 });
+
+test("harness router adds OpenClaw bridge commands only to OpenClaw command lists", async () => {
+  const { router, openclaw } = createRouter();
+  openclaw.commands.push(
+    { name: "status", description: "Show OpenClaw status", textAliases: ["/status"], acceptsArgs: false }
+  );
+
+  const openclawPayload = await router.listCommands("agent:main:main") as { commands: ChatCommandOption[] };
+  const hermesPayload = await router.listCommands("hermes:chat") as { commands: ChatCommandOption[] };
+
+  assert.deepEqual(
+    openclawPayload.commands.map((command) => command.name),
+    ["status", "verbose", "reasoning"]
+  );
+  assert.equal(hermesPayload.commands.some((command) => command.name === "verbose"), false);
+  assert.equal(hermesPayload.commands.some((command) => command.name === "reasoning"), false);
+});

@@ -28,6 +28,7 @@ export function formatHelp(commands: ChatCommandOption[]): string {
     "/model <id>",
     "/fast status|on|off",
     "/verbose on|off|full",
+    "/reasoning stream|off",
     "/trace on|off|raw"
   ].filter((entry) => commandByName.has(entry.slice(1).split(/[ <]/)[0]));
   const status = ["/status", "/tasks", "/whoami", "/context"].filter((entry) => commandByName.has(entry.slice(1)));

@@ -213,7 +213,7 @@ Android can stop active chat work, switch or create sessions, update model/reaso
 { "type": "chat.control_command", "deviceId": "openclaw-agent", "command": "reasoning", "args": { "level": "stream" } }
 ```
 
-The Android `Reasoning Stream` toggle uses the `reasoning` control command to send OpenClaw's real `/reasoning stream` and `/reasoning off` session directives. This controls reasoning visibility in OpenClaw rather than only filtering Android UI locally.
+OpenClaw exposes `verbose` and `reasoning` in its `chat.commands` metadata so Android can insert `/verbose ...` and `/reasoning ...` slash commands. The bridge still accepts the `reasoning` control command for programmatic callers and sends OpenClaw's real `/reasoning stream` or `/reasoning off` session directives.
 
 The bridge returns session state, history, metadata, stream deltas, final text, errors, and expandable tool events:
 
