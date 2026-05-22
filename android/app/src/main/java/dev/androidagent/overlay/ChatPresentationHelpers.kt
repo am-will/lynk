@@ -70,7 +70,9 @@ object ChatPresentationHelpers {
                 harnessLabel = "OpenClaw",
                 modelId = local.id,
                 contextWindow = null,
-                available = true
+                available = true,
+                reasoningOptions = null,
+                defaultReasoningEffort = null
             )
         }
         gatewayModels.forEach { remote ->
@@ -85,7 +87,9 @@ object ChatPresentationHelpers {
                 harnessLabel = "Local",
                 modelId = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
                 contextWindow = null,
-                available = true
+                available = true,
+                reasoningOptions = null,
+                defaultReasoningEffort = null
             )
         } else {
             byId.remove(AgentModelOptions.LOCAL_LITERT_MODEL_ID)

@@ -268,6 +268,23 @@ test("gateway fallback preserves explicit phone task kind", async () => {
   assert.deepEqual((fallbackCalls[0] as unknown[])[1], { taskKind: "phone" });
 });
 
+test("non-OpenClaw send failure emits chat error without gateway fallback", async () => {
+  const { bridge, chatMessages, client, fallbackCalls } = createHarness();
+  client.sendError = new Error("hermes unavailable");
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Use Hermes",
+    model: "hermes:gpt-5.5"
+  });
+
+  assert.equal(fallbackCalls.length, 0);
+  assert.equal(client.sent.length, 0);
+  const error = chatMessages.find((message) => message.type === "chat.error");
+  assert.equal(error?.message, "hermes unavailable");
+});
+
 test("default gateway chat sessions are scoped per device", async () => {
   const { bridge, client } = createHarness();
 

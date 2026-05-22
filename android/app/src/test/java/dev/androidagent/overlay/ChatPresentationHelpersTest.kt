@@ -28,7 +28,9 @@ class ChatPresentationHelpersTest {
                 harnessLabel = "OpenClaw",
                 modelId = "gpt-5.5",
                 contextWindow = 200_000,
-                available = false
+                available = false,
+                reasoningOptions = null,
+                defaultReasoningEffort = null
             )),
             localLiteRtAvailable = true
         )
@@ -49,7 +51,9 @@ class ChatPresentationHelpersTest {
                 harnessLabel = "OpenClaw",
                 modelId = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
                 contextWindow = null,
-                available = true
+                available = true,
+                reasoningOptions = null,
+                defaultReasoningEffort = null
             )),
             localLiteRtAvailable = false
         )
@@ -67,7 +71,9 @@ class ChatPresentationHelpersTest {
             harnessLabel = "OpenClaw",
             modelId = "openai/gpt-5.5",
             contextWindow = null,
-            available = true
+            available = true,
+            reasoningOptions = null,
+            defaultReasoningEffort = null
         ))
 
         assertEquals("5.5", ChatPresentationHelpers.formatModelLabel("openai/gpt-5.5", models, localLiteRtAvailable = true))
@@ -75,6 +81,43 @@ class ChatPresentationHelpersTest {
         assertEquals("Med", ChatPresentationHelpers.formatReasoningLabel("medium"))
         assertEquals("Xhigh", ChatPresentationHelpers.formatReasoningLabel("xhigh"))
         assertEquals("Reason", ChatPresentationHelpers.formatReasoningLabel(""))
+    }
+
+    @Test
+    fun duplicateModelLabelsAcrossHarnessesRemainSeparatePickerIds() {
+        val merged = ChatPresentationHelpers.mergeModelOptions(
+            gatewayModels = listOf(
+                ChatModelOption(
+                    id = "gpt-5.5",
+                    label = "GPT 5.5",
+                    provider = "openai-codex",
+                    harnessId = "openclaw",
+                    harnessLabel = "OpenClaw",
+                    modelId = "gpt-5.5",
+                    contextWindow = null,
+                    available = true,
+                    reasoningOptions = null,
+                    defaultReasoningEffort = null
+                ),
+                ChatModelOption(
+                    id = "hermes:gpt-5.5",
+                    label = "GPT 5.5",
+                    provider = "hermes",
+                    harnessId = "hermes",
+                    harnessLabel = "Hermes",
+                    modelId = "gpt-5.5",
+                    contextWindow = null,
+                    available = true,
+                    reasoningOptions = null,
+                    defaultReasoningEffort = null
+                )
+            ),
+            localLiteRtAvailable = false
+        )
+
+        assertEquals(listOf("gpt-5.5", "hermes:gpt-5.5"), merged.map { it.id }.filter { it.contains("gpt-5.5") })
+        assertEquals("OpenClaw", ChatPresentationHelpers.modelHarnessLabel(merged.first { it.id == "gpt-5.5" }))
+        assertEquals("Hermes", ChatPresentationHelpers.modelHarnessLabel(merged.first { it.id == "hermes:gpt-5.5" }))
     }
 
     @Test

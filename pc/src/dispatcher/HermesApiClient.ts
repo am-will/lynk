@@ -8,6 +8,7 @@ export interface HermesApiClientConfig {
 export interface HermesRunCreateOptions {
   input: string;
   sessionId: string;
+  model?: string;
   instructions?: string;
   idempotencyKey?: string;
 }
@@ -104,7 +105,7 @@ export class HermesApiClient {
       body: JSON.stringify({
         input: options.input,
         session_id: options.sessionId,
-        model: this.config.model,
+        model: options.model ?? this.config.model,
         ...(options.instructions ? { instructions: options.instructions } : {})
       })
     });

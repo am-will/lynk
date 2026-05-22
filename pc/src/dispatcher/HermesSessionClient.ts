@@ -6,6 +6,7 @@ import { buildHermesPrompt } from "./hermesPrompt.js";
 
 interface ActiveRun {
   runId: string;
+  sessionId: string;
   controller: AbortController;
 }
 
@@ -67,7 +68,15 @@ function eventToolName(event: HermesSseEvent): string | undefined {
 }
 
 function eventDelta(event: HermesSseEvent): string | undefined {
-  return firstStringField(event.data, ["delta", "text_delta", "output_text", "text"]);
+  const record = asRecord(event.data);
+  const nested = asRecord(record?.data) ?? record;
+  for (const key of ["delta", "text_delta", "output_text", "text"]) {
+    const value = nested?.[key];
+    if (typeof value === "string" && value.length > 0) {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 function sanitizeSessionSegment(value: string): string {
@@ -143,7 +152,7 @@ export class HermesSessionClient implements AgentClient {
         idempotencyKey: options.deviceId ? `openclaw-hermes-${options.deviceId}-${Date.now()}` : undefined
       });
       runId = created.runId;
-      this.active = { runId, controller };
+      this.active = { runId, sessionId, controller };
       await this.withTimeout(
         this.api.streamRunEvents(runId, (event) => {
           latestOutput = this.handleEvent(event, sink, latestOutput);
@@ -156,7 +165,7 @@ export class HermesSessionClient implements AgentClient {
       if (error) {
         throw new Error(error);
       }
-      const finalMessage = outputText(finalStatus.output) ?? outputText(finalStatus.raw) ?? latestOutput ?? "";
+      const finalMessage = outputText(finalStatus.output) ?? latestOutput ?? "";
       const result: AgentRunResult = {
         threadId: finalStatus.sessionId ?? sessionId,
         turnId: finalStatus.runId,
@@ -199,7 +208,7 @@ export class HermesSessionClient implements AgentClient {
     }
     await this.api.createRun({
       input: `Additional user guidance for the active Hermes task:\n${text.trim()}`,
-      sessionId: this.config.defaultSessionId,
+      sessionId: active.sessionId,
       idempotencyKey: `hermes-steer-${active.runId}-${Date.now()}`
     });
   }
@@ -216,7 +225,8 @@ export class HermesSessionClient implements AgentClient {
     } else if (status && !["completed", "failed", "cancelled"].includes(status)) {
       sink.working(`Hermes ${status}`);
     }
-    return eventDelta(event) ?? latestOutput;
+    const delta = eventDelta(event);
+    return delta ? `${latestOutput ?? ""}${delta}` : latestOutput;
   }
 
   private sessionIdFor(options: AgentRequestOptions): string {

@@ -226,6 +226,18 @@ class ChatStateReducerTest {
     }
 
     @Test
+    fun chatStateTracksHarnessMetadata() {
+        val state = ChatStateReducer.reduce(ChatState(), JSONObject()
+            .put("type", "chat.state")
+            .put("sessionKey", "hermes:session")
+            .put("harnessId", "hermes")
+            .put("harnessLabel", "Hermes"))
+
+        assertEquals("hermes", state.harnessId)
+        assertEquals("Hermes", state.harnessLabel)
+    }
+
+    @Test
     fun invalidReasoningEffortFallsBackToLastKnownOrMedium() {
         val initial = ChatStateReducer.reduce(ChatState(), JSONObject()
             .put("type", "chat.state")

@@ -18,7 +18,7 @@ const FALLBACK_REASONING_OPTIONS: ChatReasoningOption[] = [
   { id: "high", label: "high" },
   { id: "xhigh", label: "xhigh" }
 ];
-const ALLOWED_REASONING_OPTION_IDS = new Set(FALLBACK_REASONING_OPTIONS.map((option) => option.id));
+const ALLOWED_REASONING_OPTION_IDS = new Set(["none", "minimal", ...FALLBACK_REASONING_OPTIONS.map((option) => option.id)]);
 
 export function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
@@ -168,28 +168,67 @@ function stripDisplayTimestampPrefix(text: string): string {
 }
 
 export function normalizeModels(value: unknown): ChatModelOption[] {
-  const models = Array.isArray(asRecord(value)?.models) ? asRecord(value)?.models as unknown[] : [];
+  const root = asRecord(value);
+  const models = Array.isArray(root?.models)
+    ? root.models as unknown[]
+    : Array.isArray(root?.data)
+      ? root.data as unknown[]
+      : [];
   const normalized: ChatModelOption[] = [];
   for (const item of models) {
     const record = asRecord(item);
-    const key = stringField(record, "key") ?? stringField(record, "id") ?? stringField(record, "name");
+    const key = stringField(record, "key") ?? stringField(record, "id") ?? stringField(record, "model") ?? stringField(record, "name");
     if (!key) {
       continue;
     }
-    const name = stringField(record, "name") ?? key;
+    const name = stringField(record, "label") ?? stringField(record, "name") ?? stringField(record, "displayName") ?? key;
     const provider = key.includes("/") ? key.split("/")[0] : stringField(record, "provider");
+    const reasoningOptions = normalizeModelReasoningOptions(record ?? {});
+    const label = provider && name !== key && !name.toLowerCase().includes(provider.toLowerCase())
+      ? `${name} (${provider})`
+      : name;
     normalized.push({
       id: key,
-      label: provider && name !== key ? `${name} (${provider})` : name,
+      label,
       provider: provider ?? null,
       ...(stringField(record, "harnessId") ? { harnessId: stringField(record, "harnessId") } : {}),
       ...(stringField(record, "harnessLabel") ? { harnessLabel: stringField(record, "harnessLabel") } : {}),
       ...(stringField(record, "modelId") ? { modelId: stringField(record, "modelId") } : {}),
       contextWindow: numberField(record, "contextWindow"),
-      available: booleanField(record, "available")
+      available: booleanField(record, "available"),
+      ...(reasoningOptions && reasoningOptions.length > 0 ? { reasoningOptions } : {}),
+      ...(stringField(record, "defaultReasoningEffort") ? { defaultReasoningEffort: stringField(record, "defaultReasoningEffort") } : {})
     });
   }
   return normalized;
+}
+
+function normalizeModelReasoningOptions(record: Record<string, unknown> | undefined): ChatReasoningOption[] | undefined {
+  if (!record) {
+    return undefined;
+  }
+  const raw = record?.reasoningOptions ?? record?.thinkingLevels ?? record?.supportedReasoningEfforts;
+  if (!Array.isArray(raw)) {
+    return undefined;
+  }
+  return raw.map((item) => {
+    if (typeof item === "string" && item.trim()) {
+      return { id: item.trim(), label: item.trim() };
+    }
+    const itemRecord = asRecord(item);
+    const id = stringField(itemRecord, "id")
+      ?? stringField(itemRecord, "reasoningEffort")
+      ?? stringField(itemRecord, "value");
+    if (!id) {
+      return undefined;
+    }
+    return { id, label: stringField(itemRecord, "label") ?? id };
+  }).filter((option): option is ChatReasoningOption => {
+    if (!option) {
+      return false;
+    }
+    return ALLOWED_REASONING_OPTION_IDS.has(option.id);
+  });
 }
 
 export function normalizeReasoningOptions(value: unknown): ChatReasoningOption[] {

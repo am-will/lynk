@@ -183,7 +183,9 @@ export class OpenClawChatBridge {
         runId: idempotencyKey,
         message: errorMessage
       });
-      await this.fallbackSender.send(message, idempotencyKey, taskKind);
+      if (state.harnessId === "openclaw") {
+        await this.fallbackSender.send(message, idempotencyKey, taskKind);
+      }
     }
   }
 

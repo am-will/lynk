@@ -8,7 +8,7 @@ const FAST_PHONE_LOOP_INSTRUCTION = [
   "- Use phone_wait only for visible loading/animation; prefer 300-1000 ms and avoid longer waits unless the screen is clearly still changing."
 ].join("\n");
 
-const ALLOWED_THINKING_LEVELS = new Set(["low", "medium", "high", "xhigh"]);
+const ALLOWED_THINKING_LEVELS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
 
 export function isSameModelSelection(requestedModel: string, currentModel?: string | null): boolean {
   if (!currentModel) {

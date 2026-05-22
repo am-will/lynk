@@ -212,6 +212,11 @@ export class CodexAppServerClient implements AgentClient {
     this.child?.kill();
   }
 
+  async listModels(): Promise<unknown> {
+    await this.ensureStarted();
+    return await this.request("model/list", {});
+  }
+
   async steer(text: string): Promise<void> {
     const pendingTurn = this.pendingTurn;
     if (!pendingTurn) {

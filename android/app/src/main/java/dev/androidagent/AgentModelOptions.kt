@@ -15,6 +15,8 @@ object AgentModelOptions {
     )
 
     val reasoningEfforts = listOf(
+        ReasoningOption("none", "None"),
+        ReasoningOption("minimal", "Minimal"),
         ReasoningOption("low", "Low"),
         ReasoningOption("medium", "Medium"),
         ReasoningOption("high", "High"),

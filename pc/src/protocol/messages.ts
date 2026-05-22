@@ -77,7 +77,7 @@ export const REALTIME_TOOL_NAMES = {
 export type RealtimeToolName = typeof REALTIME_TOOL_NAMES[keyof typeof REALTIME_TOOL_NAMES];
 
 export const AGENT_MODEL_IDS = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.2"] as const;
-export const REASONING_EFFORTS = ["low", "medium", "high", "xhigh"] as const;
+export const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
 
 export const registerMessageSchema = z.object({
   type: z.literal("register"),
@@ -374,6 +374,8 @@ export interface ChatModelOption {
   modelId?: string | null;
   contextWindow?: number | null;
   available?: boolean | null;
+  reasoningOptions?: ChatReasoningOption[] | null;
+  defaultReasoningEffort?: string | null;
 }
 
 export interface ChatReasoningOption {
@@ -670,6 +672,11 @@ export const chatSessionSummarySchema = z.object({
   verboseLevel: z.string().optional().nullable()
 });
 
+export const chatReasoningOptionSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1)
+});
+
 export const chatModelOptionSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
@@ -678,12 +685,9 @@ export const chatModelOptionSchema = z.object({
   harnessLabel: z.string().optional().nullable(),
   modelId: z.string().optional().nullable(),
   contextWindow: z.number().optional().nullable(),
-  available: z.boolean().optional().nullable()
-});
-
-export const chatReasoningOptionSchema = z.object({
-  id: z.string().min(1),
-  label: z.string().min(1)
+  available: z.boolean().optional().nullable(),
+  reasoningOptions: z.array(chatReasoningOptionSchema).optional().nullable(),
+  defaultReasoningEffort: z.string().optional().nullable()
 });
 
 export const chatCommandOptionSchema = z.object({

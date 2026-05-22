@@ -65,7 +65,9 @@ data class ChatModelOption(
     val harnessLabel: String?,
     val modelId: String?,
     val contextWindow: Long?,
-    val available: Boolean?
+    val available: Boolean?,
+    val reasoningOptions: List<ChatReasoningOption>?,
+    val defaultReasoningEffort: String?
 )
 data class ChatReasoningOption(val id: String, val label: String)
 data class ChatCommandOption(val name: String, val description: String?, val category: String?, val aliases: List<String>, val acceptsArgs: Boolean)
@@ -144,7 +146,7 @@ data class ChatState(
             ChatReasoningOption("xhigh", "xhigh")
         )
 
-        val allowedReasoningIds = setOf("low", "medium", "high", "xhigh")
+        val allowedReasoningIds = setOf("none", "minimal", "low", "medium", "high", "xhigh")
     }
 }
 
@@ -475,13 +477,19 @@ object ChatStateReducer {
     }
 
     private fun reduceModels(state: ChatState, message: JSONObject): ChatState {
-        val incoming = parseReasoning(message.optJSONArray("reasoningOptions"))
+        val models = parseModels(message.optJSONArray("models"))
+        val selectedModel = state.selectedModel
+        val modelReasoning = models.firstOrNull { it.id == selectedModel }?.reasoningOptions
+            ?.filter { it.id in ChatState.allowedReasoningIds }
+        val incoming = modelReasoning ?: parseReasoning(message.optJSONArray("reasoningOptions"))
         val filtered = incoming.filter { it.id in ChatState.allowedReasoningIds }
         val reasoning = (if (filtered.isNotEmpty()) filtered else state.reasoningOptions)
             .ifEmpty { ChatState.defaultReasoningOptions }
-        val models = parseModels(message.optJSONArray("models"))
+        val selectedReasoning = models.firstOrNull { it.id == selectedModel }?.defaultReasoningEffort
+            ?.takeIf { option -> reasoning.any { it.id == option } }
         return state.copy(
             models = models,
+            reasoningEffort = selectedReasoning ?: state.reasoningEffort?.takeIf { current -> reasoning.any { it.id == current } } ?: reasoning.firstOrNull()?.id,
             reasoningOptions = reasoning,
             error = null
         )
@@ -661,7 +669,9 @@ object ChatStateReducer {
                     harnessLabel = item.optNullableString("harnessLabel"),
                     modelId = item.optNullableString("modelId"),
                     contextWindow = item.optNullableLong("contextWindow"),
-                    available = item.optNullableBoolean("available")
+                    available = item.optNullableBoolean("available"),
+                    reasoningOptions = parseReasoning(item.optJSONArray("reasoningOptions")).takeIf { it.isNotEmpty() },
+                    defaultReasoningEffort = item.optNullableString("defaultReasoningEffort")
                 ))
             }
         }

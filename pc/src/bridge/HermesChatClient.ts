@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { HermesApiClient, type HermesSseEvent } from "../dispatcher/HermesApiClient.js";
 import type { BridgeConfig } from "./config.js";
+import { discoverHermesModels } from "./HermesModelDiscovery.js";
 import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "./OpenClawGatewayChatClient.js";
 
 interface StoredMessage {
@@ -86,6 +87,21 @@ function sanitizeSessionId(value: string): string {
   return value.replace(/[^a-zA-Z0-9_.:-]+/g, "-").replace(/^-+|-+$/g, "") || "default";
 }
 
+function mergeHermesModels(primary: unknown[], fallback: unknown[]): unknown[] {
+  const seen = new Set<string>();
+  const result: unknown[] = [];
+  for (const model of [...primary, ...fallback]) {
+    const record = asRecord(model);
+    const id = firstStringField(record, ["id", "key", "name"]);
+    if (!id || seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    result.push(model);
+  }
+  return result;
+}
+
 export class HermesChatClient {
   private readonly api: HermesApiClient;
   private readonly sessions = new Map<string, StoredSession>();
@@ -143,6 +159,7 @@ export class HermesChatClient {
     const created = await this.api.createRun({
       input: options.message,
       sessionId: session.sessionId,
+      model: session.model,
       idempotencyKey: options.idempotencyKey
     });
     const runId = created.runId;
@@ -183,7 +200,7 @@ export class HermesChatClient {
       : Array.isArray(asRecord(payload)?.models)
         ? asRecord(payload)?.models as unknown[]
         : [];
-    const models = rawModels.length > 0
+    const apiModels = rawModels.length > 0
       ? rawModels.map((item) => {
         const record = asRecord(item);
         const id = firstStringField(record, ["id", "name"]) ?? this.config.hermesModel;
@@ -202,6 +219,7 @@ export class HermesChatClient {
         provider: "hermes",
         available: true
       }];
+    const models = mergeHermesModels(discoverHermesModels(this.config.hermesModel), apiModels);
     return { models };
   }
 

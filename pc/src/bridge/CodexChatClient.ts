@@ -28,6 +28,20 @@ interface ActiveRun {
   runId: string;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
+}
+
+function stringField(record: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function arrayField(record: Record<string, unknown> | undefined, key: string): unknown[] {
+  const value = record?.[key];
+  return Array.isArray(value) ? value : [];
+}
+
 export class CodexChatClient {
   private readonly client: CodexAppServerClient;
   private readonly sessions = new Map<string, StoredSession>();
@@ -99,10 +113,44 @@ export class CodexChatClient {
   }
 
   async listModels(): Promise<unknown> {
+    const payload = await this.client.listModels().catch(() => undefined);
+    const rawModels = Array.isArray(asRecord(payload)?.data)
+      ? asRecord(payload)?.data as unknown[]
+      : Array.isArray(asRecord(payload)?.models)
+        ? asRecord(payload)?.models as unknown[]
+        : [];
+    if (rawModels.length > 0) {
+      return {
+        models: rawModels
+          .map((item) => {
+            const record = asRecord(item);
+            const id = stringField(record, "id") ?? stringField(record, "model");
+            if (!id || record?.hidden === true) {
+              return undefined;
+            }
+            return {
+              id,
+              key: id,
+              name: stringField(record, "displayName") ?? stringField(record, "name") ?? id,
+              provider: "codex",
+              available: true,
+              reasoningOptions: arrayField(record, "supportedReasoningEfforts"),
+              defaultReasoningEffort: stringField(record, "defaultReasoningEffort")
+            };
+          })
+          .filter(Boolean),
+        defaults: {
+          thinkingLevels: ["low", "medium", "high", "xhigh"]
+        }
+      };
+    }
     return {
       models: [
-        { id: "gpt-5.3-codex", key: "gpt-5.3-codex", name: "gpt-5.3-codex", provider: "codex", available: true },
-        { id: "gpt-5.3-codex-spark", key: "gpt-5.3-codex-spark", name: "gpt-5.3-codex-spark", provider: "codex", available: true }
+        { id: "gpt-5.5", key: "gpt-5.5", name: "GPT-5.5", provider: "codex", available: true, reasoningOptions: ["low", "medium", "high", "xhigh"], defaultReasoningEffort: "medium" },
+        { id: "gpt-5.4", key: "gpt-5.4", name: "gpt-5.4", provider: "codex", available: true, reasoningOptions: ["low", "medium", "high", "xhigh"], defaultReasoningEffort: "medium" },
+        { id: "gpt-5.4-mini", key: "gpt-5.4-mini", name: "GPT-5.4-Mini", provider: "codex", available: true, reasoningOptions: ["low", "medium", "high", "xhigh"], defaultReasoningEffort: "medium" },
+        { id: "gpt-5.3-codex", key: "gpt-5.3-codex", name: "gpt-5.3-codex", provider: "codex", available: true, reasoningOptions: ["low", "medium", "high", "xhigh"], defaultReasoningEffort: "medium" },
+        { id: "gpt-5.3-codex-spark", key: "gpt-5.3-codex-spark", name: "GPT-5.3-Codex-Spark", provider: "codex", available: true, reasoningOptions: ["low", "medium", "high", "xhigh"], defaultReasoningEffort: "high" }
       ],
       defaults: {
         thinkingLevels: ["low", "medium", "high", "xhigh"]
