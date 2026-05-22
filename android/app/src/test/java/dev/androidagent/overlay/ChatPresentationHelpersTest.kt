@@ -124,6 +124,70 @@ class ChatPresentationHelpersTest {
     }
 
     @Test
+    fun resolvesClientBrandFromSelectedModelHarness() {
+        val models = listOf(
+            model("hermes:gpt-5.5", harnessId = "hermes"),
+            model("codex:gpt-5.3-codex", harnessId = "codex"),
+            model(AgentModelOptions.LOCAL_LITERT_MODEL_ID, harnessId = "local", provider = "android")
+        )
+
+        val hermes = ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = "hermes:gpt-5.5",
+            models = models,
+            harnessId = "openclaw",
+            localLiteRtAvailable = true
+        )
+        val codex = ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = "codex:gpt-5.3-codex",
+            models = models,
+            harnessId = "openclaw",
+            localLiteRtAvailable = true
+        )
+        val local = ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
+            models = models,
+            harnessId = "openclaw",
+            localLiteRtAvailable = true
+        )
+
+        assertEquals(ClientBrand.Hermes, hermes.brand)
+        assertEquals("Hermes", hermes.title)
+        assertFalse(hermes.usesWhiteTitle)
+        assertEquals(ClientBrand.Codex, codex.brand)
+        assertEquals("Codex", codex.title)
+        assertTrue(codex.usesWhiteTitle)
+        assertEquals(ClientBrand.Local, local.brand)
+        assertEquals("LiteRT-LLM", local.title)
+    }
+
+    @Test
+    fun resolvesClientBrandFromModelPrefixAndHarnessFallback() {
+        val prefixed = ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = "hermes:qwen",
+            models = emptyList(),
+            harnessId = "openclaw",
+            localLiteRtAvailable = false
+        )
+        val fallback = ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = null,
+            models = emptyList(),
+            harnessId = "codex",
+            localLiteRtAvailable = false
+        )
+        val default = ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = "gpt-5.5",
+            models = emptyList(),
+            harnessId = null,
+            localLiteRtAvailable = false
+        )
+
+        assertEquals(ClientBrand.Hermes, prefixed.brand)
+        assertEquals(ClientBrand.Codex, fallback.brand)
+        assertEquals(ClientBrand.OpenClaw, default.brand)
+        assertEquals("OpenClaw", default.title)
+    }
+
+    @Test
     fun verboseLevelCyclesThroughMenuStates() {
         assertEquals("off", ChatPresentationHelpers.normalizedVerboseLevel(null))
         assertEquals("on", ChatPresentationHelpers.normalizedVerboseLevel("high"))
@@ -166,6 +230,25 @@ class ChatPresentationHelpersTest {
             thinkingLevel = null,
             reasoningLevel = null,
             verboseLevel = null
+        )
+    }
+
+    private fun model(
+        id: String,
+        harnessId: String,
+        provider: String? = harnessId
+    ): ChatModelOption {
+        return ChatModelOption(
+            id = id,
+            label = id,
+            provider = provider,
+            harnessId = harnessId,
+            harnessLabel = harnessId.replaceFirstChar { it.uppercase() },
+            modelId = id.substringAfter(":"),
+            contextWindow = null,
+            available = true,
+            reasoningOptions = null,
+            defaultReasoningEffort = null
         )
     }
 }
