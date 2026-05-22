@@ -45,13 +45,14 @@ The bridge exposes:
 
 The bridge server is split into focused HTTP, WebSocket, and realtime modules. Legacy Codex schema generation remains available with `npm run codex:schemas`, but `pc/src/generated/codex-app-server/` is local/gitignored and not required for normal Open Claw setup.
 
-The Android model picker can select multiple host harnesses through this same bridge:
+The Android model picker can select multiple harnesses through this same bridge:
 
-- **OpenClaw** is always enabled and remains the default. Its Gateway sessions are the source of truth for normal OpenClaw chat history.
+- **OpenClaw** is enabled by default and remains the default. Its Gateway sessions are the source of truth for normal OpenClaw chat history.
 - **Hermes** appears when `HERMES_API_KEY` is set. Configure `HERMES_API_BASE_URL`, `HERMES_MODEL`, `HERMES_DEFAULT_SESSION_ID`, and `HERMES_RUN_TIMEOUT_SECONDS` in `pc/.env.local`. Run `npm run hermes:mcp` if Hermes should be able to call the Android phone MCP server.
 - **Codex** appears through the bundled Codex app-server adapter. Configure `CODEX_APP_SERVER_COMMAND` and `CODEX_AGENT_CWD` if the defaults do not match your machine.
+- **Local LiteRT-LLM** appears only when enabled in Android and a `.litertlm` model is installed.
 
-Harnesses are selected from the same Android model picker as normal models. Histories are scoped by harness, so selecting Hermes shows Hermes sessions, selecting Codex shows Codex sessions, and selecting OpenClaw shows OpenClaw Gateway sessions.
+Harnesses are selected from the same Android model picker as normal models. Histories are scoped by harness, so selecting Hermes shows Hermes sessions, selecting Codex shows Codex sessions, and selecting OpenClaw shows OpenClaw Gateway sessions. Android's **Models & Harness** settings can hide harnesses from the phone's model picker without changing the PC bridge configuration.
 
 For off-LAN use, keep `OPENCLAW_GATEWAY_URL=ws://127.0.0.1:18789` and put only the phone-facing bridge on Tailscale. Run:
 
@@ -68,7 +69,7 @@ The realtime voice path is separate from the task dispatcher: Android starts the
 
 Open `android/` in Android Studio or run Gradle from that directory. Install the app on the device, then:
 
-1. Open **Open Connection & Config**. Save the **WebSocket URL**, **Device ID**, **Auth token**, and **OpenAI API key for realtime voice** if you want realtime voice or composer transcription.
+1. Open **Connection & Config**. Save the **WebSocket URL**, **Device ID**, **Auth token**, and **OpenAI API key for realtime voice** if you want realtime voice or composer transcription.
 2. Grant overlay permission.
 3. If Android shows **Restricted setting**, open **Settings > Apps > Open Claw Agent**, use the three-dot menu, choose **Allow restricted settings**, and authenticate.
 4. Enable **Settings > Accessibility > Installed apps > Open Claw Agent**.
@@ -77,7 +78,7 @@ Open `android/` in Android Studio or run Gradle from that directory. Install the
 
 While Open Claw Agent is running, tap the bubble to open a large chat modal. The modal loads Gateway session history, streams active replies, shows model/reasoning/session controls behind the `+` button, and keeps phone-control tool activity collapsed until expanded. The foreground notification includes a **Stop Turn** action for active chat, dispatcher, and realtime voice work, including moments when the floating bubble is temporarily hidden during taps, swipes, or screenshots.
 
-The model picker controls the active harness. Host models use the PC bridge and may include OpenClaw, Hermes, and Codex entries. **Local LiteRT-LM** appears when experimental local models are enabled and a `.litertlm` file is installed; local phone mode stores its chat sessions under the app's private storage and emits the same `chat.*` timeline events as Host mode. It can call Android accessibility tools directly and can read/search/write files in its app-private local workspace when local developer tools are enabled. Termux command execution is reserved for a dedicated helper and reports a configuration error until that helper exists.
+The model picker controls the active harness. Host models use the PC bridge and may include OpenClaw, Hermes, and Codex entries. Use **Models & Harness** to toggle which harness sections appear in the picker, and use **System Prompt** to edit the default prompt. **Local LiteRT-LLM** appears when its harness toggle is on and a `.litertlm` file is installed; local phone mode stores its chat sessions under the app's private storage and emits the same `chat.*` timeline events as Host mode. It can call Android accessibility tools directly and can read/search/write files in its app-private local workspace when local developer tools are enabled. Termux command execution is reserved for a dedicated helper and reports a configuration error until that helper exists.
 
 For adb installs, build `android/app/build/outputs/apk/debug/app-debug.apk` and run:
 

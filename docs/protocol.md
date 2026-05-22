@@ -96,7 +96,7 @@ OpenClaw's own Android UI is exposed as a normal accessibility tree. Canonical s
 - Reasoning selector: `dev.openclawagent:id/openclaw_reasoning_selector`
 - Settings action: `dev.openclawagent:id/openclaw_header_settings_button`
 - Confirmation allow/cancel: `dev.openclawagent:id/openclaw_confirmation_allow_button` and `dev.openclawagent:id/openclaw_confirmation_cancel_button`
-- Main settings controls: `dev.openclawagent:id/openclaw_connection_config_button`, `dev.openclawagent:id/openclaw_agent_toggle_button`, and the individual config field IDs documented in Android resources
+- Main settings controls: `dev.openclawagent:id/openclaw_connection_config_button`, `dev.openclawagent:id/openclaw_system_prompt_menu_button`, `dev.openclawagent:id/openclaw_models_harness_button`, `dev.openclawagent:id/openclaw_agent_toggle_button`, and the individual config field IDs documented in Android resources
 
 For manual verification:
 
