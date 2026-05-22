@@ -15,7 +15,9 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.text.Editable
+import android.text.Spanned
 import android.text.TextWatcher
+import android.text.style.ForegroundColorSpan
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
@@ -71,6 +73,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.roundToInt
+
+private class SkillTokenSpan(color: Int) : ForegroundColorSpan(color)
 
 class OverlayController(
     private val context: Context,
@@ -151,7 +155,7 @@ class OverlayController(
     private var panelHasWindowFocus = false
     private var lastChatState = ChatState()
     private var showToolCalls = true
-    private var suppressSlashAutocomplete = false
+    private var suppressComposerAutocomplete = false
     private var composerContainer: LinearLayout? = null
     private var keyboardSpacerView: View? = null
     private var sendStopButton: ImageButton? = null
@@ -743,16 +747,20 @@ class OverlayController(
                         mainHandler.postDelayed({ keepAboveKeyboard(panel, params) }, 300)
                     }
                 }
-                maybeShowSlashCommands(this)
+                maybeShowCommandAutocomplete(this)
             }
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                    if (!suppressSlashAutocomplete) {
-                        maybeShowSlashCommands(this@apply)
+                    if (!suppressComposerAutocomplete) {
+                        maybeShowCommandAutocomplete(this@apply)
                     }
                 }
-                override fun afterTextChanged(s: Editable?) = Unit
+                override fun afterTextChanged(s: Editable?) {
+                    if (!suppressComposerAutocomplete) {
+                        applySkillHighlights(this@apply)
+                    }
+                }
             })
             composerInput = this
         }
@@ -1599,21 +1607,26 @@ class OverlayController(
         val existing = input.text.toString()
         val separator = if (existing.isBlank() || existing.endsWith(" ")) "" else " "
         val next = existing + separator + text
+        suppressComposerAutocomplete = true
         input.setText(next)
         input.setSelection(next.length)
+        applySkillHighlights(input)
+        suppressComposerAutocomplete = false
     }
 
-    private fun maybeShowSlashCommands(input: EditText) {
-        val token = SlashCommandAutocomplete.currentToken(
-            text = input.text?.toString().orEmpty(),
-            cursorIndex = input.selectionStart
-        )
-        if (token == null) {
-            if (anchoredPicker?.isShowingFor(input) == true) {
-                anchoredPicker?.dismiss()
-            }
-            return
+    private fun maybeShowCommandAutocomplete(input: EditText) {
+        val text = input.text?.toString().orEmpty()
+        val cursor = input.selectionStart
+        val skillToken = SlashCommandAutocomplete.currentSkillToken(text, cursor)
+        val slashToken = SlashCommandAutocomplete.currentToken(text, cursor)
+        when {
+            skillToken != null -> showSkillAutocomplete(input, skillToken)
+            slashToken != null -> showSlashAutocomplete(input, slashToken)
+            else -> dismissComposerAutocomplete(input)
         }
+    }
+
+    private fun showSlashAutocomplete(input: EditText, token: SlashToken) {
         val commands = SlashCommandAutocomplete.matchingCommands(lastChatState.commands, token.query)
         if (commands.isEmpty()) {
             if (anchoredPicker?.isShowingFor(input) == true) {
@@ -1628,25 +1641,96 @@ class OverlayController(
                 label = text,
                 sublabel = command.description?.take(72),
                 iconRes = R.drawable.ic_command,
-                onSelect = { autocompleteSlashCommand(input, token, text) }
+                onSelect = { autocompleteCommandText(input, token, text) }
             )
         }
         showAnchoredPicker(
             anchor = input,
             title = "Commands",
             sections = listOf(AnchoredPicker.Section(null, rows)),
-            toggleSameAnchor = false
+            toggleSameAnchor = false,
+            replaceShowing = true
         )
     }
 
-    private fun autocompleteSlashCommand(input: EditText, token: SlashToken, commandText: String) {
+    private fun showSkillAutocomplete(input: EditText, token: SlashToken) {
+        val skills = SlashCommandAutocomplete.matchingSkills(lastChatState.commands, token.query)
+        if (skills.isEmpty()) {
+            dismissComposerAutocomplete(input)
+            return
+        }
+        val rows = skills.map { skill ->
+            val text = SlashCommandAutocomplete.skillText(skill)
+            AnchoredPicker.Row(
+                id = "skill:${skill.name}",
+                label = text,
+                sublabel = skill.description?.take(72),
+                iconRes = R.drawable.ic_command,
+                onSelect = { autocompleteCommandText(input, token, text) }
+            )
+        }
+        showAnchoredPicker(
+            anchor = input,
+            title = "Skills",
+            sections = listOf(AnchoredPicker.Section(null, rows)),
+            toggleSameAnchor = false,
+            replaceShowing = true
+        )
+    }
+
+    private fun dismissComposerAutocomplete(input: EditText) {
+        if (anchoredPicker?.isShowingFor(input) == true) {
+            anchoredPicker?.dismiss()
+        }
+    }
+
+    private fun autocompleteCommandText(input: EditText, token: SlashToken, commandText: String) {
         val current = input.text?.toString().orEmpty()
         val result = SlashCommandAutocomplete.applyAutocomplete(current, token, commandText)
-        suppressSlashAutocomplete = true
+        suppressComposerAutocomplete = true
         input.setText(result.text)
         input.setSelection(result.cursor)
-        suppressSlashAutocomplete = false
+        applySkillHighlights(input)
+        suppressComposerAutocomplete = false
         input.requestFocus()
+    }
+
+    private fun applySkillHighlights(input: EditText) {
+        val editable = input.text ?: return
+        val existingSpans = editable.getSpans(0, editable.length, SkillTokenSpan::class.java)
+        existingSpans.forEach { span -> editable.removeSpan(span) }
+
+        if (editable.isEmpty()) return
+        val skillNames = lastChatState.commands
+            .filter { it.isSkill }
+            .map { it.name.lowercase() }
+            .toSet()
+        if (skillNames.isEmpty()) return
+
+        var index = 0
+        while (index < editable.length) {
+            val tokenStart = editable.indexOf('$', index)
+            if (tokenStart < 0) return
+            val isTokenBoundary = tokenStart == 0 || editable[tokenStart - 1].isWhitespace()
+            if (!isTokenBoundary) {
+                index = tokenStart + 1
+                continue
+            }
+            var tokenEnd = tokenStart + 1
+            while (tokenEnd < editable.length && !editable[tokenEnd].isWhitespace()) {
+                tokenEnd += 1
+            }
+            val skillName = editable.subSequence(tokenStart + 1, tokenEnd).toString().lowercase()
+            if (skillName in skillNames) {
+                editable.setSpan(
+                    SkillTokenSpan(tokens().accent),
+                    tokenStart,
+                    tokenEnd,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
+            index = tokenEnd + 1
+        }
     }
 
     private fun renderChatState(state: ChatState) {
@@ -1654,6 +1738,7 @@ class OverlayController(
         renderHeaderBrand(tokens, state)
         renderComposerActionButtons(tokens, state, lastTranscriptionState)
         composerInput?.hint = brandPresentationFor(state).copy.composerPlaceholder
+        composerInput?.let { applySkillHighlights(it) }
         modelButton?.let { btn ->
             val fastModeOn = state.fastMode == true
             val config = AgentConfigStore.load(context)
