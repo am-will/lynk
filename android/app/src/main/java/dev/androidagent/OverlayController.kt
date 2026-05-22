@@ -36,6 +36,7 @@ import android.widget.LinearLayout
 import android.widget.Space
 import android.widget.TextView
 import android.widget.FrameLayout
+import dev.androidagent.chat.ChatCommandOption
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatModelOption
 import dev.androidagent.localmodel.LocalModelStore
@@ -182,6 +183,7 @@ class OverlayController(
     private var panelContent: LinearLayout? = null
     private var anchoredPicker: AnchoredPicker? = null
     private val expandedModelHarnesses = mutableSetOf<String>()
+    private val expandedCommandPickerGroups = mutableSetOf<String>()
     private var modelPickerActiveHarnessId: String? = null
     private var headerSessionAnchor: View? = null
     private var headerSessionChevron: ImageView? = null
@@ -1373,19 +1375,11 @@ class OverlayController(
             onSelect = { showReasoningChoices(anchorOverride = menuAnchor, replace = true) }
         ))
 
-        val commandRows = mutableListOf<AnchoredPicker.Row>()
-        if (commands.isNotEmpty()) {
-            commands.take(20).forEach { command ->
-                val text = command.aliases.firstOrNull() ?: "/${command.name}"
-                commandRows.add(AnchoredPicker.Row(
-                    id = "command:${command.name}",
-                    label = text,
-                    sublabel = command.description?.take(64),
-                    iconRes = R.drawable.ic_command,
-                    onSelect = { insertComposerText("$text ") }
-                ))
-            }
-        }
+        val commandSkillRows = commandSkillMenuRows(
+            commands = commands,
+            menuAnchor = menuAnchor,
+            onDismiss = onDismiss
+        )
 
         val modeRows = listOf(
             plusFastModeRow(),
@@ -1430,7 +1424,7 @@ class OverlayController(
 
         val sections = mutableListOf<AnchoredPicker.Section>()
         sections.add(AnchoredPicker.Section("Session", sessionRows))
-        if (commandRows.isNotEmpty()) sections.add(AnchoredPicker.Section("Commands", commandRows))
+        if (commandSkillRows.isNotEmpty()) sections.add(AnchoredPicker.Section("Commands & Skills", commandSkillRows))
         sections.add(AnchoredPicker.Section("Run mode", modeRows))
         sections.add(AnchoredPicker.Section("More", voiceRows))
 
@@ -1440,7 +1434,90 @@ class OverlayController(
             sections,
             toggleSameAnchor = !replace,
             replaceShowing = replace,
+            heightFraction = if (expandedCommandPickerGroups.isNotEmpty()) 0.65f else null,
             onDismiss = onDismiss
+        )
+    }
+
+    private fun commandSkillMenuRows(
+        commands: List<ChatCommandOption>,
+        menuAnchor: View,
+        onDismiss: (() -> Unit)?
+    ): List<AnchoredPicker.Row> {
+        if (commands.isEmpty()) return emptyList()
+        val slashCommands = commands.filterNot { it.isSkill }
+        val skills = commands.filter { it.isSkill }
+        return buildList {
+            addCommandSkillGroupRow(
+                groupId = COMMAND_GROUP_COMMANDS,
+                label = "Commands",
+                count = slashCommands.size,
+                menuAnchor = menuAnchor,
+                onDismiss = onDismiss
+            )
+            if (COMMAND_GROUP_COMMANDS in expandedCommandPickerGroups) {
+                addAll(slashCommands.map(::commandMenuRow))
+            }
+            addCommandSkillGroupRow(
+                groupId = COMMAND_GROUP_SKILLS,
+                label = "Skills",
+                count = skills.size,
+                menuAnchor = menuAnchor,
+                onDismiss = onDismiss
+            )
+            if (COMMAND_GROUP_SKILLS in expandedCommandPickerGroups) {
+                addAll(skills.map(::skillMenuRow))
+            }
+        }
+    }
+
+    private fun MutableList<AnchoredPicker.Row>.addCommandSkillGroupRow(
+        groupId: String,
+        label: String,
+        count: Int,
+        menuAnchor: View,
+        onDismiss: (() -> Unit)?
+    ) {
+        val expanded = groupId in expandedCommandPickerGroups
+        add(AnchoredPicker.Row(
+            id = "commands-skills:$groupId",
+            label = label,
+            sublabel = if (count == 0) "None available" else "$count available",
+            selectable = false,
+            enabled = count > 0,
+            trailingIconRes = R.drawable.ic_chevron_right,
+            trailingIconRotation = if (expanded) 90f else 0f,
+            dismissOnSelect = false,
+            onSelect = {
+                if (expanded) {
+                    expandedCommandPickerGroups.remove(groupId)
+                } else {
+                    expandedCommandPickerGroups.add(groupId)
+                }
+                showPlusMenu(anchorOverride = menuAnchor, replace = true, onDismiss = onDismiss)
+            }
+        ))
+    }
+
+    private fun commandMenuRow(command: ChatCommandOption): AnchoredPicker.Row {
+        val text = SlashCommandAutocomplete.commandText(command)
+        return AnchoredPicker.Row(
+            id = "command:${command.name}",
+            label = text,
+            sublabel = command.description?.take(64),
+            iconRes = R.drawable.ic_command,
+            onSelect = { insertComposerText("$text ") }
+        )
+    }
+
+    private fun skillMenuRow(skill: ChatCommandOption): AnchoredPicker.Row {
+        val text = SlashCommandAutocomplete.skillText(skill)
+        return AnchoredPicker.Row(
+            id = "skill:${skill.name}",
+            label = text,
+            sublabel = skill.description?.take(64),
+            iconRes = R.drawable.ic_command,
+            onSelect = { insertComposerText("$text ") }
         )
     }
 
@@ -2307,6 +2384,8 @@ class OverlayController(
         private const val PLUS_ROW_VERBOSE = "plus_verbose"
         private const val PLUS_ROW_REASONING_STREAM = "plus_reasoning_stream"
         private const val PLUS_ROW_TOOL_CALLS = "plus_tool_calls"
+        private const val COMMAND_GROUP_COMMANDS = "commands"
+        private const val COMMAND_GROUP_SKILLS = "skills"
         const val MIN_BUBBLE_SIZE_DP = AppearancePrefs.MIN_BUBBLE_SIZE_DP
         const val DEFAULT_BUBBLE_SIZE_DP = AppearancePrefs.DEFAULT_BUBBLE_SIZE_DP
         const val MAX_BUBBLE_SIZE_DP = AppearancePrefs.MAX_BUBBLE_SIZE_DP
