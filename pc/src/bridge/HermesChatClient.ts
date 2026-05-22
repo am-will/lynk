@@ -1,4 +1,5 @@
-import { HermesApiClient, type HermesSseEvent } from "../dispatcher/HermesApiClient.js";
+import { HermesApiClient } from "../dispatcher/HermesApiClient.js";
+import { HermesRunDriver, type HermesActiveRun, type HermesRunDriverEvent } from "../dispatcher/HermesRunDriver.js";
 import type { BridgeConfig } from "./config.js";
 import { discoverHermesModels } from "./HermesModelDiscovery.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "./harness/InMemoryHarnessSessionStore.js";
@@ -6,8 +7,7 @@ import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from ".
 
 interface ActiveChatRun {
   sessionKey: string;
-  controller: AbortController;
-  cancelled: boolean;
+  active: HermesActiveRun;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -46,25 +46,9 @@ function firstStringField(value: unknown, keys: string[]): string | undefined {
   return undefined;
 }
 
-function outputText(value: unknown): string | undefined {
-  return firstStringField(value, ["output", "final_output", "finalMessage", "message", "text", "content", "delta"]);
-}
-
-function eventToolName(value: unknown): string | undefined {
-  const record = asRecord(value);
-  const nested = asRecord(record?.data) ?? record;
-  const field = nested?.toolName ?? nested?.tool ?? nested?.name ?? nested?.function_name;
-  return typeof field === "string" && field.trim() ? field.trim() : undefined;
-}
-
-function eventStatus(value: unknown): string | undefined {
-  const record = asRecord(value);
-  const status = record?.status ?? record?.state ?? record?.phase;
-  return typeof status === "string" && status.trim() ? status.trim() : undefined;
-}
-
 export class HermesChatClient {
   private readonly api: HermesApiClient;
+  private readonly driver: HermesRunDriver;
   private readonly sessions: InMemoryHarnessSessionStore;
   private readonly handlers = new Set<GatewayEventHandler>();
   private readonly activeRuns = new Map<string, ActiveChatRun>();
@@ -79,6 +63,7 @@ export class HermesChatClient {
       model: config.hermesModel,
       runTimeoutMs: config.hermesRunTimeoutMs
     });
+    this.driver = new HermesRunDriver(this.api, config.hermesRunTimeoutMs);
     this.sessions = new InMemoryHarnessSessionStore("hermes", {
       defaultModel: config.hermesModel,
       modelProvider: "hermes"
@@ -105,21 +90,19 @@ export class HermesChatClient {
     this.sessions.setThinkingLevel(session, options.thinking);
     this.sessions.appendUserMessage(session, options.message, options.idempotencyKey);
 
-    const created = await this.api.createRun({
+    const active = await this.driver.createRun({
       input: options.message,
       sessionId: session.sessionId,
       model: session.model,
       idempotencyKey: options.idempotencyKey
     });
-    const runId = created.runId;
-    const controller = new AbortController();
+    const runId = active.runId;
     this.sessions.setActiveRun(session, runId);
     this.activeRuns.set(runId, {
       sessionKey: session.key,
-      controller,
-      cancelled: false
+      active
     });
-    void this.processRun(session.key, runId, controller);
+    void this.processRun(session.key, active);
     return { runId, sessionKey: session.key };
   }
 
@@ -129,10 +112,10 @@ export class HermesChatClient {
     }
     const active = this.activeRuns.get(runId);
     if (active) {
-      active.cancelled = true;
-      active.controller.abort();
+      await this.driver.stopRun(active.active);
+    } else {
+      await this.api.stopRun(runId);
     }
-    await this.api.stopRun(runId);
     this.emit("agent", {
       type: "run.cancelled",
       sessionKey: active?.sessionKey ?? _sessionKey,
@@ -212,29 +195,22 @@ export class HermesChatClient {
 
   close(): void {
     for (const active of this.activeRuns.values()) {
-      active.controller.abort();
+      active.active.controller.abort();
     }
     this.activeRuns.clear();
   }
 
-  private async processRun(sessionKey: string, runId: string, controller: AbortController): Promise<void> {
+  private async processRun(sessionKey: string, active: HermesActiveRun): Promise<void> {
     const session = this.sessions.ensureSession(sessionKey);
-    let latestText = "";
+    const runId = active.runId;
     try {
-      await this.api.streamRunEvents(runId, (event) => {
-        latestText = this.handleRunEvent(session, runId, event, latestText);
-      }, controller.signal);
-      const final = await this.api.getRun(runId);
-      const error = outputText(final.error);
-      if (error) {
-        throw new Error(error);
-      }
-      const finalText = outputText(final.output) ?? outputText(final.raw) ?? latestText;
+      const completed = await this.driver.streamRun(active, (event) => this.handleRunEvent(session, active.runId, event));
+      const finalText = completed.finalText;
       if (finalText.trim()) {
         this.sessions.upsertAssistantMessage(session, runId, finalText);
       }
       this.sessions.clearActiveRun(session, runId);
-      this.sessions.setUsage(session, asRecord(final.raw)?.usage as Record<string, unknown> | undefined);
+      this.sessions.setUsage(session, asRecord(completed.status.raw)?.usage as Record<string, unknown> | undefined);
       this.emit("chat", {
         sessionKey,
         runId,
@@ -242,7 +218,7 @@ export class HermesChatClient {
         message: finalText
       });
     } catch (error) {
-      if (!controller.signal.aborted) {
+      if (!active.controller.signal.aborted) {
         this.emit("chat", {
           sessionKey,
           runId,
@@ -256,31 +232,28 @@ export class HermesChatClient {
     }
   }
 
-  private handleRunEvent(session: HarnessStoredSession, runId: string, event: HermesSseEvent, latestText: string): string {
-    const toolName = eventToolName(event.data);
-    if (toolName || event.event.toLowerCase().includes("tool")) {
+  private handleRunEvent(session: HarnessStoredSession, runId: string, event: HermesRunDriverEvent): void {
+    if (event.type === "tool") {
       this.emit("agent", {
         sessionKey: session.key,
         runId,
         type: "tool",
-        toolName: toolName ?? "hermes_tool",
-        status: eventStatus(event.data) ?? "running",
-        data: event.data
+        toolName: event.toolName ?? "hermes_tool",
+        status: event.status ?? "running",
+        data: event.raw.data
       });
+      return;
     }
-    const delta = firstStringField(event.data, ["delta", "text_delta", "output_text", "text"]);
-    if (!delta) {
-      return latestText;
+    if (event.type !== "delta") {
+      return;
     }
-    const next = latestText + delta;
-    this.sessions.upsertAssistantMessage(session, runId, next);
+    this.sessions.upsertAssistantMessage(session, runId, event.accumulated);
     this.emit("chat", {
       sessionKey: session.key,
       runId,
       state: "delta",
-      delta
+      delta: event.delta
     });
-    return next;
   }
 
   private emit(event: string, payload: unknown): void {

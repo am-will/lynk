@@ -1,82 +1,12 @@
 import type { AuditLog } from "../bridge/AuditLog.js";
 import type { BridgeConfig } from "../bridge/config.js";
 import type { AgentClient, AgentRequestOptions, AgentRunResult, AgentStatusSink } from "./AgentClient.js";
-import { HermesApiClient, type HermesApiClientConfig, type HermesSseEvent } from "./HermesApiClient.js";
+import { HermesApiClient, type HermesApiClientConfig } from "./HermesApiClient.js";
 import { buildHermesPrompt } from "./hermesPrompt.js";
-
-interface ActiveRun {
-  runId: string;
-  sessionId: string;
-  controller: AbortController;
-}
+import { HermesRunDriver, type HermesActiveRun, type HermesRunDriverEvent } from "./HermesRunDriver.js";
 
 export interface HermesSessionClientConfig extends HermesApiClientConfig {
   defaultSessionId: string;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
-}
-
-function firstStringField(value: unknown, keys: string[]): string | undefined {
-  if (typeof value === "string" && value.trim()) {
-    return value.trim();
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const nested = firstStringField(item, keys);
-      if (nested) {
-        return nested;
-      }
-    }
-    return undefined;
-  }
-  const record = asRecord(value);
-  if (!record) {
-    return undefined;
-  }
-  for (const key of keys) {
-    const field = record[key];
-    if (typeof field === "string" && field.trim()) {
-      return field.trim();
-    }
-  }
-  for (const field of Object.values(record)) {
-    const nested = firstStringField(field, keys);
-    if (nested) {
-      return nested;
-    }
-  }
-  return undefined;
-}
-
-function outputText(value: unknown): string | undefined {
-  return firstStringField(value, ["output", "final_output", "finalMessage", "message", "text", "content", "delta"]);
-}
-
-function eventStatus(event: HermesSseEvent): string | undefined {
-  const record = asRecord(event.data);
-  const value = record?.status ?? record?.state ?? record?.phase;
-  return typeof value === "string" ? value.toLowerCase() : undefined;
-}
-
-function eventToolName(event: HermesSseEvent): string | undefined {
-  const record = asRecord(event.data);
-  const nested = asRecord(record?.data) ?? record;
-  const value = nested?.toolName ?? nested?.tool ?? nested?.name ?? nested?.function_name;
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function eventDelta(event: HermesSseEvent): string | undefined {
-  const record = asRecord(event.data);
-  const nested = asRecord(record?.data) ?? record;
-  for (const key of ["delta", "text_delta", "output_text", "text"]) {
-    const value = nested?.[key];
-    if (typeof value === "string" && value.length > 0) {
-      return value;
-    }
-  }
-  return undefined;
 }
 
 function sanitizeSessionSegment(value: string): string {
@@ -113,8 +43,8 @@ export function hermesSessionConfigFromEnv(): HermesSessionClientConfig {
 
 export class HermesSessionClient implements AgentClient {
   private readonly config: HermesSessionClientConfig;
-  private readonly api: HermesApiClient;
-  private active?: ActiveRun;
+  private readonly driver: HermesRunDriver;
+  private active?: HermesActiveRun;
 
   constructor(
     config: HermesSessionClientConfig = hermesSessionConfigFromEnv(),
@@ -122,7 +52,7 @@ export class HermesSessionClient implements AgentClient {
     api?: HermesApiClient
   ) {
     this.config = config;
-    this.api = api ?? new HermesApiClient(config);
+    this.driver = new HermesRunDriver(api ?? new HermesApiClient(config), config.runTimeoutMs);
   }
 
   async submitUserRequest(
@@ -136,9 +66,7 @@ export class HermesSessionClient implements AgentClient {
 
     const prompt = buildHermesPrompt(text, options);
     const sessionId = this.sessionIdFor(options);
-    const controller = new AbortController();
-    let runId: string | undefined;
-    let latestOutput: string | undefined;
+    let active: HermesActiveRun | undefined;
 
     try {
       this.audit?.record("hermes_task_starting", options.deviceId, {
@@ -146,40 +74,28 @@ export class HermesSessionClient implements AgentClient {
         sessionId
       });
       sink.working(options.taskKind === "phone" ? "Sending phone task to Hermes" : "Sending task to Hermes");
-      const created = await this.api.createRun({
+      active = await this.driver.createRun({
         input: prompt,
         sessionId,
         idempotencyKey: options.deviceId ? `openclaw-hermes-${options.deviceId}-${Date.now()}` : undefined
       });
-      runId = created.runId;
-      this.active = { runId, sessionId, controller };
-      await this.withTimeout(
-        this.api.streamRunEvents(runId, (event) => {
-          latestOutput = this.handleEvent(event, sink, latestOutput);
-        }, controller.signal),
-        this.config.runTimeoutMs
-      );
-
-      const finalStatus = await this.api.getRun(runId);
-      const error = outputText(finalStatus.error);
-      if (error) {
-        throw new Error(error);
-      }
-      const finalMessage = outputText(finalStatus.output) ?? latestOutput ?? "";
+      this.active = active;
+      const completed = await this.driver.streamRun(active, (event) => this.handleEvent(event, sink));
+      const finalMessage = completed.finalText;
       const result: AgentRunResult = {
-        threadId: finalStatus.sessionId ?? sessionId,
-        turnId: finalStatus.runId,
+        threadId: completed.status.sessionId ?? sessionId,
+        turnId: completed.status.runId,
         finalMessage
       };
       sink.done(finalMessage || "Hermes task completed");
       return result;
     } catch (error) {
-      if (controller.signal.aborted) {
+      if (active?.controller.signal.aborted) {
         throw new Error("Hermes task was interrupted");
       }
       throw error;
     } finally {
-      if (this.active?.runId === runId) {
+      if (active && this.active?.runId === active.runId) {
         this.active = undefined;
       }
     }
@@ -190,8 +106,7 @@ export class HermesSessionClient implements AgentClient {
     if (!active) {
       return;
     }
-    active.controller.abort();
-    await this.api.stopRun(active.runId).catch((error) => {
+    await this.driver.stopRun(active).catch((error) => {
       this.audit?.record("hermes_task_stop_failed", undefined, {
         runId: active.runId,
         reason,
@@ -206,27 +121,19 @@ export class HermesSessionClient implements AgentClient {
     if (!active) {
       throw new Error("No active Hermes task is running");
     }
-    await this.api.createRun({
-      input: `Additional user guidance for the active Hermes task:\n${text.trim()}`,
-      sessionId: active.sessionId,
-      idempotencyKey: `hermes-steer-${active.runId}-${Date.now()}`
-    });
+    await this.driver.steerRun(active, text);
   }
 
   async close(): Promise<void> {
     await this.interrupt("Agent client closed");
   }
 
-  private handleEvent(event: HermesSseEvent, sink: AgentStatusSink, latestOutput: string | undefined): string | undefined {
-    const toolName = eventToolName(event);
-    const status = eventStatus(event);
-    if (toolName || event.event.toLowerCase().includes("tool")) {
-      sink.tool(toolName ? `Using ${toolName}` : "Hermes tool activity");
-    } else if (status && !["completed", "failed", "cancelled"].includes(status)) {
-      sink.working(`Hermes ${status}`);
+  private handleEvent(event: HermesRunDriverEvent, sink: AgentStatusSink): void {
+    if (event.type === "tool") {
+      sink.tool(event.toolName ? `Using ${event.toolName}` : "Hermes tool activity");
+    } else if (event.type === "status") {
+      sink.working(`Hermes ${event.status}`);
     }
-    const delta = eventDelta(event);
-    return delta ? `${latestOutput ?? ""}${delta}` : latestOutput;
   }
 
   private sessionIdFor(options: AgentRequestOptions): string {
@@ -235,19 +142,4 @@ export class HermesSessionClient implements AgentClient {
     return device ? `${base}-${device}` : base;
   }
 
-  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-    let timer: NodeJS.Timeout | undefined;
-    try {
-      return await Promise.race([
-        promise,
-        new Promise<T>((_, reject) => {
-          timer = setTimeout(() => reject(new Error(`Hermes task timed out after ${Math.round(timeoutMs / 1000)} seconds`)), timeoutMs);
-        })
-      ]);
-    } finally {
-      if (timer) {
-        clearTimeout(timer);
-      }
-    }
-  }
 }
