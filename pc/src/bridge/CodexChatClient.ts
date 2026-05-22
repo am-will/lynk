@@ -11,6 +11,18 @@ interface ActiveRun {
   runId: string;
 }
 
+const CODEX_CONTEXT_WINDOWS: Record<string, number> = {
+  "gpt-5.5": 400_000,
+  "gpt-5.4": 400_000,
+  "gpt-5.4-mini": 400_000,
+  "gpt-5.3-codex": 400_000,
+  "gpt-5.3-codex-spark": 400_000,
+  "gpt-5.2": 400_000,
+  "gpt-5.2-codex": 400_000,
+  "gpt-5.1-codex-max": 400_000,
+  "gpt-5.1-codex-mini": 400_000
+};
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
 }
@@ -93,25 +105,9 @@ export class CodexChatClient {
         ? asRecord(payload)?.models as unknown[]
         : [];
     if (rawModels.length > 0) {
+      const models = await Promise.all(rawModels.map((item) => this.normalizeCodexModel(item)));
       return {
-        models: rawModels
-          .map((item) => {
-            const record = asRecord(item);
-            const id = stringField(record, "id") ?? stringField(record, "model");
-            if (!id || record?.hidden === true) {
-              return undefined;
-            }
-            return {
-              id,
-              key: id,
-              name: stringField(record, "displayName") ?? stringField(record, "name") ?? id,
-              provider: "codex",
-              available: true,
-              reasoningOptions: arrayField(record, "supportedReasoningEfforts"),
-              defaultReasoningEffort: stringField(record, "defaultReasoningEffort")
-            };
-          })
-          .filter(Boolean),
+        models: models.filter(Boolean),
         defaults: {
           thinkingLevels: ["low", "medium", "high", "xhigh"]
         }
@@ -119,11 +115,11 @@ export class CodexChatClient {
     }
     return {
       models: [
-        { id: "gpt-5.5", key: "gpt-5.5", name: "GPT-5.5", provider: "codex", available: true, reasoningOptions: ["low", "medium", "high", "xhigh"], defaultReasoningEffort: "medium" },
-        { id: "gpt-5.4", key: "gpt-5.4", name: "gpt-5.4", provider: "codex", available: true, reasoningOptions: ["low", "medium", "high", "xhigh"], defaultReasoningEffort: "medium" },
-        { id: "gpt-5.4-mini", key: "gpt-5.4-mini", name: "GPT-5.4-Mini", provider: "codex", available: true, reasoningOptions: ["low", "medium", "high", "xhigh"], defaultReasoningEffort: "medium" },
-        { id: "gpt-5.3-codex", key: "gpt-5.3-codex", name: "gpt-5.3-codex", provider: "codex", available: true, reasoningOptions: ["low", "medium", "high", "xhigh"], defaultReasoningEffort: "medium" },
-        { id: "gpt-5.3-codex-spark", key: "gpt-5.3-codex-spark", name: "GPT-5.3-Codex-Spark", provider: "codex", available: true, reasoningOptions: ["low", "medium", "high", "xhigh"], defaultReasoningEffort: "high" }
+        codexFallbackModel("gpt-5.5", "GPT-5.5", "medium"),
+        codexFallbackModel("gpt-5.4", "gpt-5.4", "medium"),
+        codexFallbackModel("gpt-5.4-mini", "GPT-5.4-Mini", "medium"),
+        codexFallbackModel("gpt-5.3-codex", "gpt-5.3-codex", "medium"),
+        codexFallbackModel("gpt-5.3-codex-spark", "GPT-5.3-Codex-Spark", "high")
       ],
       defaults: {
         thinkingLevels: ["low", "medium", "high", "xhigh"]
@@ -250,6 +246,28 @@ export class CodexChatClient {
     }
   }
 
+  private async normalizeCodexModel(item: unknown): Promise<Record<string, unknown> | undefined> {
+    const record = asRecord(item);
+    const id = stringField(record, "id") ?? stringField(record, "model");
+    if (!id || record?.hidden === true) {
+      return undefined;
+    }
+    const provider = stringField(record, "modelProvider") ?? stringField(record, "provider") ?? "openai";
+    const capabilities = await this.client.readModelProviderCapabilities({ model: id, provider }).catch(() => undefined);
+    return {
+      id,
+      key: id,
+      name: stringField(record, "displayName") ?? stringField(record, "name") ?? id,
+      provider: "codex",
+      contextWindow: contextWindowFromPayload(record)
+        ?? contextWindowFromPayload(capabilities)
+        ?? CODEX_CONTEXT_WINDOWS[id],
+      available: true,
+      reasoningOptions: arrayField(record, "supportedReasoningEfforts"),
+      defaultReasoningEffort: stringField(record, "defaultReasoningEffort")
+    };
+  }
+
   private async ensureAppServerThread(session: HarnessStoredSession, model?: string): Promise<void> {
     if (!isLocalCodexSessionId(session.key, session.sessionId)) {
       return;
@@ -269,5 +287,60 @@ function isLocalCodexSessionId(sessionKey: string, sessionId: string): boolean {
     .replace(/[^a-zA-Z0-9_.:-]+/g, "-")
     .replace(/^-+|-+$/g, "") || "default";
   return sessionId === localSessionId;
+}
+
+function codexFallbackModel(id: string, name: string, defaultReasoningEffort: string): Record<string, unknown> {
+  return {
+    id,
+    key: id,
+    name,
+    provider: "codex",
+    contextWindow: CODEX_CONTEXT_WINDOWS[id],
+    available: true,
+    reasoningOptions: ["low", "medium", "high", "xhigh"],
+    defaultReasoningEffort
+  };
+}
+
+function contextWindowFromPayload(value: unknown, depth = 0): number | undefined {
+  if (depth > 3) {
+    return undefined;
+  }
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  const direct = firstPositiveNumberField(record, [
+    "contextWindow",
+    "context_window",
+    "contextLength",
+    "context_length",
+    "maxContextTokens",
+    "max_context_tokens",
+    "maxInputTokens",
+    "max_input_tokens",
+    "inputTokenLimit",
+    "input_token_limit"
+  ]);
+  if (direct !== undefined) {
+    return direct;
+  }
+  for (const nested of Object.values(record)) {
+    const found = contextWindowFromPayload(nested, depth + 1);
+    if (found !== undefined) {
+      return found;
+    }
+  }
+  return undefined;
+}
+
+function firstPositiveNumberField(record: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+      return value;
+    }
+  }
+  return undefined;
 }
 

@@ -147,6 +147,16 @@ function normalizeCodexUsage(value: unknown): Record<string, unknown> | undefine
     "total",
     "used"
   ]) ?? sumTokens(inputTokens, outputTokens);
+  const contextTokens = firstNumberField(usage, [
+    "contextTokens",
+    "context_tokens",
+    "contextWindow",
+    "context_window",
+    "contextLength",
+    "context_length",
+    "maxInputTokens",
+    "max_input_tokens"
+  ]);
   const normalized: Record<string, unknown> = {};
   if (inputTokens !== undefined) {
     normalized.inputTokens = inputTokens;
@@ -156,6 +166,9 @@ function normalizeCodexUsage(value: unknown): Record<string, unknown> | undefine
   }
   if (totalTokens !== undefined) {
     normalized.totalTokens = totalTokens;
+  }
+  if (contextTokens !== undefined) {
+    normalized.contextTokens = contextTokens;
   }
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
@@ -283,6 +296,14 @@ export class CodexAppServerClient implements AgentClient {
   async listModels(): Promise<unknown> {
     await this.ensureStarted();
     return await this.request("model/list", {});
+  }
+
+  async readModelProviderCapabilities(options: { model?: string; provider?: string } = {}): Promise<unknown> {
+    await this.ensureStarted();
+    return await this.request("modelProvider/capabilities/read", {
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.provider ? { provider: options.provider } : {})
+    });
   }
 
   async createThread(options: { model?: string; baseInstructions?: string } = {}): Promise<string> {
