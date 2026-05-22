@@ -249,7 +249,7 @@ test("explicit phone chat uses gateway session so session fast mode applies", as
   assert.equal(fallbackCalls.length, 0);
   assert.equal(client.sent.length, 1);
   assert.deepEqual(client.patched.map((entry) => entry.patch), [{ model: "gpt-5.4" }]);
-  assert.match(client.sent[0]?.message ?? "", /Phone-control speed policy/);
+  assert.match(client.sent[0]?.message ?? "", /Phone-control turn hint/);
   assert.match(client.sent[0]?.message ?? "", /User request:\nOpen the Settings app on my phone/);
   assert.equal(client.sent[0]?.thinking, "low");
 });
@@ -317,7 +317,7 @@ test("realtime phone requests include fast phone loop guidance in gateway run", 
   await waitFor(() => client.sent.length === 1);
   client.emit({ event: "chat", payload: { sessionKey: client.sent[0]?.sessionKey, runId: "run_1", state: "final", message: "Done" } });
 
-  assert.match(client.sent[0]?.message ?? "", /Avoid extra phone_observe/);
+  assert.match(client.sent[0]?.message ?? "", /Avoid redundant phone_observe/);
   assert.match(client.sent[0]?.message ?? "", /User request:\nOpen Gemini/);
   assert.deepEqual(await request, { finalMessage: "Done" });
 });
