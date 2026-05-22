@@ -48,6 +48,14 @@ export interface HarnessChatAdapter {
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult>;
+  steerChat?(options: {
+    sessionKey: string;
+    sessionId?: string;
+    runId?: string;
+    message: string;
+    thinking?: string;
+    idempotencyKey?: string;
+  }): Promise<GatewayChatSendResult>;
   abort(sessionKey: string, runId?: string): Promise<unknown>;
   listModels(): Promise<ChatModelOption[]>;
   listSessions(limit?: number): Promise<HarnessSessionList>;
@@ -65,6 +73,14 @@ interface RawHarnessClient {
   sendChat(options: {
     sessionKey: string;
     sessionId?: string;
+    message: string;
+    thinking?: string;
+    idempotencyKey?: string;
+  }): Promise<GatewayChatSendResult>;
+  steerChat?(options: {
+    sessionKey: string;
+    sessionId?: string;
+    runId?: string;
     message: string;
     thinking?: string;
     idempotencyKey?: string;
@@ -108,6 +124,20 @@ export class NormalizedHarnessAdapter implements HarnessChatAdapter {
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
     return await this.client.sendChat(options);
+  }
+
+  async steerChat(options: {
+    sessionKey: string;
+    sessionId?: string;
+    runId?: string;
+    message: string;
+    thinking?: string;
+    idempotencyKey?: string;
+  }): Promise<GatewayChatSendResult> {
+    if (!this.client.steerChat) {
+      throw new Error(`${this.harnessId} harness does not support active-turn steering.`);
+    }
+    return await this.client.steerChat(options);
   }
 
   async abort(sessionKey: string, runId?: string): Promise<unknown> {

@@ -81,6 +81,20 @@ export class OpenClawGatewayChatClient {
     };
   }
 
+  async steerChat(options: {
+    sessionKey: string;
+    sessionId?: string;
+    runId?: string;
+    message: string;
+    thinking?: string;
+    idempotencyKey?: string;
+  }): Promise<GatewayChatSendResult> {
+    return await this.sendChat({
+      ...options,
+      message: `/steer ${options.message}`
+    });
+  }
+
   async abort(sessionKey: string, runId?: string): Promise<unknown> {
     return await this.request("chat.abort", {
       sessionKey,

@@ -157,6 +157,24 @@ export class HermesChatClient {
     return { status: "stopping" };
   }
 
+  async steerChat(options: {
+    sessionKey: string;
+    sessionId?: string;
+    runId?: string;
+    message: string;
+    thinking?: string;
+    idempotencyKey?: string;
+  }): Promise<GatewayChatSendResult> {
+    const active = this.activeRunFor(options.sessionKey, options.runId);
+    if (!active) {
+      throw new Error("No active Hermes run to steer");
+    }
+    const session = this.sessions.ensureSession(active.sessionKey, options.sessionId);
+    this.sessions.appendUserMessage(session, options.message, options.idempotencyKey);
+    await this.driver.steerRun(active.active, options.message);
+    return { runId: active.active.runId, sessionKey: active.sessionKey };
+  }
+
   async listModels(): Promise<unknown> {
     const payload = await this.api.listModels().catch(() => undefined);
     const rawModels = Array.isArray(asRecord(payload)?.data)
@@ -244,6 +262,14 @@ export class HermesChatClient {
       active.active.controller.abort();
     }
     this.activeRuns.clear();
+  }
+
+  private activeRunFor(sessionKey: string, runId?: string): ActiveChatRun | undefined {
+    if (runId) {
+      const active = this.activeRuns.get(runId);
+      return active?.sessionKey === sessionKey ? active : undefined;
+    }
+    return [...this.activeRuns.values()].find((active) => active.sessionKey === sessionKey);
   }
 
   private async processRun(sessionKey: string, active: HermesActiveRun): Promise<void> {

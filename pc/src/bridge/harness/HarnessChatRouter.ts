@@ -62,6 +62,21 @@ export class HarnessChatRouter implements GatewayChatClient {
     return await this.adapterForSession(options.sessionKey).sendChat(options);
   }
 
+  async steerChat(options: {
+    sessionKey: string;
+    sessionId?: string;
+    runId?: string;
+    message: string;
+    thinking?: string;
+    idempotencyKey?: string;
+  }): Promise<GatewayChatSendResult> {
+    const adapter = this.adapterForSession(options.sessionKey);
+    if (!adapter.steerChat) {
+      throw new Error(`${adapter.harnessId} harness does not support active-turn steering.`);
+    }
+    return await adapter.steerChat(options);
+  }
+
   async abort(sessionKey: string, runId?: string): Promise<unknown> {
     return await this.adapterForSession(sessionKey).abort(sessionKey, runId);
   }

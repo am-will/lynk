@@ -115,6 +115,26 @@ export class CodexChatClient {
     return { status: "stopping" };
   }
 
+  async steerChat(options: {
+    sessionKey: string;
+    sessionId?: string;
+    runId?: string;
+    message: string;
+    thinking?: string;
+    idempotencyKey?: string;
+  }): Promise<GatewayChatSendResult> {
+    if (!this.active) {
+      throw new Error("No active Codex turn to steer");
+    }
+    if (this.active.sessionKey !== options.sessionKey || (options.runId && this.active.runId !== options.runId)) {
+      throw new Error("Active Codex turn does not match the requested steer target");
+    }
+    const session = this.sessions.ensureSession(options.sessionKey, options.sessionId);
+    this.sessions.appendUserMessage(session, options.message, options.idempotencyKey);
+    await this.client.steer(options.message);
+    return { runId: this.active.runId, sessionKey: this.active.sessionKey };
+  }
+
   async listModels(): Promise<unknown> {
     const payload = await this.client.listModels().catch(() => undefined);
     const rawModels = Array.isArray(asRecord(payload)?.data)
