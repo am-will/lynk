@@ -17,6 +17,7 @@ import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatTimelineItem
 import dev.androidagent.chat.ChatTimelineKind
 import dev.androidagent.chat.ChatTimelineRenderer
+import dev.androidagent.localmodel.LocalResponseTextNormalizer
 import dev.androidagent.ui.ClipboardHelper
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
@@ -171,17 +172,18 @@ class ChatTimelineBinder(
 
         val maxWidth = (context.resources.displayMetrics.widthPixels * 0.78f).toInt()
         val bubble = if (isAssistant && !isStreaming) {
-            val chunks = MarkdownFencedCodeParser.parse(item.text)
+            val messageText = LocalResponseTextNormalizer.normalize(item.text)
+            val chunks = MarkdownFencedCodeParser.parse(messageText)
             if (chunks.any { it is MarkdownFencedCodeChunk.CodeBlock }) {
                 assistantMessageBubbleWithCodeBlocks(
-                    messageText = item.text,
+                    messageText = messageText,
                     chunks = chunks,
                     tokens = tokens,
                     maxWidth = maxWidth
                 )
             } else {
                 plainMessageBubble(
-                    messageText = item.text,
+                    messageText = messageText,
                     tokens = tokens,
                     isUser = false,
                     isStreaming = false,
