@@ -61,10 +61,13 @@ export const MCP_PHONE_TOOL_NAME_BY_COMMAND = {
 } as const satisfies Record<PhoneCommand, string>;
 
 export const REALTIME_TOOL_NAMES = {
+  delegateAgentTask: "delegate_agent_task",
   delegateOpenClawTask: "delegate_openclaw_task",
   runPhoneTask: "run_phone_task",
+  steerAgentTask: "steer_agent_task",
   steerOpenClawTask: "steer_openclaw_task",
   steerPhoneTask: "steer_phone_task",
+  stopAgentTask: "stop_agent_task",
   stopOpenClawTask: "stop_openclaw_task",
   stopPhoneTask: "stop_phone_task",
   hangUpRealtime: "hang_up_realtime",
@@ -338,6 +341,8 @@ export interface ChatSessionSummary {
   sessionId?: string | null;
   label?: string | null;
   displayName?: string | null;
+  harnessId?: string | null;
+  harnessLabel?: string | null;
   updatedAt?: number | null;
   model?: string | null;
   modelProvider?: string | null;
@@ -364,6 +369,9 @@ export interface ChatModelOption {
   id: string;
   label: string;
   provider?: string | null;
+  harnessId?: string | null;
+  harnessLabel?: string | null;
+  modelId?: string | null;
   contextWindow?: number | null;
   available?: boolean | null;
 }
@@ -409,6 +417,8 @@ export interface ChatStateMessage {
   deviceId: string;
   sessionKey: string;
   sessionId?: string | null;
+  harnessId?: string | null;
+  harnessLabel?: string | null;
   runId?: string | null;
   isRunning: boolean;
   status?: string | null;
@@ -643,6 +653,8 @@ export const chatSessionSummarySchema = z.object({
   sessionId: z.string().optional().nullable(),
   label: z.string().optional().nullable(),
   displayName: z.string().optional().nullable(),
+  harnessId: z.string().optional().nullable(),
+  harnessLabel: z.string().optional().nullable(),
   updatedAt: z.number().optional().nullable(),
   model: z.string().optional().nullable(),
   modelProvider: z.string().optional().nullable(),
@@ -662,6 +674,9 @@ export const chatModelOptionSchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1),
   provider: z.string().optional().nullable(),
+  harnessId: z.string().optional().nullable(),
+  harnessLabel: z.string().optional().nullable(),
+  modelId: z.string().optional().nullable(),
   contextWindow: z.number().optional().nullable(),
   available: z.boolean().optional().nullable()
 });
@@ -707,6 +722,8 @@ export const chatStateMessageSchema = z.object({
   deviceId: z.string().min(1),
   sessionKey: z.string().min(1),
   sessionId: z.string().optional().nullable(),
+  harnessId: z.string().optional().nullable(),
+  harnessLabel: z.string().optional().nullable(),
   runId: z.string().optional().nullable(),
   isRunning: z.boolean(),
   status: z.string().optional().nullable(),

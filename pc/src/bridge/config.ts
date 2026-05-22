@@ -13,6 +13,11 @@ export interface BridgeConfig {
   openClawGatewayPassword?: string;
   openClawChatAgentId: string;
   openClawChatSessionKey: string;
+  hermesApiBaseUrl: string;
+  hermesApiKey?: string;
+  hermesModel: string;
+  hermesDefaultSessionId: string;
+  hermesRunTimeoutMs: number;
   openAiApiKey?: string;
   openAiRealtimeModel: string;
   openAiRealtimeVoice: string;
@@ -52,6 +57,18 @@ function readPhoneAgentToken(): string {
   return token;
 }
 
+function readPositiveInt(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer.`);
+  }
+  return parsed;
+}
+
 export function getBridgeConfig(): BridgeConfig {
   const port = Number.parseInt(process.env.PHONE_AGENT_PORT ?? "8788", 10);
   const openClawConfig = readOpenClawConfig();
@@ -66,6 +83,11 @@ export function getBridgeConfig(): BridgeConfig {
     openClawGatewayPassword: process.env.OPENCLAW_GATEWAY_PASSWORD ?? nestedString(openClawConfig, ["gateway", "auth", "password"]) ?? nestedString(openClawConfig, ["gateway", "remote", "password"]),
     openClawChatAgentId: process.env.OPENCLAW_CHAT_AGENT_ID ?? "main",
     openClawChatSessionKey: process.env.OPENCLAW_CHAT_SESSION_KEY ?? "agent:main:explicit:open-claw-agent",
+    hermesApiBaseUrl: (process.env.HERMES_API_BASE_URL ?? "http://127.0.0.1:8642/v1").replace(/\/+$/, ""),
+    hermesApiKey: process.env.HERMES_API_KEY?.trim() || undefined,
+    hermesModel: process.env.HERMES_MODEL?.trim() || "hermes-agent",
+    hermesDefaultSessionId: process.env.HERMES_DEFAULT_SESSION_ID?.trim() || "hermes-agent",
+    hermesRunTimeoutMs: readPositiveInt("HERMES_RUN_TIMEOUT_SECONDS", 600) * 1000,
     openAiApiKey: process.env.OPENAI_API_KEY,
     openAiRealtimeModel: process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2",
     openAiRealtimeVoice: process.env.OPENAI_REALTIME_VOICE ?? "marin",

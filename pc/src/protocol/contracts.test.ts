@@ -52,11 +52,14 @@ test("Android local phone tool registry matches shared MCP command names", () =>
 
 test("shared realtime tool names cover delegated phone and OpenClaw controls", () => {
   assert.deepEqual(Object.values(REALTIME_TOOL_NAMES).sort(), [
+    "delegate_agent_task",
     "delegate_openclaw_task",
     "hang_up_realtime",
     "run_phone_task",
+    "steer_agent_task",
     "steer_openclaw_task",
     "steer_phone_task",
+    "stop_agent_task",
     "stop_openclaw_task",
     "stop_phone_task",
     "web_search"

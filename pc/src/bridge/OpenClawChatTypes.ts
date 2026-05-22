@@ -1,9 +1,11 @@
 import type { ChatSessionSummary } from "../protocol/messages.js";
+import type { HarnessId } from "./AgentHarness.js";
 import type { BridgeConfig } from "./config.js";
 import type { GatewayChatSendResult, GatewayEventHandler } from "./OpenClawGatewayChatClient.js";
 import { requestKeyFromSessionKey } from "./OpenClawGatewayChatClient.js";
 
 export interface DeviceChatState {
+  harnessId: HarnessId;
   sessionKey: string;
   sessionId?: string | null;
   runId?: string | null;
@@ -14,6 +16,8 @@ export interface DeviceChatState {
   verboseLevel?: string | null;
   pendingFirstMessageDisplayName?: boolean;
   lastRealtimeRequestAt?: number | null;
+  sessionKeysByHarness: Map<HarnessId, string>;
+  modelsByHarness: Map<HarnessId, string | null>;
   pendingRuns: Map<string, PendingChatRun>;
   sessionSummaries: Map<string, ChatSessionSummary>;
 }
@@ -36,10 +40,10 @@ export interface GatewayChatClient {
   }): Promise<GatewayChatSendResult>;
   abort(sessionKey: string, runId?: string): Promise<unknown>;
   listModels(): Promise<unknown>;
-  listSessions(limit?: number): Promise<unknown>;
+  listSessions(limit?: number, harnessId?: HarnessId): Promise<unknown>;
   createSession(options: { key?: string; label?: string; model?: string }): Promise<unknown>;
   patchSession(sessionKey: string, patch: Record<string, unknown>): Promise<unknown>;
-  listCommands(): Promise<unknown>;
+  listCommands(sessionKey?: string): Promise<unknown>;
   effectiveTools(sessionKey: string): Promise<unknown>;
   health(): Promise<unknown>;
   close(): void;
@@ -56,6 +60,7 @@ export class DeviceChatStateStore {
       return existing;
     }
     const created: DeviceChatState = {
+      harnessId: "openclaw",
       sessionKey: defaultSessionKeyForDevice(this.config, deviceId),
       runId: null,
       model: null,
@@ -65,6 +70,8 @@ export class DeviceChatStateStore {
       verboseLevel: null,
       pendingFirstMessageDisplayName: false,
       lastRealtimeRequestAt: null,
+      sessionKeysByHarness: new Map([["openclaw", defaultSessionKeyForDevice(this.config, deviceId)]]),
+      modelsByHarness: new Map(),
       pendingRuns: new Map(),
       sessionSummaries: new Map()
     };

@@ -15,6 +15,10 @@ const config: BridgeConfig = {
   openClawGatewayUrl: "ws://127.0.0.1:18789",
   openClawChatAgentId: "main",
   openClawChatSessionKey: "agent:main:explicit:open-claw-agent",
+  hermesApiBaseUrl: "http://127.0.0.1:8642/v1",
+  hermesModel: "hermes-agent",
+  hermesDefaultSessionId: "hermes-agent",
+  hermesRunTimeoutMs: 600_000,
   openAiRealtimeModel: "gpt-realtime-2",
   openAiRealtimeVoice: "marin",
   openAiWebSearchModel: "gpt-5.5"

@@ -182,6 +182,9 @@ export function normalizeModels(value: unknown): ChatModelOption[] {
       id: key,
       label: provider && name !== key ? `${name} (${provider})` : name,
       provider: provider ?? null,
+      ...(stringField(record, "harnessId") ? { harnessId: stringField(record, "harnessId") } : {}),
+      ...(stringField(record, "harnessLabel") ? { harnessLabel: stringField(record, "harnessLabel") } : {}),
+      ...(stringField(record, "modelId") ? { modelId: stringField(record, "modelId") } : {}),
       contextWindow: numberField(record, "contextWindow"),
       available: booleanField(record, "available")
     });
@@ -226,6 +229,8 @@ export function normalizeSessions(value: unknown): ChatSessionSummary[] {
       sessionId: stringField(record, "sessionId") ?? null,
       label: stringField(record, "label") ?? null,
       displayName: stringField(record, "displayName") ?? stringField(record, "label") ?? null,
+      ...(stringField(record, "harnessId") ? { harnessId: stringField(record, "harnessId") } : {}),
+      ...(stringField(record, "harnessLabel") ? { harnessLabel: stringField(record, "harnessLabel") } : {}),
       updatedAt: numberField(record, "updatedAt"),
       model: stringField(record, "model") ?? null,
       modelProvider: stringField(record, "modelProvider") ?? null,
@@ -514,7 +519,7 @@ export function mapGatewayChatEvent(
       deviceId,
       sessionKey,
       runId,
-      message: stringField(record, "errorMessage") ?? "OpenClaw chat run failed"
+      message: stringField(record, "errorMessage") ?? stringField(record, "error") ?? "OpenClaw chat run failed"
     };
   }
   return undefined;
