@@ -136,6 +136,7 @@ class LocalAgentChatClient(
     private fun models(): JSONObject =
         JSONObject()
             .put("type", "chat.models")
+            .put("source", "local")
             .put("models", JSONArray().put(JSONObject()
                 .put("id", AgentModelOptions.LOCAL_LITERT_MODEL_ID)
                 .put("label", "Local LiteRT-LM")

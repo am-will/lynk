@@ -2,7 +2,9 @@ package dev.androidagent.overlay
 
 import dev.androidagent.AgentModelOptions
 import dev.androidagent.chat.ChatModelOption
+import dev.androidagent.chat.ChatModelSource
 import dev.androidagent.chat.ChatSessionRow
+import dev.androidagent.chat.ChatState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -121,6 +123,33 @@ class ChatPresentationHelpersTest {
         assertEquals("openclaw", ChatPresentationHelpers.modelHarnessId(merged.first { it.id == "gpt-5.5" }))
         assertEquals("hermes", ChatPresentationHelpers.modelHarnessId(merged.first { it.id == "hermes:gpt-5.5" }))
         assertEquals(listOf("openclaw", "hermes", "codex", "local"), listOf("local", "codex", "hermes", "openclaw").sortedBy(ChatPresentationHelpers::modelHarnessSortOrder))
+    }
+
+    @Test
+    fun modelPickerOptionsCombineExplicitHostAndLocalSnapshots() {
+        val state = ChatState(
+            models = listOf(model(AgentModelOptions.LOCAL_LITERT_MODEL_ID, harnessId = "local", provider = "android")),
+            modelSource = ChatModelSource.LOCAL,
+            hostModels = listOf(
+                model("gpt-5.5", harnessId = "openclaw"),
+                model("hermes:gpt-5.5", harnessId = "hermes"),
+                model("codex:gpt-5.3-codex", harnessId = "codex")
+            ),
+            localModels = listOf(model(AgentModelOptions.LOCAL_LITERT_MODEL_ID, harnessId = "local", provider = "android"))
+        )
+
+        val merged = ChatPresentationHelpers.modelPickerOptions(state, localLiteRtAvailable = true)
+
+        assertEquals(
+            listOf("gpt-5.5", "hermes:gpt-5.5", "codex:gpt-5.3-codex", AgentModelOptions.LOCAL_LITERT_MODEL_ID),
+            merged.map { it.id }.filter {
+                it == "gpt-5.5" ||
+                    it == "hermes:gpt-5.5" ||
+                    it == "codex:gpt-5.3-codex" ||
+                    it == AgentModelOptions.LOCAL_LITERT_MODEL_ID
+            }
+        )
+        assertEquals("local", ChatPresentationHelpers.modelHarnessId(merged.first { it.id == AgentModelOptions.LOCAL_LITERT_MODEL_ID }))
     }
 
     @Test

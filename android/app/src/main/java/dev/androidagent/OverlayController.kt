@@ -1113,7 +1113,7 @@ class OverlayController(
     private fun showModelChoices(anchorOverride: View? = null, replace: Boolean = false) {
         val anchor = anchorOverride ?: modelButton ?: return
         val localLiteRtAvailable = isExperimentalLocalModelAvailable()
-        val merged = ChatPresentationHelpers.mergeModelOptions(lastChatState.models, localLiteRtAvailable)
+        val merged = ChatPresentationHelpers.modelPickerOptions(lastChatState, localLiteRtAvailable)
         if (merged.isEmpty()) {
             setStatus("No models available.")
             return
@@ -1617,10 +1617,12 @@ class OverlayController(
         renderComposerActionButtons(tokens, state, lastTranscriptionState)
         modelButton?.let { btn ->
             val fastModeOn = state.fastMode == true
+            val localLiteRtAvailable = isExperimentalLocalModelAvailable()
+            val modelOptions = ChatPresentationHelpers.modelPickerOptions(state, localLiteRtAvailable)
             val modelLabel = ChatPresentationHelpers.formatModelLabel(
                 model = state.selectedModel ?: state.models.firstOrNull()?.id,
-                models = state.models,
-                localLiteRtAvailable = isExperimentalLocalModelAvailable()
+                models = modelOptions,
+                localLiteRtAvailable = localLiteRtAvailable
             )
             btn.text = modelLabel
             btn.updateAccessibilityState(

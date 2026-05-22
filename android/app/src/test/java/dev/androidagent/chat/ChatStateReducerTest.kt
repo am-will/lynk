@@ -128,15 +128,17 @@ class ChatStateReducerTest {
     }
 
     @Test
-    fun localModelRefreshKeepsHostHarnessModelsAvailable() {
+    fun modelSnapshotsStayScopedToExplicitSource() {
         val hostModels = ChatStateReducer.reduce(ChatState(), JSONObject()
             .put("type", "chat.models")
+            .put("source", "host")
             .put("models", JSONArray()
                 .put(model("gpt-5.5", "OpenClaw", "openclaw", "openclaw"))
                 .put(model("hermes:gpt-5.5", "Hermes", "hermes", "hermes"))
                 .put(model("codex:gpt-5.3-codex", "Codex", "codex", "codex"))))
         val localRefresh = ChatStateReducer.reduce(hostModels, JSONObject()
             .put("type", "chat.models")
+            .put("source", "local")
             .put("models", JSONArray()
                 .put(JSONObject()
                     .put("id", AgentModelOptions.LOCAL_LITERT_MODEL_ID)
@@ -145,9 +147,15 @@ class ChatStateReducerTest {
                     .put("available", true))))
 
         assertEquals(
-            listOf("gpt-5.5", "hermes:gpt-5.5", "codex:gpt-5.3-codex", AgentModelOptions.LOCAL_LITERT_MODEL_ID),
+            listOf(AgentModelOptions.LOCAL_LITERT_MODEL_ID),
             localRefresh.models.map { it.id }
         )
+        assertEquals(ChatModelSource.LOCAL, localRefresh.modelSource)
+        assertEquals(
+            listOf("gpt-5.5", "hermes:gpt-5.5", "codex:gpt-5.3-codex"),
+            localRefresh.hostModels.map { it.id }
+        )
+        assertEquals(listOf(AgentModelOptions.LOCAL_LITERT_MODEL_ID), localRefresh.localModels.map { it.id })
     }
 
     @Test

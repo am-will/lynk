@@ -290,11 +290,11 @@ class PhoneWebSocketClient(
             "chat.error",
             "chat.reply_available",
             "chat.tool_event",
-            "chat.models",
             "chat.commands",
             "chat.tools",
             "chat.sessions",
             "chat.usage" -> onChatMessage(message)
+            "chat.models" -> onChatMessage(message.put("source", "host"))
             "realtime.sdp" -> onRealtimeSdp(message)
             "realtime.transcript_delta" -> onRealtimeTranscriptDelta(message)
             "realtime.item_added" -> onRealtimeItemAdded(message)

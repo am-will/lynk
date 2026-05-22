@@ -2,6 +2,8 @@ package dev.androidagent.overlay
 
 import dev.androidagent.AgentModelOptions
 import dev.androidagent.chat.ChatModelOption
+import dev.androidagent.chat.ChatModelSource
+import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatSessionRow
 
 enum class ClientBrand {
@@ -71,7 +73,8 @@ object ChatPresentationHelpers {
 
     fun mergeModelOptions(
         gatewayModels: List<ChatModelOption>,
-        localLiteRtAvailable: Boolean
+        localLiteRtAvailable: Boolean,
+        localModels: List<ChatModelOption> = emptyList()
     ): List<ChatModelOption> {
         val byId = linkedMapOf<String, ChatModelOption>()
         AgentModelOptions.models.forEach { local ->
@@ -92,22 +95,34 @@ object ChatPresentationHelpers {
             byId[remote.id] = remote
         }
         if (localLiteRtAvailable) {
-            byId[AgentModelOptions.LOCAL_LITERT_MODEL_ID] = ChatModelOption(
-                id = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
-                label = "Local LiteRT-LM",
-                provider = "android",
-                harnessId = "local",
-                harnessLabel = "Local",
-                modelId = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
-                contextWindow = null,
-                available = true,
-                reasoningOptions = null,
-                defaultReasoningEffort = null
-            )
+            byId[AgentModelOptions.LOCAL_LITERT_MODEL_ID] = localModels.firstOrNull { it.id == AgentModelOptions.LOCAL_LITERT_MODEL_ID }
+                ?: ChatModelOption(
+                    id = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
+                    label = "Local LiteRT-LM",
+                    provider = "android",
+                    harnessId = "local",
+                    harnessLabel = "Local",
+                    modelId = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
+                    contextWindow = null,
+                    available = true,
+                    reasoningOptions = null,
+                    defaultReasoningEffort = null
+                )
         } else {
             byId.remove(AgentModelOptions.LOCAL_LITERT_MODEL_ID)
         }
         return byId.values.toList()
+    }
+
+    fun modelPickerOptions(state: ChatState, localLiteRtAvailable: Boolean): List<ChatModelOption> {
+        val hostModels = state.hostModels.ifEmpty {
+            if (state.modelSource == ChatModelSource.LOCAL) emptyList() else state.models
+        }
+        return mergeModelOptions(
+            gatewayModels = hostModels,
+            localLiteRtAvailable = localLiteRtAvailable,
+            localModels = state.localModels
+        )
     }
 
     fun selectedModelId(selectedModel: String?, localLiteRtAvailable: Boolean): String {
