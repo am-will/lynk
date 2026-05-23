@@ -15,7 +15,8 @@ import type { BridgeConfig } from "../config.js";
 import type { ChatCommandOption } from "../../protocol/messages.js";
 import { HermesChatClient } from "../HermesChatClient.js";
 import type { GatewayChatClient } from "../OpenClawChatTypes.js";
-import { OpenClawGatewayChatClient, type GatewayChatSendResult, type GatewayEventHandler } from "../OpenClawGatewayChatClient.js";
+import type { GatewayChatSendResult, GatewayEventHandler } from "../chat/ChatTransportTypes.js";
+import { OpenClawGatewayChatClient } from "../OpenClawGatewayChatClient.js";
 import { NormalizedHarnessAdapter, type HarnessChatAdapter, type HarnessCreatedSession } from "./HarnessChatAdapter.js";
 
 const OPENCLAW_BRIDGE_COMMANDS: ChatCommandOption[] = [

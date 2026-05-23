@@ -3,12 +3,12 @@ import type {
   ChatFinalMessage,
   ChatOutboundMessage
 } from "../protocol/messages.js";
-import type { GatewayEvent } from "./OpenClawGatewayChatClient.js";
+import type { GatewayEvent } from "./chat/ChatTransportTypes.js";
 import {
   mapGatewayChatEvent,
   normalizeGatewayReasoningEvent,
   normalizeGatewayToolEvent
-} from "./OpenClawGatewayChatClient.js";
+} from "./chat/ChatNormalizers.js";
 import type { DeviceChatState, PendingChatRun } from "./OpenClawChatTypes.js";
 import { DeviceChatStateStore } from "./OpenClawChatTypes.js";
 
@@ -76,6 +76,7 @@ export class OpenClawGatewayEventRouter {
       this.options.settleRun(message);
       if (messageRunId && state.runId === messageRunId) {
         state.runId = null;
+        state.activeTaskKind = null;
       }
       if (messageRunId && pendingRun) {
         this.options.sendReplyAvailable(deviceId, message, messageSessionKey ?? pendingRun.sessionKey, pendingRun);
@@ -138,6 +139,7 @@ export class OpenClawGatewayEventRouter {
       }
       if (record.type === "run.completed") {
         state.runId = null;
+        state.activeTaskKind = null;
         this.options.sendState(deviceId, "OpenClaw finished");
         void this.options.refreshMetadata(deviceId);
         void this.options.sendHistory(deviceId);

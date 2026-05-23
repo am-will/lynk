@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 import type { BridgeConfig } from "./config.js";
-import { asRecord, stringField } from "./OpenClawGatewayNormalizers.js";
+import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "./chat/ChatTransportTypes.js";
+import { asRecord, stringField } from "./chat/ChatNormalizers.js";
+export type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "./chat/ChatTransportTypes.js";
 export {
   chatMessagesFromHistory,
   enrichSessionsWithModelContext,
@@ -17,26 +19,13 @@ export {
   normalizeTools,
   requestKeyFromSessionKey,
   usageFromSession
-} from "./OpenClawGatewayNormalizers.js";
+} from "./chat/ChatNormalizers.js";
 
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
 }
-
-export interface GatewayEvent {
-  event: string;
-  payload: unknown;
-  seq?: number;
-}
-
-export interface GatewayChatSendResult {
-  runId: string;
-  sessionKey: string;
-}
-
-export type GatewayEventHandler = (event: GatewayEvent) => void;
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;

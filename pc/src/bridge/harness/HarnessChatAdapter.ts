@@ -7,7 +7,7 @@ import type {
   ChatToolSummary
 } from "../../protocol/messages.js";
 import type { HarnessId } from "../AgentHarness.js";
-import type { GatewayChatSendResult, GatewayEventHandler } from "../OpenClawGatewayChatClient.js";
+import type { GatewayChatSendResult, GatewayEventHandler } from "../chat/ChatTransportTypes.js";
 import {
   chatMessagesFromHistory,
   normalizeCommands,
@@ -15,7 +15,7 @@ import {
   normalizeReasoningOptions,
   normalizeSessions,
   normalizeTools
-} from "../OpenClawGatewayChatClient.js";
+} from "../chat/ChatNormalizers.js";
 
 export interface HarnessChatHistory {
   sessionId?: string | null;
