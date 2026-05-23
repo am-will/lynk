@@ -36,6 +36,7 @@ import dev.androidagent.ui.exposeToAccessibility
  * - Consistent typography hierarchy via [Typography].
  */
 object SettingsComponents {
+    const val CONTAINER_RADIUS = 10
 
     fun dp(context: Context, value: Int): Int = DesignTokens.dp(context, value)
     fun tokens(context: Context): ThemeTokens = DesignTokens.resolve(context)
@@ -61,13 +62,13 @@ object SettingsComponents {
     fun darkCardBackground(context: Context, tokens: ThemeTokens): GradientDrawable {
         return Drawables.rounded(
             fill = tokens.surface,
-            radius = dp(context, DesignTokens.Radius.lg).toFloat(),
+            radius = dp(context, CONTAINER_RADIUS).toFloat(),
             strokeColor = tokens.border,
             strokeWidth = dp(context, 1).coerceAtLeast(1)
         )
     }
 
-    fun insetBackground(context: Context, tokens: ThemeTokens, radius: Int = DesignTokens.Radius.md): GradientDrawable {
+    fun insetBackground(context: Context, tokens: ThemeTokens, radius: Int = CONTAINER_RADIUS): GradientDrawable {
         return Drawables.rounded(
             fill = tokens.surfaceInset,
             radius = dp(context, radius).toFloat(),
@@ -318,7 +319,7 @@ object SettingsComponents {
             gravity = Gravity.CENTER_VERTICAL
             val baseBackground = Drawables.rounded(
                 fill = if (highlighted) ColorUtils.with(dotColor, 0x16) else tokens.surface,
-                radius = dp(context, 18).toFloat(),
+                radius = dp(context, CONTAINER_RADIUS).toFloat(),
                 strokeColor = if (highlighted) ColorUtils.with(dotColor, 0x66) else tokens.border,
                 strokeWidth = dp(context, 1).coerceAtLeast(1)
             )
@@ -442,7 +443,7 @@ object SettingsComponents {
             gravity = Gravity.CENTER_VERTICAL
             background = Drawables.rounded(
                 fill = tokens.surfaceInset,
-                radius = dp(context, 14).toFloat(),
+                radius = dp(context, CONTAINER_RADIUS).toFloat(),
                 strokeColor = tokens.borderSoft,
                 strokeWidth = dp(context, 1).coerceAtLeast(1)
             )
@@ -620,13 +621,13 @@ object SettingsComponents {
         val textColor: Int
         when (tone) {
             ButtonTone.Primary -> {
-                container.background = Drawables.rounded(tokens.accent, dp(context, 12).toFloat())
+                container.background = Drawables.rounded(tokens.accent, dp(context, CONTAINER_RADIUS).toFloat())
                 textColor = tokens.accentInk
             }
             ButtonTone.Secondary -> {
                 container.background = Drawables.rounded(
                     fill = tokens.surfaceInset,
-                    radius = dp(context, 12).toFloat(),
+                    radius = dp(context, CONTAINER_RADIUS).toFloat(),
                     strokeColor = tokens.border,
                     strokeWidth = dp(context, 1).coerceAtLeast(1)
                 )
@@ -635,7 +636,7 @@ object SettingsComponents {
             ButtonTone.Outline -> {
                 container.background = Drawables.rounded(
                     fill = Color.TRANSPARENT,
-                    radius = dp(context, 12).toFloat(),
+                    radius = dp(context, CONTAINER_RADIUS).toFloat(),
                     strokeColor = tokens.border,
                     strokeWidth = dp(context, 1).coerceAtLeast(1)
                 )
@@ -644,7 +645,7 @@ object SettingsComponents {
             ButtonTone.Danger -> {
                 container.background = Drawables.rounded(
                     fill = ColorUtils.with(tokens.danger, 0x22),
-                    radius = dp(context, 12).toFloat(),
+                    radius = dp(context, CONTAINER_RADIUS).toFloat(),
                     strokeColor = ColorUtils.with(tokens.danger, 0x55),
                     strokeWidth = dp(context, 1).coerceAtLeast(1)
                 )
@@ -768,7 +769,7 @@ object SettingsComponents {
             orientation = LinearLayout.HORIZONTAL
             background = Drawables.rounded(
                 fill = tokens.surfaceInset,
-                radius = dp(context, 12).toFloat(),
+                radius = dp(context, CONTAINER_RADIUS).toFloat(),
                 strokeColor = tokens.borderSoft,
                 strokeWidth = dp(context, 1).coerceAtLeast(1)
             )
@@ -810,7 +811,7 @@ object SettingsComponents {
             gravity = Gravity.CENTER_VERTICAL
             background = Drawables.rounded(
                 fill = tokens.surfaceInset,
-                radius = dp(context, 12).toFloat(),
+                radius = dp(context, CONTAINER_RADIUS).toFloat(),
                 strokeColor = tokens.borderSoft,
                 strokeWidth = dp(context, 1).coerceAtLeast(1)
             )

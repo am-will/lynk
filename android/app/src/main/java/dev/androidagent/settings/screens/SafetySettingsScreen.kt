@@ -11,6 +11,7 @@ import android.widget.ScrollView
 import dev.androidagent.AgentConfigStore
 import dev.androidagent.DefaultSystemPrompt
 import dev.androidagent.R
+import dev.androidagent.settings.SettingsComponents
 import dev.androidagent.settings.SettingsUi
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
@@ -35,7 +36,7 @@ object SafetySettingsScreen {
         root.addView(SettingsUi.toolbar(activity, "System", tokens, callbacks::onBack))
 
         val promptSummary = SettingsUi.body(activity, SettingsUi.systemPromptPreview(promptDraft), tokens).apply {
-            background = Drawables.glassInset(activity, tokens, DesignTokens.Radius.md)
+            background = Drawables.glassInset(activity, tokens, SettingsComponents.CONTAINER_RADIUS)
             setPadding(
                 SettingsUi.dp(activity, DesignTokens.Spacing.lg),
                 SettingsUi.dp(activity, DesignTokens.Spacing.md + 2),
@@ -101,7 +102,7 @@ object SafetySettingsScreen {
             setTextColor(tokens.primaryText)
             setHintTextColor(tokens.tertiaryText)
             textSize = DesignTokens.Text.callout
-            background = Drawables.glassInset(activity, tokens, DesignTokens.Radius.md)
+            background = Drawables.glassInset(activity, tokens, SettingsComponents.CONTAINER_RADIUS)
             setPadding(
                 SettingsUi.dp(activity, DesignTokens.Spacing.lg),
                 SettingsUi.dp(activity, DesignTokens.Spacing.md + 2),
@@ -123,7 +124,7 @@ object SafetySettingsScreen {
             }
             .create()
         dialog.setOnShowListener {
-            dialog.window?.setBackgroundDrawable(Drawables.glassSurface(activity, tokens, DesignTokens.Radius.xl))
+            dialog.window?.setBackgroundDrawable(Drawables.glassSurface(activity, tokens, SettingsComponents.CONTAINER_RADIUS))
             dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(tokens.accent)
             dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(tokens.secondaryText)
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(tokens.secondaryText)

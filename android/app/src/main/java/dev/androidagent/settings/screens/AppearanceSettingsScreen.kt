@@ -21,6 +21,7 @@ import dev.androidagent.avatar.AvatarLibrary
 import dev.androidagent.avatar.AvatarSelection
 import dev.androidagent.avatar.PetAsset
 import dev.androidagent.settings.BubbleSizeMapper
+import dev.androidagent.settings.SettingsComponents
 import dev.androidagent.settings.SettingsUi
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
@@ -75,7 +76,7 @@ object AppearanceSettingsScreen {
 
         val avatarSummary = SettingsUi.body(activity, currentAvatarSummary(activity), tokens).apply {
             exposeToAccessibility(description = "Current avatar")
-            background = Drawables.glassInset(activity, tokens, DesignTokens.Radius.md)
+            background = Drawables.glassInset(activity, tokens, SettingsComponents.CONTAINER_RADIUS)
             setPadding(
                 SettingsUi.dp(activity, DesignTokens.Spacing.lg),
                 SettingsUi.dp(activity, DesignTokens.Spacing.md + 2),
@@ -219,7 +220,7 @@ object AppearanceSettingsScreen {
         }
 
         dialog.setOnShowListener {
-            dialog.window?.setBackgroundDrawable(Drawables.glassSurface(activity, tokens, DesignTokens.Radius.xl))
+            dialog.window?.setBackgroundDrawable(Drawables.glassSurface(activity, tokens, SettingsComponents.CONTAINER_RADIUS))
             dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(tokens.secondaryText)
         }
         dialog.setOnDismissListener { executor.shutdownNow() }
@@ -229,7 +230,7 @@ object AppearanceSettingsScreen {
     private fun avatarRow(activity: Activity, tokens: ThemeTokens, title: String, subtitle: String, selected: Boolean, onClick: () -> Unit): View {
         return LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
-            background = Drawables.glassInset(activity, tokens, DesignTokens.Radius.md)
+            background = Drawables.glassInset(activity, tokens, SettingsComponents.CONTAINER_RADIUS)
             setPadding(
                 SettingsUi.dp(activity, DesignTokens.Spacing.lg),
                 SettingsUi.dp(activity, DesignTokens.Spacing.md + 2),

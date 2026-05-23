@@ -88,11 +88,11 @@ object SettingsUi {
     ): TextView {
         val (bg, textColor) = when (tone) {
             SettingsButtonTone.Primary ->
-                Drawables.rounded(tokens.accent, dp(context, 12).toFloat()) to tokens.accentInk
+                Drawables.rounded(tokens.accent, dp(context, SettingsComponents.CONTAINER_RADIUS).toFloat()) to tokens.accentInk
             SettingsButtonTone.Secondary ->
                 Drawables.rounded(
                     fill = tokens.surfaceInset,
-                    radius = dp(context, 12).toFloat(),
+                    radius = dp(context, SettingsComponents.CONTAINER_RADIUS).toFloat(),
                     strokeColor = tokens.border,
                     strokeWidth = dp(context, 1).coerceAtLeast(1)
                 ) to tokens.primaryText
@@ -132,7 +132,7 @@ object SettingsUi {
             setTextColor(tokens.primaryText)
             setHintTextColor(tokens.tertiaryText)
             textSize = DesignTokens.Text.callout
-            background = SettingsComponents.insetBackground(context, tokens, DesignTokens.Radius.md)
+            background = SettingsComponents.insetBackground(context, tokens)
             setPadding(
                 dp(context, DesignTokens.Spacing.md),
                 dp(context, DesignTokens.Spacing.sm + 2),
@@ -173,7 +173,7 @@ object SettingsUi {
         return Spinner(context).apply {
             this.adapter = adapter
             setSelection(selection)
-            background = SettingsComponents.insetBackground(context, tokens, DesignTokens.Radius.md)
+            background = SettingsComponents.insetBackground(context, tokens)
             setPadding(dp(context, DesignTokens.Spacing.md), 0, dp(context, DesignTokens.Spacing.md), 0)
             minimumHeight = dp(context, DesignTokens.Sizes.action)
         }
@@ -216,7 +216,7 @@ object SettingsUi {
             gravity = Gravity.CENTER
             background = Drawables.rounded(
                 fill = tint(color, if (tokens.isDark) 0.20f else 0.12f),
-                radius = dp(context, DesignTokens.Radius.sm).toFloat(),
+                radius = dp(context, SettingsComponents.CONTAINER_RADIUS).toFloat(),
                 strokeColor = tint(color, 0.40f),
                 strokeWidth = dp(context, 1).coerceAtLeast(1)
             )
@@ -250,7 +250,7 @@ object SettingsUi {
         return LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = Drawables.glassInset(context, tokens, DesignTokens.Radius.md)
+            background = Drawables.glassInset(context, tokens, SettingsComponents.CONTAINER_RADIUS)
             setPadding(
                 dp(context, DesignTokens.Spacing.lg),
                 dp(context, DesignTokens.Spacing.md + 2),

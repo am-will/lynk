@@ -56,7 +56,7 @@ object SettingsForms {
             orientation = LinearLayout.HORIZONTAL
             background = Drawables.rounded(
                 fill = ColorUtils.with(tokens.accent, 0x1A),
-                radius = SettingsComponents.dp(context, 12).toFloat(),
+                radius = SettingsComponents.dp(context, SettingsComponents.CONTAINER_RADIUS).toFloat(),
                 strokeColor = ColorUtils.with(tokens.accent, 0x55),
                 strokeWidth = SettingsComponents.dp(context, 1).coerceAtLeast(1)
             )
