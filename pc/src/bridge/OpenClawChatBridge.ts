@@ -4,6 +4,7 @@ import type { Dispatcher } from "../dispatcher/dispatcher.js";
 import {
   defaultSessionKeyForHarness,
   harnessForSessionKey,
+  harnessInfos,
   harnessLabel
 } from "./AgentHarness.js";
 import type {
@@ -56,6 +57,7 @@ import {
   normalizeSessions,
   normalizeTools,
   requestKeyFromSessionKey,
+  stringField,
   usageFromSession
 } from "./chat/ChatNormalizers.js";
 import { OpenClawRealtimeSessions } from "./OpenClawRealtimeSessions.js";
@@ -130,6 +132,23 @@ export class OpenClawChatBridge {
 
   async health(): Promise<unknown> {
     return await this.client.health();
+  }
+
+  async backendReadiness(): Promise<unknown> {
+    const modelCounts = await this.harnessModelCounts();
+    const harnesses: Record<string, unknown> = {};
+    for (const info of harnessInfos(this.config)) {
+      harnesses[info.id] = {
+        ok: info.enabled,
+        configured: info.enabled,
+        label: info.label,
+        modelCount: modelCounts[info.id] ?? 0,
+        message: info.enabled
+          ? `${info.label} is configured on the PC bridge.`
+          : `${info.label} is not configured on the PC bridge.`
+      };
+    }
+    return { harnesses };
   }
 
   async send(message: ChatSendMessage): Promise<void> {
@@ -783,6 +802,29 @@ export class OpenClawChatBridge {
       sessionKey,
       message: error instanceof Error ? error.message : String(error)
     });
+  }
+
+  private async harnessModelCounts(): Promise<Record<string, number>> {
+    const payload = await this.client.listModels().catch(() => undefined);
+    const record = payload && typeof payload === "object" ? payload as Record<string, unknown> : undefined;
+    const models = Array.isArray(record?.models) ? record.models : [];
+    const counts: Record<string, number> = {};
+    for (const model of models) {
+      const harnessId = this.harnessIdFromModel(model);
+      counts[harnessId] = (counts[harnessId] ?? 0) + 1;
+    }
+    return counts;
+  }
+
+  private harnessIdFromModel(model: unknown): string {
+    const record = model && typeof model === "object" ? model as Record<string, unknown> : undefined;
+    const harnessId = stringField(record, "harnessId") ?? stringField(record, "provider");
+    if (harnessId === "hermes" || harnessId === "codex" || harnessId === "local") {
+      return harnessId;
+    }
+    const id = stringField(record, "id") ?? "";
+    const prefix = id.split(":", 1)[0]?.toLowerCase();
+    return prefix === "hermes" || prefix === "codex" || prefix === "local" ? prefix : "openclaw";
   }
 
   private sendReplyAvailable(

@@ -20,7 +20,7 @@ export interface BridgeHttpDependencies {
   hub: Pick<PhoneHub, "listPhones" | "sendCommand">;
   audit: Pick<AuditLog, "recent" | "active">;
   dispatcher: Pick<Dispatcher, "handleUserRequest">;
-  chatBridge: Pick<OpenClawChatBridge, "health">;
+  chatBridge: Pick<OpenClawChatBridge, "backendReadiness" | "health">;
   stopAgentWork: (deviceId: string, reason: string) => Promise<void>;
   petsDir?: string;
 }
@@ -67,6 +67,12 @@ async function routeHttp(req: IncomingMessage, res: ServerResponse, deps: Bridge
   if (req.method === "GET" && url.pathname === "/api/harnesses/health") {
     const health = await deps.chatBridge.health();
     json(res, 200, { ok: true, ...recordPayload(health) });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/harnesses/readiness") {
+    const readiness = await deps.chatBridge.backendReadiness();
+    json(res, 200, { ok: true, ...recordPayload(readiness) });
     return;
   }
 

@@ -74,7 +74,7 @@ object DiagnosticsBackendTester {
 
         return try {
             val request = Request.Builder()
-                .url("$httpBase/api/harnesses/health")
+                .url("$httpBase/api/harnesses/readiness")
                 .header("Authorization", "Bearer $token")
                 .build()
             httpClient.newCall(request).execute().use { response ->
@@ -85,16 +85,16 @@ object DiagnosticsBackendTester {
                         if (response.code == 401) {
                             "Bridge rejected the saved token. Re-pair or update PHONE_AGENT_TOKEN."
                         } else {
-                            "GET /api/harnesses/health responded ${response.code}."
+                            "GET /api/harnesses/readiness responded ${response.code}."
                         }
                     )
                 }
                 val payload = try {
                     JSONObject(body)
                 } catch (parseError: Throwable) {
-                    return@use error(backend, "Bridge returned invalid harness health JSON: ${parseError.message}")
+                    return@use error(backend, "Bridge returned invalid harness readiness JSON: ${parseError.message}")
                 }
-                parseHarnessHealth(backend, payload)
+                parseHarnessReadiness(backend, payload)
             }
         } catch (io: IOException) {
             error(backend, "Could not reach the PC bridge at $httpBase: ${io.message}")
@@ -116,20 +116,22 @@ object DiagnosticsBackendTester {
         return if (pathStart < 0) withHttpScheme.trimEnd('/') else withHttpScheme.substring(0, pathStart).trimEnd('/')
     }
 
-    internal fun parseHarnessHealth(
+    internal fun parseHarnessReadiness(
         backend: DiagnosticsBackendId,
         payload: JSONObject
     ): DiagnosticsBackendTestResult {
         val harnesses = payload.optJSONObject("harnesses") ?: return error(
             backend,
-            "Bridge response did not include harness readiness details."
+            "Bridge response did not include backend readiness details."
         )
         val harness = harnesses.optJSONObject(backend.harnessId) ?: return warning(
             backend,
             "${backend.label} is not configured on the PC bridge."
         )
         if (isHealthy(harness)) {
-            return success(backend, "${backend.label} backend is ready.")
+            val modelCount = harness.optInt("modelCount", 0)
+            val suffix = if (modelCount > 0) " ($modelCount models available)" else ""
+            return success(backend, "${backend.label} backend is ready$suffix.")
         }
         return error(
             backend,

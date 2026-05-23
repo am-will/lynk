@@ -20,32 +20,32 @@ class DiagnosticsBackendTesterTest {
     }
 
     @Test
-    fun parseHarnessHealthReportsReadyHarness() {
-        val result = DiagnosticsBackendTester.parseHarnessHealth(
+    fun parseHarnessReadinessReportsReadyHarness() {
+        val result = DiagnosticsBackendTester.parseHarnessReadiness(
             DiagnosticsBackendId.Codex,
-            JSONObject("""{"harnesses":{"codex":{"ok":true,"active":false}}}""")
+            JSONObject("""{"harnesses":{"codex":{"ok":true,"configured":true,"modelCount":5}}}""")
         )
 
         assertTrue(result.ok)
         assertEquals(DiagnosticsEventLevel.Success, result.level)
-        assertEquals("Codex backend is ready.", result.message)
+        assertEquals("Codex backend is ready (5 models available).", result.message)
     }
 
     @Test
-    fun parseHarnessHealthReturnsConcreteFailure() {
-        val result = DiagnosticsBackendTester.parseHarnessHealth(
+    fun parseHarnessReadinessReturnsConcreteFailure() {
+        val result = DiagnosticsBackendTester.parseHarnessReadiness(
             DiagnosticsBackendId.Hermes,
-            JSONObject("""{"harnesses":{"hermes":{"ok":false,"error":"missing HERMES_API_KEY"}}}""")
+            JSONObject("""{"harnesses":{"hermes":{"ok":false,"configured":false,"message":"Hermes is not configured on the PC bridge."}}}""")
         )
 
         assertFalse(result.ok)
         assertEquals(DiagnosticsEventLevel.Error, result.level)
-        assertEquals("missing HERMES_API_KEY", result.message)
+        assertEquals("Hermes is not configured on the PC bridge.", result.message)
     }
 
     @Test
-    fun parseHarnessHealthExplainsMissingHarness() {
-        val result = DiagnosticsBackendTester.parseHarnessHealth(
+    fun parseHarnessReadinessExplainsMissingHarness() {
+        val result = DiagnosticsBackendTester.parseHarnessReadiness(
             DiagnosticsBackendId.Hermes,
             JSONObject("""{"harnesses":{"openclaw":{"ok":true}}}""")
         )

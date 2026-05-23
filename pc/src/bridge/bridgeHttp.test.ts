@@ -52,6 +52,16 @@ class FakeChatBridge {
       }
     };
   }
+
+  async backendReadiness(): Promise<unknown> {
+    return {
+      harnesses: {
+        openclaw: { ok: true, configured: true, label: "OpenClaw", modelCount: 0 },
+        hermes: { ok: false, configured: false, label: "Hermes", modelCount: 0, message: "Hermes is not configured on the PC bridge." },
+        codex: { ok: true, configured: true, label: "Codex", modelCount: 5 }
+      }
+    };
+  }
 }
 
 async function withHttpServer<T>(
@@ -137,6 +147,24 @@ test("bridge HTTP serves authenticated harness health", async () => {
       harnesses: {
         openclaw: { ok: true },
         hermes: { ok: false, error: "missing HERMES_API_KEY" }
+      }
+    });
+  });
+});
+
+test("bridge HTTP serves authenticated harness readiness", async () => {
+  await withHttpServer({}, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/harnesses/readiness`, {
+      headers: authHeaders()
+    });
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      ok: true,
+      harnesses: {
+        openclaw: { ok: true, configured: true, label: "OpenClaw", modelCount: 0 },
+        hermes: { ok: false, configured: false, label: "Hermes", modelCount: 0, message: "Hermes is not configured on the PC bridge." },
+        codex: { ok: true, configured: true, label: "Codex", modelCount: 5 }
       }
     });
   });
