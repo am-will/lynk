@@ -68,7 +68,7 @@ object SettingsHubScreen {
             )
         }
         renderCategories(activity, tokens, categoriesContainer, callbacks, metrics)
-        root.addView(categoriesContainer, SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg))
+        root.addView(categoriesContainer, SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.xxl))
 
         return root
     }
@@ -81,7 +81,7 @@ object SettingsHubScreen {
     ): View {
         val gridHeight = SettingsComponents.dp(activity, metrics.statusGridHeightDp)
         val chips = listOf(
-            SettingsComponents.statusChip(activity, tokens, R.drawable.ic_wifi, "Wi-Fi", linkValue(snapshot.connectedLan), mapStatus(snapshot.connectedLan), fillCell = true, iconSizeDp = metrics.statusChipIconSizeDp),
+            SettingsComponents.statusChip(activity, tokens, R.drawable.ic_link, "Link", linkValue(snapshot.connectedLan), mapStatus(snapshot.connectedLan), fillCell = true, iconSizeDp = metrics.statusChipIconSizeDp),
             SettingsComponents.statusChip(activity, tokens, R.drawable.ic_health, "Bridge", statusLabel(snapshot.bridgeHealthy), mapStatus(snapshot.bridgeHealthy), fillCell = true, iconSizeDp = metrics.statusChipIconSizeDp),
             SettingsComponents.statusChip(activity, tokens, R.drawable.ic_lock, "Auth", if (snapshot.authOk == StatusLevel.Good) "OK" else "Off", mapStatus(snapshot.authOk), fillCell = true, iconSizeDp = metrics.statusChipIconSizeDp),
             SettingsComponents.statusChip(
@@ -164,7 +164,7 @@ object SettingsHubScreen {
                     0,
                     1f
                 ).apply {
-                    topMargin = if (index == 0) 0 else SettingsComponents.dp(activity, DesignTokens.Spacing.sm + 2)
+                    topMargin = if (index == 0) 0 else SettingsComponents.dp(activity, DesignTokens.Spacing.md)
                 }
             )
         }

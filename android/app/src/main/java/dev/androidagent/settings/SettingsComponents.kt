@@ -107,7 +107,7 @@ object SettingsComponents {
         val dm = context.resources.displayMetrics
         val heightDp = (dm.heightPixels / dm.density).toInt()
         val widthDp = (dm.widthPixels / dm.density).toInt()
-        val compact = heightDp < 700 || widthDp < 360
+        val compact = heightDp < 700 || widthDp <= 400
         val bottomNavReserveDp = 68
         val contentHeightDp = (heightDp - bottomNavReserveDp).coerceAtLeast(520)
 
@@ -118,9 +118,9 @@ object SettingsComponents {
         val categoryGaps = (DesignTokens.Spacing.sm + 2) * 4
         val categoryReserve = (contentHeightDp - verticalPadding * 2 - headerReserve - sectionGaps - categoryGaps)
             .coerceAtLeast(240)
-        val statusGridHeight = (categoryReserve * 0.34f).toInt().coerceIn(
-            if (compact) 148 else 172,
-            if (compact) 168 else 204
+        val statusGridHeight = (categoryReserve * 0.24f).toInt().coerceIn(
+            if (compact) 108 else 132,
+            if (compact) 124 else 156
         )
 
         return HubLayoutMetrics(
@@ -129,7 +129,7 @@ object SettingsComponents {
             statusGridHeightDp = statusGridHeight,
             categoryIconSizeDp = if (compact) 38 else 44,
             headerAvatarSizeDp = if (compact) 52 else 64,
-            statusChipIconSizeDp = if (compact) 22 else 24
+            statusChipIconSizeDp = if (compact) 15 else 16
         )
     }
 
@@ -336,7 +336,7 @@ object SettingsComponents {
         StatusTone.Idle -> tokens.secondaryText
     }
 
-    /** Single status card: icon well + label + colored dot + value. */
+    /** Single status card: icon well + label + colored indicator. */
     fun statusChip(
         context: Context,
         tokens: ThemeTokens,
@@ -348,20 +348,20 @@ object SettingsComponents {
         iconSizeDp: Int = 12
     ): LinearLayout {
         val dotColor = statusToneColor(tokens, tone)
-        val iconWellSize = (iconSizeDp + 24).coerceAtLeast(44)
+        val iconWellSize = (iconSizeDp + 14).coerceAtLeast(30)
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             background = Drawables.rounded(
                 fill = tokens.surface,
-                radius = dp(context, 20).toFloat(),
+                radius = dp(context, 18).toFloat(),
                 strokeColor = tokens.border,
                 strokeWidth = dp(context, 1).coerceAtLeast(1)
             )
             setPadding(
-                dp(context, DesignTokens.Spacing.md),
                 dp(context, DesignTokens.Spacing.sm),
-                dp(context, DesignTokens.Spacing.md + 2),
+                dp(context, DesignTokens.Spacing.sm),
+                dp(context, DesignTokens.Spacing.sm),
                 dp(context, DesignTokens.Spacing.sm)
             )
             if (fillCell) {
@@ -376,7 +376,7 @@ object SettingsComponents {
         val iconWell = FrameLayout(context).apply {
             background = Drawables.rounded(
                 fill = ColorUtils.with(tokens.secondaryText, 0x16),
-                radius = dp(context, 12).toFloat(),
+                radius = dp(context, 10).toFloat(),
                 strokeColor = ColorUtils.with(tokens.secondaryText, 0x24),
                 strokeWidth = dp(context, 1).coerceAtLeast(1)
             )
@@ -391,17 +391,17 @@ object SettingsComponents {
 
         val textRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
+            gravity = Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(
                 0,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 1f
             )
-            setPadding(dp(context, DesignTokens.Spacing.md), 0, 0, 0)
+            setPadding(dp(context, 6), 0, 0, 0)
         }
         textRow.addView(TextView(context).apply {
             text = label
-            textSize = if (fillCell) 17f else DesignTokens.Text.callout
+            textSize = if (fillCell) 15f else DesignTokens.Text.callout
             setTextColor(tokens.primaryText)
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             maxLines = 1
@@ -410,20 +410,10 @@ object SettingsComponents {
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         textRow.addView(View(context).apply {
             background = Drawables.circle(fill = dotColor)
-            layoutParams = LinearLayout.LayoutParams(dp(context, 6), dp(context, 6)).apply {
-                marginStart = dp(context, DesignTokens.Spacing.md)
-                marginEnd = dp(context, DesignTokens.Spacing.sm)
+            layoutParams = LinearLayout.LayoutParams(dp(context, 8), dp(context, 8)).apply {
+                marginStart = dp(context, DesignTokens.Spacing.sm)
             }
         })
-        textRow.addView(TextView(context).apply {
-            text = value
-            textSize = if (fillCell) 16f else DesignTokens.Text.callout
-            setTextColor(dotColor)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            maxLines = 1
-            ellipsize = TextUtils.TruncateAt.END
-            includeFontPadding = false
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         container.addView(textRow)
 
         return container
@@ -432,7 +422,7 @@ object SettingsComponents {
     /** 2x2 grid of status chips with equal cell sizing. */
     fun statusChipGrid(context: Context, chips: List<View>, gridHeightPx: Int): LinearLayout {
         require(chips.size == 4) { "statusChipGrid expects exactly 4 chips" }
-        val gap = dp(context, DesignTokens.Spacing.md)
+        val gap = dp(context, DesignTokens.Spacing.sm)
         val rowHeight = ((gridHeightPx - gap).coerceAtLeast(1)) / 2
         return LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
