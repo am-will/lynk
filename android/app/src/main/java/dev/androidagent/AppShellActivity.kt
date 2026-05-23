@@ -172,6 +172,7 @@ class AppShellActivity : ComponentActivity() {
             override fun toggleAgentService() = toggleAgentServiceInternal()
             override fun isAgentServiceRunning(): Boolean = AgentForegroundService.isRunning
             override fun bridgeConnected(): Boolean = bridgeConnected
+            override fun togglePetEnabled() = togglePetEnabledInternal()
         }, onNavigationChanged = ::updateBackHandling)
 
         root.addView(contentHost, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
@@ -425,6 +426,30 @@ class AppShellActivity : ComponentActivity() {
             DiagnosticsEventLog.append(DiagnosticsEventLevel.Success, "Agent bubble started")
         }
         mainHandler.postDelayed({ refreshShellState() }, 150)
+    }
+
+    private fun togglePetEnabledInternal() {
+        val config = AgentConfigStore.load(this)
+        val nextEnabled = !config.petEnabled
+        AgentConfigStore.save(this, config.copy(petEnabled = nextEnabled))
+        if (nextEnabled) {
+            DiagnosticsEventLog.append(DiagnosticsEventLevel.Success, "Pet enabled")
+            refreshPetVisibility(startIfNeeded = true)
+        } else {
+            DiagnosticsEventLog.append(DiagnosticsEventLevel.Info, "Pet disabled")
+            refreshPetVisibility(startIfNeeded = false)
+        }
+        settingsHost.showHub()
+    }
+
+    private fun refreshPetVisibility(startIfNeeded: Boolean) {
+        val intent = Intent(this, AgentForegroundService::class.java)
+            .setAction(AgentForegroundService.ACTION_REFRESH_PET_VISIBILITY)
+        if (startIfNeeded) {
+            runCatching { ContextCompat.startForegroundService(this, intent) }
+        } else if (AgentForegroundService.isRunning) {
+            runCatching { startService(intent) }
+        }
     }
 
     private fun requestMicPermissionInternal() {

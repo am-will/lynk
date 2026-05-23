@@ -218,7 +218,7 @@ class AgentForegroundService : Service() {
             onChatSessionViewed = { sessionKey -> markChatSessionRead(sessionKey) }
         ).also {
             it.setChatState(chatState)
-            it.show()
+            showPetIfEnabled(it)
         }
         voiceRuntimeController = VoiceRuntimeController(
             context = this,
@@ -256,7 +256,11 @@ class AgentForegroundService : Service() {
                 return START_STICKY
             }
             ACTION_ENSURE_SERVICE -> {
-                overlayController?.show()
+                showPetIfEnabled()
+                return START_STICKY
+            }
+            ACTION_REFRESH_PET_VISIBILITY -> {
+                refreshPetVisibility()
                 return START_STICKY
             }
             ACTION_REFRESH_AVATAR -> {
@@ -278,8 +282,22 @@ class AgentForegroundService : Service() {
                 return START_STICKY
             }
         }
-        overlayController?.show()
+        showPetIfEnabled()
         return START_STICKY
+    }
+
+    private fun showPetIfEnabled(controller: OverlayController? = overlayController) {
+        if (AgentConfigStore.load(this).petEnabled) {
+            controller?.show()
+        }
+    }
+
+    private fun refreshPetVisibility() {
+        if (AgentConfigStore.load(this).petEnabled) {
+            overlayController?.show()
+        } else {
+            overlayController?.hide()
+        }
     }
 
     private fun startVoiceFromShell() {
@@ -1104,6 +1122,7 @@ class AgentForegroundService : Service() {
         private const val ACTION_OPEN_CHAT_SESSION = "dev.openclawagent.action.OPEN_CHAT_SESSION"
         const val ACTION_REFRESH_AVATAR = "dev.openclawagent.action.REFRESH_AVATAR"
         const val ACTION_RESIZE_BUBBLE = "dev.openclawagent.action.RESIZE_BUBBLE"
+        const val ACTION_REFRESH_PET_VISIBILITY = "dev.openclawagent.action.REFRESH_PET_VISIBILITY"
         const val ACTION_ATTACH_SHELL_CHAT = "dev.openclawagent.action.ATTACH_SHELL_CHAT"
         const val ACTION_DETACH_SHELL_CHAT = "dev.openclawagent.action.DETACH_SHELL_CHAT"
         const val EXTRA_BUBBLE_SIZE_DP = "dev.openclawagent.extra.BUBBLE_SIZE_DP"

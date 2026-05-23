@@ -200,6 +200,7 @@ class MainActivity : ComponentActivity() {
         }
         override fun isAgentServiceRunning(): Boolean = AgentForegroundService.isRunning
         override fun bridgeConnected(): Boolean = bridgeConnected
+        override fun togglePetEnabled() = togglePetEnabledInternal()
     }
 
     private fun refreshSetupState() {
@@ -210,6 +211,29 @@ class MainActivity : ComponentActivity() {
         } else {
             setupBanner.text = "Overlay granted. Re-open the app to enter the full shell."
         }
+    }
+
+    private fun togglePetEnabledInternal() {
+        val config = AgentConfigStore.load(this)
+        val nextEnabled = !config.petEnabled
+        AgentConfigStore.save(this, config.copy(petEnabled = nextEnabled))
+        if (nextEnabled && Settings.canDrawOverlays(this)) {
+            runCatching {
+                ContextCompat.startForegroundService(
+                    this,
+                    Intent(this, AgentForegroundService::class.java)
+                        .setAction(AgentForegroundService.ACTION_REFRESH_PET_VISIBILITY)
+                )
+            }
+        } else if (AgentForegroundService.isRunning) {
+            runCatching {
+                startService(
+                    Intent(this, AgentForegroundService::class.java)
+                        .setAction(AgentForegroundService.ACTION_REFRESH_PET_VISIBILITY)
+                )
+            }
+        }
+        settingsHost.showHub()
     }
 
     private fun maybeRequestMicPermission(intent: Intent?) {

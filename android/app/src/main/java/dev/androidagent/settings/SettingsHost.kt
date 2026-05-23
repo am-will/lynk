@@ -35,6 +35,7 @@ class SettingsHost(
         fun toggleAgentService()
         fun isAgentServiceRunning(): Boolean
         fun bridgeConnected(): Boolean
+        fun togglePetEnabled()
     }
 
     private val tokens get() = SettingsUi.tokens(activity)
@@ -58,6 +59,7 @@ class SettingsHost(
                 override fun navigate(destination: SettingsDestination) = showScreen(destination)
                 override fun refreshStatus() = callbacks.refreshStatus()
                 override fun bridgeConnected() = callbacks.bridgeConnected()
+                override fun togglePetEnabled() = callbacks.togglePetEnabled()
             })
         )
         onNavigationChanged()

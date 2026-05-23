@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.content.res.ColorStateList
 import android.text.InputType
 import android.text.TextUtils
 import android.util.TypedValue
@@ -17,6 +18,7 @@ import android.widget.LinearLayout
 import android.widget.Switch
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import android.graphics.drawable.RippleDrawable
 import dev.androidagent.R
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
@@ -345,19 +347,26 @@ object SettingsComponents {
         value: String,
         tone: StatusTone,
         fillCell: Boolean = false,
-        iconSizeDp: Int = 12
+        iconSizeDp: Int = 12,
+        highlighted: Boolean = false,
+        onClick: (() -> Unit)? = null
     ): LinearLayout {
         val dotColor = statusToneColor(tokens, tone)
         val iconWellSize = (iconSizeDp + 14).coerceAtLeast(30)
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = Drawables.rounded(
-                fill = tokens.surface,
+            val baseBackground = Drawables.rounded(
+                fill = if (highlighted) ColorUtils.with(dotColor, 0x16) else tokens.surface,
                 radius = dp(context, 18).toFloat(),
-                strokeColor = tokens.border,
+                strokeColor = if (highlighted) ColorUtils.with(dotColor, 0x66) else tokens.border,
                 strokeWidth = dp(context, 1).coerceAtLeast(1)
             )
+            background = if (onClick != null) {
+                RippleDrawable(ColorStateList.valueOf(ColorUtils.with(dotColor, 0x22)), baseBackground, null)
+            } else {
+                baseBackground
+            }
             setPadding(
                 dp(context, DesignTokens.Spacing.sm),
                 dp(context, DesignTokens.Spacing.sm),
@@ -371,6 +380,11 @@ object SettingsComponents {
                 )
             }
             exposeToAccessibility(description = "$label $value")
+            if (onClick != null) {
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { onClick() }
+            }
         }
 
         val iconWell = FrameLayout(context).apply {

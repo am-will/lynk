@@ -23,6 +23,7 @@ data class SettingsStatusSnapshot(
     val locationGranted: Boolean,
     val accessibilityEnabled: Boolean,
     val serviceRunning: Boolean,
+    val petEnabled: Boolean,
     val endpointSummary: String,
     val setupMessage: String
 )
@@ -87,6 +88,7 @@ object SettingsStatusProvider {
             locationGranted = location,
             accessibilityEnabled = accessibility,
             serviceRunning = service,
+            petEnabled = config.petEnabled,
             endpointSummary = endpointSummary,
             setupMessage = setupMessage
         )

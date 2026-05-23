@@ -22,6 +22,7 @@ object SettingsHubScreen {
         fun navigate(destination: SettingsDestination)
         fun refreshStatus()
         fun bridgeConnected(): Boolean
+        fun togglePetEnabled()
     }
 
     fun build(activity: Activity, tokens: ThemeTokens, callbacks: Callbacks): View {
@@ -55,7 +56,7 @@ object SettingsHubScreen {
             bridgeConnected = callbacks.bridgeConnected()
         )
         root.addView(
-            buildStatusChipGrid(activity, tokens, snapshot, metrics),
+            buildStatusChipGrid(activity, tokens, snapshot, metrics, callbacks),
             SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg)
         )
 
@@ -86,7 +87,8 @@ object SettingsHubScreen {
         activity: Activity,
         tokens: ThemeTokens,
         snapshot: dev.androidagent.settings.SettingsStatusSnapshot,
-        metrics: HubLayoutMetrics
+        metrics: HubLayoutMetrics,
+        callbacks: Callbacks
     ): View {
         val gridHeight = SettingsComponents.dp(activity, metrics.statusGridHeightDp)
         val chips = listOf(
@@ -98,10 +100,12 @@ object SettingsHubScreen {
                 tokens,
                 R.drawable.ic_dog,
                 "Pet",
-                if (snapshot.serviceRunning) "On" else "Off",
-                if (snapshot.serviceRunning) StatusTone.Good else StatusTone.Idle,
+                if (snapshot.petEnabled) "On" else "Off",
+                if (snapshot.petEnabled) StatusTone.Good else StatusTone.Idle,
                 fillCell = true,
-                iconSizeDp = metrics.statusChipIconSizeDp
+                iconSizeDp = metrics.statusChipIconSizeDp,
+                highlighted = snapshot.petEnabled,
+                onClick = callbacks::togglePetEnabled
             )
         )
         return SettingsComponents.statusChipGrid(activity, chips, gridHeight)
