@@ -201,7 +201,6 @@ class MainActivity : ComponentActivity() {
         }
         override fun isAgentServiceRunning(): Boolean = AgentForegroundService.isRunning
         override fun bridgeConnected(): Boolean = bridgeConnected
-        override fun voiceActive(): Boolean = false
     }
 
     private fun refreshSetupState() {

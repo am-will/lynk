@@ -366,10 +366,10 @@ object SettingsComponents {
                 strokeWidth = dp(context, 1).coerceAtLeast(1)
             )
             setPadding(
-                dp(context, DesignTokens.Spacing.md - 2),
-                dp(context, DesignTokens.Spacing.sm + 2),
-                dp(context, DesignTokens.Spacing.md - 2),
-                dp(context, DesignTokens.Spacing.sm + 2)
+                dp(context, DesignTokens.Spacing.sm),
+                dp(context, DesignTokens.Spacing.xs + 1),
+                dp(context, DesignTokens.Spacing.sm),
+                dp(context, DesignTokens.Spacing.xs + 1)
             )
             exposeToAccessibility(description = "$label $value")
         }
@@ -381,27 +381,33 @@ object SettingsComponents {
         topRow.addView(ImageView(context).apply {
             setImageResource(iconRes)
             setColorFilter(tokens.secondaryText)
-            layoutParams = LinearLayout.LayoutParams(dp(context, 14), dp(context, 14))
+            layoutParams = LinearLayout.LayoutParams(dp(context, 12), dp(context, 12))
         })
         topRow.addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
         topRow.addView(View(context).apply {
             background = Drawables.circle(fill = dotColor)
-            layoutParams = LinearLayout.LayoutParams(dp(context, 7), dp(context, 7))
+            layoutParams = LinearLayout.LayoutParams(dp(context, 6), dp(context, 6))
         })
         container.addView(topRow)
 
         container.addView(TextView(context).apply {
             text = label
-            Typography.applyFootnote(this, tokens)
+            textSize = DesignTokens.Text.caption
+            setTextColor(tokens.secondaryText)
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            setPadding(0, dp(context, DesignTokens.Spacing.sm - 2), 0, 0)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            includeFontPadding = false
+            setPadding(0, dp(context, DesignTokens.Spacing.xs), 0, 0)
         })
         container.addView(TextView(context).apply {
             text = value
-            textSize = DesignTokens.Text.caption
+            textSize = 10f
             setTextColor(dotColor)
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            setPadding(0, dp(context, 1), 0, 0)
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(0, 0, 0, 0)
             includeFontPadding = false
         })
 
@@ -414,7 +420,7 @@ object SettingsComponents {
         return LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             chips.forEachIndexed { index, view ->
-                if (index > 0) addView(View(context), LinearLayout.LayoutParams(dp(context, DesignTokens.Spacing.sm), 0))
+                if (index > 0) addView(View(context), LinearLayout.LayoutParams(dp(context, DesignTokens.Spacing.xs), 0))
                 addView(view, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             }
         }

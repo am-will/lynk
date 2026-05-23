@@ -18,7 +18,6 @@ data class SettingsStatusSnapshot(
     val connectedLan: StatusLevel,
     val bridgeHealthy: StatusLevel,
     val authOk: StatusLevel,
-    val voiceIdle: StatusLevel,
     val overlayGranted: Boolean,
     val microphoneGranted: Boolean,
     val locationGranted: Boolean,
@@ -38,7 +37,7 @@ enum class StatusLevel(val label: String) {
 
 object SettingsStatusProvider {
 
-    fun snapshot(context: Context, bridgeConnected: Boolean = false, voiceActive: Boolean = false): SettingsStatusSnapshot {
+    fun snapshot(context: Context, bridgeConnected: Boolean = false): SettingsStatusSnapshot {
         val config = AgentConfigStore.load(context)
         val tokens = DesignTokens.resolve(context)
         val overlay = Settings.canDrawOverlays(context)
@@ -83,7 +82,6 @@ object SettingsStatusProvider {
             connectedLan = if (bridgeConnected) StatusLevel.Good else if (service) StatusLevel.Warning else StatusLevel.Bad,
             bridgeHealthy = if (bridgeConnected) StatusLevel.Good else StatusLevel.Warning,
             authOk = if (bridgeTokenReady) StatusLevel.Good else StatusLevel.Bad,
-            voiceIdle = if (voiceActive) StatusLevel.Active else StatusLevel.Idle,
             overlayGranted = overlay,
             microphoneGranted = microphone,
             locationGranted = location,

@@ -57,7 +57,6 @@ class AppShellActivity : ComponentActivity() {
     private var pendingLocalModelPathField: EditText? = null
     private var selectedTab = ShellTab.Chat
     private var bridgeConnected = false
-    private var voiceActive = false
 
     private val localModelPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@registerForActivityResult
@@ -156,7 +155,6 @@ class AppShellActivity : ComponentActivity() {
             override fun toggleAgentService() = toggleAgentServiceInternal()
             override fun isAgentServiceRunning(): Boolean = AgentForegroundService.isRunning
             override fun bridgeConnected(): Boolean = bridgeConnected
-            override fun voiceActive(): Boolean = voiceActive
         })
 
         root.addView(contentHost, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))

@@ -32,7 +32,6 @@ object SettingsHubScreen {
         fun onRunTargetChanged()
         fun refreshStatus()
         fun bridgeConnected(): Boolean
-        fun voiceActive(): Boolean
     }
 
     fun build(activity: Activity, tokens: ThemeTokens, callbacks: Callbacks): View {
@@ -72,8 +71,7 @@ object SettingsHubScreen {
 
         val snapshot = SettingsStatusProvider.snapshot(
             activity,
-            bridgeConnected = callbacks.bridgeConnected(),
-            voiceActive = callbacks.voiceActive()
+            bridgeConnected = callbacks.bridgeConnected()
         )
         root.addView(buildStatusChipRow(activity, tokens, snapshot), SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.md))
 
@@ -126,7 +124,14 @@ object SettingsHubScreen {
             SettingsComponents.statusChip(activity, tokens, R.drawable.ic_wifi, "Connected", "LAN", mapStatus(snapshot.connectedLan)),
             SettingsComponents.statusChip(activity, tokens, R.drawable.ic_health, "Bridge", statusLabel(snapshot.bridgeHealthy), mapStatus(snapshot.bridgeHealthy)),
             SettingsComponents.statusChip(activity, tokens, R.drawable.ic_lock, "Auth", if (snapshot.authOk == StatusLevel.Good) "OK" else "Off", mapStatus(snapshot.authOk)),
-            SettingsComponents.statusChip(activity, tokens, R.drawable.ic_voice_idle, "Voice", if (snapshot.voiceIdle == StatusLevel.Active) "Active" else "Idle", if (snapshot.voiceIdle == StatusLevel.Active) StatusTone.Good else StatusTone.Idle)
+            SettingsComponents.statusChip(
+                activity,
+                tokens,
+                R.drawable.ic_brand_circle,
+                "Pet",
+                if (snapshot.serviceRunning) "On" else "Off",
+                if (snapshot.serviceRunning) StatusTone.Good else StatusTone.Idle
+            )
         )
         return SettingsComponents.statusChipRow(activity, chips)
     }

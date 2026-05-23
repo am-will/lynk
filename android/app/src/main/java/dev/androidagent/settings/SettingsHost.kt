@@ -35,7 +35,6 @@ class SettingsHost(
         fun toggleAgentService()
         fun isAgentServiceRunning(): Boolean
         fun bridgeConnected(): Boolean
-        fun voiceActive(): Boolean
     }
 
     private val tokens get() = SettingsUi.tokens(activity)
@@ -48,7 +47,6 @@ class SettingsHost(
                 override fun onRunTargetChanged() = callbacks.onRunTargetChanged()
                 override fun refreshStatus() = callbacks.refreshStatus()
                 override fun bridgeConnected() = callbacks.bridgeConnected()
-                override fun voiceActive() = callbacks.voiceActive()
             })
         )
     }
