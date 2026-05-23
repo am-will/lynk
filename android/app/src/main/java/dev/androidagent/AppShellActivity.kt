@@ -129,6 +129,9 @@ class AppShellActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        if (selectedTab == ShellTab.Chat) {
+            detachShellChat()
+        }
         unregisterServiceStateReceiver()
         super.onStop()
     }

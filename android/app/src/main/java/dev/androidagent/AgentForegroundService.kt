@@ -285,6 +285,7 @@ class AgentForegroundService : Service() {
             ACTION_DETACH_SHELL_CHAT -> {
                 overlayController?.detachShellChat()
                 shellChatContainer = null
+                refreshPetVisibility()
                 return START_STICKY
             }
         }

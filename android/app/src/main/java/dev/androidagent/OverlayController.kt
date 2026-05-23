@@ -171,6 +171,7 @@ class OverlayController(
     private var automationSuppressionDepth = 0
     private var restoreBubbleAfterAutomation = false
     private var restoreBubbleAfterFullscreen = false
+    private var restoreBubbleAfterShellChat = false
     private var restorePanelAfterAutomation = false
     private var restorePanelScrimAfterAutomation = false
     private var restorePanelFocusAfterAutomation = false
@@ -219,6 +220,7 @@ class OverlayController(
             !Settings.canDrawOverlays(context) ||
             bubbleOverlay.isVisible ||
             automationSuppressionDepth > 0 ||
+            isShellChatActivelyViewed() ||
             (!allowDuringFullscreenPanel && isFullscreenPanelAttached())
         ) {
             return
@@ -230,6 +232,7 @@ class OverlayController(
         automationSuppressionDepth = 0
         restoreBubbleAfterAutomation = false
         restoreBubbleAfterFullscreen = false
+        restoreBubbleAfterShellChat = false
         recentsSuppressionActive = false
         restoreBubbleAfterRecents = false
         bubbleOverlay.hide()
@@ -465,6 +468,7 @@ class OverlayController(
             if (panelView != null && activePanelPresentation == PanelPresentation.Shell) {
                 val currentParent = panelView?.parent as? ViewGroup
                 if (currentParent === container && container.childCount > 0) {
+                    suppressBubbleForShellChat()
                     notifyCurrentChatSessionViewed()
                     return@post
                 }
@@ -472,6 +476,7 @@ class OverlayController(
             } else if (panelView != null) {
                 dismissPanel(force = true)
             }
+            suppressBubbleForShellChat()
             presentPanel(PanelPresentation.Shell, container)
         }
     }
@@ -480,6 +485,7 @@ class OverlayController(
         mainHandler.post {
             if (activePanelPresentation == PanelPresentation.Shell) {
                 dismissPanel(force = true)
+                restoreBubbleAfterShellChatDismiss()
             }
         }
     }
@@ -2021,6 +2027,9 @@ class OverlayController(
         if (panelHasWindowFocus == hasWindowFocus) return
         panelHasWindowFocus = hasWindowFocus
         if (hasWindowFocus) {
+            if (activePanelPresentation == PanelPresentation.Shell) {
+                suppressBubbleForShellChat()
+            }
             notifyCurrentChatSessionViewed()
         } else {
             if (activePanelPresentation == PanelPresentation.Fullscreen && !bubbleOverlay.isVisible) {
@@ -2029,6 +2038,8 @@ class OverlayController(
                 // chat state. Preserve the original dismiss-time restore intent
                 // so the regular dismiss path stays a no-op for the bubble.
                 restoreBubbleAfterFullscreen = true
+                showInternal(allowDuringFullscreenPanel = true)
+            } else if (activePanelPresentation == PanelPresentation.Shell && restoreBubbleAfterShellChat && !bubbleOverlay.isVisible) {
                 showInternal(allowDuringFullscreenPanel = true)
             }
         }
@@ -2486,6 +2497,22 @@ class OverlayController(
         if (shouldRestore && Settings.canDrawOverlays(context) && automationSuppressionDepth == 0 && !bubbleOverlay.isVisible) {
             show()
         }
+    }
+
+    private fun suppressBubbleForShellChat() {
+        restoreBubbleAfterShellChat = bubbleOverlay.suppressForFullscreen() || restoreBubbleAfterShellChat
+    }
+
+    private fun restoreBubbleAfterShellChatDismiss() {
+        val shouldRestore = restoreBubbleAfterShellChat
+        restoreBubbleAfterShellChat = false
+        if (shouldRestore && Settings.canDrawOverlays(context) && automationSuppressionDepth == 0 && !bubbleOverlay.isVisible) {
+            show()
+        }
+    }
+
+    private fun isShellChatActivelyViewed(): Boolean {
+        return activePanelPresentation == PanelPresentation.Shell && panelHasWindowFocus
     }
 
     private fun isFullscreenPanelAttached(): Boolean {
