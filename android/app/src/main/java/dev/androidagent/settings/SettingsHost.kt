@@ -108,12 +108,6 @@ class SettingsHost(
                     callbacks.refreshStatus()
                     DiagnosticsEventLog.append(DiagnosticsEventLevel.Success, "Connection settings saved")
                 }
-                override fun toggleAgentService() = callbacks.toggleAgentService()
-                override fun isAgentServiceRunning() = callbacks.isAgentServiceRunning()
-                override fun openOverlaySettings() = callbacks.openOverlaySettings()
-                override fun requestMicPermission() = callbacks.requestMicPermission()
-                override fun requestLocationPermission() = callbacks.requestLocationPermission()
-                override fun openAccessibilitySettings() = callbacks.openAccessibilitySettings()
                 override fun onBack() = back()
             })
             SettingsDestination.Voice -> VoiceSettingsScreen.build(activity, tokens, object : VoiceSettingsScreen.Callbacks {
@@ -125,7 +119,13 @@ class SettingsHost(
                 override fun startVoice() = callbacks.ensureAgentServiceRunning()
                 override fun onBack() = back()
             })
-            SettingsDestination.Safety -> SafetySettingsScreen.build(activity, tokens, back)
+            SettingsDestination.Safety -> SafetySettingsScreen.build(activity, tokens, object : SafetySettingsScreen.Callbacks {
+                override fun openOverlaySettings() = callbacks.openOverlaySettings()
+                override fun requestMicPermission() = callbacks.requestMicPermission()
+                override fun requestLocationPermission() = callbacks.requestLocationPermission()
+                override fun openAccessibilitySettings() = callbacks.openAccessibilitySettings()
+                override fun onBack() = back()
+            })
             SettingsDestination.Appearance -> AppearanceSettingsScreen.build(activity, tokens, object : AppearanceSettingsScreen.Callbacks {
                 override fun onSaved() = callbacks.refreshStatus()
                 override fun notifyAvatarChanged() {

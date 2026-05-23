@@ -15,12 +15,6 @@ object ConnectionSettingsScreen {
 
     interface Callbacks {
         fun onSaved()
-        fun toggleAgentService()
-        fun isAgentServiceRunning(): Boolean
-        fun openOverlaySettings()
-        fun requestMicPermission()
-        fun requestLocationPermission()
-        fun openAccessibilitySettings()
         fun onBack()
     }
 
@@ -47,38 +41,10 @@ object ConnectionSettingsScreen {
         }
 
         root.addView(SettingsUi.card(activity, tokens).apply {
-            addView(SettingsUi.sectionHeader(activity, "Bridge pairing", "Connect to the PC bridge over WebSocket.", tokens))
-            addView(SettingsUi.labeledField(activity, "WebSocket URL", hostInput, tokens, DesignTokens.Spacing.md))
-            addView(SettingsUi.labeledField(activity, "Device ID", deviceInput, tokens))
-            addView(SettingsUi.labeledField(activity, "Auth token", tokenInput, tokens))
-        }, SettingsUi.stackedParams(activity))
-
-        val toggleLabel = if (callbacks.isAgentServiceRunning()) "Stop Agent Bubble" else "Start Agent Bubble"
-        root.addView(
-            SettingsUi.actionButton(
-                activity,
-                toggleLabel,
-                if (callbacks.isAgentServiceRunning()) dev.androidagent.settings.SettingsButtonTone.Secondary else dev.androidagent.settings.SettingsButtonTone.Primary,
-                tokens,
-                callbacks::toggleAgentService
-            ).exposeToAccessibility(R.id.openclaw_agent_toggle_button, "Agent bubble toggle"),
-            SettingsUi.stackedParams(activity)
-        )
-
-        root.addView(SettingsUi.card(activity, tokens).apply {
-            addView(SettingsUi.sectionHeader(activity, "Permissions", "Required capabilities for the agent bubble.", tokens))
-            addView(SettingsUi.actionButton(activity, "Grant Overlay Permission", dev.androidagent.settings.SettingsButtonTone.Secondary, tokens, callbacks::openOverlaySettings).apply {
-                exposeToAccessibility(R.id.openclaw_overlay_permission_button, "Grant overlay permission")
-            }, SettingsUi.stackedParams(activity, DesignTokens.Spacing.md))
-            addView(SettingsUi.actionButton(activity, "Grant Microphone Permission", dev.androidagent.settings.SettingsButtonTone.Secondary, tokens, callbacks::requestMicPermission).apply {
-                exposeToAccessibility(R.id.openclaw_microphone_permission_button, "Grant microphone permission")
-            }, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm + 2))
-            addView(SettingsUi.actionButton(activity, "Grant Location Permission", dev.androidagent.settings.SettingsButtonTone.Secondary, tokens, callbacks::requestLocationPermission).apply {
-                exposeToAccessibility(R.id.openclaw_location_permission_button, "Grant location permission")
-            }, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm + 2))
-            addView(SettingsUi.actionButton(activity, "Open Accessibility Settings", dev.androidagent.settings.SettingsButtonTone.Secondary, tokens, callbacks::openAccessibilitySettings).apply {
-                exposeToAccessibility(R.id.openclaw_accessibility_settings_button, "Open accessibility settings")
-            }, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm + 2))
+            addView(SettingsUi.sectionHeader(activity, "Pairing", "Connect to the PC bridge over WebSocket.", tokens))
+            addView(SettingsUi.labeledField(activity, "URL", hostInput, tokens, DesignTokens.Spacing.md))
+            addView(SettingsUi.labeledField(activity, "Pairing ID", deviceInput, tokens))
+            addView(SettingsUi.labeledField(activity, "Token", tokenInput, tokens))
         }, SettingsUi.stackedParams(activity))
 
         root.addView(
