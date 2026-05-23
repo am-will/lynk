@@ -96,7 +96,8 @@ class OverlayController(
     private val onSetChatReasoning: (String) -> Unit = {},
     private val onChatControlCommand: (String, JSONObject) -> Unit = { _, _ -> },
     private val onToggleChatTool: (String) -> Unit = {},
-    private val onChatSessionViewed: (String) -> Unit = {}
+    private val onChatSessionViewed: (String) -> Unit = {},
+    private val onChatSessionOpened: (String) -> Unit = {}
 ) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -496,6 +497,7 @@ class OverlayController(
             return
         }
         presentPanel(presentation)
+        notifyCurrentChatSessionOpened()
     }
 
     private fun presentPanel(
@@ -2001,13 +2003,18 @@ class OverlayController(
         modelButton?.takeIf { anchoredPicker?.isShowingFor(it) == true }?.let { anchor ->
             showModelChoices(anchorOverride = anchor, replace = true)
         }
-        bubbleOverlay.renderUnreadBadge(state)
+        bubbleOverlay.renderChatState(state)
         renderTimeline(state)
     }
 
     private fun notifyCurrentChatSessionViewed() {
         if (!isPanelActivelyViewed()) return
         lastChatState.sessionKey?.takeIf { it.isNotBlank() }?.let(onChatSessionViewed)
+    }
+
+    private fun notifyCurrentChatSessionOpened() {
+        if (!isPanelActivelyViewed()) return
+        lastChatState.sessionKey?.takeIf { it.isNotBlank() }?.let(onChatSessionOpened)
     }
 
     /**

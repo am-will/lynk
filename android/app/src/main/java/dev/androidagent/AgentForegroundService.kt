@@ -152,6 +152,7 @@ class AgentForegroundService : Service() {
     private var phoneControlAttentionRunId: String? = null
     private var phoneControlAttentionClear: Runnable? = null
     private val phoneControlRunIds = mutableSetOf<String>()
+    private val phoneControlProtectedReplySessions = mutableSetOf<String>()
     private val closeSystemDialogsReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != Intent.ACTION_CLOSE_SYSTEM_DIALOGS) return
@@ -200,7 +201,7 @@ class AgentForegroundService : Service() {
             onSelectChatSession = { sessionKey ->
                 val route = routeForSessionKey(sessionKey)
                 connectAgentClient(routeOverride = route).selectSession(sessionKey)
-                markChatSessionRead(sessionKey)
+                markChatSessionRead(sessionKey, force = true)
             },
             onNewChatSession = { startNewChatFromUi() },
             onSetChatModel = { model ->
@@ -221,7 +222,8 @@ class AgentForegroundService : Service() {
                 chatState = ChatStateReducer.toggleTool(chatState, eventId)
                 overlayController?.setChatState(chatState)
             },
-            onChatSessionViewed = { sessionKey -> markChatSessionRead(sessionKey) }
+            onChatSessionViewed = { sessionKey -> markChatSessionRead(sessionKey) },
+            onChatSessionOpened = { sessionKey -> markChatSessionRead(sessionKey, force = true) }
         ).also {
             it.setChatState(chatState)
             showPetIfEnabled(it)
@@ -320,8 +322,10 @@ class AgentForegroundService : Service() {
     }
 
     private fun holdPhoneControlPetAfterCompletion(sessionKey: String?, runId: String?) {
-        phoneControlAttentionSessionKey = sessionKey?.takeIf { it.isNotBlank() } ?: phoneControlAttentionSessionKey
+        val key = sessionKey?.takeIf { it.isNotBlank() }
+        phoneControlAttentionSessionKey = key ?: phoneControlAttentionSessionKey
         phoneControlAttentionRunId = runId?.takeIf { it.isNotBlank() } ?: phoneControlAttentionRunId
+        key?.let(phoneControlProtectedReplySessions::add)
         if (!AgentConfigStore.load(this).petEnabled) {
             phoneControlPetOverrideVisible = true
             if (Settings.canDrawOverlays(this)) {
@@ -337,6 +341,7 @@ class AgentForegroundService : Service() {
             phoneControlAttentionClear = null
             phoneControlAttentionSessionKey = null
             phoneControlAttentionRunId = null
+            phoneControlProtectedReplySessions.clear()
             restorePetAfterPhoneControlIfNeeded()
         }
         phoneControlAttentionClear = clear
@@ -364,6 +369,23 @@ class AgentForegroundService : Service() {
 
     private fun isRememberedPhoneControlRun(runId: String?): Boolean {
         return runId?.takeIf { it.isNotBlank() }?.let(phoneControlRunIds::contains) == true
+    }
+
+    private fun shouldPreservePhoneControlUnread(sessionKey: String?): Boolean {
+        val key = sessionKey?.takeIf { it.isNotBlank() } ?: return false
+        return key in phoneControlProtectedReplySessions
+    }
+
+    private fun acknowledgePhoneControlReply(sessionKey: String?) {
+        val key = sessionKey?.takeIf { it.isNotBlank() } ?: return
+        phoneControlProtectedReplySessions.remove(key)
+        if (phoneControlAttentionSessionKey == key) {
+            phoneControlAttentionClear?.let(mainHandler::removeCallbacks)
+            phoneControlAttentionClear = null
+            phoneControlAttentionSessionKey = null
+            phoneControlAttentionRunId = null
+            restorePetAfterPhoneControlIfNeeded()
+        }
     }
 
     private fun handlePhoneControlCommandStarted() {
@@ -622,6 +644,7 @@ class AgentForegroundService : Service() {
     }
 
     private fun submitChatPrompt(text: String, delivery: ChatSendDelivery): Boolean {
+        markChatSessionRead(chatState.sessionKey, force = true)
         chatState = ChatStateReducer.localUserMessage(chatState, text)
         overlayController?.setChatState(chatState)
         val requestConfig = AgentConfigStore.load(this)
@@ -770,6 +793,7 @@ class AgentForegroundService : Service() {
     }
 
     private fun startNewChatFromUi() {
+        markChatSessionRead(chatState.sessionKey, force = true)
         pendingNewChat = true
         val now = System.currentTimeMillis()
         chatState = chatState.copy(
@@ -834,15 +858,17 @@ class AgentForegroundService : Service() {
                 )
                 activatePhoneControlPet()
             }
-            if (replySessionKey != null && overlayController?.isViewingChatSession(replySessionKey) == true) {
-                chatState = ChatStateReducer.markSessionRead(chatState, replySessionKey)
-            }
             if (phoneControlCompleted) {
                 holdPhoneControlPetAfterCompletion(
                     sessionKey = messageSessionKey ?: chatState.sessionKey,
                     runId = messageRunId
                 )
                 forgetPhoneControlRun(messageRunId)
+            }
+            if (replySessionKey != null && overlayController?.isViewingChatSession(replySessionKey) == true) {
+                if (!shouldPreservePhoneControlUnread(replySessionKey)) {
+                    chatState = ChatStateReducer.markSessionRead(chatState, replySessionKey)
+                }
             }
             if (
                 pendingNewChat &&
@@ -884,8 +910,12 @@ class AgentForegroundService : Service() {
         }
     }
 
-    private fun markChatSessionRead(sessionKey: String?) {
+    private fun markChatSessionRead(sessionKey: String?, force: Boolean = false) {
         val key = sessionKey?.takeIf { it.isNotBlank() } ?: return
+        if (!force && shouldPreservePhoneControlUnread(key)) {
+            return
+        }
+        acknowledgePhoneControlReply(key)
         if (chatState.unreadCountForSession(key) <= 0) {
             cancelReplyNotification(key)
             return
@@ -905,6 +935,7 @@ class AgentForegroundService : Service() {
     private fun openChatFromIntent(intent: Intent?) {
         restoreAgentChromeAfterRecents()
         openActiveChatConnection()
+        markChatSessionRead(chatState.sessionKey, force = true)
         val presentation = panelPresentationFrom(intent)
         if (presentation == PanelPresentation.Popup) {
             overlayController?.show()
@@ -930,7 +961,7 @@ class AgentForegroundService : Service() {
         restoreAgentChromeAfterRecents()
         val route = routeForSessionKey(sessionKey)
         connectAgentClient(routeOverride = route).selectSession(sessionKey)
-        markChatSessionRead(sessionKey)
+        markChatSessionRead(sessionKey, force = true)
         cancelReplyNotification(sessionKey)
         if (Settings.canDrawOverlays(this)) {
             if (presentation == PanelPresentation.Popup) {
