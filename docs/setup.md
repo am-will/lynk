@@ -41,7 +41,7 @@ The bridge exposes:
 
 - `ws://0.0.0.0:8788/phone` for Android
 - `http://127.0.0.1:8788/health` for local status
-- protected `http://127.0.0.1:8788/api/*` routes for phones, audit, pets, agent control, and command dispatch. Call these with `Authorization: Bearer $PHONE_AGENT_TOKEN` or `X-Phone-Agent-Token: $PHONE_AGENT_TOKEN`.
+- protected `http://127.0.0.1:8788/api/*` routes for phones, audit, pets, harness diagnostics, agent control, and command dispatch. Call these with `Authorization: Bearer $PHONE_AGENT_TOKEN` or `X-Phone-Agent-Token: $PHONE_AGENT_TOKEN`.
 
 The bridge server is split into focused HTTP, WebSocket, and realtime modules. Legacy Codex schema generation remains available with `npm run codex:schemas`, but `pc/src/generated/codex-app-server/` is local/gitignored and not required for normal Open Claw setup.
 
