@@ -2,11 +2,13 @@ package dev.androidagent.settings.screens
 
 import android.app.Activity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import dev.androidagent.R
 import dev.androidagent.settings.SettingsComponents
 import dev.androidagent.settings.SettingsComponents.BadgeTone
+import dev.androidagent.settings.SettingsComponents.HubLayoutMetrics
 import dev.androidagent.settings.SettingsComponents.StatusTone
 import dev.androidagent.settings.SettingsDestination
 import dev.androidagent.settings.SettingsStatusProvider
@@ -24,6 +26,7 @@ object SettingsHubScreen {
     }
 
     fun build(activity: Activity, tokens: ThemeTokens, callbacks: Callbacks): View {
+        val metrics = SettingsComponents.hubLayoutMetrics(activity)
         val scroll = ScrollView(activity).apply {
             setBackgroundColor(tokens.background)
             isFillViewport = true
@@ -34,20 +37,24 @@ object SettingsHubScreen {
 
         val root = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
+            layoutParams = ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
             setPadding(
-                SettingsComponents.dp(activity, DesignTokens.Spacing.lg),
-                SettingsComponents.dp(activity, DesignTokens.Spacing.md),
-                SettingsComponents.dp(activity, DesignTokens.Spacing.lg),
-                SettingsComponents.dp(activity, DesignTokens.Spacing.xxxl)
+                SettingsComponents.dp(activity, metrics.horizontalPaddingDp),
+                SettingsComponents.dp(activity, metrics.verticalPaddingDp),
+                SettingsComponents.dp(activity, metrics.horizontalPaddingDp),
+                SettingsComponents.dp(activity, metrics.verticalPaddingDp)
             )
         }
 
-        // Header with avatar, title, subtitle, menu
         root.addView(SettingsComponents.hubHeader(
             context = activity,
             tokens = tokens,
             titleText = "Android Agent",
             subtitleText = "Android bubble endpoint for your agents",
+            avatarSizeDp = metrics.headerAvatarSizeDp,
             onMenu = { /* future overflow */ }
         ))
 
@@ -55,24 +62,37 @@ object SettingsHubScreen {
             activity,
             bridgeConnected = callbacks.bridgeConnected()
         )
-        root.addView(buildStatusChipGrid(activity, tokens, snapshot), SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg))
+        root.addView(
+            buildStatusChipGrid(activity, tokens, snapshot, metrics),
+            SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg)
+        )
 
         val categoriesContainer = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
         }
-        renderCategories(activity, tokens, categoriesContainer, callbacks)
+        renderCategories(activity, tokens, categoriesContainer, callbacks, metrics)
         root.addView(categoriesContainer, SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg))
 
         scroll.addView(root)
         return scroll
     }
 
-    private fun buildStatusChipGrid(activity: Activity, tokens: ThemeTokens, snapshot: dev.androidagent.settings.SettingsStatusSnapshot): View {
-        val gridHeight = SettingsComponents.dp(activity, 156)
+    private fun buildStatusChipGrid(
+        activity: Activity,
+        tokens: ThemeTokens,
+        snapshot: dev.androidagent.settings.SettingsStatusSnapshot,
+        metrics: HubLayoutMetrics
+    ): View {
+        val gridHeight = SettingsComponents.dp(activity, metrics.statusGridHeightDp)
         val chips = listOf(
-            SettingsComponents.statusChip(activity, tokens, R.drawable.ic_wifi, "Connected", "LAN", mapStatus(snapshot.connectedLan), fillCell = true),
-            SettingsComponents.statusChip(activity, tokens, R.drawable.ic_health, "Bridge", statusLabel(snapshot.bridgeHealthy), mapStatus(snapshot.bridgeHealthy), fillCell = true),
-            SettingsComponents.statusChip(activity, tokens, R.drawable.ic_lock, "Auth", if (snapshot.authOk == StatusLevel.Good) "OK" else "Off", mapStatus(snapshot.authOk), fillCell = true),
+            SettingsComponents.statusChip(activity, tokens, R.drawable.ic_wifi, "Connected", "LAN", mapStatus(snapshot.connectedLan), fillCell = true, iconSizeDp = metrics.statusChipIconSizeDp),
+            SettingsComponents.statusChip(activity, tokens, R.drawable.ic_health, "Bridge", statusLabel(snapshot.bridgeHealthy), mapStatus(snapshot.bridgeHealthy), fillCell = true, iconSizeDp = metrics.statusChipIconSizeDp),
+            SettingsComponents.statusChip(activity, tokens, R.drawable.ic_lock, "Auth", if (snapshot.authOk == StatusLevel.Good) "OK" else "Off", mapStatus(snapshot.authOk), fillCell = true, iconSizeDp = metrics.statusChipIconSizeDp),
             SettingsComponents.statusChip(
                 activity,
                 tokens,
@@ -80,7 +100,8 @@ object SettingsHubScreen {
                 "Pet",
                 if (snapshot.serviceRunning) "On" else "Off",
                 if (snapshot.serviceRunning) StatusTone.Good else StatusTone.Idle,
-                fillCell = true
+                fillCell = true,
+                iconSizeDp = metrics.statusChipIconSizeDp
             )
         )
         return SettingsComponents.statusChipGrid(activity, chips, gridHeight)
@@ -110,7 +131,13 @@ object SettingsHubScreen {
         val destination: SettingsDestination
     )
 
-    private fun renderCategories(activity: Activity, tokens: ThemeTokens, container: LinearLayout, callbacks: Callbacks) {
+    private fun renderCategories(
+        activity: Activity,
+        tokens: ThemeTokens,
+        container: LinearLayout,
+        callbacks: Callbacks,
+        metrics: HubLayoutMetrics
+    ) {
         container.removeAllViews()
         val specs = listOf(
             CategoryRowSpec("Runtime", "Host bridge, local model, backends", R.drawable.ic_terminal, BadgeTone.Teal, SettingsDestination.Runtime),
@@ -127,12 +154,20 @@ object SettingsHubScreen {
                 tone = spec.tone,
                 titleText = spec.title,
                 subtitleText = spec.subtitle,
+                minHeightDp = metrics.categoryRowMinHeightDp,
+                iconSizeDp = metrics.categoryIconSizeDp,
                 onClick = { callbacks.navigate(spec.destination) }
             )
-            container.addView(row, SettingsComponents.verticalMargin(
-                activity,
-                top = if (index == 0) 0 else DesignTokens.Spacing.sm + 2
-            ))
+            container.addView(
+                row,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    0,
+                    1f
+                ).apply {
+                    topMargin = if (index == 0) 0 else SettingsComponents.dp(activity, DesignTokens.Spacing.sm + 2)
+                }
+            )
         }
     }
 }

@@ -93,6 +93,48 @@ object SettingsComponents {
         }
     }
 
+    data class HubLayoutMetrics(
+        val horizontalPaddingDp: Int,
+        val verticalPaddingDp: Int,
+        val statusGridHeightDp: Int,
+        val categoryRowMinHeightDp: Int,
+        val categoryIconSizeDp: Int,
+        val headerAvatarSizeDp: Int,
+        val statusChipIconSizeDp: Int
+    )
+
+    /** Scale hub spacing and row heights from screen size while keeping compact minimums. */
+    fun hubLayoutMetrics(context: Context): HubLayoutMetrics {
+        val dm = context.resources.displayMetrics
+        val heightDp = (dm.heightPixels / dm.density).toInt()
+        val widthDp = (dm.widthPixels / dm.density).toInt()
+        val compact = heightDp < 700 || widthDp < 360
+
+        val horizontalPadding = if (compact) DesignTokens.Spacing.lg else DesignTokens.Spacing.xl
+        val verticalPadding = if (compact) DesignTokens.Spacing.md else DesignTokens.Spacing.lg
+        val statusGridHeight = (heightDp * 0.17f).toInt().coerceIn(
+            if (compact) 132 else 148,
+            if (compact) 168 else 220
+        )
+        val headerReserve = if (compact) 76 else 88
+        val gaps = DesignTokens.Spacing.lg + DesignTokens.Spacing.lg + (DesignTokens.Spacing.sm + 2) * 4
+        val categoryArea = (heightDp - verticalPadding * 2 - statusGridHeight - headerReserve - gaps).coerceAtLeast(260)
+        val categoryRowMin = (categoryArea / 5).coerceIn(
+            if (compact) 52 else 60,
+            if (compact) 96 else 132
+        )
+
+        return HubLayoutMetrics(
+            horizontalPaddingDp = horizontalPadding,
+            verticalPaddingDp = verticalPadding,
+            statusGridHeightDp = statusGridHeight,
+            categoryRowMinHeightDp = categoryRowMin,
+            categoryIconSizeDp = if (compact) 38 else 44,
+            headerAvatarSizeDp = if (compact) 40 else 48,
+            statusChipIconSizeDp = if (compact) 12 else 14
+        )
+    }
+
     // -------- icon badges --------
 
     enum class BadgeTone { Teal, Blue, Violet, Amber, Pink, Slate, Red, Green }
@@ -189,13 +231,14 @@ object SettingsComponents {
 
     // -------- header bars --------
 
-    /** Hub header: small avatar + title + subtitle + 3-dot menu. */
+    /** Hub header: small avatar + title + subtitle. */
     fun hubHeader(
         context: Context,
         tokens: ThemeTokens,
         titleText: String,
         subtitleText: String,
         avatarRes: Int = R.drawable.openclaw_bubble_logo,
+        avatarSizeDp: Int = 40,
         onMenu: (() -> Unit)? = null
     ): LinearLayout {
         val row = LinearLayout(context).apply {
@@ -205,7 +248,7 @@ object SettingsComponents {
 
         val avatar = ImageView(context).apply {
             setImageResource(avatarRes)
-            layoutParams = LinearLayout.LayoutParams(dp(context, 40), dp(context, 40))
+            layoutParams = LinearLayout.LayoutParams(dp(context, avatarSizeDp), dp(context, avatarSizeDp))
             background = Drawables.circle(
                 fill = ColorUtils.with(tokens.accent, 0x26),
                 strokeColor = ColorUtils.with(tokens.accent, 0x55),
@@ -300,7 +343,8 @@ object SettingsComponents {
         label: String,
         value: String,
         tone: StatusTone,
-        fillCell: Boolean = false
+        fillCell: Boolean = false,
+        iconSizeDp: Int = 12
     ): LinearLayout {
         val dotColor = statusToneColor(tokens, tone)
         val container = LinearLayout(context).apply {
@@ -333,7 +377,7 @@ object SettingsComponents {
         topRow.addView(ImageView(context).apply {
             setImageResource(iconRes)
             setColorFilter(tokens.secondaryText)
-            layoutParams = LinearLayout.LayoutParams(dp(context, 12), dp(context, 12))
+            layoutParams = LinearLayout.LayoutParams(dp(context, iconSizeDp), dp(context, iconSizeDp))
         })
         topRow.addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
         topRow.addView(View(context).apply {
@@ -411,18 +455,6 @@ object SettingsComponents {
             addView(chips[startIndex], LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
             addView(View(context), LinearLayout.LayoutParams(gap, ViewGroup.LayoutParams.MATCH_PARENT))
             addView(chips[startIndex + 1], LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
-        }
-    }
-
-    /** Row of 4 status chips, evenly spaced. */
-    fun statusChipRow(context: Context, chips: List<View>): LinearLayout {
-        val tokens = tokens(context)
-        return LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            chips.forEachIndexed { index, view ->
-                if (index > 0) addView(View(context), LinearLayout.LayoutParams(dp(context, DesignTokens.Spacing.xs), 0))
-                addView(view, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            }
         }
     }
 
@@ -505,7 +537,9 @@ object SettingsComponents {
         tone: BadgeTone,
         titleText: String,
         subtitleText: String,
-        onClick: () -> Unit
+        onClick: () -> Unit,
+        minHeightDp: Int = 64,
+        iconSizeDp: Int = 38
     ): LinearLayout {
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -521,10 +555,10 @@ object SettingsComponents {
             isFocusable = true
             setOnClickListener { onClick() }
             exposeToAccessibility(description = "$titleText, $subtitleText")
-            minimumHeight = dp(context, 64)
+            minimumHeight = dp(context, minHeightDp)
         }
 
-        row.addView(iconBadge(context, tokens, iconRes, tone, sizeDp = 38))
+        row.addView(iconBadge(context, tokens, iconRes, tone, sizeDp = iconSizeDp))
 
         val copy = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
