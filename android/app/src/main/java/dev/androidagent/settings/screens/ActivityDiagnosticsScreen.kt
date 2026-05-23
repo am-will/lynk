@@ -11,21 +11,25 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.ComponentActivity
+import androidx.lifecycle.lifecycleScope
 import dev.androidagent.AgentConfigStore
+import dev.androidagent.AgentForegroundService
 import dev.androidagent.R
 import dev.androidagent.localmodel.LocalModelStore
-import dev.androidagent.settings.ColorUtils
+import dev.androidagent.settings.DiagnosticsBackendId
+import dev.androidagent.settings.DiagnosticsBackendTestResult
+import dev.androidagent.settings.DiagnosticsBackendTester
 import dev.androidagent.settings.DiagnosticsEventLevel
 import dev.androidagent.settings.DiagnosticsEventLog
 import dev.androidagent.settings.DiagnosticsPrefsStore
 import dev.androidagent.settings.SettingsComponents
 import dev.androidagent.settings.SettingsComponents.BadgeTone
-import dev.androidagent.settings.SettingsComponents.ButtonTone
-import dev.androidagent.settings.SettingsStatusProvider
 import dev.androidagent.settings.StatusLevel
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
 import dev.androidagent.ui.ThemeTokens
+import kotlinx.coroutines.launch
 
 object ActivityDiagnosticsScreen {
 
@@ -49,12 +53,17 @@ object ActivityDiagnosticsScreen {
             context = activity,
             tokens = tokens,
             titleText = "Developer Diagnostics",
-            onBack = { activity.onBackPressed() }
+            onBack = { navigateBack(activity) }
         ))
 
-        val snapshot = SettingsStatusProvider.snapshot(activity)
         val config = AgentConfigStore.load(activity)
         val localReady = LocalModelStore.exists(config.localModelPath)
+        val serviceRunning = AgentForegroundService.isRunning
+        val enabledHostBackends = listOfNotNull(
+            "OpenClaw".takeIf { config.openClawHarnessEnabled },
+            "Hermes".takeIf { config.hermesHarnessEnabled },
+            "Codex".takeIf { config.codexHarnessEnabled }
+        )
 
         // System status section
         root.addView(SettingsComponents.sectionHeader(activity, tokens, "System status"),
@@ -64,19 +73,37 @@ object ActivityDiagnosticsScreen {
             activity, tokens,
             iconRes = R.drawable.ic_activity,
             tone = BadgeTone.Teal,
-            title = "Bridge health",
+            title = "Bridge link",
             subtitle = "PC bridge connection",
-            statusText = snapshot.bridgeHealthy.label,
-            tone2 = snapshot.bridgeHealthy
+            details = when {
+                config.token.isBlank() -> "Missing PHONE_AGENT_TOKEN. Backend tests cannot authenticate until Connection settings are paired."
+                serviceRunning -> "Bubble service is running. Use Test Backends below to verify bridge and harness readiness."
+                else -> "Bubble service is stopped. Start the bubble before using host backends."
+            },
+            statusText = when {
+                config.token.isBlank() -> "Setup"
+                serviceRunning -> "Running"
+                else -> "Stopped"
+            },
+            tone2 = when {
+                config.token.isBlank() -> StatusLevel.Warning
+                serviceRunning -> StatusLevel.Good
+                else -> StatusLevel.Idle
+            }
         ))
         root.addView(buildStatusCard(
             activity, tokens,
             iconRes = R.drawable.ic_brand_circle,
             tone = BadgeTone.Blue,
-            title = "Harness health",
-            subtitle = "Agent harness & tools",
-            statusText = snapshot.bridgeHealthy.label,
-            tone2 = snapshot.bridgeHealthy
+            title = "Backend readiness",
+            subtitle = if (enabledHostBackends.isEmpty()) "No host backends enabled" else "Enabled: ${enabledHostBackends.joinToString(", ")}",
+            details = if (enabledHostBackends.isEmpty()) {
+                "Enable at least one host backend in Models & Harness."
+            } else {
+                "Tap a backend test to check the PC bridge and that specific harness."
+            },
+            statusText = if (enabledHostBackends.isEmpty()) "Off" else "Test",
+            tone2 = StatusLevel.Idle
         ), SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.sm))
         root.addView(buildStatusCard(
             activity, tokens,
@@ -84,6 +111,11 @@ object ActivityDiagnosticsScreen {
             tone = BadgeTone.Violet,
             title = "Local model",
             subtitle = "LiteRT-LM",
+            details = when {
+                !config.experimentalLocalModelsEnabled -> "Local phone mode is disabled in Models & Harness."
+                localReady -> "Imported model is available on ${config.localModelBackend.label}."
+                else -> "Local phone mode is enabled, but no .litertlm model is imported."
+            },
             statusText = if (localReady) "Ready" else "Missing",
             tone2 = if (localReady) StatusLevel.Good else StatusLevel.Warning
         ), SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.sm))
@@ -106,10 +138,6 @@ object ActivityDiagnosticsScreen {
 
         root.addView(buildLogsCard(activity, tokens))
 
-        // Danger zone
-        root.addView(buildDangerZone(activity, tokens),
-            SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.xl))
-
         scroll.addView(root)
         return scroll
     }
@@ -121,6 +149,7 @@ object ActivityDiagnosticsScreen {
         tone: BadgeTone,
         title: String,
         subtitle: String,
+        details: String? = null,
         statusText: String,
         tone2: StatusLevel
     ): LinearLayout {
@@ -149,6 +178,15 @@ object ActivityDiagnosticsScreen {
             includeFontPadding = false
             setPadding(0, SettingsComponents.dp(activity, 2), 0, 0)
         })
+        details?.takeIf { it.isNotBlank() }?.let { detailText ->
+            copy.addView(TextView(activity).apply {
+                text = detailText
+                setTextColor(tokens.tertiaryText)
+                textSize = DesignTokens.Text.caption
+                includeFontPadding = false
+                setPadding(0, SettingsComponents.dp(activity, 4), 0, 0)
+            })
+        }
         row.addView(copy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
         val statusColor = when (tone2) {
@@ -232,12 +270,12 @@ object ActivityDiagnosticsScreen {
             orientation = LinearLayout.HORIZONTAL
         }
         val entries = listOf(
-            Triple(R.drawable.ic_brand_circle, "OpenClaw", BadgeTone.Teal),
-            Triple(R.drawable.ic_chip, "Hermes", BadgeTone.Violet),
-            Triple(R.drawable.ic_terminal, "Codex", BadgeTone.Blue),
-            Triple(R.drawable.ic_file, "Local", BadgeTone.Slate)
+            BackendEntry(DiagnosticsBackendId.OpenClaw, R.drawable.ic_brand_circle, BadgeTone.Teal),
+            BackendEntry(DiagnosticsBackendId.Hermes, R.drawable.ic_chip, BadgeTone.Violet),
+            BackendEntry(DiagnosticsBackendId.Codex, R.drawable.ic_terminal, BadgeTone.Blue),
+            BackendEntry(DiagnosticsBackendId.Local, R.drawable.ic_file, BadgeTone.Slate)
         )
-        entries.forEachIndexed { index, (icon, label, tone) ->
+        entries.forEachIndexed { index, entry ->
             val cell = LinearLayout(activity).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
@@ -251,23 +289,31 @@ object ActivityDiagnosticsScreen {
                 isClickable = true
                 isFocusable = true
                 setOnClickListener {
-                    DiagnosticsEventLog.append(DiagnosticsEventLevel.Info, "$label backend tested")
+                    runBackendTest(activity, entry.backend)
                 }
             }
-            cell.addView(SettingsComponents.iconBadge(activity, tokens, icon, tone, sizeDp = 36))
             cell.addView(TextView(activity).apply {
-                text = label
+                text = entry.backend.label
                 setTextColor(tokens.primaryText)
                 typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
                 textSize = DesignTokens.Text.footnote
                 includeFontPadding = false
-                setPadding(0, SettingsComponents.dp(activity, DesignTokens.Spacing.sm), 0, 0)
+                gravity = Gravity.CENTER
+                textAlignment = View.TEXT_ALIGNMENT_CENTER
+            })
+            cell.addView(SettingsComponents.iconBadge(activity, tokens, entry.iconRes, entry.tone, sizeDp = 36), LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = SettingsComponents.dp(activity, DesignTokens.Spacing.sm)
             })
             cell.addView(TextView(activity).apply {
                 text = "Test"
                 setTextColor(tokens.secondaryText)
                 textSize = DesignTokens.Text.caption
                 includeFontPadding = false
+                gravity = Gravity.CENTER
+                textAlignment = View.TEXT_ALIGNMENT_CENTER
                 setPadding(0, SettingsComponents.dp(activity, 2), 0, 0)
             })
             grid.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
@@ -366,81 +412,46 @@ object ActivityDiagnosticsScreen {
         return card
     }
 
-    private fun buildDangerZone(activity: Activity, tokens: ThemeTokens): LinearLayout {
-        val column = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
-        column.addView(TextView(activity).apply {
-            text = "Danger zone"
-            setTextColor(tokens.danger)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textSize = DesignTokens.Text.footnote
-            includeFontPadding = false
-            setPadding(0, 0, 0, SettingsComponents.dp(activity, DesignTokens.Spacing.sm))
-            letterSpacing = 0.05f
-        })
-        val card = LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = Drawables.rounded(
-                fill = ColorUtils.with(tokens.danger, 0x1F),
-                radius = SettingsComponents.dp(activity, DesignTokens.Radius.lg).toFloat(),
-                strokeColor = ColorUtils.with(tokens.danger, 0x66),
-                strokeWidth = SettingsComponents.dp(activity, 1).coerceAtLeast(1)
+    private fun runBackendTest(activity: Activity, backend: DiagnosticsBackendId) {
+        val owner = activity as? ComponentActivity
+        if (owner == null) {
+            val result = DiagnosticsBackendTestResult(
+                backend = backend,
+                ok = false,
+                level = DiagnosticsEventLevel.Error,
+                title = "${backend.label} Test Failed",
+                message = "Diagnostics tests need a ComponentActivity lifecycle."
             )
-            setPadding(
-                SettingsComponents.dp(activity, DesignTokens.Spacing.md),
-                SettingsComponents.dp(activity, DesignTokens.Spacing.md),
-                SettingsComponents.dp(activity, DesignTokens.Spacing.md),
-                SettingsComponents.dp(activity, DesignTokens.Spacing.md)
-            )
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { confirmReset(activity, tokens) }
+            showBackendResult(activity, result)
+            return
         }
-        card.addView(ImageView(activity).apply {
-            setImageResource(R.drawable.ic_warning)
-            setColorFilter(tokens.danger)
-            layoutParams = LinearLayout.LayoutParams(
-                SettingsComponents.dp(activity, 22),
-                SettingsComponents.dp(activity, 22)
-            )
-        })
-        val copy = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(SettingsComponents.dp(activity, DesignTokens.Spacing.sm + 2), 0, 0, 0)
+        owner.lifecycleScope.launch {
+            val result = DiagnosticsBackendTester.test(activity, backend)
+            showBackendResult(activity, result)
         }
-        copy.addView(TextView(activity).apply {
-            text = "Reset all data & settings"
-            setTextColor(tokens.danger)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textSize = DesignTokens.Text.callout
-            includeFontPadding = false
-        })
-        copy.addView(TextView(activity).apply {
-            text = "This cannot be undone"
-            setTextColor(ColorUtils.with(tokens.danger, 0xCC))
-            textSize = DesignTokens.Text.footnote
-            includeFontPadding = false
-            setPadding(0, SettingsComponents.dp(activity, 2), 0, 0)
-        })
-        card.addView(copy, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-
-        column.addView(card)
-        return column
     }
 
-    private fun confirmReset(activity: Activity, tokens: ThemeTokens) {
+    private fun showBackendResult(activity: Activity, result: DiagnosticsBackendTestResult) {
+        DiagnosticsEventLog.append(result.level, "${result.backend.label}: ${result.message}")
         AlertDialog.Builder(activity)
-            .setTitle("Reset all data?")
-            .setMessage("This clears agent, appearance, avatar, and diagnostics preferences.")
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Reset") { _, _ ->
-                activity.getSharedPreferences("open_claw_agent_config", android.content.Context.MODE_PRIVATE).edit().clear().apply()
-                activity.getSharedPreferences("open_claw_agent_appearance", android.content.Context.MODE_PRIVATE).edit().clear().apply()
-                activity.getSharedPreferences("avatar_config", android.content.Context.MODE_PRIVATE).edit().clear().apply()
-                activity.getSharedPreferences("open_claw_agent_diagnostics", android.content.Context.MODE_PRIVATE).edit().clear().apply()
-                DiagnosticsEventLog.clear()
-                DiagnosticsEventLog.append(DiagnosticsEventLevel.Warning, "All settings reset")
-            }
+            .setTitle(result.title)
+            .setMessage(result.message)
+            .setPositiveButton("OK", null)
             .show()
     }
+
+    private fun navigateBack(activity: Activity) {
+        if (activity is ComponentActivity) {
+            activity.onBackPressedDispatcher.onBackPressed()
+            return
+        }
+        @Suppress("DEPRECATION")
+        activity.onBackPressed()
+    }
+
+    private data class BackendEntry(
+        val backend: DiagnosticsBackendId,
+        val iconRes: Int,
+        val tone: BadgeTone
+    )
 }
