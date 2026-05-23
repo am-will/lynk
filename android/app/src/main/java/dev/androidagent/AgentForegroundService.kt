@@ -151,6 +151,7 @@ class AgentForegroundService : Service() {
     private var phoneControlAttentionSessionKey: String? = null
     private var phoneControlAttentionRunId: String? = null
     private var phoneControlAttentionClear: Runnable? = null
+    private val phoneControlRunIds = mutableSetOf<String>()
     private val closeSystemDialogsReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != Intent.ACTION_CLOSE_SYSTEM_DIALOGS) return
@@ -350,6 +351,29 @@ class AgentForegroundService : Service() {
         overlayController?.hidePhoneControlPet()
     }
 
+    private fun rememberPhoneControlRun(sessionKey: String?, runId: String?) {
+        runId?.takeIf { it.isNotBlank() }?.let(phoneControlRunIds::add)
+        phoneControlAttentionSessionKey = sessionKey?.takeIf { it.isNotBlank() } ?: phoneControlAttentionSessionKey
+        phoneControlAttentionRunId = runId?.takeIf { it.isNotBlank() } ?: phoneControlAttentionRunId
+    }
+
+    private fun forgetPhoneControlRun(runId: String?) {
+        runId?.takeIf { it.isNotBlank() }?.let(phoneControlRunIds::remove)
+    }
+
+    private fun isRememberedPhoneControlRun(runId: String?): Boolean {
+        return runId?.takeIf { it.isNotBlank() }?.let(phoneControlRunIds::contains) == true
+    }
+
+    private fun handlePhoneControlCommandStarted() {
+        rememberPhoneControlRun(chatState.sessionKey, chatState.activeRunId)
+        activatePhoneControlPet()
+    }
+
+    private fun handlePhoneControlCommandFinished() {
+        holdPhoneControlPetAfterCompletion(chatState.sessionKey, chatState.activeRunId)
+    }
+
     private fun startVoiceFromShell() {
         val config = AgentConfigStore.load(this)
         val model = selectedChatModel(config)
@@ -521,7 +545,12 @@ class AgentForegroundService : Service() {
     }
 
     private fun commandExecutor(): AccessibilityCommandExecutor {
-        return commandExecutor ?: AccessibilityCommandExecutor(this, overlayController).also {
+        return commandExecutor ?: AccessibilityCommandExecutor(
+            context = this,
+            overlayController = overlayController,
+            onPhoneControlCommandStarted = { handlePhoneControlCommandStarted() },
+            onPhoneControlCommandFinished = { handlePhoneControlCommandFinished() }
+        ).also {
             commandExecutor = it
         }
     }
@@ -792,9 +821,27 @@ class AgentForegroundService : Service() {
             } else {
                 null
             }
+            val messageRunId = message.optString("runId").takeIf { it.isNotBlank() }
+            val messageSessionKey = message.optString("sessionKey").takeIf { it.isNotBlank() }
+            val phoneControlStarted = isPhoneControlStartMessage(message)
+            val phoneControlCompleted = isTerminalChatMessage(message) && isRememberedPhoneControlRun(messageRunId)
             chatState = ChatStateReducer.reduce(chatState, message)
+            if (phoneControlStarted) {
+                rememberPhoneControlRun(
+                    sessionKey = messageSessionKey ?: chatState.sessionKey,
+                    runId = messageRunId ?: chatState.activeRunId
+                )
+                activatePhoneControlPet()
+            }
             if (replySessionKey != null && overlayController?.isViewingChatSession(replySessionKey) == true) {
                 chatState = ChatStateReducer.markSessionRead(chatState, replySessionKey)
+            }
+            if (phoneControlCompleted) {
+                holdPhoneControlPetAfterCompletion(
+                    sessionKey = messageSessionKey ?: chatState.sessionKey,
+                    runId = messageRunId
+                )
+                forgetPhoneControlRun(messageRunId)
             }
             if (
                 pendingNewChat &&
@@ -814,6 +861,12 @@ class AgentForegroundService : Service() {
                 overlayController?.openChatPanel(presentation = PanelPresentation.Popup)
             }
         }
+    }
+
+    private fun isPhoneControlStartMessage(message: JSONObject): Boolean {
+        if (message.optString("type") != "chat.state") return false
+        val status = message.optString("status").lowercase()
+        return status.contains("phone task") || status.contains("android phone tools")
     }
 
     private fun handleHostModelSnapshot(message: JSONObject) {

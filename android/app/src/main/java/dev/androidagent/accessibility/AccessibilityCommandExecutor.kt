@@ -30,15 +30,22 @@ import kotlin.coroutines.resume
 
 class AccessibilityCommandExecutor(
     private val context: Context,
-    private val overlayController: OverlayController?
+    private val overlayController: OverlayController?,
+    private val onPhoneControlCommandStarted: (String) -> Unit = {},
+    private val onPhoneControlCommandFinished: (String) -> Unit = {}
 ) {
     private val scope = CoroutineScope(Dispatchers.Main)
     private val observer = ScreenObserver()
 
     fun execute(command: String, args: JSONObject, callback: (CommandResult) -> Unit) {
         scope.launch {
-            val result = runCatching { executeInternal(command, args) }
-                .getOrElse { CommandResult(false, currentObservationOrNull(), it.message ?: it.toString()) }
+            onPhoneControlCommandStarted(command)
+            val result = try {
+                runCatching { executeInternal(command, args) }
+                    .getOrElse { CommandResult(false, currentObservationOrNull(), it.message ?: it.toString()) }
+            } finally {
+                onPhoneControlCommandFinished(command)
+            }
             callback(result)
         }
     }
