@@ -10,13 +10,18 @@ internal data class DemoHtmlTermuxFallback(
 
 internal object DemoHtmlTermuxFallbackPolicy {
     fun replacementFor(userText: String, args: JSONObject): DemoHtmlTermuxFallback? {
+        if (!isDemoFallbackEnabled()) return null
         if (!shouldReplaceTermuxCommand(userText, args)) return null
         return fallback(userText, "The model supplied an unreliable Termux command for an HTML/browser task. OpenClaw replaced it with a known-good command for the requested project.")
     }
 
     fun fallbackForEmptyCommand(userText: String): DemoHtmlTermuxFallback? {
+        if (!isDemoFallbackEnabled()) return null
         return fallback(userText, "The model called termux_command without a command. OpenClaw supplied a concrete Termux command for the user's requested HTML project.")
     }
+
+    private fun isDemoFallbackEnabled(): Boolean =
+        java.lang.Boolean.getBoolean("openclaw.local.demoFallback")
 
     private fun fallback(userText: String, reason: String): DemoHtmlTermuxFallback? {
         val text = userText.lowercase()

@@ -21,11 +21,17 @@ class LocalAgentController(
         userText: String,
         history: List<LocalChatMessage>
     ): String {
-        emit(state(sessionKey, runId, isRunning = true, status = "Local model is working"))
         val transcript = history.takeLast(16).map { "${it.role}: ${it.text}" }.toMutableList()
         transcript.add("user: $userText")
-        val toolsAllowed = shouldAllowTools(userText)
-        val phoneControlRequest = shouldLoadAndroidControlSkill(userText)
+        val toolsAllowed = LocalToolPolicy.shouldAllowTools(userText)
+        val phoneControlRequest = LocalToolPolicy.shouldLoadAndroidControlSkill(userText)
+        emit(state(
+            sessionKey = sessionKey,
+            runId = runId,
+            isRunning = true,
+            status = "Local model is working",
+            taskKind = if (phoneControlRequest) "phone" else null
+        ))
         if (phoneControlRequest) {
             transcript.add("system: This is an Android phone-control request. Before any phone_* tool, call local_read_skill with name android-control and follow the returned skill.")
         }
@@ -82,7 +88,7 @@ class LocalAgentController(
             val calls = LocalToolCallParser.parse(response)
             if (calls.isEmpty()) {
                 val finalText = cleanFinalText(response.ifBlank { "I could not generate a response." })
-                if (toolsAllowed && shouldRejectCommandRequest(userText, finalText) && !rejectedCommandRequest) {
+                if (toolsAllowed && LocalToolPolicy.shouldRejectCommandRequest(userText, finalText) && !rejectedCommandRequest) {
                     rejectedCommandRequest = true
                     transcript.add("assistant: $finalText")
                     transcript.add("system: Do not ask the user for a shell command. The user asked you to perform the task. Choose the Termux command yourself and call termux_command now.")
@@ -108,7 +114,7 @@ class LocalAgentController(
 
             for (call in calls) {
                 var callToExecute = call
-                if (phoneControlRequest && isPhoneTool(call.name) && !androidControlSkillLoaded) {
+                if (phoneControlRequest && LocalToolPolicy.isPhoneTool(call.name) && !androidControlSkillLoaded) {
                     val rejected = JSONObject()
                         .put("ok", false)
                         .put("error", "Before Android phone-control tools, call local_read_skill with args {\"name\":\"android-control\"} and follow that skill.")
@@ -145,7 +151,7 @@ class LocalAgentController(
                     transcript.add("system: ${replacementFallback.reason}")
                     callToExecute = LocalToolCall("termux_command", replacementFallback.args)
                     demoFallbackTargetPath = replacementFallback.targetPath
-                } else if (call.name == "termux_command" && termuxCommandText(call.args).isBlank()) {
+                } else if (call.name == "termux_command" && LocalToolPolicy.termuxCommandText(call.args).isBlank()) {
                     val emptyCommandFallback = DemoHtmlTermuxFallbackPolicy.fallbackForEmptyCommand(userText)
                     if (emptyCommandFallback != null) {
                         transcript.add("assistant tool request: ${JSONObject().put("tool", call.name).put("args", call.args)}")
@@ -256,13 +262,20 @@ class LocalAgentController(
         return result
     }
 
-    private fun state(sessionKey: String, runId: String?, isRunning: Boolean, status: String): JSONObject =
+    private fun state(
+        sessionKey: String,
+        runId: String?,
+        isRunning: Boolean,
+        status: String,
+        taskKind: String? = null
+    ): JSONObject =
         JSONObject()
             .put("type", "chat.state")
             .put("sessionKey", sessionKey)
             .put("runId", runId)
             .put("isRunning", isRunning)
             .put("status", status)
+            .put("taskKind", taskKind)
             .put("model", AgentModelOptions.LOCAL_LITERT_MODEL_ID)
             .put("reasoningEffort", configProvider().reasoningEffort)
 
@@ -328,60 +341,6 @@ class LocalAgentController(
     private fun cleanFinalText(text: String): String {
         return LocalResponseTextNormalizer.normalize(text)
     }
-
-    private fun buildLocalSystemPrompt(basePrompt: String): String {
-        return """
-            $basePrompt
-
-            Local mode override:
-            - Behave like a normal conversational LLM with optional tools.
-            - Do not use tools for ordinary questions or chat.
-            - Only call tools when the user asks you to interact with the phone, files, or Termux.
-            - For file/project creation requests, decide the commands yourself. Do not ask the user to provide commands.
-            - For HTML or files that should open in the browser, use Termux/shared storage, not the app-private local workspace.
-            - Do not prefix final answers with TASK_COMPLETE or BLOCKED. Reply naturally.
-        """.trimIndent()
-    }
-
-    private fun shouldAllowTools(userText: String): Boolean {
-        val text = userText.lowercase()
-        val actionKeywords = listOf(
-            "phone", "screen", "screenshot", "observe", "tap", "click", "press", "swipe", "scroll",
-            "type into", "open app", "launch", "settings", "youtube", "home button", "back button",
-            "camera", "browser", "termux", "terminal", "shell", "command", "execute",
-            "file", "folder", "directory", "workspace", "project", "index.html", "html", "css", "javascript"
-        )
-        return actionKeywords.any { text.contains(it) }
-    }
-
-    private fun shouldLoadAndroidControlSkill(userText: String): Boolean {
-        val text = userText.lowercase()
-        val phoneSignals = listOf(
-            "phone", "screen", "screenshot", "observe", "tap", "click", "press", "swipe", "scroll",
-            "type into", "open app", "launch", "settings", "youtube", "camera", "home button", "back button",
-            "notification", "recents", "android"
-        )
-        val nonPhoneSignals = listOf("termux", "terminal", "shell", "command", "file", "folder", "directory", "project", "html", "css", "javascript")
-        return phoneSignals.any { text.contains(it) } && nonPhoneSignals.none { text.contains(it) }
-    }
-
-    private fun isPhoneTool(name: String): Boolean =
-        LocalToolSpecs.phoneCommandsByToolId.containsKey(name)
-
-    private fun shouldRejectCommandRequest(userText: String, response: String): Boolean {
-        val user = userText.lowercase()
-        val answer = response.lowercase()
-        val askedForExecutableWork = listOf("termux", "terminal", "shell", "command", "file", "folder", "directory", "project", "html", "css", "javascript")
-            .any { user.contains(it) }
-        val isAskingUserForCommand = listOf("provide the command", "specific command", "exact command", "tell me the command", "what command")
-            .any { answer.contains(it) }
-        return askedForExecutableWork && isAskingUserForCommand
-    }
-
-    private fun termuxCommandText(args: JSONObject): String =
-        args.optString("command")
-            .ifBlank { args.optString("cmd") }
-            .ifBlank { args.optString("script") }
 
     companion object {
         private const val TAG = "LocalAgentController"

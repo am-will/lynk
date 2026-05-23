@@ -5,9 +5,21 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
 
 class DemoHtmlTermuxFallbackPolicyTest {
+    @Before
+    fun enableDemoFallback() {
+        System.setProperty("openclaw.local.demoFallback", "true")
+    }
+
+    @After
+    fun clearDemoFallback() {
+        System.clearProperty("openclaw.local.demoFallback")
+    }
+
     @Test
     fun emptyCommandFallbackOnlyAppliesToHtmlTermuxRequests() {
         val fallback = DemoHtmlTermuxFallbackPolicy.fallbackForEmptyCommand(
