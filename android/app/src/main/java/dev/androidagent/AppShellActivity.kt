@@ -22,6 +22,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -57,6 +58,19 @@ class AppShellActivity : ComponentActivity() {
     private var pendingLocalModelPathField: EditText? = null
     private var selectedTab = ShellTab.Chat
     private var bridgeConnected = false
+    private var chatHost: FrameLayout? = null
+
+    private val backPressedCallback = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() {
+            if (selectedTab == ShellTab.Settings && settingsHost.handleBack()) {
+                updateBackHandling()
+                return
+            }
+            isEnabled = false
+            onBackPressedDispatcher.onBackPressed()
+            isEnabled = selectedTab == ShellTab.Settings && settingsHost.canGoBack()
+        }
+    }
 
     private val localModelPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@registerForActivityResult
@@ -98,6 +112,7 @@ class AppShellActivity : ComponentActivity() {
         }
         ensureAgentService()
         buildUi()
+        onBackPressedDispatcher.addCallback(this, backPressedCallback)
         handleLaunchIntent(intent)
     }
 
@@ -121,6 +136,9 @@ class AppShellActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshShellState()
+        if (selectedTab == ShellTab.Chat) {
+            chatHost?.takeIf { it.childCount == 0 }?.let { attachShellChat() }
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
@@ -154,7 +172,7 @@ class AppShellActivity : ComponentActivity() {
             override fun toggleAgentService() = toggleAgentServiceInternal()
             override fun isAgentServiceRunning(): Boolean = AgentForegroundService.isRunning
             override fun bridgeConnected(): Boolean = bridgeConnected
-        })
+        }, onNavigationChanged = ::updateBackHandling)
 
         root.addView(contentHost, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(buildBottomNav(tokens), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
@@ -229,6 +247,9 @@ class AppShellActivity : ComponentActivity() {
     }
 
     private fun selectTab(tab: ShellTab) {
+        if (selectedTab == ShellTab.Chat && tab != ShellTab.Chat) {
+            detachShellChat()
+        }
         selectedTab = tab
         val tokens = tokens()
         bottomNavView?.let { nav ->
@@ -247,8 +268,12 @@ class AppShellActivity : ComponentActivity() {
             }
         }
         contentHost.removeAllViews()
+        chatHost = null
         when (tab) {
-            ShellTab.Chat -> contentHost.addView(buildChatTab())
+            ShellTab.Chat -> {
+                contentHost.addView(buildChatTab())
+                attachShellChat()
+            }
             ShellTab.Voice -> contentHost.addView(buildVoiceTab())
             ShellTab.Activity -> contentHost.addView(ActivityDiagnosticsScreen.build(this, tokens))
             ShellTab.Settings -> {
@@ -256,19 +281,21 @@ class AppShellActivity : ComponentActivity() {
                 settingsHost.showHub()
             }
         }
+        updateBackHandling()
+    }
+
+    private fun updateBackHandling() {
+        backPressedCallback.isEnabled = selectedTab == ShellTab.Settings && settingsHost.canGoBack()
     }
 
     private fun buildChatTab(): View {
-        val tokens = tokens()
-        return buildHeroTab(
-            tokens = tokens,
-            iconRes = R.drawable.ic_chat,
-            tone = SettingsComponents.BadgeTone.Teal,
-            title = "Chat",
-            subtitle = "Open a fullscreen chat session. The floating bubble still opens the popup overlay.",
-            primaryLabel = "Open Chat",
-            primaryAction = { openFullscreenChat() }
-        )
+        return FrameLayout(this).apply {
+            chatHost = this
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
     }
 
     private fun buildVoiceTab(): View {
@@ -352,20 +379,27 @@ class AppShellActivity : ComponentActivity() {
                 selectTab(ShellTab.Settings)
             }
             intent?.getStringExtra(EXTRA_INITIAL_TAB)?.equals("settings", ignoreCase = true) == true -> selectTab(ShellTab.Settings)
-            intent?.getBooleanExtra(EXTRA_OPEN_CHAT, false) == true -> openFullscreenChat()
+            intent?.getBooleanExtra(EXTRA_OPEN_CHAT, false) == true -> selectTab(ShellTab.Chat)
         }
         if (intent?.getBooleanExtra(EXTRA_REQUEST_MIC_PERMISSION, false) == true) {
             requestMicPermissionInternal()
         }
     }
 
-    private fun openFullscreenChat() {
+    private fun attachShellChat() {
+        val host = chatHost ?: return
+        AgentForegroundService.shellChatContainer = host
         ensureAgentService()
         val intent = Intent(this, AgentForegroundService::class.java)
-            .setAction(AgentForegroundService.ACTION_OPEN_CHAT)
-            .putExtra(AgentForegroundService.EXTRA_PANEL_PRESENTATION, AgentForegroundService.PANEL_PRESENTATION_FULLSCREEN)
+            .setAction(AgentForegroundService.ACTION_ATTACH_SHELL_CHAT)
         runCatching { ContextCompat.startForegroundService(this, intent) }
-        DiagnosticsEventLog.append(DiagnosticsEventLevel.Info, "Opened fullscreen chat")
+    }
+
+    private fun detachShellChat() {
+        AgentForegroundService.shellChatContainer = null
+        val intent = Intent(this, AgentForegroundService::class.java)
+            .setAction(AgentForegroundService.ACTION_DETACH_SHELL_CHAT)
+        runCatching { startService(intent) }
     }
 
     private fun startVoiceSession() {

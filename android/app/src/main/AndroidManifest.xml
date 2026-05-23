@@ -48,7 +48,8 @@
         <activity
             android:name=".AppShellActivity"
             android:exported="false"
-            android:launchMode="singleTop">
+            android:launchMode="singleTop"
+            android:windowSoftInputMode="adjustResize">
         </activity>
 
         <activity
