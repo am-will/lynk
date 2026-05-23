@@ -13,6 +13,7 @@ import dev.androidagent.settings.ColorUtils
 import dev.androidagent.settings.SettingsComponents
 import dev.androidagent.settings.SettingsComponents.BadgeTone
 import dev.androidagent.settings.SettingsComponents.ButtonTone
+import dev.androidagent.settings.SettingsForms
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
 import dev.androidagent.ui.ThemeTokens
@@ -117,7 +118,7 @@ object LocalModelSettingsScreen {
 
         // Info banner
         root.addView(
-            SettingsComponents.infoBanner(
+            SettingsForms.infoBanner(
                 activity, tokens,
                 "Local models run entirely on this device.",
                 "No data leaves your phone."
@@ -259,7 +260,7 @@ object LocalModelSettingsScreen {
             includeFontPadding = false
         })
         card.addView(
-            SettingsComponents.filePathRow(activity, tokens, "/storage/emulated/0/AndroidAgent/workspace"),
+            SettingsForms.filePathRow(activity, tokens, "/storage/emulated/0/AndroidAgent/workspace"),
             SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.sm)
         )
         return card
@@ -286,9 +287,9 @@ object LocalModelSettingsScreen {
             includeFontPadding = false
             setPadding(0, SettingsComponents.dp(activity, 2), 0, 0)
         })
-        card.addView(SettingsComponents.checkRow(activity, tokens, "Android phone tools", androidState[0]) { androidState[0] = it },
+        card.addView(SettingsForms.checkRow(activity, tokens, "Android phone tools", androidState[0]) { androidState[0] = it },
             SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.md))
-        card.addView(SettingsComponents.checkRow(activity, tokens, "App-private workspace tools", workspaceState[0]) { workspaceState[0] = it },
+        card.addView(SettingsForms.checkRow(activity, tokens, "App-private workspace tools", workspaceState[0]) { workspaceState[0] = it },
             SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.xs))
         return card
     }

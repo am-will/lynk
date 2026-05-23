@@ -7,7 +7,6 @@ import android.widget.LinearLayout
 import dev.androidagent.R
 import dev.androidagent.settings.SettingsComponents
 import dev.androidagent.settings.SettingsComponents.BadgeTone
-import dev.androidagent.settings.SettingsComponents.HubLayoutMetrics
 import dev.androidagent.settings.SettingsComponents.StatusTone
 import dev.androidagent.settings.SettingsDestination
 import dev.androidagent.settings.SettingsStatusProvider
@@ -26,7 +25,7 @@ object SettingsHubScreen {
     }
 
     fun build(activity: Activity, tokens: ThemeTokens, callbacks: Callbacks): View {
-        val metrics = SettingsComponents.hubLayoutMetrics(activity)
+        val metrics = hubLayoutMetrics(activity)
         val root = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = ViewGroup.LayoutParams(
