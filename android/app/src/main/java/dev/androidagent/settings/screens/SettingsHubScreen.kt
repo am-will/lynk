@@ -1,13 +1,9 @@
 package dev.androidagent.settings.screens
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import dev.androidagent.AgentConfigStore
-import dev.androidagent.AgentMode
-import dev.androidagent.AgentModelOptions
 import dev.androidagent.R
 import dev.androidagent.settings.SettingsComponents
 import dev.androidagent.settings.SettingsComponents.BadgeTone
@@ -16,7 +12,6 @@ import dev.androidagent.settings.SettingsDestination
 import dev.androidagent.settings.SettingsStatusProvider
 import dev.androidagent.settings.StatusLevel
 import dev.androidagent.ui.DesignTokens
-import dev.androidagent.ui.Drawables
 import dev.androidagent.ui.ThemeTokens
 import dev.androidagent.ui.exposeToAccessibility
 
@@ -24,7 +19,6 @@ object SettingsHubScreen {
 
     interface Callbacks {
         fun navigate(destination: SettingsDestination)
-        fun onRunTargetChanged()
         fun refreshStatus()
         fun bridgeConnected(): Boolean
     }
@@ -48,6 +42,7 @@ object SettingsHubScreen {
             )
         }
 
+        // Header with avatar, title, subtitle, menu
         root.addView(SettingsComponents.hubHeader(
             context = activity,
             tokens = tokens,
@@ -55,14 +50,6 @@ object SettingsHubScreen {
             subtitleText = "Android bubble endpoint for your agents",
             onMenu = { /* future overflow */ }
         ))
-
-        val runLabel = if (AgentConfigStore.load(activity).agentMode == AgentMode.Local) "Local phone" else "Host bridge"
-        root.addView(SettingsComponents.runTargetPill(
-            context = activity,
-            tokens = tokens,
-            currentLabel = runLabel,
-            onClick = { showRunTargetMenu(activity, callbacks) }
-        ), SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg))
 
         val snapshot = SettingsStatusProvider.snapshot(
             activity,
@@ -145,33 +132,5 @@ object SettingsHubScreen {
                 top = if (index == 0) 0 else DesignTokens.Spacing.sm + 2
             ))
         }
-    }
-
-    private fun showRunTargetMenu(activity: Activity, callbacks: Callbacks) {
-        val tokens = SettingsComponents.tokens(activity)
-        val options = listOf(AgentMode.Host to "Host bridge", AgentMode.Local to "Local phone")
-        val current = AgentConfigStore.load(activity).agentMode
-        val labels = options.map { it.second }.toTypedArray()
-        val dialog = AlertDialog.Builder(activity)
-            .setTitle("Run target")
-            .setSingleChoiceItems(labels, options.indexOfFirst { it.first == current }) { d, which ->
-                val selected = options[which].first
-                val config = AgentConfigStore.load(activity)
-                if (config.agentMode != selected) {
-                    val updated = config.copy(
-                        agentMode = selected,
-                        experimentalLocalModelsEnabled = selected == AgentMode.Local || config.experimentalLocalModelsEnabled,
-                        model = if (selected == AgentMode.Local) AgentModelOptions.LOCAL_LITERT_MODEL_ID else config.model
-                    )
-                    AgentConfigStore.save(activity, updated)
-                    callbacks.onRunTargetChanged()
-                }
-                d.dismiss()
-            }
-            .create()
-        dialog.setOnShowListener {
-            dialog.window?.setBackgroundDrawable(Drawables.glassSurface(activity, tokens, DesignTokens.Radius.xl))
-        }
-        dialog.show()
     }
 }

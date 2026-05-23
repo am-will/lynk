@@ -143,7 +143,6 @@ class AppShellActivity : ComponentActivity() {
         settingsHost = SettingsHost(this, settingsContainer, object : SettingsHost.Callbacks {
             override fun ensureAgentServiceRunning() = ensureAgentService()
             override fun refreshStatus() = refreshShellState()
-            override fun onRunTargetChanged() = refreshShellState()
             override fun requestMicPermission() = requestMicPermissionInternal()
             override fun requestLocationPermission() = requestLocationPermissionInternal()
             override fun openAccessibilitySettings() {

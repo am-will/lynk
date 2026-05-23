@@ -281,61 +281,6 @@ object SettingsComponents {
         }
     }
 
-    // -------- run target pill --------
-
-    fun runTargetPill(
-        context: Context,
-        tokens: ThemeTokens,
-        currentLabel: String,
-        onClick: () -> Unit
-    ): LinearLayout {
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            background = Drawables.rounded(
-                fill = tokens.surface,
-                radius = dp(context, 14).toFloat(),
-                strokeColor = ColorUtils.with(tokens.accent, 0x55),
-                strokeWidth = dp(context, 1).coerceAtLeast(1)
-            )
-            setPadding(
-                dp(context, DesignTokens.Spacing.md),
-                dp(context, DesignTokens.Spacing.md),
-                dp(context, DesignTokens.Spacing.md),
-                dp(context, DesignTokens.Spacing.md)
-            )
-            isClickable = true
-            isFocusable = true
-            setOnClickListener { onClick() }
-        }
-
-        val icon = ImageView(context).apply {
-            setImageResource(R.drawable.ic_wifi)
-            setColorFilter(tokens.accent)
-            layoutParams = LinearLayout.LayoutParams(dp(context, 22), dp(context, 22))
-        }
-        row.addView(icon)
-
-        row.addView(TextView(context).apply {
-            text = "Run target: "
-            Typography.applyCallout(this, tokens, secondary = true)
-            setPadding(dp(context, DesignTokens.Spacing.sm), 0, 0, 0)
-        })
-        row.addView(TextView(context).apply {
-            text = currentLabel
-            Typography.applyCallout(this, tokens)
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-
-        row.addView(ImageView(context).apply {
-            setImageResource(R.drawable.ic_chevron_down_small)
-            setColorFilter(tokens.tertiaryText)
-            layoutParams = LinearLayout.LayoutParams(dp(context, 20), dp(context, 20))
-        })
-
-        return row
-    }
-
     // -------- status chips (4 across) --------
 
     enum class StatusTone { Good, Warn, Bad, Idle }

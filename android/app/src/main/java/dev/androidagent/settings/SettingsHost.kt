@@ -22,12 +22,12 @@ import dev.androidagent.ui.DesignTokens
 class SettingsHost(
     private val activity: Activity,
     private val container: FrameLayout,
-    private val callbacks: Callbacks
+    private val callbacks: Callbacks,
+    private val onNavigationChanged: () -> Unit = {}
 ) {
     interface Callbacks {
         fun ensureAgentServiceRunning()
         fun refreshStatus()
-        fun onRunTargetChanged()
         fun requestMicPermission()
         fun requestLocationPermission()
         fun openAccessibilitySettings()
@@ -38,17 +38,29 @@ class SettingsHost(
     }
 
     private val tokens get() = SettingsUi.tokens(activity)
+    private var showingHub = true
+
+    fun canGoBack(): Boolean = !showingHub
+
+    fun handleBack(): Boolean {
+        if (!showingHub) {
+            showHub()
+            return true
+        }
+        return false
+    }
 
     fun showHub() {
+        showingHub = true
         container.removeAllViews()
         container.addView(
             SettingsHubScreen.build(activity, tokens, object : SettingsHubScreen.Callbacks {
                 override fun navigate(destination: SettingsDestination) = showScreen(destination)
-                override fun onRunTargetChanged() = callbacks.onRunTargetChanged()
                 override fun refreshStatus() = callbacks.refreshStatus()
                 override fun bridgeConnected() = callbacks.bridgeConnected()
             })
         )
+        onNavigationChanged()
     }
 
     fun navigateTo(destination: SettingsDestination) {
@@ -56,6 +68,7 @@ class SettingsHost(
     }
 
     private fun showScreen(destination: SettingsDestination) {
+        showingHub = false
         container.removeAllViews()
         val scroll = ScrollView(activity).apply {
             setBackgroundColor(tokens.background)
@@ -132,6 +145,7 @@ class SettingsHost(
         content.addView(screenView, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         scroll.addView(content)
         container.addView(scroll, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        onNavigationChanged()
     }
 
     companion object {

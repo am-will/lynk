@@ -178,7 +178,6 @@ class MainActivity : ComponentActivity() {
             }
         }
         override fun refreshStatus() = refreshSetupState()
-        override fun onRunTargetChanged() = refreshSetupState()
         override fun requestMicPermission() = requestMicPermissionInternal()
         override fun requestLocationPermission() = requestLocationPermissionInternal()
         override fun openAccessibilitySettings() {
