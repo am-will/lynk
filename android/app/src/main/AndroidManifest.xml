@@ -46,6 +46,12 @@
         </activity>
 
         <activity
+            android:name=".AppShellActivity"
+            android:exported="false"
+            android:launchMode="singleTop">
+        </activity>
+
+        <activity
             android:name=".MainActivity"
             android:exported="false"
             android:launchMode="singleTop">

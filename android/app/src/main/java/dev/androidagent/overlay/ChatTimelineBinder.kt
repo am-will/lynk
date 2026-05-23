@@ -479,26 +479,27 @@ class ChatTimelineBinder(
                     tool?.output?.let { "Output\n${it.take(1200)}" },
                     tool?.error?.let { "Error\n$it" }
                 ).joinToString("\n\n")
-
-                val detailsContainer = LinearLayout(context).apply {
-                    orientation = LinearLayout.VERTICAL
-                    background = Drawables.glassInset(context, tokens, DesignTokens.Radius.sm)
-                    setPadding(
-                        dp(DesignTokens.Spacing.md),
-                        dp(DesignTokens.Spacing.sm),
-                        dp(DesignTokens.Spacing.md),
-                        dp(DesignTokens.Spacing.sm)
-                    )
-                    addView(TextView(context).apply {
-                        text = details.ifBlank { "No additional details." }
-                        Typography.applyMono(this, tokens)
-                        setLineSpacing(dp(2).toFloat(), 1.0f)
-                    })
+                if (details.isNotBlank()) {
+                    val detailsContainer = LinearLayout(context).apply {
+                        orientation = LinearLayout.VERTICAL
+                        background = Drawables.glassInset(context, tokens, DesignTokens.Radius.sm)
+                        setPadding(
+                            dp(DesignTokens.Spacing.md),
+                            dp(DesignTokens.Spacing.sm),
+                            dp(DesignTokens.Spacing.md),
+                            dp(DesignTokens.Spacing.sm)
+                        )
+                        addView(TextView(context).apply {
+                            text = details
+                            Typography.applyMono(this, tokens)
+                            setLineSpacing(dp(2).toFloat(), 1.0f)
+                        })
+                    }
+                    addView(detailsContainer, LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { topMargin = dp(DesignTokens.Spacing.sm) })
                 }
-                addView(detailsContainer, LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = dp(DesignTokens.Spacing.sm) })
             }
         }
     }

@@ -24,6 +24,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewAnimationUtils
+import android.view.ViewGroup
 import android.view.ViewConfiguration
 import android.view.WindowInsets
 import android.view.WindowManager
@@ -434,6 +435,9 @@ class OverlayController(
 
     fun openPanel(presentation: PanelPresentation = PanelPresentation.Popup) {
         mainHandler.post {
+            if (presentation == PanelPresentation.Shell) {
+                return@post
+            }
             if (panelView != null) {
                 if (activePanelPresentation == presentation) {
                     notifyCurrentChatSessionViewed()
@@ -441,7 +445,31 @@ class OverlayController(
                 }
                 dismissPanel(force = true)
             }
-            togglePanel(presentation)
+            presentPanel(presentation)
+        }
+    }
+
+    fun attachShellChat(container: FrameLayout) {
+        mainHandler.post {
+            if (panelView != null && activePanelPresentation == PanelPresentation.Shell) {
+                val currentParent = panelView?.parent as? ViewGroup
+                if (currentParent === container && container.childCount > 0) {
+                    notifyCurrentChatSessionViewed()
+                    return@post
+                }
+                dismissPanel(force = true)
+            } else if (panelView != null) {
+                dismissPanel(force = true)
+            }
+            presentPanel(PanelPresentation.Shell, container)
+        }
+    }
+
+    fun detachShellChat() {
+        mainHandler.post {
+            if (activePanelPresentation == PanelPresentation.Shell) {
+                dismissPanel(force = true)
+            }
         }
     }
 
@@ -450,7 +478,13 @@ class OverlayController(
             dismissPanel()
             return
         }
+        presentPanel(presentation)
+    }
 
+    private fun presentPanel(
+        presentation: PanelPresentation,
+        shellContainer: FrameLayout? = null
+    ) {
         activePanelPresentation = presentation
         if (presentation == PanelPresentation.Fullscreen) {
             suppressBubbleForFullscreen()
@@ -467,7 +501,13 @@ class OverlayController(
         val header = buildModalHeader(tokens, presentation)
 
         val display = context.resources.displayMetrics
-        val defaultBounds = panelDefaultBounds(display.heightPixels, presentation)
+        val shellHeight = shellContainer?.height?.takeIf { it > 0 }
+        val defaultBounds = panelDefaultBounds(
+            displayHeight = display.heightPixels,
+            presentation = presentation,
+            shellHeight = shellHeight
+        )
+        val dismissOnBack = presentation != PanelPresentation.Shell
         val handle = panelChrome.build(
             tokens = tokens,
             presentation = presentation,
@@ -475,7 +515,8 @@ class OverlayController(
             voice = voice,
             status = status,
             composer = composer,
-            defaultBounds = defaultBounds
+            defaultBounds = defaultBounds,
+            dismissOnBack = dismissOnBack
         )
         val host = handle.host
         val params = handle.panelParams
@@ -487,25 +528,45 @@ class OverlayController(
         input.setOnFocusChangeListener { _, hasFocus ->
             if (hasFocus) {
                 armKeyboardFallback()
-                mainHandler.postDelayed({ keepAboveKeyboard(host, params) }, 300)
-                mainHandler.postDelayed({ keepAboveKeyboard(host, params) }, 700)
-            } else {
+                if (presentation == PanelPresentation.Shell) {
+                    mainHandler.postDelayed({ positionPanelAboveKeyboard(host, null) }, 300)
+                    mainHandler.postDelayed({ positionPanelAboveKeyboard(host, null) }, 700)
+                } else {
+                    mainHandler.postDelayed({ keepAboveKeyboard(host, params) }, 300)
+                    mainHandler.postDelayed({ keepAboveKeyboard(host, params) }, 700)
+                }
+            } else if (presentation != PanelPresentation.Shell) {
                 restorePanelDefaultSize(host, params)
             }
         }
-        windowManager.addView(scrim, handle.scrimParams)
-        panelScrimView = scrim
-        panelScrimParams = handle.scrimParams
 
-        windowManager.addView(host, params)
-        host.viewTreeObserver.addOnGlobalLayoutListener { positionPanelAboveKeyboard(host, params) }
-        scrim.viewTreeObserver.addOnGlobalLayoutListener { positionPanelAboveKeyboard(host, params) }
+        if (presentation == PanelPresentation.Shell && shellContainer != null) {
+            shellContainer.removeAllViews()
+            shellContainer.addView(
+                host,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT
+                )
+            )
+            host.viewTreeObserver.addOnGlobalLayoutListener { positionPanelAboveKeyboard(host, null) }
+            panelView = host
+            panelParams = null
+            panelScrimView = null
+            panelScrimParams = null
+        } else {
+            windowManager.addView(scrim, handle.scrimParams)
+            panelScrimView = scrim
+            panelScrimParams = handle.scrimParams
+
+            windowManager.addView(host, params)
+            host.viewTreeObserver.addOnGlobalLayoutListener { positionPanelAboveKeyboard(host, params) }
+            scrim.viewTreeObserver.addOnGlobalLayoutListener { positionPanelAboveKeyboard(host, params) }
+            panelView = host
+            panelParams = params
+        }
+
         host.requestFocus()
-        panelView = host
-        panelParams = params
-        // Assume we have focus when we open the panel; the real onWindowFocusChanged
-        // callback will correct this if the system never grants focus (e.g., panel
-        // opened from a background notification while user is in another app).
         panelHasWindowFocus = true
 
         renderChatState(lastChatState)
@@ -513,7 +574,11 @@ class OverlayController(
         renderHostConnectionState(lastHostConnectionState)
         renderTranscriptionState(lastTranscriptionState)
 
-        runPanelOpenAnimation(host, scrim, appearancePrefs(), handle.defaultHeight)
+        if (presentation == PanelPresentation.Shell) {
+            host.alpha = 1f
+        } else {
+            runPanelOpenAnimation(host, scrim, appearancePrefs(), handle.defaultHeight)
+        }
         if (suppressNextPanelViewedCallback) {
             suppressNextPanelViewedCallback = false
         } else {
@@ -551,8 +616,12 @@ class OverlayController(
             viewId = R.id.openclaw_header_settings_button,
             compact = true
         ) {
-            dismissPanel()
-            openSettings()
+            if (presentation == PanelPresentation.Shell) {
+                openSettings()
+            } else {
+                dismissPanel()
+                openSettings()
+            }
         }
         val closeButton = iconButton(
             tokens = tokens,
@@ -643,7 +712,9 @@ class OverlayController(
             addView(connectionButton, LinearLayout.LayoutParams(headerSize, headerSize).apply { rightMargin = headerGap })
             addView(voiceButton, LinearLayout.LayoutParams(headerSize, headerSize).apply { rightMargin = headerGap })
             addView(settingsButton, LinearLayout.LayoutParams(headerSize, headerSize).apply { rightMargin = headerGap })
-            addView(closeButton, LinearLayout.LayoutParams(headerSize, headerSize))
+            if (presentation != PanelPresentation.Shell) {
+                addView(closeButton, LinearLayout.LayoutParams(headerSize, headerSize))
+            }
         }
 
         return LinearLayout(context).apply {
@@ -714,6 +785,12 @@ class OverlayController(
     }
 
     private fun handlePanelBackPressed() {
+        if (activePanelPresentation == PanelPresentation.Shell) {
+            if (isAnchoredPickerShowing()) {
+                anchoredPicker?.dismiss()
+            }
+            return
+        }
         if (isAnchoredPickerShowing()) {
             anchoredPicker?.dismiss()
         } else {
@@ -2229,8 +2306,12 @@ class OverlayController(
         panelDismissAnimating = false
         cancelPanelOpenAnimators()
         cancelPanelCloseAnimators()
-        detachOverlayView(windowManager, panelView)
-        detachOverlayView(windowManager, panelScrimView)
+        if (dismissedPresentation == PanelPresentation.Shell) {
+            (panelView?.parent as? ViewGroup)?.removeView(panelView)
+        } else {
+            detachOverlayView(windowManager, panelView)
+            detachOverlayView(windowManager, panelScrimView)
+        }
         panelView = null
         panelParams = null
         panelScrimView = null
@@ -2442,11 +2523,7 @@ class OverlayController(
     }
 
     private fun openSettings() {
-        context.startActivity(
-            Intent(context, MainActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                .putExtra(MainActivity.EXTRA_SHOW_SETTINGS, true)
-        )
+        context.startActivity(AppShellActivity.openSettingsIntent(context))
     }
 
     private fun attachDrag(
@@ -2529,11 +2606,11 @@ class OverlayController(
         params.y = params.y.coerceIn(dp(8), maxY)
     }
 
-    private fun keepAboveKeyboard(view: View, params: WindowManager.LayoutParams) {
+    private fun keepAboveKeyboard(view: View, params: WindowManager.LayoutParams?) {
         positionPanelAboveKeyboard(view, params)
     }
 
-    private fun positionPanelAboveKeyboard(panel: View, params: WindowManager.LayoutParams) {
+    private fun positionPanelAboveKeyboard(panel: View, params: WindowManager.LayoutParams?) {
         val displayHeight = context.resources.displayMetrics.heightPixels
         val defaultBounds = panelDefaultBounds(displayHeight)
         val defaultBottom = defaultBounds.y + defaultBounds.height
@@ -2561,12 +2638,16 @@ class OverlayController(
             displayHeight
         }
         if (defaultBottom - keyboardTop < dp(120)) {
-            restorePanelDefaultSize(panel, params)
+            if (params != null) {
+                restorePanelDefaultSize(panel, params)
+            } else {
+                setKeyboardSpacerHeight(0)
+            }
             return
         }
 
         panel.translationY = 0f
-        if (activePanelPresentation == PanelPresentation.Fullscreen) {
+        if (activePanelPresentation == PanelPresentation.Fullscreen || activePanelPresentation == PanelPresentation.Shell) {
             setKeyboardSpacerHeight(
                 PanelKeyboardLayout.fullscreenKeyboardSpacerHeight(
                     defaultBounds = defaultBounds,
@@ -2574,10 +2655,12 @@ class OverlayController(
                     bottomClearance = keyboardBottomClearance()
                 )
             )
-            if (params.height != defaultBounds.height || params.y != defaultBounds.y) {
-                params.height = defaultBounds.height
-                params.y = defaultBounds.y
-                windowManager.updateViewLayout(panel, params)
+            if (params != null && activePanelPresentation == PanelPresentation.Fullscreen) {
+                if (params.height != defaultBounds.height || params.y != defaultBounds.y) {
+                    params.height = defaultBounds.height
+                    params.y = defaultBounds.y
+                    windowManager.updateViewLayout(panel, params)
+                }
             }
             anchoredPicker?.reposition()
             return
@@ -2593,10 +2676,12 @@ class OverlayController(
             composerGap = keyboardComposerGap(),
             minHeight = dp(240)
         ) ?: run {
-            restorePanelDefaultSize(panel, params)
+            if (params != null) {
+                restorePanelDefaultSize(panel, params)
+            }
             return
         }
-        if (params.height != adjustedBounds.height || params.y != adjustedBounds.y) {
+        if (params != null && (params.height != adjustedBounds.height || params.y != adjustedBounds.y)) {
             params.height = adjustedBounds.height
             params.y = adjustedBounds.y
             windowManager.updateViewLayout(panel, params)
@@ -2606,12 +2691,13 @@ class OverlayController(
     }
 
     private fun keyboardTopFromVisibleFrame(defaultPanelBottom: Int): Int? {
-        val scrim = panelScrimView ?: return null
-        if (!isOverlayAttached(scrim)) {
-            return null
-        }
+        val anchor = when {
+            panelScrimView != null && isOverlayAttached(panelScrimView) -> panelScrimView
+            activePanelPresentation == PanelPresentation.Shell -> panelView
+            else -> return null
+        } ?: return null
         val visible = Rect()
-        scrim.getWindowVisibleDisplayFrame(visible)
+        anchor.getWindowVisibleDisplayFrame(visible)
         val keyboardOverlap = defaultPanelBottom - visible.bottom
         return visible.bottom.takeIf { keyboardOverlap >= dp(120) }
     }
@@ -2661,8 +2747,13 @@ class OverlayController(
 
     private fun panelDefaultBounds(
         displayHeight: Int,
-        presentation: PanelPresentation = activePanelPresentation
+        presentation: PanelPresentation = activePanelPresentation,
+        shellHeight: Int? = null
     ): PanelBounds {
+        if (presentation == PanelPresentation.Shell) {
+            val height = shellHeight ?: panelView?.height?.takeIf { it > 0 } ?: displayHeight
+            return PanelBounds(height = height, y = 0)
+        }
         return PanelKeyboardLayout.defaultBounds(
             displayHeight = displayHeight,
             presentation = presentation,

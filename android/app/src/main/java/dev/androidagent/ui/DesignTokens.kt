@@ -100,6 +100,9 @@ object DesignTokens {
         return if (isNightMode(context)) dark() else light()
     }
 
+    /** Force dark tokens regardless of device night mode. */
+    fun darkOnly(): ThemeTokens = dark()
+
     fun isNightMode(context: Context): Boolean {
         val cfg = (context.resources.configuration.uiMode and
             Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
@@ -143,28 +146,28 @@ object DesignTokens {
 
     private fun dark(): ThemeTokens = ThemeTokens(
         isDark = true,
-        background = 0xFF0A0F1A.toInt(),
-        surface = 0xFF141B2A.toInt(),
-        surfaceElevated = 0xFF182032.toInt(),
-        surfaceGlass = 0xE6182032.toInt(),
-        surfaceInset = 0xFF0F1624.toInt(),
-        border = 0xFF2A3650.toInt(),
-        borderSoft = 0xFF1F2A40.toInt(),
+        background = 0xFF070B14.toInt(),
+        surface = 0xFF111827.toInt(),
+        surfaceElevated = 0xFF131A2B.toInt(),
+        surfaceGlass = 0xE6131A2B.toInt(),
+        surfaceInset = 0xFF0C1322.toInt(),
+        border = 0xFF1F2A40.toInt(),
+        borderSoft = 0xFF1A2438.toInt(),
         highlight = 0x14FFFFFF,
         primaryText = 0xFFF1F5F9.toInt(),
-        secondaryText = 0xFFA6B0C2.toInt(),
-        tertiaryText = 0xFF6B7689.toInt(),
-        accent = 0xFF7C9CFF.toInt(),
+        secondaryText = 0xFF94A3B8.toInt(),
+        tertiaryText = 0xFF64748B.toInt(),
+        accent = 0xFF2DD4BF.toInt(),
         accentInk = 0xFF06101E.toInt(),
-        accentSoft = 0x247C9CFF,
-        accentMuted = 0xFF4F6BC4.toInt(),
-        success = 0xFF4ADE80.toInt(),
+        accentSoft = 0x332DD4BF,
+        accentMuted = 0xFF14B8A6.toInt(),
+        success = 0xFF34D399.toInt(),
         warning = 0xFFFBBF24.toInt(),
         danger = 0xFFF87171.toInt(),
         dangerSoft = 0x24F87171,
-        bubbleUser = 0xFF3766FF.toInt(),
-        bubbleUserInk = 0xFFFFFFFF.toInt(),
-        bubbleAssistant = 0xFF242E42.toInt(),
+        bubbleUser = 0xFF2DD4BF.toInt(),
+        bubbleUserInk = 0xFF06101E.toInt(),
+        bubbleAssistant = 0xFF1B2438.toInt(),
         bubbleAssistantInk = 0xFFF1F5F9.toInt(),
         bubbleSystem = 0x33F87171,
         bubbleSystemInk = 0xFFFCA5A5.toInt(),

@@ -7,7 +7,7 @@ import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import dev.androidagent.AgentConfig
 import dev.androidagent.AgentConfigStore
-import dev.androidagent.MainActivity
+import dev.androidagent.AppShellActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -378,8 +378,8 @@ class VoiceRuntimeController(
 
     private fun openMicPermissionScreen() {
         context.startActivity(
-            Intent(context, MainActivity::class.java)
-                .putExtra(MainActivity.EXTRA_REQUEST_MIC_PERMISSION, true)
+            Intent(context, AppShellActivity::class.java)
+                .putExtra(AppShellActivity.EXTRA_REQUEST_MIC_PERMISSION, true)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         )
     }

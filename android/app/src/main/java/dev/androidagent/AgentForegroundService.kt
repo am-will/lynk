@@ -20,6 +20,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
+import android.widget.FrameLayout
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.app.ServiceCompat
@@ -250,6 +251,14 @@ class AgentForegroundService : Service() {
                 }
                 return START_STICKY
             }
+            ACTION_START_VOICE -> {
+                startVoiceFromShell()
+                return START_STICKY
+            }
+            ACTION_ENSURE_SERVICE -> {
+                overlayController?.show()
+                return START_STICKY
+            }
             ACTION_REFRESH_AVATAR -> {
                 overlayController?.refreshBubbleAvatar()
                 return START_STICKY
@@ -259,9 +268,34 @@ class AgentForegroundService : Service() {
                 overlayController?.refreshBubbleSize(size)
                 return START_STICKY
             }
+            ACTION_ATTACH_SHELL_CHAT -> {
+                attachShellChatFromIntent()
+                return START_STICKY
+            }
+            ACTION_DETACH_SHELL_CHAT -> {
+                overlayController?.detachShellChat()
+                shellChatContainer = null
+                return START_STICKY
+            }
         }
         overlayController?.show()
         return START_STICKY
+    }
+
+    private fun startVoiceFromShell() {
+        val config = AgentConfigStore.load(this)
+        val model = selectedChatModel(config)
+        if (model.isBlank()) {
+            overlayController?.setStatus("Enable a host model harness before starting voice.")
+            return
+        }
+        if (model == AgentModelOptions.LOCAL_LITERT_MODEL_ID) {
+            overlayController?.setStatus("Realtime voice still requires a host model.")
+            return
+        }
+        connectAgentClient(model)
+        promoteVoiceForegroundIfAllowed()
+        voiceRuntimeController?.start()
     }
 
     override fun onDestroy() {
@@ -740,6 +774,12 @@ class AgentForegroundService : Service() {
         updateNotification()
     }
 
+    private fun attachShellChatFromIntent() {
+        val container = shellChatContainer ?: return
+        openActiveChatConnection()
+        overlayController?.attachShellChat(container)
+    }
+
     private fun openChatFromIntent(intent: Intent?) {
         restoreAgentChromeAfterRecents()
         openActiveChatConnection()
@@ -780,7 +820,7 @@ class AgentForegroundService : Service() {
             )
         } else {
             startActivity(
-                Intent(this, MainActivity::class.java)
+                Intent(this, AppShellActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
             )
         }
@@ -939,8 +979,8 @@ class AgentForegroundService : Service() {
 
     private fun openMicPermissionScreen() {
         startActivity(
-            Intent(this, MainActivity::class.java)
-                .putExtra(MainActivity.EXTRA_REQUEST_MIC_PERMISSION, true)
+            Intent(this, AppShellActivity::class.java)
+                .putExtra(AppShellActivity.EXTRA_REQUEST_MIC_PERMISSION, true)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         )
     }
@@ -1059,9 +1099,13 @@ class AgentForegroundService : Service() {
         private const val TAG = "AgentService"
         private const val ACTION_STOP_TURN = "dev.openclawagent.action.STOP_TURN"
         const val ACTION_OPEN_CHAT = "dev.openclawagent.action.OPEN_CHAT"
+        const val ACTION_ENSURE_SERVICE = "dev.openclawagent.action.ENSURE_SERVICE"
+        const val ACTION_START_VOICE = "dev.openclawagent.action.START_VOICE"
         private const val ACTION_OPEN_CHAT_SESSION = "dev.openclawagent.action.OPEN_CHAT_SESSION"
         const val ACTION_REFRESH_AVATAR = "dev.openclawagent.action.REFRESH_AVATAR"
         const val ACTION_RESIZE_BUBBLE = "dev.openclawagent.action.RESIZE_BUBBLE"
+        const val ACTION_ATTACH_SHELL_CHAT = "dev.openclawagent.action.ATTACH_SHELL_CHAT"
+        const val ACTION_DETACH_SHELL_CHAT = "dev.openclawagent.action.DETACH_SHELL_CHAT"
         const val EXTRA_BUBBLE_SIZE_DP = "dev.openclawagent.extra.BUBBLE_SIZE_DP"
         const val EXTRA_PANEL_PRESENTATION = "panelPresentation"
         const val PANEL_PRESENTATION_POPUP = "popup"
@@ -1082,5 +1126,7 @@ class AgentForegroundService : Service() {
         private const val REPLY_CHANNEL_ID = "open-claw-agent-replies"
         var isRunning: Boolean = false
             private set
+        @Volatile
+        var shellChatContainer: FrameLayout? = null
     }
 }

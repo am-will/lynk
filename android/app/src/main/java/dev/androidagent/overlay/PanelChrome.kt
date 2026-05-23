@@ -50,7 +50,8 @@ class PanelChrome(
         voice: View,
         status: StatusUpdateView,
         composer: View,
-        defaultBounds: PanelBounds
+        defaultBounds: PanelBounds,
+        dismissOnBack: Boolean = true
     ): PanelChromeHandle {
         val history = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -77,8 +78,12 @@ class PanelChrome(
             visibility = View.GONE
             hideFromAccessibility()
         }
-        val chrome = buildContent(tokens, header, voice, historyScroll, status, composer, keyboardSpacer)
-        val host = PanelHost(context).apply {
+        val chrome = buildContent(tokens, header, voice, historyScroll, status, composer, keyboardSpacer, dismissOnBack)
+        val host = if (dismissOnBack) {
+            PanelHost(context)
+        } else {
+            FrameLayout(context)
+        }.apply {
             exposeToAccessibility(
                 viewId = R.id.openclaw_panel_host,
                 description = "Chat panel",
@@ -135,7 +140,8 @@ class PanelChrome(
         historyScroll: ScrollView,
         status: StatusUpdateView,
         composer: View,
-        keyboardSpacer: View
+        keyboardSpacer: View,
+        dismissOnBack: Boolean
     ): LinearLayout {
         return LinearLayout(context).apply {
             exposeToAccessibility(
@@ -148,12 +154,14 @@ class PanelChrome(
             background = Drawables.glassPanel(context, tokens)
             elevation = dp(DesignTokens.Elevation.popover).toFloat()
             setPadding(0, 0, 0, 0)
-            setOnKeyListener { _, keyCode, event ->
-                if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
-                    callbacks.onBackPressed()
-                    true
-                } else {
-                    false
+            if (dismissOnBack) {
+                setOnKeyListener { _, keyCode, event ->
+                    if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+                        callbacks.onBackPressed()
+                        true
+                    } else {
+                        false
+                    }
                 }
             }
             addView(header, LinearLayout.LayoutParams(

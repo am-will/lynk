@@ -11,13 +11,17 @@ class LauncherActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         if (Settings.canDrawOverlays(this)) {
-            val intent = Intent(this, AgentForegroundService::class.java)
-                .setAction(AgentForegroundService.ACTION_OPEN_CHAT)
-                .putExtra(
-                    AgentForegroundService.EXTRA_PANEL_PRESENTATION,
-                    AgentForegroundService.PANEL_PRESENTATION_FULLSCREEN
+            runCatching {
+                ContextCompat.startForegroundService(
+                    this,
+                    Intent(this, AgentForegroundService::class.java)
+                        .setAction(AgentForegroundService.ACTION_ENSURE_SERVICE)
                 )
-            runCatching { ContextCompat.startForegroundService(this, intent) }
+            }
+            startActivity(
+                Intent(this, AppShellActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            )
         } else {
             startActivity(
                 Intent(this, MainActivity::class.java)

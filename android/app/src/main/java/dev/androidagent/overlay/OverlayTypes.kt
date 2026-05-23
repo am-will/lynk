@@ -2,7 +2,8 @@ package dev.androidagent.overlay
 
 enum class PanelPresentation {
     Popup,
-    Fullscreen
+    Fullscreen,
+    Shell
 }
 
 enum class HostConnectionPhase {
