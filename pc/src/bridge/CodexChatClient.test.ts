@@ -74,7 +74,7 @@ test("Codex new sessions create and reuse app-server threads", async () => {
   assert.equal(created.key, "codex:chat");
   assert.equal(created.sessionId, "thread_1");
   assert.equal(fake.createdThreads[0]?.model, "gpt-5.3-codex");
-  assert.match(fake.createdThreads[0]?.baseInstructions ?? "", /Phone-control policy/);
+  assert.match(fake.createdThreads[0]?.baseInstructions ?? "", /android-control skill/);
 
   await client.sendChat({
     sessionKey: "codex:chat",
@@ -101,7 +101,7 @@ test("Codex sends from implicit sessions create a durable thread first", async (
   await waitFor(() => fake.submitted.length === 1);
 
   assert.equal(fake.createdThreads.length, 1);
-  assert.match(fake.createdThreads[0]?.baseInstructions ?? "", /Phone-control policy/);
+  assert.match(fake.createdThreads[0]?.baseInstructions ?? "", /android-control skill/);
   assert.equal(fake.submitted[0]?.options.threadId, "thread_1");
   assert.equal(fake.submitted[0]?.options.useSessionInstructions, true);
   assert.equal(fake.submitted[0]?.text, "Hello");

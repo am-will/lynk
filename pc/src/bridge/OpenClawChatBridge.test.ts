@@ -403,7 +403,7 @@ test("realtime phone requests include fast phone loop guidance in gateway run", 
   await waitFor(() => client.sent.length === 1);
   client.emit({ event: "chat", payload: { sessionKey: client.sent[0]?.sessionKey, runId: "run_1", state: "final", message: "Done" } });
 
-  assert.match(client.sent[0]?.message ?? "", /Avoid redundant phone_observe/);
+  assert.match(client.sent[0]?.message ?? "", /\$android-control skill/);
   assert.match(client.sent[0]?.message ?? "", /User request:\nOpen Gemini/);
   assert.deepEqual(await request, { finalMessage: "Done" });
 });
