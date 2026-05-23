@@ -232,7 +232,9 @@ export class CodexAppServerClient implements AgentClient {
   constructor(
     private readonly audit?: AuditLog,
     private readonly command = process.env.CODEX_APP_SERVER_COMMAND ?? "codex app-server --listen stdio://",
-    private readonly cwd = process.env.CODEX_AGENT_CWD ?? process.cwd()
+    private readonly cwd = process.env.CODEX_AGENT_CWD ?? process.cwd(),
+    private readonly approvalPolicy = process.env.CODEX_APP_SERVER_APPROVAL_POLICY?.trim() || "never",
+    private readonly sandbox = process.env.CODEX_APP_SERVER_SANDBOX?.trim() || "workspace-write"
   ) {}
 
   async submitUserRequest(
@@ -264,7 +266,7 @@ export class CodexAppServerClient implements AgentClient {
       threadId,
       input: [{ type: "text", text: turnInput }],
       cwd: this.cwd,
-      approvalPolicy: "never",
+      approvalPolicy: this.approvalPolicy,
       model: options.model,
       effort: options.reasoningEffort,
       personality: "pragmatic"
@@ -357,8 +359,8 @@ export class CodexAppServerClient implements AgentClient {
     const result = await this.request("thread/start", {
       model: options.model,
       cwd: this.cwd,
-      approvalPolicy: "never",
-      sandbox: "workspace-write",
+      approvalPolicy: this.approvalPolicy,
+      sandbox: this.sandbox,
       personality: "pragmatic",
       serviceName: "android_phone_agent",
       baseInstructions: options.baseInstructions
@@ -379,8 +381,8 @@ export class CodexAppServerClient implements AgentClient {
     const result = await this.request("thread/resume", {
       threadId: options.threadId,
       cwd: this.cwd,
-      approvalPolicy: "never",
-      sandbox: "workspace-write",
+      approvalPolicy: this.approvalPolicy,
+      sandbox: this.sandbox,
       personality: "pragmatic",
       ...(options.model ? { model: options.model } : {})
     });

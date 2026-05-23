@@ -25,6 +25,10 @@ class LocalAgentController(
         val transcript = history.takeLast(16).map { "${it.role}: ${it.text}" }.toMutableList()
         transcript.add("user: $userText")
         val toolsAllowed = shouldAllowTools(userText)
+        val phoneControlRequest = shouldLoadAndroidControlSkill(userText)
+        if (phoneControlRequest) {
+            transcript.add("system: This is an Android phone-control request. Before any phone_* tool, call local_read_skill with name android-control and follow the returned skill.")
+        }
         val config = configProvider()
         val systemPrompt = LocalPromptBuilder.systemPrompt(
             basePrompt = config.systemPrompt,
@@ -37,6 +41,7 @@ class LocalAgentController(
         var repeatedObserveCount = 0
         var latestScreenshotPath: String? = null
         var lastSparseObservationScreenshotKey: String? = null
+        var androidControlSkillLoaded = false
 
         repeat(MAX_TOOL_ROUNDS) toolLoop@{ round ->
             Log.i(TAG, "local turn $runId round=${round + 1} starting")
@@ -103,6 +108,14 @@ class LocalAgentController(
 
             for (call in calls) {
                 var callToExecute = call
+                if (phoneControlRequest && isPhoneTool(call.name) && !androidControlSkillLoaded) {
+                    val rejected = JSONObject()
+                        .put("ok", false)
+                        .put("error", "Before Android phone-control tools, call local_read_skill with args {\"name\":\"android-control\"} and follow that skill.")
+                    transcript.add("assistant tool request: ${JSONObject().put("tool", call.name).put("args", call.args)}")
+                    transcript.add("tool ${call.name} result: ${rejected.toString()}")
+                    continue
+                }
                 if (call.name == "phone_observe" && latestScreenshotPath != null) {
                     val rejected = JSONObject()
                         .put("ok", false)
@@ -150,6 +163,11 @@ class LocalAgentController(
                     }
                 }
                 val result = executeAndRecordTool(sessionKey, runId, round, callToExecute, transcript)
+                if (callToExecute.name == "local_read_skill" && result.optBoolean("ok", false) &&
+                    result.optString("name") == LocalToolRegistry.ANDROID_CONTROL_SKILL_NAME
+                ) {
+                    androidControlSkillLoaded = true
+                }
                 result.optString("screenshotPath").takeIf { it.isNotBlank() }?.let { path ->
                     latestScreenshotPath = path
                 }
@@ -335,6 +353,20 @@ class LocalAgentController(
         )
         return actionKeywords.any { text.contains(it) }
     }
+
+    private fun shouldLoadAndroidControlSkill(userText: String): Boolean {
+        val text = userText.lowercase()
+        val phoneSignals = listOf(
+            "phone", "screen", "screenshot", "observe", "tap", "click", "press", "swipe", "scroll",
+            "type into", "open app", "launch", "settings", "youtube", "camera", "home button", "back button",
+            "notification", "recents", "android"
+        )
+        val nonPhoneSignals = listOf("termux", "terminal", "shell", "command", "file", "folder", "directory", "project", "html", "css", "javascript")
+        return phoneSignals.any { text.contains(it) } && nonPhoneSignals.none { text.contains(it) }
+    }
+
+    private fun isPhoneTool(name: String): Boolean =
+        LocalToolSpecs.phoneCommandsByToolId.containsKey(name)
 
     private fun shouldRejectCommandRequest(userText: String, response: String): Boolean {
         val user = userText.lowercase()

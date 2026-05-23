@@ -25,5 +25,6 @@ class LocalToolSpecsTest {
         assertEquals(LocalToolSpecs.all.map { it.id }.toSet(), ids)
         assertTrue(ids.contains("phone_long_press_node"))
         assertTrue(ids.contains("phone_wait"))
+        assertTrue(ids.contains("local_read_skill"))
     }
 }

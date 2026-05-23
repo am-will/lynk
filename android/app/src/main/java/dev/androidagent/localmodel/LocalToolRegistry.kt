@@ -26,6 +26,7 @@ class LocalToolRegistry(
         return if (phoneCommand != null) {
             executePhone(phoneCommand, call.args)
         } else when (call.name) {
+            "local_read_skill" -> readSkill(call.args)
             "local_list_files" -> listFiles(call.args)
             "local_read_file" -> readFile(call.args)
             "local_write_file" -> writeFile(call.args)
@@ -77,6 +78,23 @@ class LocalToolRegistry(
 
     private fun looksLikePackageName(value: String): Boolean =
         value.count { it == '.' } >= 2 && value.all { it.isLetterOrDigit() || it == '.' || it == '_' }
+
+    private fun readSkill(args: JSONObject): JSONObject {
+        val name = args.optString("name").ifBlank { args.optString("skill") }.ifBlank { "android-control" }
+        if (name != ANDROID_CONTROL_SKILL_NAME) {
+            return JSONObject()
+                .put("ok", false)
+                .put("error", "Unknown packaged local skill: $name")
+                .put("availableSkills", JSONArray(listOf(ANDROID_CONTROL_SKILL_NAME)))
+        }
+        val path = "skills/$ANDROID_CONTROL_SKILL_NAME/SKILL.md"
+        val text = context.assets.open(path).bufferedReader().use { it.readText() }
+        return JSONObject()
+            .put("ok", true)
+            .put("name", ANDROID_CONTROL_SKILL_NAME)
+            .put("path", path)
+            .put("text", text)
+    }
 
     private fun listFiles(args: JSONObject): JSONObject {
         val dir = resolveWorkspacePath(args.optString("path", "."))
@@ -175,6 +193,10 @@ class LocalToolRegistry(
     private fun workspaceRelativePath(file: File): String {
         val root = workspaceRoot().canonicalFile
         return file.canonicalFile.relativeTo(root).path.ifBlank { "." }
+    }
+
+    companion object {
+        const val ANDROID_CONTROL_SKILL_NAME = "android-control"
     }
 
 }

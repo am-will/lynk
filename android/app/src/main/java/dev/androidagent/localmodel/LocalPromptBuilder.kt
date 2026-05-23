@@ -11,6 +11,7 @@ internal object LocalPromptBuilder {
             Tool mode:
             - Use tools only when the user asks you to interact with the phone UI, inspect the current phone screen, read/write local workspace files, run Termux commands, or perform another action that cannot be answered from conversation alone.
             - If you need a tool, respond with only JSON such as {"tool":"phone_observe","args":{}} or {"toolCalls":[{"name":"phone_open_app","args":{"appName":"Settings"}}]}.
+            - For Android phone-control tasks, first call {"tool":"local_read_skill","args":{"name":"android-control"}} and follow that skill before any phone_* tool.
             - If the user asks you to create files, websites, projects, or anything that should open in the phone browser, use termux_command and save it somewhere phone-accessible such as /sdcard/Download/openclaw-project. Choose the shell commands yourself.
             - Do not observe the phone just to answer a normal text question. Do not call phone_observe repeatedly.
             - Never invent node IDs. Use only node IDs returned by observation.

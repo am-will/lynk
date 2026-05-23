@@ -19,6 +19,8 @@ class LocalPromptBuilderTest {
 
         assertTrue(systemPrompt.contains("Available tools"))
         assertTrue(systemPrompt.contains("phone_observe"))
+        assertTrue(systemPrompt.contains("local_read_skill"))
+        assertTrue(systemPrompt.contains("android-control"))
         assertTrue(roundPrompt.contains("Conversation:"))
         assertFalse(roundPrompt.contains("Available tools"))
         assertFalse(roundPrompt.contains("Use tools only when"))
