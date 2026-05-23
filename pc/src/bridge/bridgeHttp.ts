@@ -10,6 +10,7 @@ import {
 } from "./PetCatalog.js";
 import { phoneCommandSchema, type PhoneCommandRequest } from "../protocol/messages.js";
 import type { BridgeConfig } from "./config.js";
+import type { OpenClawChatBridge } from "./OpenClawChatBridge.js";
 import type { PhoneHub } from "./PhoneHub.js";
 import { isAuthorizedHttpRequest } from "./httpAuth.js";
 import { BodyTooLargeError, json, readJson } from "./httpUtils.js";
@@ -19,6 +20,7 @@ export interface BridgeHttpDependencies {
   hub: Pick<PhoneHub, "listPhones" | "sendCommand">;
   audit: Pick<AuditLog, "recent" | "active">;
   dispatcher: Pick<Dispatcher, "handleUserRequest">;
+  chatBridge: Pick<OpenClawChatBridge, "health">;
   stopAgentWork: (deviceId: string, reason: string) => Promise<void>;
   petsDir?: string;
 }
@@ -59,6 +61,12 @@ async function routeHttp(req: IncomingMessage, res: ServerResponse, deps: Bridge
 
   if (req.method === "GET" && url.pathname === "/api/phones") {
     json(res, 200, { phones: deps.hub.listPhones(), defaultDeviceId: deps.config.defaultDeviceId });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/harnesses/health") {
+    const health = await deps.chatBridge.health();
+    json(res, 200, { ok: true, ...recordPayload(health) });
     return;
   }
 
@@ -159,4 +167,11 @@ async function handlePetSpritesheet(req: IncomingMessage, res: ServerResponse, p
 
 function petsDir(deps: BridgeHttpDependencies): string {
   return deps.petsDir ?? resolvePetsDir();
+}
+
+function recordPayload(value: unknown): Record<string, unknown> {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return { health: value };
 }

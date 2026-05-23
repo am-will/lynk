@@ -43,6 +43,17 @@ class FakeDispatcher {
   }
 }
 
+class FakeChatBridge {
+  async health(): Promise<unknown> {
+    return {
+      harnesses: {
+        openclaw: { ok: true },
+        hermes: { ok: false, error: "missing HERMES_API_KEY" }
+      }
+    };
+  }
+}
+
 async function withHttpServer<T>(
   options: { petsDir?: string; stopAgentWork?: (deviceId: string, reason: string) => Promise<void> },
   fn: (baseUrl: string, fakes: { hub: FakeHub; audit: FakeAudit; dispatcher: FakeDispatcher }) => Promise<T>
@@ -50,11 +61,13 @@ async function withHttpServer<T>(
   const hub = new FakeHub();
   const audit = new FakeAudit();
   const dispatcher = new FakeDispatcher();
+  const chatBridge = new FakeChatBridge();
   const handler = createBridgeHttpHandler({
     config: { token, defaultDeviceId: "phone" },
     hub: hub as never,
     audit: audit as never,
     dispatcher: dispatcher as never,
+    chatBridge: chatBridge as never,
     stopAgentWork: options.stopAgentWork ?? (async () => {}),
     petsDir: options.petsDir
   });
@@ -109,6 +122,23 @@ test("bridge HTTP serves health without auth and protects api routes", async () 
     const protectedResponse = await fetch(`${baseUrl}/api/phones`);
     assert.equal(protectedResponse.status, 401);
     assert.equal(protectedResponse.headers.get("www-authenticate"), "Bearer");
+  });
+});
+
+test("bridge HTTP serves authenticated harness health", async () => {
+  await withHttpServer({}, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/harnesses/health`, {
+      headers: authHeaders()
+    });
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      ok: true,
+      harnesses: {
+        openclaw: { ok: true },
+        hermes: { ok: false, error: "missing HERMES_API_KEY" }
+      }
+    });
   });
 });
 

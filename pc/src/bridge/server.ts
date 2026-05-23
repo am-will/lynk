@@ -50,6 +50,7 @@ const handleHttp = createBridgeHttpHandler({
   hub,
   audit,
   dispatcher,
+  chatBridge,
   stopAgentWork
 });
 

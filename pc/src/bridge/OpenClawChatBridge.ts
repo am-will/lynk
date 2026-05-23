@@ -128,6 +128,10 @@ export class OpenClawChatBridge {
     await this.refreshDevice(message.deviceId);
   }
 
+  async health(): Promise<unknown> {
+    return await this.client.health();
+  }
+
   async send(message: ChatSendMessage): Promise<void> {
     const text = message.text.trim();
     if (!text) {
