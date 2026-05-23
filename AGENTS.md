@@ -87,6 +87,7 @@
 - Biometric, fingerprint, passkey, password-manager, and OS credential prompts must remain manual. Stop and ask the user to handle them.
 - Primary host `chat.*` messages rely on the selected harness and its configured tools for ordinary session policy. Explicit phone tasks, legacy `user_request`, and realtime delegated tasks are wrapped with the bridge/dispatcher phone-safety context.
 
+
 ## Testing Expectations
 - For PC bridge/protocol/dispatcher changes, run `cd pc && npm run check && npm test`.
 - For Android protocol, chat reducer, overlay, local model, voice, or transcription changes, run `cd android && ./gradlew :app:testDebugUnitTest` when Gradle is available.
