@@ -130,6 +130,80 @@ private fun unquotePrompt(prompt: String): String {
     }
 }
 
+internal class PhoneControlPetPolicy {
+    private val runIds = mutableSetOf<String>()
+    private val protectedReplySessions = mutableSetOf<String>()
+
+    var overrideVisible: Boolean = false
+        private set
+    var attentionSessionKey: String? = null
+        private set
+    var attentionRunId: String? = null
+        private set
+
+    fun activate(userPetEnabled: Boolean) {
+        if (!userPetEnabled) {
+            overrideVisible = true
+        }
+    }
+
+    fun holdAfterCompletion(userPetEnabled: Boolean, sessionKey: String?, runId: String?) {
+        val key = sessionKey?.takeIf { it.isNotBlank() }
+        attentionSessionKey = key ?: attentionSessionKey
+        attentionRunId = runId?.takeIf { it.isNotBlank() } ?: attentionRunId
+        key?.let(protectedReplySessions::add)
+        if (!userPetEnabled) {
+            overrideVisible = true
+        }
+    }
+
+    fun clearTimedAttention(userPetEnabled: Boolean): Boolean {
+        attentionSessionKey = null
+        attentionRunId = null
+        protectedReplySessions.clear()
+        return restoreOverrideIfNeeded(userPetEnabled)
+    }
+
+    fun restoreOverrideIfNeeded(userPetEnabled: Boolean): Boolean {
+        if (!overrideVisible || userPetEnabled) {
+            overrideVisible = false
+            return false
+        }
+        overrideVisible = false
+        return true
+    }
+
+    fun rememberRun(sessionKey: String?, runId: String?) {
+        runId?.takeIf { it.isNotBlank() }?.let(runIds::add)
+        attentionSessionKey = sessionKey?.takeIf { it.isNotBlank() } ?: attentionSessionKey
+        attentionRunId = runId?.takeIf { it.isNotBlank() } ?: attentionRunId
+    }
+
+    fun forgetRun(runId: String?) {
+        runId?.takeIf { it.isNotBlank() }?.let(runIds::remove)
+    }
+
+    fun isRememberedRun(runId: String?): Boolean {
+        return runId?.takeIf { it.isNotBlank() }?.let(runIds::contains) == true
+    }
+
+    fun shouldPreserveUnread(sessionKey: String?): Boolean {
+        val key = sessionKey?.takeIf { it.isNotBlank() } ?: return false
+        return key in protectedReplySessions
+    }
+
+    fun acknowledgeReply(sessionKey: String?, userPetEnabled: Boolean): Boolean {
+        val key = sessionKey?.takeIf { it.isNotBlank() } ?: return false
+        protectedReplySessions.remove(key)
+        if (attentionSessionKey != key) {
+            return false
+        }
+        attentionSessionKey = null
+        attentionRunId = null
+        return restoreOverrideIfNeeded(userPetEnabled)
+    }
+}
+
 class AgentForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -147,12 +221,8 @@ class AgentForegroundService : Service() {
     private var notifiedReplySessions = emptySet<String>()
     private var recentsSuppressionStartedAtMs = 0L
     private var recentsRestoreCheck: Runnable? = null
-    private var phoneControlPetOverrideVisible = false
-    private var phoneControlAttentionSessionKey: String? = null
-    private var phoneControlAttentionRunId: String? = null
     private var phoneControlAttentionClear: Runnable? = null
-    private val phoneControlRunIds = mutableSetOf<String>()
-    private val phoneControlProtectedReplySessions = mutableSetOf<String>()
+    private val phoneControlPetPolicy = PhoneControlPetPolicy()
     private val closeSystemDialogsReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != Intent.ACTION_CLOSE_SYSTEM_DIALOGS) return
@@ -302,7 +372,7 @@ class AgentForegroundService : Service() {
     }
 
     private fun refreshPetVisibility() {
-        if (AgentConfigStore.load(this).petEnabled || phoneControlPetOverrideVisible) {
+        if (AgentConfigStore.load(this).petEnabled || phoneControlPetPolicy.overrideVisible) {
             overlayController?.show()
         } else {
             overlayController?.hide()
@@ -313,21 +383,16 @@ class AgentForegroundService : Service() {
         val config = AgentConfigStore.load(this)
         phoneControlAttentionClear?.let(mainHandler::removeCallbacks)
         phoneControlAttentionClear = null
-        if (!config.petEnabled) {
-            phoneControlPetOverrideVisible = true
-        }
+        phoneControlPetPolicy.activate(config.petEnabled)
         if (Settings.canDrawOverlays(this)) {
             overlayController?.showForPhoneControl()
         }
     }
 
     private fun holdPhoneControlPetAfterCompletion(sessionKey: String?, runId: String?) {
-        val key = sessionKey?.takeIf { it.isNotBlank() }
-        phoneControlAttentionSessionKey = key ?: phoneControlAttentionSessionKey
-        phoneControlAttentionRunId = runId?.takeIf { it.isNotBlank() } ?: phoneControlAttentionRunId
-        key?.let(phoneControlProtectedReplySessions::add)
-        if (!AgentConfigStore.load(this).petEnabled) {
-            phoneControlPetOverrideVisible = true
+        val config = AgentConfigStore.load(this)
+        phoneControlPetPolicy.holdAfterCompletion(config.petEnabled, sessionKey, runId)
+        if (!config.petEnabled) {
             if (Settings.canDrawOverlays(this)) {
                 overlayController?.showForPhoneControl()
             }
@@ -339,52 +404,46 @@ class AgentForegroundService : Service() {
         phoneControlAttentionClear?.let(mainHandler::removeCallbacks)
         val clear = Runnable {
             phoneControlAttentionClear = null
-            phoneControlAttentionSessionKey = null
-            phoneControlAttentionRunId = null
-            phoneControlProtectedReplySessions.clear()
-            restorePetAfterPhoneControlIfNeeded()
+            if (phoneControlPetPolicy.clearTimedAttention(AgentConfigStore.load(this).petEnabled)) {
+                overlayController?.hidePhoneControlPet()
+            }
         }
         phoneControlAttentionClear = clear
         mainHandler.postDelayed(clear, PHONE_CONTROL_COMPLETION_VISIBLE_MS)
     }
 
     private fun restorePetAfterPhoneControlIfNeeded() {
-        if (!phoneControlPetOverrideVisible || AgentConfigStore.load(this).petEnabled) {
-            phoneControlPetOverrideVisible = false
-            return
+        if (phoneControlPetPolicy.restoreOverrideIfNeeded(AgentConfigStore.load(this).petEnabled)) {
+            overlayController?.hidePhoneControlPet()
         }
-        phoneControlPetOverrideVisible = false
-        overlayController?.hidePhoneControlPet()
     }
 
     private fun rememberPhoneControlRun(sessionKey: String?, runId: String?) {
-        runId?.takeIf { it.isNotBlank() }?.let(phoneControlRunIds::add)
-        phoneControlAttentionSessionKey = sessionKey?.takeIf { it.isNotBlank() } ?: phoneControlAttentionSessionKey
-        phoneControlAttentionRunId = runId?.takeIf { it.isNotBlank() } ?: phoneControlAttentionRunId
+        phoneControlPetPolicy.rememberRun(sessionKey, runId)
     }
 
     private fun forgetPhoneControlRun(runId: String?) {
-        runId?.takeIf { it.isNotBlank() }?.let(phoneControlRunIds::remove)
+        phoneControlPetPolicy.forgetRun(runId)
     }
 
     private fun isRememberedPhoneControlRun(runId: String?): Boolean {
-        return runId?.takeIf { it.isNotBlank() }?.let(phoneControlRunIds::contains) == true
+        return phoneControlPetPolicy.isRememberedRun(runId)
     }
 
     private fun shouldPreservePhoneControlUnread(sessionKey: String?): Boolean {
-        val key = sessionKey?.takeIf { it.isNotBlank() } ?: return false
-        return key in phoneControlProtectedReplySessions
+        return phoneControlPetPolicy.shouldPreserveUnread(sessionKey)
     }
 
     private fun acknowledgePhoneControlReply(sessionKey: String?) {
         val key = sessionKey?.takeIf { it.isNotBlank() } ?: return
-        phoneControlProtectedReplySessions.remove(key)
-        if (phoneControlAttentionSessionKey == key) {
+        val wasAttentionSession = phoneControlPetPolicy.attentionSessionKey == key
+        val shouldHidePet = phoneControlPetPolicy.acknowledgeReply(key, AgentConfigStore.load(this).petEnabled)
+        if (wasAttentionSession) {
             phoneControlAttentionClear?.let(mainHandler::removeCallbacks)
             phoneControlAttentionClear = null
-            phoneControlAttentionSessionKey = null
-            phoneControlAttentionRunId = null
-            restorePetAfterPhoneControlIfNeeded()
+        }
+        if (shouldHidePet) {
+            overlayController?.hidePhoneControlPet()
         }
     }
 
