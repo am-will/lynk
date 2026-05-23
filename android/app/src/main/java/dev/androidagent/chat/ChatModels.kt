@@ -1,6 +1,5 @@
 package dev.androidagent.chat
 
-import dev.androidagent.AgentModelOptions
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
@@ -494,7 +493,14 @@ object ChatStateReducer {
             error = message.optNullableString("error")
         )
         val existing = state.timeline.firstOrNull { it.id == "tool_${event.eventId}" }?.toolEvent
-        val merged = event.copy(isExpanded = existing?.isExpanded ?: false)
+        val merged = event.copy(
+            title = event.title.ifBlank { existing?.title.orEmpty() }.ifBlank { event.toolName },
+            summary = event.summary ?: existing?.summary,
+            args = event.args ?: existing?.args,
+            output = event.output ?: existing?.output,
+            error = event.error ?: existing?.error,
+            isExpanded = existing?.isExpanded ?: false
+        )
         return state.copy(
             sessionKey = message.optNullableString("sessionKey") ?: state.sessionKey,
             timeline = upsertTimeline(state.timeline, ChatTimelineItem(
@@ -580,69 +586,16 @@ object ChatStateReducer {
         current: String?,
         incoming: String?,
         activeHarnessId: String?
-    ): String? {
-        val activeHarness = normalizeHarnessId(activeHarnessId)
-        val currentModel = current?.trim()?.takeIf { it.isNotBlank() }
-        val incomingModel = normalizeModelForHarness(incoming, activeHarness)
+    ): String? = ChatModelCatalog.selectedModelForActiveHarness(current, incoming, activeHarnessId)
 
-        if (incomingModel == null) {
-            return currentModel?.takeUnless { model ->
-                activeHarness != null && harnessForModel(model) != activeHarness
-            }
-        }
-        if (currentModel == null) return incomingModel
+    private fun normalizeModelForHarness(model: String?, harnessId: String?): String? =
+        ChatModelCatalog.normalizeModelForHarness(model, harnessId)
 
-        val currentHarness = harnessForModel(currentModel)
-        val incomingHarness = harnessForModel(incomingModel)
-        if (activeHarness != null && currentHarness != activeHarness && incomingHarness == activeHarness) {
-            return incomingModel
-        }
-        if (currentHarness != incomingHarness) {
-            return incomingModel
-        }
-        return currentModel
-    }
+    private fun harnessForModel(model: String): String = ChatModelCatalog.harnessForModel(model)
 
-    private fun normalizeModelForHarness(model: String?, harnessId: String?): String? {
-        val cleanModel = model?.trim()?.takeIf { it.isNotBlank() } ?: return null
-        val harness = normalizeHarnessId(harnessId)
-        if (cleanModel == AgentModelOptions.LOCAL_LITERT_MODEL_ID) return cleanModel
-        if ((harness == "codex" || harness == "hermes") && harnessFromModelPrefix(cleanModel) == null) {
-            return "$harness:$cleanModel"
-        }
-        return cleanModel
-    }
+    private fun harnessFromSessionKey(sessionKey: String?): String? = ChatModelCatalog.harnessFromSessionKey(sessionKey)
 
-    private fun harnessForModel(model: String): String {
-        if (model == AgentModelOptions.LOCAL_LITERT_MODEL_ID) return "local"
-        return harnessFromModelPrefix(model) ?: "openclaw"
-    }
-
-    private fun harnessFromModelPrefix(model: String): String? {
-        val prefix = model.trim().substringBefore(":", missingDelimiterValue = "")
-            .takeIf { it.isNotBlank() }
-            ?.lowercase()
-        return normalizeHarnessId(prefix)
-    }
-
-    private fun harnessFromSessionKey(sessionKey: String?): String? {
-        val cleanKey = sessionKey?.trim()?.takeIf { it.isNotBlank() } ?: return null
-        val prefix = cleanKey.substringBefore(":", missingDelimiterValue = "")
-            .takeIf { it.isNotBlank() }
-            ?.lowercase()
-        return when (prefix) {
-            "codex", "hermes", "local" -> prefix
-            else -> "openclaw"
-        }
-    }
-
-    private fun normalizeHarnessId(harnessId: String?): String? {
-        val cleanHarnessId = harnessId?.trim()?.takeIf { it.isNotBlank() }?.lowercase()
-        return when (cleanHarnessId) {
-            "openclaw", "codex", "hermes", "local" -> cleanHarnessId
-            else -> null
-        }
-    }
+    private fun normalizeHarnessId(harnessId: String?): String? = ChatModelCatalog.normalizeHarnessId(harnessId)
 
     private fun usageWithModelContext(
         state: ChatState,
@@ -650,17 +603,9 @@ object ChatStateReducer {
         selectedModel: String?
     ): ChatUsageSummary {
         if (usage.contextTokens != null || usage.totalTokens == null) return usage
-        val contextWindow = contextWindowForModel(state, selectedModel) ?: return usage
+        val contextWindow = ChatModelCatalog.contextWindowForModel(state, selectedModel) ?: return usage
         if (contextWindow <= 0L) return usage
         return usage.copy(contextTokens = contextWindow)
-    }
-
-    private fun contextWindowForModel(state: ChatState, selectedModel: String?): Long? {
-        val model = selectedModel?.takeIf { it.isNotBlank() } ?: return null
-        val options = state.models + state.hostModels + state.localModels
-        return options.firstOrNull { option ->
-            option.id == model || option.modelId == model
-        }?.contextWindow
     }
 
     private fun mergeUnreadSessionMetadata(
