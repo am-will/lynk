@@ -32,6 +32,7 @@ import dev.androidagent.agentchat.HostAgentChatClient
 import dev.androidagent.agentchat.LocalAgentChatClient
 import dev.androidagent.avatar.AvatarLibrary
 import dev.androidagent.chat.ChatState
+import dev.androidagent.chat.ChatModelCatalog
 import dev.androidagent.chat.ChatStateReducer
 import dev.androidagent.chat.ChatTimelineItem
 import dev.androidagent.chat.ChatTimelineKind
@@ -45,6 +46,7 @@ import dev.androidagent.overlay.HostConnectionPhase
 import dev.androidagent.overlay.HostConnectionState
 import dev.androidagent.overlay.PanelPresentation
 import dev.androidagent.overlay.ChatPresentationHelpers
+import dev.androidagent.settings.DiagnosticsBackendSnapshot
 import dev.androidagent.voice.VoiceRuntimeController
 import dev.androidagent.voice.transcription.VoiceTranscriptionManager
 import dev.androidagent.voice.transcription.VoiceTranscriptionState
@@ -101,6 +103,7 @@ class AgentForegroundService : Service() {
         AgentConfigStore.load(this).also { config ->
             chatState = chatState.copy(selectedModel = selectedChatModel(config))
             AvatarLibrary.scanOnBoot(applicationContext, config.hostUrl, config.token)
+            publishBackendAvailability(config)
         }
         ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), foregroundServiceType(includeMicrophone = false))
         voiceTranscriptionManager = VoiceTranscriptionManager(onStateChanged = ::handleTranscriptionState)
@@ -625,6 +628,7 @@ class AgentForegroundService : Service() {
             status = "Model: ${chatModelDisplayLabel(model, route)}",
             error = null
         )
+        publishBackendAvailability(config)
         overlayController?.setChatState(chatState)
         connectAgentClient(model).setModel(sessionKeyForRoute(route), modelForRoute(model, route, config))
         lastNotificationText = chatStatusText(chatState.status, chatState)
@@ -769,6 +773,7 @@ class AgentForegroundService : Service() {
             val phoneControlStarted = isPhoneControlStartMessage(message)
             val phoneControlCompleted = isTerminalChatMessage(message) && isRememberedPhoneControlRun(messageRunId)
             chatState = ChatStateReducer.reduce(chatState, message)
+            publishBackendAvailability()
             if (phoneControlStarted) {
                 rememberPhoneControlRun(
                     sessionKey = messageSessionKey ?: chatState.sessionKey,
@@ -818,8 +823,25 @@ class AgentForegroundService : Service() {
     private fun handleHostModelSnapshot(message: JSONObject) {
         serviceScope.launch {
             chatState = ChatStateReducer.reduce(chatState, message)
+            publishBackendAvailability()
             overlayController?.setChatState(chatState)
         }
+    }
+
+    private fun publishBackendAvailability(config: AgentConfig = AgentConfigStore.load(this)) {
+        val models = availableChatModels(config).filter { it.available != false }
+        val modelCounts = models
+            .groupingBy { ChatPresentationHelpers.modelHarnessId(it) }
+            .eachCount()
+        val activeHarnessIds = buildSet {
+            chatState.harnessId?.takeIf { it.isNotBlank() }?.let { add(it.lowercase()) }
+            chatState.selectedModel?.takeIf { it.isNotBlank() }?.let { add(ChatModelCatalog.harnessForModel(it)) }
+            chatState.sessions.forEach { session ->
+                session.harnessId?.takeIf { it.isNotBlank() }?.let { add(it.lowercase()) }
+                session.model?.takeIf { it.isNotBlank() }?.let { add(ChatModelCatalog.harnessForModel(it)) }
+            }
+        }
+        DiagnosticsBackendSnapshot.update(modelCounts, activeHarnessIds)
     }
 
     private fun isTerminalChatMessage(message: JSONObject): Boolean {

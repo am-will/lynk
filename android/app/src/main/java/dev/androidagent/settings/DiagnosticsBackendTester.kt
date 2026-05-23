@@ -60,6 +60,7 @@ object DiagnosticsBackendTester {
         if (!isHarnessEnabled(config, backend)) {
             return warning(backend, "${backend.label} is disabled in Models & Harness.")
         }
+        liveAvailabilityResult(backend)?.let { return it }
         val httpBase = deriveHttpBase(config.hostUrl) ?: return warning(
             backend,
             "Bridge URL is missing. Configure the host URL in Connection settings."
@@ -80,6 +81,12 @@ object DiagnosticsBackendTester {
             httpClient.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
+                    if (response.code == 404) {
+                        return@use warning(
+                            backend,
+                            "Live model metadata has not loaded for ${backend.label} yet. Open Chat once, then test again."
+                        )
+                    }
                     return@use error(
                         backend,
                         if (response.code == 401) {
@@ -97,10 +104,23 @@ object DiagnosticsBackendTester {
                 parseHarnessReadiness(backend, payload)
             }
         } catch (io: IOException) {
-            error(backend, "Could not reach the PC bridge at $httpBase: ${io.message}")
+            warning(backend, "Live model metadata has not loaded for ${backend.label} yet. Bridge probe failed at $httpBase: ${io.message}")
         } catch (throwable: Throwable) {
             error(backend, throwable.message ?: "Backend test failed.")
         }
+    }
+
+    internal fun liveAvailabilityResult(backend: DiagnosticsBackendId): DiagnosticsBackendTestResult? {
+        val availability = DiagnosticsBackendSnapshot.current()
+        if (availability.updatedAtMs <= 0L) return null
+        if (!availability.isReady(backend.harnessId)) return null
+        val modelCount = availability.modelCounts.getOrDefault(backend.harnessId, 0)
+        val detail = if (modelCount > 0) {
+            "${backend.label} is available in the current model picker ($modelCount models)."
+        } else {
+            "${backend.label} has an active or recent chat session in this app."
+        }
+        return success(backend, detail)
     }
 
     internal fun deriveHttpBase(hostUrl: String): String? {
