@@ -4,7 +4,6 @@ import android.app.Activity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import dev.androidagent.R
 import dev.androidagent.settings.SettingsComponents
 import dev.androidagent.settings.SettingsComponents.BadgeTone
@@ -27,26 +26,20 @@ object SettingsHubScreen {
 
     fun build(activity: Activity, tokens: ThemeTokens, callbacks: Callbacks): View {
         val metrics = SettingsComponents.hubLayoutMetrics(activity)
-        val scroll = ScrollView(activity).apply {
-            setBackgroundColor(tokens.background)
-            isFillViewport = true
-            overScrollMode = View.OVER_SCROLL_NEVER
-            clipToPadding = false
-            exposeToAccessibility(viewId = R.id.openclaw_root, description = "Android Agent settings")
-        }
-
         val root = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
+            setBackgroundColor(tokens.background)
             setPadding(
                 SettingsComponents.dp(activity, metrics.horizontalPaddingDp),
                 SettingsComponents.dp(activity, metrics.verticalPaddingDp),
                 SettingsComponents.dp(activity, metrics.horizontalPaddingDp),
                 SettingsComponents.dp(activity, metrics.verticalPaddingDp)
             )
+            exposeToAccessibility(viewId = R.id.openclaw_root, description = "Android Agent settings")
         }
 
         root.addView(SettingsComponents.hubHeader(
@@ -77,8 +70,7 @@ object SettingsHubScreen {
         renderCategories(activity, tokens, categoriesContainer, callbacks, metrics)
         root.addView(categoriesContainer, SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg))
 
-        scroll.addView(root)
-        return scroll
+        return root
     }
 
     private fun buildStatusChipGrid(
@@ -89,7 +81,7 @@ object SettingsHubScreen {
     ): View {
         val gridHeight = SettingsComponents.dp(activity, metrics.statusGridHeightDp)
         val chips = listOf(
-            SettingsComponents.statusChip(activity, tokens, R.drawable.ic_wifi, "Connected", "LAN", mapStatus(snapshot.connectedLan), fillCell = true, iconSizeDp = metrics.statusChipIconSizeDp),
+            SettingsComponents.statusChip(activity, tokens, R.drawable.ic_wifi, "Wi-Fi", linkValue(snapshot.connectedLan), mapStatus(snapshot.connectedLan), fillCell = true, iconSizeDp = metrics.statusChipIconSizeDp),
             SettingsComponents.statusChip(activity, tokens, R.drawable.ic_health, "Bridge", statusLabel(snapshot.bridgeHealthy), mapStatus(snapshot.bridgeHealthy), fillCell = true, iconSizeDp = metrics.statusChipIconSizeDp),
             SettingsComponents.statusChip(activity, tokens, R.drawable.ic_lock, "Auth", if (snapshot.authOk == StatusLevel.Good) "OK" else "Off", mapStatus(snapshot.authOk), fillCell = true, iconSizeDp = metrics.statusChipIconSizeDp),
             SettingsComponents.statusChip(
@@ -104,6 +96,14 @@ object SettingsHubScreen {
             )
         )
         return SettingsComponents.statusChipGrid(activity, chips, gridHeight)
+    }
+
+    private fun linkValue(level: StatusLevel): String = when (level) {
+        StatusLevel.Good -> "LAN"
+        StatusLevel.Warning -> "Wait"
+        StatusLevel.Bad -> "Off"
+        StatusLevel.Idle -> "Idle"
+        StatusLevel.Active -> "Active"
     }
 
     private fun mapStatus(level: StatusLevel): StatusTone = when (level) {
@@ -153,8 +153,8 @@ object SettingsHubScreen {
                 tone = spec.tone,
                 titleText = spec.title,
                 subtitleText = spec.subtitle,
-                minHeightDp = metrics.categoryRowMinHeightDp,
                 iconSizeDp = metrics.categoryIconSizeDp,
+                fillRow = true,
                 onClick = { callbacks.navigate(spec.destination) }
             )
             container.addView(
