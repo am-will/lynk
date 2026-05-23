@@ -75,7 +75,7 @@ object SettingsHubScreen {
             SettingsComponents.statusChip(
                 activity,
                 tokens,
-                R.drawable.ic_brand_circle,
+                R.drawable.ic_dog,
                 "Pet",
                 if (snapshot.serviceRunning) "On" else "Off",
                 if (snapshot.serviceRunning) StatusTone.Good else StatusTone.Idle

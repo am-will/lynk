@@ -340,6 +340,7 @@ object SettingsComponents {
             textSize = DesignTokens.Text.caption
             setTextColor(tokens.secondaryText)
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            gravity = Gravity.CENTER_HORIZONTAL
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
             includeFontPadding = false
@@ -350,6 +351,7 @@ object SettingsComponents {
             textSize = 10f
             setTextColor(dotColor)
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            gravity = Gravity.CENTER_HORIZONTAL
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
             setPadding(0, 0, 0, 0)
