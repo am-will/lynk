@@ -54,8 +54,7 @@ object SettingsHubScreen {
             tokens = tokens,
             titleText = "Android Agent",
             subtitleText = "The best interface for your agents.",
-            avatarSizeDp = metrics.headerAvatarSizeDp,
-            onMenu = { /* future overflow */ }
+            avatarSizeDp = metrics.headerAvatarSizeDp
         ))
 
         val snapshot = SettingsStatusProvider.snapshot(
