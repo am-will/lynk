@@ -35,6 +35,8 @@ object AppearanceSettingsScreen {
         fun onSaved()
         fun notifyAvatarChanged()
         fun notifyBubbleResize(sizeDp: Int)
+        fun toggleAgentService()
+        fun isAgentServiceRunning(): Boolean
         fun onBack()
     }
 
@@ -42,6 +44,21 @@ object AppearanceSettingsScreen {
         val current = AppearancePrefsStore.load(activity)
         val root = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
         root.addView(SettingsUi.toolbar(activity, "Appearance", tokens, callbacks::onBack))
+
+        val toggleLabel = if (callbacks.isAgentServiceRunning()) "Stop Agent Bubble" else "Start Agent Bubble"
+        root.addView(SettingsUi.card(activity, tokens).apply {
+            addView(SettingsUi.sectionHeader(activity, "Agent Bubble", "Show or hide the floating agent bubble.", tokens))
+            addView(
+                SettingsUi.actionButton(
+                    activity,
+                    toggleLabel,
+                    if (callbacks.isAgentServiceRunning()) dev.androidagent.settings.SettingsButtonTone.Secondary else dev.androidagent.settings.SettingsButtonTone.Primary,
+                    tokens,
+                    callbacks::toggleAgentService
+                ).exposeToAccessibility(R.id.openclaw_agent_toggle_button, "Agent bubble toggle"),
+                SettingsUi.stackedParams(activity, DesignTokens.Spacing.md)
+            )
+        }, SettingsUi.stackedParams(activity))
 
         val animationOptions = listOf(
             PanelAnimationStyle.Circular to "Circular reveal (from bubble)",

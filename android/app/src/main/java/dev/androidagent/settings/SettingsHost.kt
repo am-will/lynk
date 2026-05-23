@@ -139,6 +139,8 @@ class SettingsHost(
                         .putExtra(dev.androidagent.AgentForegroundService.EXTRA_BUBBLE_SIZE_DP, sizeDp)
                     runCatching { androidx.core.content.ContextCompat.startForegroundService(activity, intent) }
                 }
+                override fun toggleAgentService() = callbacks.toggleAgentService()
+                override fun isAgentServiceRunning() = callbacks.isAgentServiceRunning()
                 override fun onBack() = back()
             })
             SettingsDestination.LocalModel -> {
