@@ -243,6 +243,7 @@ class ChatStateReducerTest {
         assertEquals(1, completed.timeline.size)
         val tool = completed.timeline.single().toolEvent!!
         assertEquals("completed", tool.status)
+        assertEquals("{\"command\":\"npm test\"}", tool.args)
         assertEquals("ok", tool.output)
         assertTrue(tool.isExpanded)
     }

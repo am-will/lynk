@@ -275,6 +275,71 @@ test("normalizeGatewayToolEvent produces expandable tool rows", () => {
   assert.equal(event?.output, "ok");
 });
 
+test("normalizeGatewayToolEvent skips unkeyed empty tool placeholders", () => {
+  const event = normalizeGatewayToolEvent("phone", "agent:main:main", {
+    runId: "run1",
+    stream: "tool",
+    data: {
+      toolName: "bash",
+      status: "running"
+    }
+  });
+
+  assert.equal(event, undefined);
+});
+
+test("normalizeGatewayToolEvent skips unkeyed running calls with args to avoid duplicate terminal rows", () => {
+  const event = normalizeGatewayToolEvent("phone", "agent:main:main", {
+    runId: "run1",
+    seq: 5,
+    stream: "tool",
+    data: {
+      toolName: "bash",
+      status: "running",
+      args: { command: "git status" }
+    }
+  });
+
+  assert.equal(event, undefined);
+});
+
+test("normalizeGatewayToolEvent keeps keyed lifecycle placeholders for upserts", () => {
+  const event = normalizeGatewayToolEvent("phone", "agent:main:main", {
+    runId: "run1",
+    stream: "tool",
+    data: {
+      callId: "call_123",
+      toolName: "bash",
+      status: "running"
+    }
+  });
+
+  assert.equal(event?.eventId, "call_123");
+  assert.equal(event?.toolName, "bash");
+  assert.equal(event?.status, "running");
+});
+
+test("normalizeGatewayToolEvent maps failed tool results with content items", () => {
+  const event = normalizeGatewayToolEvent("phone", "agent:main:main", {
+    runId: "run1",
+    type: "tool.result",
+    data: {
+      toolCallId: "call_123",
+      name: "bash",
+      success: false,
+      contentItems: [
+        { type: "inputText", text: "command not found: foo" }
+      ]
+    }
+  });
+
+  assert.equal(event?.eventId, "call_123");
+  assert.equal(event?.toolName, "bash");
+  assert.equal(event?.status, "failed");
+  assert.equal(event?.output, "command not found: foo");
+  assert.equal(event?.error, "command not found: foo");
+});
+
 test("requestKeyFromSessionKey strips canonical explicit key prefix", () => {
   assert.equal(requestKeyFromSessionKey("agent:main:explicit:open-claw-agent", "main"), "open-claw-agent");
   assert.equal(requestKeyFromSessionKey("agent:main:main", "main"), "agent:main:main");
