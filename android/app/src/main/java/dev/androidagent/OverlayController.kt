@@ -203,6 +203,17 @@ class OverlayController(
         showInternal(allowDuringFullscreenPanel = false)
     }
 
+    fun showForPhoneControl() {
+        showInternal(allowDuringFullscreenPanel = false)
+    }
+
+    fun hidePhoneControlPet() {
+        restoreBubbleAfterAutomation = false
+        restoreBubbleAfterFullscreen = false
+        restoreBubbleAfterRecents = false
+        bubbleOverlay.hide()
+    }
+
     private fun showInternal(allowDuringFullscreenPanel: Boolean) {
         if (
             !Settings.canDrawOverlays(context) ||

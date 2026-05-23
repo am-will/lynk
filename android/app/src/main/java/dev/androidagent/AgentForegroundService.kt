@@ -63,6 +63,7 @@ private enum class ChatClientRoute {
 
 private const val SYSTEM_DIALOG_REASON_HOME_KEY = "homekey"
 private const val SYSTEM_DIALOG_REASON_RECENT_APPS = "recentapps"
+private const val PHONE_CONTROL_COMPLETION_VISIBLE_MS = 30_000L
 
 internal enum class SystemDialogChromeAction {
     None,
@@ -146,6 +147,10 @@ class AgentForegroundService : Service() {
     private var notifiedReplySessions = emptySet<String>()
     private var recentsSuppressionStartedAtMs = 0L
     private var recentsRestoreCheck: Runnable? = null
+    private var phoneControlPetOverrideVisible = false
+    private var phoneControlAttentionSessionKey: String? = null
+    private var phoneControlAttentionRunId: String? = null
+    private var phoneControlAttentionClear: Runnable? = null
     private val closeSystemDialogsReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != Intent.ACTION_CLOSE_SYSTEM_DIALOGS) return
@@ -293,11 +298,56 @@ class AgentForegroundService : Service() {
     }
 
     private fun refreshPetVisibility() {
-        if (AgentConfigStore.load(this).petEnabled) {
+        if (AgentConfigStore.load(this).petEnabled || phoneControlPetOverrideVisible) {
             overlayController?.show()
         } else {
             overlayController?.hide()
         }
+    }
+
+    private fun activatePhoneControlPet() {
+        val config = AgentConfigStore.load(this)
+        phoneControlAttentionClear?.let(mainHandler::removeCallbacks)
+        phoneControlAttentionClear = null
+        if (!config.petEnabled) {
+            phoneControlPetOverrideVisible = true
+        }
+        if (Settings.canDrawOverlays(this)) {
+            overlayController?.showForPhoneControl()
+        }
+    }
+
+    private fun holdPhoneControlPetAfterCompletion(sessionKey: String?, runId: String?) {
+        phoneControlAttentionSessionKey = sessionKey?.takeIf { it.isNotBlank() } ?: phoneControlAttentionSessionKey
+        phoneControlAttentionRunId = runId?.takeIf { it.isNotBlank() } ?: phoneControlAttentionRunId
+        if (!AgentConfigStore.load(this).petEnabled) {
+            phoneControlPetOverrideVisible = true
+            if (Settings.canDrawOverlays(this)) {
+                overlayController?.showForPhoneControl()
+            }
+        }
+        schedulePhoneControlPetRestore()
+    }
+
+    private fun schedulePhoneControlPetRestore() {
+        phoneControlAttentionClear?.let(mainHandler::removeCallbacks)
+        val clear = Runnable {
+            phoneControlAttentionClear = null
+            phoneControlAttentionSessionKey = null
+            phoneControlAttentionRunId = null
+            restorePetAfterPhoneControlIfNeeded()
+        }
+        phoneControlAttentionClear = clear
+        mainHandler.postDelayed(clear, PHONE_CONTROL_COMPLETION_VISIBLE_MS)
+    }
+
+    private fun restorePetAfterPhoneControlIfNeeded() {
+        if (!phoneControlPetOverrideVisible || AgentConfigStore.load(this).petEnabled) {
+            phoneControlPetOverrideVisible = false
+            return
+        }
+        phoneControlPetOverrideVisible = false
+        overlayController?.hidePhoneControlPet()
     }
 
     private fun startVoiceFromShell() {
