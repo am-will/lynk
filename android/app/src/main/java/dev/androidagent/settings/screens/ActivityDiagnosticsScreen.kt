@@ -14,7 +14,6 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import dev.androidagent.AgentConfigStore
-import dev.androidagent.AgentForegroundService
 import dev.androidagent.R
 import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.settings.DiagnosticsBackendId
@@ -58,53 +57,11 @@ object ActivityDiagnosticsScreen {
 
         val config = AgentConfigStore.load(activity)
         val localReady = LocalModelStore.exists(config.localModelPath)
-        val serviceRunning = AgentForegroundService.isRunning
-        val enabledHostBackends = listOfNotNull(
-            "OpenClaw".takeIf { config.openClawHarnessEnabled },
-            "Hermes".takeIf { config.hermesHarnessEnabled },
-            "Codex".takeIf { config.codexHarnessEnabled }
-        )
 
         // System status section
         root.addView(SettingsComponents.sectionHeader(activity, tokens, "System status"),
             SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.sm))
 
-        root.addView(buildStatusCard(
-            activity, tokens,
-            iconRes = R.drawable.ic_activity,
-            tone = BadgeTone.Teal,
-            title = "Bridge link",
-            subtitle = "PC bridge connection",
-            details = when {
-                config.token.isBlank() -> "Missing PHONE_AGENT_TOKEN. Backend tests cannot authenticate until Connection settings are paired."
-                serviceRunning -> "Bubble service is running. Use Test Backends below to verify bridge and harness readiness."
-                else -> "Bubble service is stopped. Start the bubble before using host backends."
-            },
-            statusText = when {
-                config.token.isBlank() -> "Setup"
-                serviceRunning -> "Running"
-                else -> "Stopped"
-            },
-            tone2 = when {
-                config.token.isBlank() -> StatusLevel.Warning
-                serviceRunning -> StatusLevel.Good
-                else -> StatusLevel.Idle
-            }
-        ))
-        root.addView(buildStatusCard(
-            activity, tokens,
-            iconRes = R.drawable.ic_brand_circle,
-            tone = BadgeTone.Blue,
-            title = "Backend readiness",
-            subtitle = if (enabledHostBackends.isEmpty()) "No host backends enabled" else "Enabled: ${enabledHostBackends.joinToString(", ")}",
-            details = if (enabledHostBackends.isEmpty()) {
-                "Enable at least one host backend in Models & Harness."
-            } else {
-                "Tap a backend test to check the PC bridge and that specific harness."
-            },
-            statusText = if (enabledHostBackends.isEmpty()) "Off" else "Test",
-            tone2 = StatusLevel.Idle
-        ), SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.sm))
         root.addView(buildStatusCard(
             activity, tokens,
             iconRes = R.drawable.ic_chip,
@@ -118,19 +75,19 @@ object ActivityDiagnosticsScreen {
             },
             statusText = if (localReady) "Ready" else "Missing",
             tone2 = if (localReady) StatusLevel.Good else StatusLevel.Warning
-        ), SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.sm))
-
-        // Recent events
-        root.addView(SettingsComponents.sectionHeader(activity, tokens, "Recent events", trailingText = "View all") { /* future */ },
-            SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg))
-
-        root.addView(buildRecentEventsCard(activity, tokens))
+        ))
 
         // Test backends 2x2
         root.addView(SettingsComponents.sectionHeader(activity, tokens, "Test backends"),
             SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg))
 
         root.addView(buildTestBackendsGrid(activity, tokens))
+
+        // Recent events
+        root.addView(SettingsComponents.sectionHeader(activity, tokens, "Recent events", trailingText = "View all") { /* future */ },
+            SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg))
+
+        root.addView(buildRecentEventsCard(activity, tokens))
 
         // Logs
         root.addView(SettingsComponents.sectionHeader(activity, tokens, "Logs"),
@@ -314,7 +271,7 @@ object ActivityDiagnosticsScreen {
                 includeFontPadding = false
                 gravity = Gravity.CENTER
                 textAlignment = View.TEXT_ALIGNMENT_CENTER
-                setPadding(0, SettingsComponents.dp(activity, 2), 0, 0)
+                setPadding(0, SettingsComponents.dp(activity, DesignTokens.Spacing.xs), 0, 0)
             })
             grid.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
                 if (index > 0) marginStart = SettingsComponents.dp(activity, DesignTokens.Spacing.sm)
