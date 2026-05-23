@@ -88,7 +88,21 @@ class SettingsHost(
 
         val back = { showHub() }
         val screenView: View = when (destination) {
-            SettingsDestination.Runtime -> RuntimeSettingsScreen.build(activity, tokens, back)
+            SettingsDestination.Runtime -> {
+                val importFieldHolder = arrayOf<android.widget.EditText?>(null)
+                RuntimeSettingsScreen.build(activity, tokens, object : RuntimeSettingsScreen.Callbacks {
+                    override fun onSaved() {
+                        callbacks.refreshStatus()
+                        DiagnosticsEventLog.append(DiagnosticsEventLevel.Success, "Harness settings saved")
+                    }
+                    override fun onImportRequested(pathField: android.widget.EditText) {
+                        importFieldHolder[0] = pathField
+                        (activity as? AppShellActivity)?.registerLocalModelImport(pathField)
+                            ?: (activity as? MainActivity)?.registerLocalModelImport(pathField)
+                    }
+                    override fun onBack() = back()
+                })
+            }
             SettingsDestination.Connection -> ConnectionSettingsScreen.build(activity, tokens, object : ConnectionSettingsScreen.Callbacks {
                 override fun onSaved() {
                     callbacks.refreshStatus()

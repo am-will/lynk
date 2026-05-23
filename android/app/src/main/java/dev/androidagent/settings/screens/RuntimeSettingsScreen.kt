@@ -1,23 +1,32 @@
 package dev.androidagent.settings.screens
 
 import android.app.Activity
+import android.text.InputType
 import android.view.View
+import android.widget.EditText
 import android.widget.LinearLayout
 import dev.androidagent.AgentConfigStore
-import dev.androidagent.AgentModelOptions
-import dev.androidagent.ChatActiveSendMode
+import dev.androidagent.LocalModelBackend
 import dev.androidagent.R
+import dev.androidagent.settings.SettingsButtonTone
 import dev.androidagent.settings.SettingsUi
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.ThemeTokens
+import dev.androidagent.ui.exposeToAccessibility
 
 object RuntimeSettingsScreen {
 
-    fun build(activity: Activity, tokens: ThemeTokens, onBack: () -> Unit): View {
+    interface Callbacks {
+        fun onSaved()
+        fun onImportRequested(pathField: EditText)
+        fun onBack()
+    }
+
+    fun build(activity: Activity, tokens: ThemeTokens, callbacks: Callbacks): View {
         val config = AgentConfigStore.load(activity)
         val root = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL }
 
-        root.addView(SettingsUi.toolbar(activity, "Runtime", tokens, onBack))
+        root.addView(SettingsUi.toolbar(activity, "Harness", tokens, callbacks::onBack))
 
         val openClaw = SettingsUi.harnessCheckBox(activity, "OpenClaw", config.openClawHarnessEnabled, "Enable OpenClaw harness", tokens, R.id.openclaw_harness_openclaw_checkbox)
         val hermes = SettingsUi.harnessCheckBox(activity, "Hermes", config.hermesHarnessEnabled, "Enable Hermes harness", tokens, R.id.openclaw_harness_hermes_checkbox)
@@ -32,48 +41,65 @@ object RuntimeSettingsScreen {
             addView(local, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
         }, SettingsUi.stackedParams(activity))
 
-        val modelOptions = AgentModelOptions.models.map { it.label }
-        val modelSpinner = SettingsUi.styledSpinner(
+        val localModelPathInput = SettingsUi.configField(activity, "Model file", config.localModelPath, tokens).apply {
+            exposeToAccessibility(R.id.openclaw_local_model_path_field, "Local LiteRT model path")
+        }
+        val localBackends = LocalModelBackend.values().toList()
+        val localBackendSpinner = SettingsUi.styledSpinner(
             activity,
-            modelOptions,
-            AgentModelOptions.models.indexOfFirst { it.id == config.model }.coerceAtLeast(0),
+            localBackends.map { it.label },
+            localBackends.indexOf(config.localModelBackend).coerceAtLeast(0),
             tokens
         )
-        val reasoningOptions = AgentModelOptions.reasoningEfforts.map { it.label }
-        val reasoningSpinner = SettingsUi.styledSpinner(
+        val localContextInput = SettingsUi.configField(
             activity,
-            reasoningOptions,
-            AgentModelOptions.reasoningEfforts.indexOfFirst { it.id == config.reasoningEffort }.coerceAtLeast(0),
-            tokens
-        )
-        val sendModes = ChatActiveSendMode.values().toList()
-        val sendModeSpinner = SettingsUi.styledSpinner(
+            "Context tokens",
+            config.localContextTokens.toString(),
+            tokens,
+            InputType.TYPE_CLASS_NUMBER
+        ).apply {
+            exposeToAccessibility(R.id.openclaw_local_context_field, "Local context window")
+        }
+        val localDeveloperTools = SettingsUi.harnessCheckBox(
             activity,
-            sendModes.map { it.label },
-            sendModes.indexOf(config.activeSendMode).coerceAtLeast(0),
-            tokens
+            "Enable developer tools",
+            config.localDeveloperToolsEnabled,
+            "Enable local model file writes, terminal, and developer tools",
+            tokens,
+            R.id.openclaw_local_developer_tools_checkbox
         )
 
         root.addView(SettingsUi.card(activity, tokens).apply {
-            addView(SettingsUi.sectionHeader(activity, "Defaults", "Default model and chat behavior for new sessions.", tokens))
-            addView(SettingsUi.labeledField(activity, "Default model", modelSpinner, tokens, DesignTokens.Spacing.md))
-            addView(SettingsUi.labeledField(activity, "Default reasoning", reasoningSpinner, tokens))
-            addView(SettingsUi.labeledField(activity, "Active send mode", sendModeSpinner, tokens))
+            addView(SettingsUi.sectionHeader(activity, "Local Models", "Import and tune the on-device LiteRT-LM harness.", tokens))
+            addView(SettingsUi.labeledField(activity, "Model file", localModelPathInput, tokens, DesignTokens.Spacing.md))
+            addView(
+                SettingsUi.actionButton(activity, "Import Local Model", SettingsButtonTone.Secondary, tokens) {
+                    callbacks.onImportRequested(localModelPathInput)
+                }.exposeToAccessibility(R.id.openclaw_local_model_import_button, "Import local LiteRT model"),
+                SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm + 2)
+            )
+            addView(SettingsUi.labeledField(activity, "Backend", localBackendSpinner, tokens))
+            addView(SettingsUi.labeledField(activity, "Context window", localContextInput, tokens))
+            addView(localDeveloperTools, SettingsUi.stackedParams(activity, DesignTokens.Spacing.md))
+            addView(SettingsUi.body(activity, "Local phone tools remain governed by System permissions and phone-control settings.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
         }, SettingsUi.stackedParams(activity))
 
         root.addView(
-            SettingsUi.actionButton(activity, "Save", dev.androidagent.settings.SettingsButtonTone.Primary, tokens) {
+            SettingsUi.actionButton(activity, "Save", SettingsButtonTone.Primary, tokens) {
                 val saved = config.copy(
                     openClawHarnessEnabled = openClaw.isChecked,
                     hermesHarnessEnabled = hermes.isChecked,
                     codexHarnessEnabled = codex.isChecked,
                     experimentalLocalModelsEnabled = local.isChecked,
-                    model = AgentModelOptions.models.getOrElse(modelSpinner.selectedItemPosition) { AgentModelOptions.models.first() }.id,
-                    reasoningEffort = AgentModelOptions.reasoningEfforts.getOrElse(reasoningSpinner.selectedItemPosition) { AgentModelOptions.reasoningEfforts.first() }.id,
-                    activeSendMode = sendModes.getOrElse(sendModeSpinner.selectedItemPosition) { ChatActiveSendMode.Steer }
+                    localModelPath = localModelPathInput.text.toString().trim(),
+                    localModelBackend = localBackends.getOrElse(localBackendSpinner.selectedItemPosition) { LocalModelBackend.Cpu },
+                    localContextTokens = localContextInput.text.toString().toIntOrNull()?.coerceIn(512, 131_072)
+                        ?: config.localContextTokens,
+                    localDeveloperToolsEnabled = localDeveloperTools.isChecked
                 )
                 AgentConfigStore.save(activity, saved)
-                onBack()
+                callbacks.onSaved()
+                callbacks.onBack()
             },
             SettingsUi.stackedParams(activity, DesignTokens.Spacing.xl)
         )

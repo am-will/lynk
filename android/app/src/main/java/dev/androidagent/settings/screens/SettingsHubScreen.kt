@@ -152,11 +152,11 @@ object SettingsHubScreen {
     ) {
         container.removeAllViews()
         val specs = listOf(
-            CategoryRowSpec("Runtime", "Host bridge, local model, backends", R.drawable.ic_terminal, BadgeTone.Teal, SettingsDestination.Runtime),
-            CategoryRowSpec("Connection", "URL, pairing, network, transport", R.drawable.ic_link, BadgeTone.Blue, SettingsDestination.Connection),
-            CategoryRowSpec("Voice", "Realtime voice, transcription, audio", R.drawable.ic_voice_idle, BadgeTone.Violet, SettingsDestination.Voice),
-            CategoryRowSpec("Safety", "Confirmations, blocklists, guardrails", R.drawable.ic_shield, BadgeTone.Amber, SettingsDestination.Safety),
-            CategoryRowSpec("Appearance", "Theme, bubble, font size", R.drawable.ic_palette, BadgeTone.Pink, SettingsDestination.Appearance)
+            CategoryRowSpec("Harness", "Backends, local models", R.drawable.ic_terminal, BadgeTone.Teal, SettingsDestination.Runtime),
+            CategoryRowSpec("Connection", "URL, token, pairing", R.drawable.ic_link, BadgeTone.Blue, SettingsDestination.Connection),
+            CategoryRowSpec("Voice", "API keys, transcription, models", R.drawable.ic_voice_idle, BadgeTone.Violet, SettingsDestination.Voice),
+            CategoryRowSpec("System", "System prompt, permissions, phone control", R.drawable.ic_shield, BadgeTone.Amber, SettingsDestination.Safety),
+            CategoryRowSpec("Appearance", "Theme, pet, size", R.drawable.ic_palette, BadgeTone.Pink, SettingsDestination.Appearance)
         )
         specs.forEachIndexed { index, spec ->
             val row = SettingsComponents.categoryRow(
