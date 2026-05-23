@@ -299,7 +299,8 @@ object SettingsComponents {
         iconRes: Int,
         label: String,
         value: String,
-        tone: StatusTone
+        tone: StatusTone,
+        fillCell: Boolean = false
     ): LinearLayout {
         val dotColor = statusToneColor(tokens, tone)
         val container = LinearLayout(context).apply {
@@ -316,6 +317,12 @@ object SettingsComponents {
                 dp(context, DesignTokens.Spacing.sm),
                 dp(context, DesignTokens.Spacing.xs + 1)
             )
+            if (fillCell) {
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            }
             exposeToAccessibility(description = "$label $value")
         }
 
@@ -335,7 +342,16 @@ object SettingsComponents {
         })
         container.addView(topRow)
 
-        container.addView(TextView(context).apply {
+        val textBlock = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                if (fillCell) 0 else ViewGroup.LayoutParams.WRAP_CONTENT,
+                if (fillCell) 1f else 0f
+            )
+        }
+        textBlock.addView(TextView(context).apply {
             text = label
             textSize = DesignTokens.Text.caption
             setTextColor(tokens.secondaryText)
@@ -346,7 +362,7 @@ object SettingsComponents {
             includeFontPadding = false
             setPadding(0, dp(context, DesignTokens.Spacing.xs), 0, 0)
         })
-        container.addView(TextView(context).apply {
+        textBlock.addView(TextView(context).apply {
             text = value
             textSize = 10f
             setTextColor(dotColor)
@@ -357,8 +373,45 @@ object SettingsComponents {
             setPadding(0, 0, 0, 0)
             includeFontPadding = false
         })
+        container.addView(textBlock)
 
         return container
+    }
+
+    /** 2x2 grid of status chips with equal cell sizing. */
+    fun statusChipGrid(context: Context, chips: List<View>, gridHeightPx: Int): LinearLayout {
+        require(chips.size == 4) { "statusChipGrid expects exactly 4 chips" }
+        val gap = dp(context, DesignTokens.Spacing.xs)
+        val rowHeight = ((gridHeightPx - gap).coerceAtLeast(1)) / 2
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                gridHeightPx
+            )
+            addView(buildStatusChipGridRow(context, chips, 0, rowHeight, gap))
+            addView(View(context), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, gap))
+            addView(buildStatusChipGridRow(context, chips, 2, rowHeight, gap))
+        }
+    }
+
+    private fun buildStatusChipGridRow(
+        context: Context,
+        chips: List<View>,
+        startIndex: Int,
+        rowHeight: Int,
+        gap: Int
+    ): LinearLayout {
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                rowHeight
+            )
+            addView(chips[startIndex], LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+            addView(View(context), LinearLayout.LayoutParams(gap, ViewGroup.LayoutParams.MATCH_PARENT))
+            addView(chips[startIndex + 1], LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+        }
     }
 
     /** Row of 4 status chips, evenly spaced. */

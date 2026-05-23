@@ -55,7 +55,7 @@ object SettingsHubScreen {
             activity,
             bridgeConnected = callbacks.bridgeConnected()
         )
-        root.addView(buildStatusChipRow(activity, tokens, snapshot), SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg))
+        root.addView(buildStatusChipGrid(activity, tokens, snapshot), SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg))
 
         val categoriesContainer = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
@@ -67,21 +67,23 @@ object SettingsHubScreen {
         return scroll
     }
 
-    private fun buildStatusChipRow(activity: Activity, tokens: ThemeTokens, snapshot: dev.androidagent.settings.SettingsStatusSnapshot): View {
+    private fun buildStatusChipGrid(activity: Activity, tokens: ThemeTokens, snapshot: dev.androidagent.settings.SettingsStatusSnapshot): View {
+        val gridHeight = SettingsComponents.dp(activity, 156)
         val chips = listOf(
-            SettingsComponents.statusChip(activity, tokens, R.drawable.ic_wifi, "Connected", "LAN", mapStatus(snapshot.connectedLan)),
-            SettingsComponents.statusChip(activity, tokens, R.drawable.ic_health, "Bridge", statusLabel(snapshot.bridgeHealthy), mapStatus(snapshot.bridgeHealthy)),
-            SettingsComponents.statusChip(activity, tokens, R.drawable.ic_lock, "Auth", if (snapshot.authOk == StatusLevel.Good) "OK" else "Off", mapStatus(snapshot.authOk)),
+            SettingsComponents.statusChip(activity, tokens, R.drawable.ic_wifi, "Connected", "LAN", mapStatus(snapshot.connectedLan), fillCell = true),
+            SettingsComponents.statusChip(activity, tokens, R.drawable.ic_health, "Bridge", statusLabel(snapshot.bridgeHealthy), mapStatus(snapshot.bridgeHealthy), fillCell = true),
+            SettingsComponents.statusChip(activity, tokens, R.drawable.ic_lock, "Auth", if (snapshot.authOk == StatusLevel.Good) "OK" else "Off", mapStatus(snapshot.authOk), fillCell = true),
             SettingsComponents.statusChip(
                 activity,
                 tokens,
                 R.drawable.ic_dog,
                 "Pet",
                 if (snapshot.serviceRunning) "On" else "Off",
-                if (snapshot.serviceRunning) StatusTone.Good else StatusTone.Idle
+                if (snapshot.serviceRunning) StatusTone.Good else StatusTone.Idle,
+                fillCell = true
             )
         )
-        return SettingsComponents.statusChipRow(activity, chips)
+        return SettingsComponents.statusChipGrid(activity, chips, gridHeight)
     }
 
     private fun mapStatus(level: StatusLevel): StatusTone = when (level) {
