@@ -2,10 +2,7 @@ package dev.androidagent.settings.screens
 
 import android.app.Activity
 import android.app.AlertDialog
-import android.text.Editable
-import android.text.TextWatcher
 import android.view.View
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import dev.androidagent.AgentConfigStore
@@ -16,8 +13,6 @@ import dev.androidagent.settings.SettingsComponents
 import dev.androidagent.settings.SettingsComponents.BadgeTone
 import dev.androidagent.settings.SettingsComponents.StatusTone
 import dev.androidagent.settings.SettingsDestination
-import dev.androidagent.settings.SettingsSearchController
-import dev.androidagent.settings.SettingsSearchEntry
 import dev.androidagent.settings.SettingsStatusProvider
 import dev.androidagent.settings.StatusLevel
 import dev.androidagent.ui.DesignTokens
@@ -73,47 +68,13 @@ object SettingsHubScreen {
             activity,
             bridgeConnected = callbacks.bridgeConnected()
         )
-        root.addView(buildStatusChipRow(activity, tokens, snapshot), SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.md))
+        root.addView(buildStatusChipRow(activity, tokens, snapshot), SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg))
 
-        val searchInput = SettingsComponents.searchBar(activity, tokens, "Type a setting or command")
-        root.addView(searchInput, SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.md))
-
-        root.addView(SettingsComponents.sectionHeader(
-            context = activity,
-            tokens = tokens,
-            titleText = "Pinned",
-            trailingText = "Edit",
-            onTrailing = { /* future */ }
-        ), SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg))
-
-        val searchResults = LinearLayout(activity).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = View.GONE
-        }
         val categoriesContainer = LinearLayout(activity).apply {
             orientation = LinearLayout.VERTICAL
         }
         renderCategories(activity, tokens, categoriesContainer, callbacks)
-
-        root.addView(searchResults)
-        root.addView(categoriesContainer)
-
-        val realInput = searchInput.findViewWithTag<EditText>("search_input")
-        realInput?.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                val query = s?.toString().orEmpty()
-                if (query.isBlank()) {
-                    searchResults.visibility = View.GONE
-                    categoriesContainer.visibility = View.VISIBLE
-                } else {
-                    searchResults.visibility = View.VISIBLE
-                    categoriesContainer.visibility = View.GONE
-                    renderSearchResults(activity, tokens, searchResults, query, callbacks)
-                }
-            }
-            override fun afterTextChanged(s: Editable?) {}
-        })
+        root.addView(categoriesContainer, SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg))
 
         scroll.addView(root)
         return scroll
@@ -184,45 +145,6 @@ object SettingsHubScreen {
                 top = if (index == 0) 0 else DesignTokens.Spacing.sm + 2
             ))
         }
-    }
-
-    private fun renderSearchResults(activity: Activity, tokens: ThemeTokens, container: LinearLayout, query: String, callbacks: Callbacks) {
-        container.removeAllViews()
-        val results = SettingsSearchController.filter(query)
-        if (results.isEmpty()) {
-            container.addView(SettingsComponents.body(activity, tokens, "No matches.").apply {
-                setPadding(0, SettingsComponents.dp(activity, DesignTokens.Spacing.md), 0, SettingsComponents.dp(activity, DesignTokens.Spacing.md))
-            })
-            return
-        }
-        var lastGroup = ""
-        results.forEach { entry ->
-            if (entry.group != lastGroup) {
-                lastGroup = entry.group
-                container.addView(SettingsComponents.overline(activity, tokens, entry.group).apply {
-                    setPadding(0, SettingsComponents.dp(activity, DesignTokens.Spacing.md), 0, SettingsComponents.dp(activity, DesignTokens.Spacing.sm))
-                })
-            }
-            val (icon, tone) = iconForEntry(entry)
-            container.addView(SettingsComponents.categoryRow(
-                context = activity,
-                tokens = tokens,
-                iconRes = icon,
-                tone = tone,
-                titleText = entry.title,
-                subtitleText = entry.subtitle,
-                onClick = { callbacks.navigate(entry.destination) }
-            ), SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.xs))
-        }
-    }
-
-    private fun iconForEntry(entry: SettingsSearchEntry): Pair<Int, BadgeTone> = when (entry.destination) {
-        SettingsDestination.Runtime -> R.drawable.ic_terminal to BadgeTone.Teal
-        SettingsDestination.Connection -> R.drawable.ic_link to BadgeTone.Blue
-        SettingsDestination.Voice -> R.drawable.ic_voice_idle to BadgeTone.Violet
-        SettingsDestination.Safety -> R.drawable.ic_shield to BadgeTone.Amber
-        SettingsDestination.Appearance -> R.drawable.ic_palette to BadgeTone.Pink
-        SettingsDestination.LocalModel -> R.drawable.ic_chip to BadgeTone.Slate
     }
 
     private fun showRunTargetMenu(activity: Activity, callbacks: Callbacks) {
