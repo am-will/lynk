@@ -8,30 +8,31 @@ import org.junit.Test
 class PhoneControlPetPolicyTest {
     @Test
     fun disabledPetUsesRuntimeOverrideOnly() {
-        val policy = PhoneControlPetPolicy()
+        val policy = PhoneControlAttentionReducer()
 
-        policy.activate(userPetEnabled = false)
+        val showEffects = policy.dispatch(PhoneControlAttentionEvent.RunStarted("agent:main:phone", "run_phone"), userPetEnabled = false)
 
         assertTrue(policy.overrideVisible)
-        assertTrue(policy.restoreOverrideIfNeeded(userPetEnabled = false))
+        assertTrue(PhoneControlAttentionEffect.ShowTransientPet in showEffects)
+        assertTrue(PhoneControlAttentionEffect.HideTransientPet in policy.restoreOverrideIfNeeded(userPetEnabled = false))
         assertFalse(policy.overrideVisible)
     }
 
     @Test
     fun enabledPetDoesNotNeedRuntimeOverride() {
-        val policy = PhoneControlPetPolicy()
+        val policy = PhoneControlAttentionReducer()
 
         policy.activate(userPetEnabled = true)
 
         assertFalse(policy.overrideVisible)
-        assertFalse(policy.restoreOverrideIfNeeded(userPetEnabled = true))
+        assertFalse(PhoneControlAttentionEffect.HideTransientPet in policy.restoreOverrideIfNeeded(userPetEnabled = true))
     }
 
     @Test
     fun completionProtectsUnreadUntilAcknowledged() {
-        val policy = PhoneControlPetPolicy()
+        val policy = PhoneControlAttentionReducer()
 
-        policy.holdAfterCompletion(
+        val effects = policy.holdAfterCompletion(
             userPetEnabled = false,
             sessionKey = "agent:main:phone",
             runId = "run_phone"
@@ -41,21 +42,22 @@ class PhoneControlPetPolicyTest {
         assertEquals("agent:main:phone", policy.attentionSessionKey)
         assertEquals("run_phone", policy.attentionRunId)
         assertTrue(policy.shouldPreserveUnread("agent:main:phone"))
-        assertTrue(policy.acknowledgeReply("agent:main:phone", userPetEnabled = false))
+        assertTrue(PhoneControlAttentionEffect.ShowTransientPet in effects)
+        assertTrue(PhoneControlAttentionEffect.HideTransientPet in policy.acknowledgeReply("agent:main:phone", userPetEnabled = false))
         assertFalse(policy.shouldPreserveUnread("agent:main:phone"))
         assertFalse(policy.overrideVisible)
     }
 
     @Test
     fun timedClearReleasesProtectionAndHidesTransientPet() {
-        val policy = PhoneControlPetPolicy()
+        val policy = PhoneControlAttentionReducer()
         policy.holdAfterCompletion(
             userPetEnabled = false,
             sessionKey = "agent:main:phone",
             runId = "run_phone"
         )
 
-        assertTrue(policy.clearTimedAttention(userPetEnabled = false))
+        assertTrue(PhoneControlAttentionEffect.HideTransientPet in policy.dispatch(PhoneControlAttentionEvent.TimerExpired, userPetEnabled = false))
 
         assertFalse(policy.shouldPreserveUnread("agent:main:phone"))
         assertFalse(policy.overrideVisible)
@@ -63,7 +65,7 @@ class PhoneControlPetPolicyTest {
 
     @Test
     fun rememberedRunsTrackPhoneControlTerminals() {
-        val policy = PhoneControlPetPolicy()
+        val policy = PhoneControlAttentionReducer()
 
         policy.rememberRun(sessionKey = "agent:main:phone", runId = "run_phone")
 

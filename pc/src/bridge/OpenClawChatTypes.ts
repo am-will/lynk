@@ -1,8 +1,8 @@
-import type { ChatModelOption, ChatSendMessage, ChatSessionSummary } from "../protocol/messages.js";
+import type { ChatModelOption, ChatSendMessage, ChatSessionSummary, ChatTaskKind } from "../protocol/messages.js";
 import type { HarnessId } from "./AgentHarness.js";
 import type { BridgeConfig } from "./config.js";
-import type { GatewayChatSendResult, GatewayEventHandler } from "./OpenClawGatewayChatClient.js";
-import { requestKeyFromSessionKey } from "./OpenClawGatewayChatClient.js";
+import type { GatewayChatSendResult, GatewayEventHandler } from "./chat/ChatTransportTypes.js";
+import { requestKeyFromSessionKey } from "./chat/ChatNormalizers.js";
 
 export interface DeviceChatState {
   harnessId: HarnessId;
@@ -14,6 +14,7 @@ export interface DeviceChatState {
   reasoningStream?: boolean | null;
   fastMode?: boolean | null;
   verboseLevel?: string | null;
+  activeTaskKind?: ChatTaskKind | null;
   pendingFirstMessageDisplayName?: boolean;
   lastRealtimeRequestAt?: number | null;
   sessionKeysByHarness: Map<HarnessId, string>;
@@ -28,6 +29,7 @@ export interface DeviceChatState {
 export interface PendingChatRun {
   sessionKey: string;
   sessionId?: string | null;
+  taskKind?: ChatTaskKind;
   startedAt: number;
 }
 
@@ -100,13 +102,16 @@ export class DeviceChatStateStore {
     state: DeviceChatState,
     runId: string,
     sessionKey: string,
-    sessionId?: string | null
+    sessionId?: string | null,
+    taskKind: ChatTaskKind = "general"
   ): void {
     state.pendingRuns.set(runId, {
       sessionKey,
       sessionId: sessionId ?? null,
+      taskKind,
       startedAt: Date.now()
     });
+    state.activeTaskKind = taskKind;
   }
 }
 

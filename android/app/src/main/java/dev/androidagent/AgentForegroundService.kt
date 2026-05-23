@@ -61,148 +61,7 @@ private enum class ChatClientRoute {
     Local
 }
 
-private const val SYSTEM_DIALOG_REASON_HOME_KEY = "homekey"
-private const val SYSTEM_DIALOG_REASON_RECENT_APPS = "recentapps"
 private const val PHONE_CONTROL_COMPLETION_VISIBLE_MS = 30_000L
-
-internal enum class SystemDialogChromeAction {
-    None,
-    MinimizePanel,
-    SuppressAgentChrome
-}
-
-internal fun systemDialogChromeAction(reason: String?): SystemDialogChromeAction {
-    return when (reason) {
-        SYSTEM_DIALOG_REASON_HOME_KEY -> SystemDialogChromeAction.MinimizePanel
-        SYSTEM_DIALOG_REASON_RECENT_APPS -> SystemDialogChromeAction.SuppressAgentChrome
-        else -> SystemDialogChromeAction.None
-    }
-}
-
-internal fun isSystemRecentsSurface(packageName: String?, className: String?): Boolean {
-    val packageValue = packageName.orEmpty().lowercase()
-    val classValue = className.orEmpty().lowercase()
-    val combined = "$packageValue $classValue"
-    return combined.contains("recents") ||
-        combined.contains("overview") ||
-        (packageValue.contains("launcher") && classValue.contains("quickstep")) ||
-        (packageValue == "com.android.systemui" && classValue.contains("recents"))
-}
-
-internal data class ChatDeliveryOverride(
-    val delivery: ChatSendDelivery,
-    val text: String
-)
-
-internal fun parseChatDeliveryOverride(text: String): ChatDeliveryOverride? {
-    val trimmed = text.trim()
-    if (!trimmed.startsWith("/")) {
-        return null
-    }
-    val body = trimmed.removePrefix("/").trimStart()
-    val command = body.substringBefore(' ').lowercase()
-    val prompt = body.substringAfter(' ', missingDelimiterValue = "").trim()
-    if (prompt.isBlank()) {
-        return null
-    }
-    val delivery = when (command) {
-        "queue" -> ChatSendDelivery.Queue
-        "steer" -> ChatSendDelivery.Steer
-        else -> return null
-    }
-    val unquotedPrompt = unquotePrompt(prompt)
-    if (unquotedPrompt.isBlank()) {
-        return null
-    }
-    return ChatDeliveryOverride(delivery, unquotedPrompt)
-}
-
-private fun unquotePrompt(prompt: String): String {
-    if (prompt.length < 2) {
-        return prompt
-    }
-    val first = prompt.first()
-    val last = prompt.last()
-    return if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
-        prompt.substring(1, prompt.length - 1).trim()
-    } else {
-        prompt
-    }
-}
-
-internal class PhoneControlPetPolicy {
-    private val runIds = mutableSetOf<String>()
-    private val protectedReplySessions = mutableSetOf<String>()
-
-    var overrideVisible: Boolean = false
-        private set
-    var attentionSessionKey: String? = null
-        private set
-    var attentionRunId: String? = null
-        private set
-
-    fun activate(userPetEnabled: Boolean) {
-        if (!userPetEnabled) {
-            overrideVisible = true
-        }
-    }
-
-    fun holdAfterCompletion(userPetEnabled: Boolean, sessionKey: String?, runId: String?) {
-        val key = sessionKey?.takeIf { it.isNotBlank() }
-        attentionSessionKey = key ?: attentionSessionKey
-        attentionRunId = runId?.takeIf { it.isNotBlank() } ?: attentionRunId
-        key?.let(protectedReplySessions::add)
-        if (!userPetEnabled) {
-            overrideVisible = true
-        }
-    }
-
-    fun clearTimedAttention(userPetEnabled: Boolean): Boolean {
-        attentionSessionKey = null
-        attentionRunId = null
-        protectedReplySessions.clear()
-        return restoreOverrideIfNeeded(userPetEnabled)
-    }
-
-    fun restoreOverrideIfNeeded(userPetEnabled: Boolean): Boolean {
-        if (!overrideVisible || userPetEnabled) {
-            overrideVisible = false
-            return false
-        }
-        overrideVisible = false
-        return true
-    }
-
-    fun rememberRun(sessionKey: String?, runId: String?) {
-        runId?.takeIf { it.isNotBlank() }?.let(runIds::add)
-        attentionSessionKey = sessionKey?.takeIf { it.isNotBlank() } ?: attentionSessionKey
-        attentionRunId = runId?.takeIf { it.isNotBlank() } ?: attentionRunId
-    }
-
-    fun forgetRun(runId: String?) {
-        runId?.takeIf { it.isNotBlank() }?.let(runIds::remove)
-    }
-
-    fun isRememberedRun(runId: String?): Boolean {
-        return runId?.takeIf { it.isNotBlank() }?.let(runIds::contains) == true
-    }
-
-    fun shouldPreserveUnread(sessionKey: String?): Boolean {
-        val key = sessionKey?.takeIf { it.isNotBlank() } ?: return false
-        return key in protectedReplySessions
-    }
-
-    fun acknowledgeReply(sessionKey: String?, userPetEnabled: Boolean): Boolean {
-        val key = sessionKey?.takeIf { it.isNotBlank() } ?: return false
-        protectedReplySessions.remove(key)
-        if (attentionSessionKey != key) {
-            return false
-        }
-        attentionSessionKey = null
-        attentionRunId = null
-        return restoreOverrideIfNeeded(userPetEnabled)
-    }
-}
 
 class AgentForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -222,7 +81,7 @@ class AgentForegroundService : Service() {
     private var recentsSuppressionStartedAtMs = 0L
     private var recentsRestoreCheck: Runnable? = null
     private var phoneControlAttentionClear: Runnable? = null
-    private val phoneControlPetPolicy = PhoneControlPetPolicy()
+    private val phoneControlPetPolicy = PhoneControlAttentionReducer()
     private val closeSystemDialogsReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != Intent.ACTION_CLOSE_SYSTEM_DIALOGS) return
@@ -404,7 +263,7 @@ class AgentForegroundService : Service() {
         phoneControlAttentionClear?.let(mainHandler::removeCallbacks)
         val clear = Runnable {
             phoneControlAttentionClear = null
-            if (phoneControlPetPolicy.clearTimedAttention(AgentConfigStore.load(this).petEnabled)) {
+            if (PhoneControlAttentionEffect.HideTransientPet in phoneControlPetPolicy.clearTimedAttention(AgentConfigStore.load(this).petEnabled)) {
                 overlayController?.hidePhoneControlPet()
             }
         }
@@ -413,7 +272,7 @@ class AgentForegroundService : Service() {
     }
 
     private fun restorePetAfterPhoneControlIfNeeded() {
-        if (phoneControlPetPolicy.restoreOverrideIfNeeded(AgentConfigStore.load(this).petEnabled)) {
+        if (PhoneControlAttentionEffect.HideTransientPet in phoneControlPetPolicy.restoreOverrideIfNeeded(AgentConfigStore.load(this).petEnabled)) {
             overlayController?.hidePhoneControlPet()
         }
     }
@@ -437,12 +296,12 @@ class AgentForegroundService : Service() {
     private fun acknowledgePhoneControlReply(sessionKey: String?) {
         val key = sessionKey?.takeIf { it.isNotBlank() } ?: return
         val wasAttentionSession = phoneControlPetPolicy.attentionSessionKey == key
-        val shouldHidePet = phoneControlPetPolicy.acknowledgeReply(key, AgentConfigStore.load(this).petEnabled)
+        val effects = phoneControlPetPolicy.acknowledgeReply(key, AgentConfigStore.load(this).petEnabled)
         if (wasAttentionSession) {
             phoneControlAttentionClear?.let(mainHandler::removeCallbacks)
             phoneControlAttentionClear = null
         }
-        if (shouldHidePet) {
+        if (PhoneControlAttentionEffect.HideTransientPet in effects) {
             overlayController?.hidePhoneControlPet()
         }
     }
@@ -951,6 +810,7 @@ class AgentForegroundService : Service() {
 
     private fun isPhoneControlStartMessage(message: JSONObject): Boolean {
         if (message.optString("type") != "chat.state") return false
+        if (message.optString("taskKind") == "phone") return true
         val status = message.optString("status").lowercase()
         return status.contains("phone task") || status.contains("android phone tools")
     }

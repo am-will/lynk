@@ -29,7 +29,7 @@ export class OpenClawFallbackSender {
   async send(message: ChatSendMessage, runId: string, taskKind: AgentTaskKind = "general"): Promise<void> {
     const state = this.options.states.stateFor(message.deviceId);
     state.runId = runId;
-    this.options.states.trackPendingRun(state, runId, state.sessionKey, state.sessionId ?? null);
+    this.options.states.trackPendingRun(state, runId, state.sessionKey, state.sessionId ?? null, taskKind);
     this.options.sendChat(message.deviceId, {
       type: "chat.history",
       deviceId: message.deviceId,

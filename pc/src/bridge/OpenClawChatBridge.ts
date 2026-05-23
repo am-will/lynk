@@ -57,7 +57,7 @@ import {
   normalizeTools,
   requestKeyFromSessionKey,
   usageFromSession
-} from "./OpenClawGatewayChatClient.js";
+} from "./chat/ChatNormalizers.js";
 import { OpenClawRealtimeSessions } from "./OpenClawRealtimeSessions.js";
 import { OpenClawRunWaiters } from "./OpenClawRunWaiters.js";
 import { PhoneHub } from "./PhoneHub.js";
@@ -185,7 +185,8 @@ export class OpenClawChatBridge {
         state,
         result.runId,
         result.sessionKey,
-        message.sessionId ?? state.sessionId ?? null
+        message.sessionId ?? state.sessionId ?? null,
+        taskKind
       );
       await this.maybeSetFirstMessageDisplayName(message.deviceId, text);
       this.audit?.record("openclaw_chat_send", message.deviceId, {
@@ -237,6 +238,7 @@ export class OpenClawChatBridge {
       });
     } finally {
       state.runId = null;
+      state.activeTaskKind = null;
       if (runId) {
         state.pendingRuns.delete(runId);
       }
@@ -328,6 +330,7 @@ export class OpenClawChatBridge {
       });
       state.sessionKey = result.sessionKey;
       state.runId = result.runId;
+      state.activeTaskKind = options.taskKind;
       state.lastRealtimeRequestAt = Date.now();
       this.audit?.record("realtime_chat_send", request.deviceId, {
         sessionKey: result.sessionKey,
@@ -709,6 +712,7 @@ export class OpenClawChatBridge {
       runId: state.runId ?? null,
       isRunning: Boolean(state.runId),
       status: status ?? null,
+      taskKind: state.runId ? state.activeTaskKind ?? null : null,
       model: state.model ?? null,
       reasoningEffort: state.reasoningEffort ?? null,
       reasoningStream: state.reasoningStream ?? null,

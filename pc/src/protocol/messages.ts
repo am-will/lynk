@@ -79,6 +79,8 @@ export type RealtimeToolName = typeof REALTIME_TOOL_NAMES[keyof typeof REALTIME_
 export const AGENT_MODEL_IDS = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.2"] as const;
 export const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
 export const CHAT_SEND_DELIVERIES = ["normal", "queue", "steer"] as const;
+export const CHAT_TASK_KINDS = ["general", "phone"] as const;
+export type ChatTaskKind = typeof CHAT_TASK_KINDS[number];
 
 export const registerMessageSchema = z.object({
   type: z.literal("register"),
@@ -426,6 +428,7 @@ export interface ChatStateMessage {
   runId?: string | null;
   isRunning: boolean;
   status?: string | null;
+  taskKind?: ChatTaskKind | null;
   model?: string | null;
   reasoningEffort?: string | null;
   reasoningStream?: boolean | null;
@@ -733,6 +736,7 @@ export const chatStateMessageSchema = z.object({
   runId: z.string().optional().nullable(),
   isRunning: z.boolean(),
   status: z.string().optional().nullable(),
+  taskKind: z.enum(CHAT_TASK_KINDS).optional().nullable(),
   model: z.string().optional().nullable(),
   reasoningEffort: z.string().optional().nullable(),
   reasoningStream: z.boolean().optional().nullable(),
