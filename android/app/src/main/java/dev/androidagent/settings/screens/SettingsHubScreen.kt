@@ -68,7 +68,16 @@ object SettingsHubScreen {
             )
         }
         renderCategories(activity, tokens, categoriesContainer, callbacks, metrics)
-        root.addView(categoriesContainer, SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.xxl))
+        root.addView(
+            categoriesContainer,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            ).apply {
+                topMargin = SettingsComponents.dp(activity, DesignTokens.Spacing.xxl)
+            }
+        )
 
         return root
     }
