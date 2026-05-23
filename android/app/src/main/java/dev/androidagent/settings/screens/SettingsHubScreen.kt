@@ -53,7 +53,7 @@ object SettingsHubScreen {
             context = activity,
             tokens = tokens,
             titleText = "Android Agent",
-            subtitleText = "Android bubble endpoint for your agents",
+            subtitleText = "The best interface for your agents.",
             avatarSizeDp = metrics.headerAvatarSizeDp,
             onMenu = { /* future overflow */ }
         ))
