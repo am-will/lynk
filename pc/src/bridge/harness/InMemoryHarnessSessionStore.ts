@@ -23,7 +23,7 @@ export interface HarnessStoredSession {
   updatedAt: number;
   activeRunId?: string | null;
   usage?: Record<string, unknown>;
-  baseInstructionsBound?: boolean;
+  metadata?: Record<string, unknown>;
 }
 
 export interface InMemoryHarnessSessionStoreOptions {
@@ -57,7 +57,7 @@ export class InMemoryHarnessSessionStore {
       messages: [],
       updatedAt: Date.now(),
       activeRunId: null,
-      baseInstructionsBound: false
+      metadata: {}
     };
     this.sessions.set(key, created);
     this.persist();
@@ -171,16 +171,25 @@ export class InMemoryHarnessSessionStore {
     this.persist();
   }
 
-  setBaseInstructionsBound(session: HarnessStoredSession, bound: boolean): void {
-    if (session.baseInstructionsBound === bound) {
+  setMetadata(session: HarnessStoredSession, key: string, value: unknown): void {
+    const metadata = session.metadata ?? {};
+    if (metadata[key] === value) {
       return;
     }
-    session.baseInstructionsBound = bound;
+    session.metadata = {
+      ...metadata,
+      [key]: value
+    };
     session.updatedAt = Date.now();
     this.persist();
   }
 
-  upsertAssistantMessage(session: HarnessStoredSession, runId: string, text: string): void {
+  upsertAssistantMessage(
+    session: HarnessStoredSession,
+    runId: string,
+    text: string,
+    options: { persist?: boolean } = {}
+  ): void {
     const id = `assistant_${runId}`;
     const existing = session.messages.find((message) => message.id === id);
     if (existing) {
@@ -195,7 +204,9 @@ export class InMemoryHarnessSessionStore {
       });
     }
     session.updatedAt = Date.now();
-    this.persist();
+    if (options.persist !== false) {
+      this.persist();
+    }
   }
 
   historyMessages(session: HarnessStoredSession): ChatHistoryMessage[] {
@@ -268,7 +279,10 @@ function parseStoredSession(value: unknown, defaultModel: string): HarnessStored
     updatedAt: numberField(record, "updatedAt") ?? Date.now(),
     activeRunId: null,
     usage: asRecord(record?.usage),
-    baseInstructionsBound: booleanField(record, "baseInstructionsBound") ?? false
+    metadata: {
+      ...asRecord(record?.metadata),
+      ...(booleanField(record, "baseInstructionsBound") === true ? { codexBaseInstructionsBound: true } : {})
+    }
   };
 }
 

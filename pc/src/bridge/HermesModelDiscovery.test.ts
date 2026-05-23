@@ -1,0 +1,71 @@
+import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { discoverHermesModels } from "./HermesModelDiscovery.js";
+
+function withHermesHome(files: Record<string, string>, run: () => void): void {
+  const previousHome = process.env.HERMES_HOME;
+  const home = mkdtempSync(join(tmpdir(), "open-claw-hermes-"));
+  try {
+    for (const [name, content] of Object.entries(files)) {
+      writeFileSync(join(home, name), content);
+    }
+    process.env.HERMES_HOME = home;
+    run();
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HERMES_HOME;
+    } else {
+      process.env.HERMES_HOME = previousHome;
+    }
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+const configYaml = [
+  "model:",
+  "  default: MiniMax-M2.7",
+  "  provider: local-minimax",
+  "  context_length: 149429",
+  "providers:",
+  "  local-minimax:",
+  "    models:",
+  "      MiniMax-M2.7:",
+  "        context_length: 149429"
+].join("\n");
+
+const authJson = JSON.stringify({
+  providers: {
+    "openai-codex": {}
+  }
+});
+
+test("Hermes model discovery uses Codex OAuth context length cache", () => {
+  withHermesHome({
+    "config.yaml": configYaml,
+    "auth.json": authJson,
+    "context_length_cache.yaml": [
+      "context_lengths:",
+      "  gpt-5.5@https://chatgpt.com/backend-api/codex: 333000"
+    ].join("\n")
+  }, () => {
+    const models = discoverHermesModels("hermes-agent");
+
+    assert.equal(models.find((model) => model.id === "openai-codex:gpt-5.5")?.contextWindow, 333_000);
+    assert.equal(models.find((model) => model.id === "local-minimax:MiniMax-M2.7")?.contextWindow, 149_429);
+  });
+});
+
+test("Hermes model discovery falls back to known Codex OAuth context windows", () => {
+  withHermesHome({
+    "config.yaml": configYaml,
+    "auth.json": authJson
+  }, () => {
+    const models = discoverHermesModels("hermes-agent");
+
+    assert.equal(models.find((model) => model.id === "openai-codex:gpt-5.5")?.contextWindow, 272_000);
+    assert.equal(models.find((model) => model.id === "openai-codex:gpt-5.3-codex-spark")?.contextWindow, 128_000);
+  });
+});

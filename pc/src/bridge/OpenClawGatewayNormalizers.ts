@@ -11,14 +11,7 @@ import type {
   ChatToolSummary,
   ChatUsageSummary
 } from "../protocol/messages.js";
-
-const FALLBACK_REASONING_OPTIONS: ChatReasoningOption[] = [
-  { id: "low", label: "low" },
-  { id: "medium", label: "medium" },
-  { id: "high", label: "high" },
-  { id: "xhigh", label: "xhigh" }
-];
-const ALLOWED_REASONING_OPTION_IDS = new Set(["none", "minimal", ...FALLBACK_REASONING_OPTIONS.map((option) => option.id)]);
+import { ALLOWED_REASONING_OPTION_IDS, DEFAULT_REASONING_OPTIONS } from "./chat/ModelCatalog.js";
 
 export function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
@@ -251,7 +244,7 @@ export function normalizeReasoningOptions(value: unknown): ChatReasoningOption[]
     }
     return ALLOWED_REASONING_OPTION_IDS.has(option.id);
   });
-  return normalized.length > 0 ? normalized : FALLBACK_REASONING_OPTIONS;
+  return normalized.length > 0 ? normalized : DEFAULT_REASONING_OPTIONS;
 }
 
 export function normalizeSessions(value: unknown): ChatSessionSummary[] {
@@ -479,8 +472,11 @@ export function normalizeTools(value: unknown): ChatToolSummary[] {
   return normalized;
 }
 
-function statusFromRaw(raw: Record<string, unknown> | undefined): ChatToolEventMessage["status"] {
-  const status = stringField(raw, "status") ?? stringField(raw, "state") ?? stringField(raw, "phase");
+function statusFromRaw(
+  data: Record<string, unknown> | undefined,
+  record?: Record<string, unknown>
+): ChatToolEventMessage["status"] {
+  const status = stringField(data, "status") ?? stringField(data, "state") ?? stringField(data, "phase");
   if (status === "completed" || status === "done" || status === "success") {
     return "completed";
   }
@@ -490,7 +486,88 @@ function statusFromRaw(raw: Record<string, unknown> | undefined): ChatToolEventM
   if (status === "blocked" || status === "denied") {
     return "blocked";
   }
+  if (booleanField(data, "success") === true) {
+    return "completed";
+  }
+  if (booleanField(data, "success") === false || stringField(data, "error")) {
+    return "failed";
+  }
+  const eventType = [
+    stringField(record, "type"),
+    stringField(record, "event"),
+    stringField(data, "type"),
+    stringField(data, "event")
+  ].filter(Boolean).join(" ").toLowerCase();
+  if (eventType.includes("tool.result")) {
+    return "completed";
+  }
+  if (eventType.includes("tool.error") || eventType.includes("tool.failed")) {
+    return "failed";
+  }
   return status === "info" ? "info" : "running";
+}
+
+function ownField(record: Record<string, unknown> | undefined, key: string): unknown {
+  return record && Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined;
+}
+
+function meaningfulToolValue(value: unknown): boolean {
+  if (value === undefined || value === null) {
+    return false;
+  }
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  if (typeof value === "object") {
+    return Object.keys(value).length > 0;
+  }
+  return true;
+}
+
+function firstMeaningfulField(record: Record<string, unknown> | undefined, keys: string[]): unknown {
+  for (const key of keys) {
+    const value = ownField(record, key);
+    if (meaningfulToolValue(value)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function textFromContentItems(value: unknown): string | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const text = value
+    .map((item) => {
+      if (typeof item === "string") {
+        return item;
+      }
+      const record = asRecord(item);
+      return stringField(record, "text") ?? stringField(record, "content") ?? "";
+    })
+    .filter(Boolean)
+    .join("\n");
+  return text.trim() ? text : undefined;
+}
+
+function toolEventId(data: Record<string, unknown>, record: Record<string, unknown>): string | undefined {
+  for (const source of [data, record]) {
+    const id = stringField(source, "eventId")
+      ?? stringField(source, "id")
+      ?? stringField(source, "callId")
+      ?? stringField(source, "toolCallId")
+      ?? stringField(source, "tool_call_id")
+      ?? stringField(source, "invocationId")
+      ?? stringField(source, "requestId");
+    if (id) {
+      return id;
+    }
+  }
+  return undefined;
 }
 
 export function normalizeGatewayToolEvent(
@@ -512,9 +589,21 @@ export function normalizeGatewayToolEvent(
   if (!toolName && !stream.includes("tool") && !stream.includes("command")) {
     return undefined;
   }
-  const status = statusFromRaw(data);
-  const eventId = stringField(data, "id") ?? stringField(record, "id") ?? `${record.runId ?? "run"}:${record.seq ?? randomUUID()}`;
+  const status = statusFromRaw(data, record);
+  const stableEventId = toolEventId(data, record);
+  const eventId = stableEventId ?? `${record.runId ?? "run"}:${record.seq ?? randomUUID()}`;
   const summary = stringField(data, "summary") ?? stringField(data, "message") ?? stringField(data, "text") ?? null;
+  const args = firstMeaningfulField(data, ["args", "arguments", "input", "parameters"]);
+  const contentItemsText = textFromContentItems(data.contentItems);
+  const output = firstMeaningfulField(data, ["output", "result", "response"]) ?? contentItemsText;
+  const error = stringField(data, "error") ?? (status === "failed" ? contentItemsText : undefined) ?? null;
+  const hasVisibleDetails = Boolean(summary) || meaningfulToolValue(args) || meaningfulToolValue(output) || Boolean(error);
+  if (!stableEventId && status === "running") {
+    return undefined;
+  }
+  if (!hasVisibleDetails && !stableEventId && status !== "failed" && status !== "blocked") {
+    return undefined;
+  }
   return {
     type: "chat.tool_event",
     deviceId,
@@ -522,12 +611,12 @@ export function normalizeGatewayToolEvent(
     runId: stringField(record, "runId") ?? null,
     eventId,
     toolName: toolName ?? "tool",
-    title: summary ?? toolName ?? "Tool activity",
+    title: stringField(data, "title") ?? summary ?? toolName ?? "Tool activity",
     status,
     summary,
-    args: data.args ?? data.arguments ?? null,
-    output: data.output ?? data.result ?? null,
-    error: stringField(data, "error") ?? null,
+    args: args ?? null,
+    output: output ?? null,
+    error,
     raw: payload
   };
 }

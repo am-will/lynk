@@ -1,28 +1,20 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { AuditLog } from "./AuditLog.js";
 import type { AgentRunResult, AgentStatusSink } from "../dispatcher/AgentClient.js";
 import { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js";
 import { PHONE_AGENT_SYSTEM_PROMPT } from "../dispatcher/promptPolicy.js";
+import { codexAppServerContextWindow, DEFAULT_REASONING_OPTIONS } from "./chat/ModelCatalog.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "./harness/InMemoryHarnessSessionStore.js";
-import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "./OpenClawGatewayChatClient.js";
+import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "./chat/ChatTransportTypes.js";
 
 interface ActiveRun {
   sessionKey: string;
   runId: string;
 }
 
-const CODEX_CONTEXT_WINDOWS: Record<string, number> = {
-  "gpt-5.5": 400_000,
-  "gpt-5.4": 400_000,
-  "gpt-5.4-mini": 400_000,
-  "gpt-5.3-codex": 400_000,
-  "gpt-5.3-codex-spark": 400_000,
-  "gpt-5.2": 400_000,
-  "gpt-5.2-codex": 400_000,
-  "gpt-5.1-codex-max": 400_000,
-  "gpt-5.1-codex-mini": 400_000
-};
+const CODEX_BASE_INSTRUCTIONS_FINGERPRINT_KEY = "codexBaseInstructionsFingerprint";
+const LEGACY_CODEX_BASE_INSTRUCTIONS_BOUND_KEY = "codexBaseInstructionsBound";
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
@@ -229,7 +221,7 @@ export class CodexChatClient {
         model,
         reasoningEffort,
         taskKind: "general",
-        useSessionInstructions: session.baseInstructionsBound === true
+        useSessionInstructions: codexBaseInstructionsBound(session)
       });
       if (result.threadId) {
         this.sessions.setSessionId(session, result.threadId);
@@ -301,7 +293,7 @@ export class CodexChatClient {
       provider: "codex",
       contextWindow: contextWindowFromPayload(record)
         ?? contextWindowFromPayload(capabilities)
-        ?? CODEX_CONTEXT_WINDOWS[id],
+        ?? codexAppServerContextWindow(id),
       available: true,
       reasoningOptions: arrayField(record, "supportedReasoningEfforts"),
       defaultReasoningEffort: stringField(record, "defaultReasoningEffort")
@@ -317,7 +309,7 @@ export class CodexChatClient {
       baseInstructions: PHONE_AGENT_SYSTEM_PROMPT
     });
     this.sessions.setSessionId(session, threadId);
-    this.sessions.setBaseInstructionsBound(session, true);
+    this.sessions.setMetadata(session, CODEX_BASE_INSTRUCTIONS_FINGERPRINT_KEY, promptFingerprint(PHONE_AGENT_SYSTEM_PROMPT));
   }
 }
 
@@ -333,15 +325,25 @@ function isLocalCodexSessionId(sessionKey: string, sessionId: string): boolean {
   return sessionId === localSessionId;
 }
 
+function codexBaseInstructionsBound(session: HarnessStoredSession): boolean {
+  const metadata = session.metadata ?? {};
+  return metadata[CODEX_BASE_INSTRUCTIONS_FINGERPRINT_KEY] === promptFingerprint(PHONE_AGENT_SYSTEM_PROMPT)
+    || metadata[LEGACY_CODEX_BASE_INSTRUCTIONS_BOUND_KEY] === true;
+}
+
+function promptFingerprint(prompt: string): string {
+  return createHash("sha256").update(prompt).digest("hex");
+}
+
 function codexFallbackModel(id: string, name: string, defaultReasoningEffort: string): Record<string, unknown> {
   return {
     id,
     key: id,
     name,
     provider: "codex",
-    contextWindow: CODEX_CONTEXT_WINDOWS[id],
+    contextWindow: codexAppServerContextWindow(id),
     available: true,
-    reasoningOptions: ["low", "medium", "high", "xhigh"],
+    reasoningOptions: DEFAULT_REASONING_OPTIONS.map((option) => option.id),
     defaultReasoningEffort
   };
 }

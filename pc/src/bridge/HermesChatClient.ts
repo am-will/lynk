@@ -5,7 +5,7 @@ import type { ChatHistoryMessage, ChatSessionSummary } from "../protocol/message
 import type { BridgeConfig } from "./config.js";
 import { discoverHermesModels } from "./HermesModelDiscovery.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "./harness/InMemoryHarnessSessionStore.js";
-import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "./OpenClawGatewayChatClient.js";
+import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "./chat/ChatTransportTypes.js";
 
 interface ActiveChatRun {
   sessionKey: string;
@@ -319,7 +319,7 @@ export class HermesChatClient {
     if (event.type !== "delta") {
       return;
     }
-    this.sessions.upsertAssistantMessage(session, runId, event.accumulated);
+    this.sessions.upsertAssistantMessage(session, runId, event.accumulated, { persist: false });
     this.emit("chat", {
       sessionKey: session.key,
       runId,

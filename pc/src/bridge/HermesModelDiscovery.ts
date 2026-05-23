@@ -3,13 +3,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import type { ChatModelOption, ChatReasoningOption } from "../protocol/messages.js";
-
-const FALLBACK_REASONING_OPTIONS: ChatReasoningOption[] = [
-  { id: "low", label: "low" },
-  { id: "medium", label: "medium" },
-  { id: "high", label: "high" },
-  { id: "xhigh", label: "xhigh" }
-];
+import {
+  defaultReasoningForProvider,
+  hermesCodexOauthContextWindow,
+  reasoningOptionsForProvider
+} from "./chat/ModelCatalog.js";
 
 const FALLBACK_PROVIDER_MODELS: Record<string, string[]> = {
   anthropic: [
@@ -50,6 +48,8 @@ const PROVIDER_LABELS: Record<string, string> = {
   openrouter: "OpenRouter"
 };
 
+const CODEX_OAUTH_URL_FRAGMENT = "chatgpt.com/backend-api/codex";
+
 interface HermesConfigSummary {
   modelProvider?: string;
   modelDefault?: string;
@@ -57,13 +57,20 @@ interface HermesConfigSummary {
   providers: Map<string, Array<{ id: string; contextWindow?: number }>>;
 }
 
+interface HermesContextLengthCacheEntry {
+  model: string;
+  endpoint: string;
+  contextWindow: number;
+}
+
 export function discoverHermesModels(defaultModel: string): ChatModelOption[] {
   const home = process.env.HERMES_HOME?.trim() || join(homedir(), ".hermes");
   const config = readHermesConfigSummary(join(home, "config.yaml"));
+  const contextCache = readHermesContextLengthCache(join(home, "context_length_cache.yaml"));
   const providerIds = new Set<string>();
   const models: ChatModelOption[] = [];
 
-  addConfiguredModel(models, providerIds, config, defaultModel);
+  addConfiguredModel(models, providerIds, config, defaultModel, contextCache);
   for (const provider of config.providers.keys()) {
     providerIds.add(provider);
   }
@@ -80,12 +87,13 @@ export function discoverHermesModels(defaultModel: string): ChatModelOption[] {
       ...catalogModels
     ]);
     for (const id of ids) {
+      const configuredModel = configured.find((model) => model.id === id);
       upsertHermesModel(models, {
         id: hermesModelSelectionId(provider, id),
         label: `${providerLabel(provider)} / ${id}`,
         provider,
         modelId: hermesModelSelectionId(provider, id),
-        contextWindow: configured.find((model) => model.id === id)?.contextWindow ?? null,
+        contextWindow: configuredModel?.contextWindow ?? contextWindowForHermesModel(provider, id, contextCache) ?? null,
         available: true,
         reasoningOptions: reasoningOptionsForHermesProvider(provider, id),
         defaultReasoningEffort: defaultReasoningForHermesProvider(provider, id)
@@ -109,7 +117,8 @@ function addConfiguredModel(
   models: ChatModelOption[],
   providerIds: Set<string>,
   config: HermesConfigSummary,
-  defaultModel: string
+  defaultModel: string,
+  contextCache: HermesContextLengthCacheEntry[]
 ): void {
   const model = config.modelDefault?.trim() || defaultModel.trim();
   if (!model) {
@@ -122,7 +131,7 @@ function addConfiguredModel(
     label: `${providerLabel(provider)} / ${model}`,
     provider,
     modelId: hermesModelSelectionId(provider, model),
-    contextWindow: config.modelContextLength,
+    contextWindow: config.modelContextLength ?? contextWindowForHermesModel(provider, model, contextCache),
     available: true,
     reasoningOptions: reasoningOptionsForHermesProvider(provider, model),
     defaultReasoningEffort: defaultReasoningForHermesProvider(provider, model)
@@ -193,6 +202,38 @@ function readHermesConfigSummary(path: string): HermesConfigSummary {
   return summary;
 }
 
+function readHermesContextLengthCache(path: string): HermesContextLengthCacheEntry[] {
+  if (!existsSync(path)) {
+    return [];
+  }
+  try {
+    return readFileSync(path, "utf8")
+      .split(/\r?\n/)
+      .map((line) => {
+        const match = line.match(/^\s+(.+):\s*([0-9][0-9_,]*)\s*$/);
+        if (!match) {
+          return undefined;
+        }
+        const separator = match[1].indexOf("@");
+        if (separator <= 0) {
+          return undefined;
+        }
+        const contextWindow = positiveInt(match[2]);
+        if (!contextWindow) {
+          return undefined;
+        }
+        return {
+          model: unquote(match[1].slice(0, separator).trim()),
+          endpoint: unquote(match[1].slice(separator + 1).trim()).replace(/\/+$/, ""),
+          contextWindow
+        };
+      })
+      .filter((entry): entry is HermesContextLengthCacheEntry => Boolean(entry));
+  } catch {
+    return [];
+  }
+}
+
 function readCredentialPoolProviders(path: string): string[] {
   if (!existsSync(path)) {
     return [];
@@ -257,6 +298,56 @@ function loadHermesProviderCatalog(home: string, providers: string[]): Map<strin
   }
 }
 
+function contextWindowForHermesModel(
+  provider: string,
+  model: string,
+  contextCache: HermesContextLengthCacheEntry[]
+): number | undefined {
+  return cachedContextWindowForHermesModel(provider, model, contextCache)
+    ?? providerFallbackContextWindow(provider, model);
+}
+
+function cachedContextWindowForHermesModel(
+  provider: string,
+  model: string,
+  contextCache: HermesContextLengthCacheEntry[]
+): number | undefined {
+  const queryModel = bareHermesModel(provider, model).toLowerCase();
+  for (const entry of contextCache) {
+    const cachedModel = bareHermesModel(provider, entry.model).toLowerCase();
+    if (cachedModel !== queryModel) {
+      continue;
+    }
+    if (!contextCacheEndpointMatchesProvider(provider, entry.endpoint)) {
+      continue;
+    }
+    return entry.contextWindow;
+  }
+  return undefined;
+}
+
+function contextCacheEndpointMatchesProvider(provider: string, endpoint: string): boolean {
+  const normalizedProvider = provider.toLowerCase();
+  const normalizedEndpoint = endpoint.toLowerCase();
+  if (normalizedProvider === "openai-codex") {
+    return normalizedEndpoint.includes(CODEX_OAUTH_URL_FRAGMENT);
+  }
+  return !normalizedEndpoint.includes(CODEX_OAUTH_URL_FRAGMENT);
+}
+
+function providerFallbackContextWindow(provider: string, model: string): number | undefined {
+  if (provider.toLowerCase() !== "openai-codex") {
+    return undefined;
+  }
+  return hermesCodexOauthContextWindow(bareHermesModel(provider, model));
+}
+
+function bareHermesModel(provider: string, model: string): string {
+  const trimmed = model.trim();
+  const prefix = `${provider.trim()}:`.toLowerCase();
+  return trimmed.toLowerCase().startsWith(prefix) ? trimmed.slice(prefix.length).trim() : trimmed;
+}
+
 function upsertHermesModel(models: ChatModelOption[], model: ChatModelOption): void {
   const index = models.findIndex((existing) => existing.id === model.id);
   if (index === -1) {
@@ -279,19 +370,11 @@ function hermesModelSelectionId(provider: string, model: string): string {
 }
 
 function reasoningOptionsForHermesProvider(provider: string, model: string): ChatReasoningOption[] | undefined {
-  const normalized = provider.toLowerCase();
-  const lowerModel = model.toLowerCase();
-  if (normalized.includes("minimax") || normalized === "local" || lowerModel.includes("minimax")) {
-    return undefined;
-  }
-  if (normalized === "anthropic" || lowerModel.includes("claude")) {
-    return undefined;
-  }
-  return FALLBACK_REASONING_OPTIONS;
+  return reasoningOptionsForProvider(provider, model);
 }
 
 function defaultReasoningForHermesProvider(provider: string, model: string): string | undefined {
-  return reasoningOptionsForHermesProvider(provider, model)?.some((option) => option.id === "medium") ? "medium" : undefined;
+  return defaultReasoningForProvider(provider, model);
 }
 
 function providerLabel(provider: string): string {
@@ -345,7 +428,7 @@ function unquote(value: string): string {
 }
 
 function positiveInt(value: string): number | undefined {
-  const parsed = Number.parseInt(value, 10);
+  const parsed = Number.parseInt(value.replace(/[,_]/g, ""), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
