@@ -444,6 +444,42 @@ test("completed background session runs emit reply notifications without switchi
   assert.equal(reply.textPreview, "Background answer");
 });
 
+test("host initiated terminal events emit reply notifications without switching timeline", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+  const cronSessionKey = "agent:main:explicit:nightly-cron";
+  client.sessions = [{
+    key: cronSessionKey,
+    sessionId: "cron-session",
+    displayName: "Nightly cron"
+  }];
+  await bridge.open({
+    type: "chat.open",
+    deviceId: "pixel"
+  });
+
+  const beforeFinal = chatMessages.length;
+  client.emit({
+    event: "chat",
+    payload: {
+      sessionKey: cronSessionKey,
+      runId: "cron-run-1",
+      state: "final",
+      message: "Cron finished"
+    }
+  });
+
+  const emitted = chatMessages.slice(beforeFinal);
+  assert.equal(emitted.some((message) => message.type === "chat.final"), false);
+  const reply = emitted.find((message) => message.type === "chat.reply_available");
+  assert.ok(reply);
+  assert.equal(reply.sessionKey, cronSessionKey);
+  assert.equal(reply.runId, "cron-run-1");
+  assert.equal(reply.status, "completed");
+  assert.equal(reply.textPreview, "Cron finished");
+  assert.equal(reply.sessionId, "cron-session");
+  assert.equal(reply.sessionDisplayName, "Nightly cron");
+});
+
 test("reasoning and model changes do not append chat messages", async () => {
   const { bridge, chatMessages, client } = createHarness();
 

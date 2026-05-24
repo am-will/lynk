@@ -60,8 +60,10 @@ export class OpenClawGatewayEventRouter {
     const isTrackedPendingRun = Boolean(
       pendingRun && (!messageSessionKey || pendingRun.sessionKey === messageSessionKey)
     );
+    const isTerminalMessage = message.type === "chat.final" || message.type === "chat.error";
+    const isNotificationEligibleTerminal = Boolean(isTerminalMessage && messageSessionKey && messageRunId);
 
-    if (!isSelectedSession && !isTrackedPendingRun) {
+    if (!isSelectedSession && !isTrackedPendingRun && !isNotificationEligibleTerminal) {
       return false;
     }
 
@@ -72,15 +74,20 @@ export class OpenClawGatewayEventRouter {
       this.options.sendChat(deviceId, message);
     }
 
-    if (message.type === "chat.final" || message.type === "chat.error") {
+    if (isTerminalMessage) {
       this.options.settleRun(message);
       if (messageRunId && state.runId === messageRunId) {
         state.runId = null;
         state.activeTaskKind = null;
       }
-      if (messageRunId && pendingRun) {
-        this.options.sendReplyAvailable(deviceId, message, messageSessionKey ?? pendingRun.sessionKey, pendingRun);
-        state.pendingRuns.delete(messageRunId);
+      if (messageRunId) {
+        const replySessionKey = messageSessionKey ?? pendingRun?.sessionKey;
+        if (replySessionKey) {
+          this.options.sendReplyAvailable(deviceId, message, replySessionKey, pendingRun);
+        }
+        if (pendingRun) {
+          state.pendingRuns.delete(messageRunId);
+        }
       }
       if (isSelectedSession) {
         this.options.sendState(deviceId, message.type === "chat.final" ? "OpenClaw finished" : "OpenClaw failed");
