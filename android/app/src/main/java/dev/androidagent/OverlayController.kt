@@ -50,6 +50,7 @@ import dev.androidagent.overlay.BubbleOverlay
 import dev.androidagent.overlay.ChatPresentationHelpers
 import dev.androidagent.overlay.ChatTimelineBinder
 import dev.androidagent.overlay.ConfirmationOverlay
+import dev.androidagent.overlay.CodexSessionPickerSections
 import dev.androidagent.overlay.HostConnectionCopy
 import dev.androidagent.overlay.HostConnectionIndicatorButton
 import dev.androidagent.overlay.HostConnectionPhase
@@ -1495,7 +1496,7 @@ class OverlayController(
             AnchoredPicker.Row(
                 id = "session:${session.key}",
                 label = label.take(40),
-                sublabel = codexSessionSublabel(session) ?: session.model,
+                sublabel = session.model,
                 iconRes = R.drawable.ic_notification_bubble,
                 badgeCount = lastChatState.unreadCountForSession(session.key),
                 selected = session.key == lastChatState.sessionKey,
@@ -1508,33 +1509,13 @@ class OverlayController(
         if (!isCodexHarness()) {
             return listOf(AnchoredPicker.Section(null, sessionPickerRows(limit = 30)))
         }
-        val scoped = lastChatState.sessions.take(limit)
-        val workspaceSessions = scoped.filter { !it.workspacePath.isNullOrBlank() || !it.workspaceName.isNullOrBlank() }
-        val quickChatSessions = scoped.filter { it.workspacePath.isNullOrBlank() && it.workspaceName.isNullOrBlank() }
-        val sections = mutableListOf<AnchoredPicker.Section>()
-
-        workspaceSessions
-            .groupBy { it.workspacePath ?: it.workspaceName ?: "Workspace" }
-            .forEach { (workspaceKey, sessions) ->
-                val title = sessions.firstOrNull()?.workspacePath?.let(CodexWorkspacePaths::display)
-                    ?: sessions.firstOrNull()?.workspaceName
-                    ?: CodexWorkspacePaths.display(workspaceKey)
-                sections.add(AnchoredPicker.Section(title, sessionPickerRows(sessions, limit = sessions.size)))
-            }
-
-        if (quickChatSessions.isNotEmpty()) {
-            sections.add(AnchoredPicker.Section("QuickChats", sessionPickerRows(quickChatSessions, limit = quickChatSessions.size)))
-        }
-
-        return sections
-    }
-
-    private fun codexSessionSublabel(session: ChatSessionRow): String? {
-        if (!isCodexHarness()) return null
-        return session.workspacePath?.let(CodexWorkspacePaths::display)
-            ?: session.preview?.lineSequence()?.firstOrNull { it.isNotBlank() }?.take(64)
-            ?: session.source
-            ?: session.model
+        return CodexSessionPickerSections.build(
+            sessions = lastChatState.sessions,
+            selectedSessionKey = lastChatState.sessionKey,
+            unreadCountForSession = lastChatState::unreadCountForSession,
+            onSelectSession = onSelectChatSession,
+            limit = limit
+        )
     }
 
     private fun isCodexHarness(): Boolean {
@@ -1579,7 +1560,7 @@ class OverlayController(
         }
         if (sessions.isNotEmpty()) {
             val sessionCount = sessions.size.coerceAtMost(30)
-            val workspaceCount = sessions.mapNotNull { it.workspacePath ?: it.workspaceName }.distinct().size
+            val workspaceCount = CodexSessionPickerSections.workspaceCount(sessions)
             sessionRows.add(AnchoredPicker.Row(
                 id = "chat:previous",
                 label = if (isCodexHarness()) "Previous Codex sessions" else "Previous chats",

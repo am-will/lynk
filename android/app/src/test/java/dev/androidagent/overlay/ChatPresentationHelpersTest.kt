@@ -343,11 +343,45 @@ class ChatPresentationHelpersTest {
         assertEquals("fallback", ChatPresentationHelpers.sessionLabel(session(key = "agent:main:fallback")))
     }
 
+    @Test
+    fun codexSessionPickerGroupsWorkspacesAndQuickChats() {
+        val sections = CodexSessionPickerSections.build(
+            sessions = listOf(
+                session(
+                    key = "codex:workspace",
+                    displayName = "Workspace chat",
+                    workspacePath = "/Users/example/Projects/app",
+                    model = "gpt-5.3-codex"
+                ),
+                session(
+                    key = "codex:quick",
+                    displayName = "Quick chat",
+                    preview = "quick question",
+                    model = "gpt-5.3-codex"
+                )
+            ),
+            selectedSessionKey = "codex:workspace",
+            unreadCountForSession = { key -> if (key == "codex:quick") 2 else 0 },
+            onSelectSession = {}
+        )
+
+        assertEquals(listOf("~/Projects/app", "QuickChats"), sections.map { it.title })
+        assertEquals("~/Projects/app", sections[0].rows[0].sublabel)
+        assertTrue(sections[0].rows[0].selected)
+        assertEquals("quick question", sections[1].rows[0].sublabel)
+        assertEquals(2, sections[1].rows[0].badgeCount)
+    }
+
     private fun session(
         key: String = "agent:main:default",
         sessionId: String? = null,
         label: String? = null,
-        displayName: String? = null
+        displayName: String? = null,
+        workspacePath: String? = null,
+        workspaceName: String? = null,
+        preview: String? = null,
+        source: String? = null,
+        model: String? = null
     ): ChatSessionRow {
         return ChatSessionRow(
             key = key,
@@ -356,13 +390,13 @@ class ChatPresentationHelpersTest {
             displayName = displayName,
             harnessId = "openclaw",
             harnessLabel = "OpenClaw",
-            workspacePath = null,
-            workspaceName = null,
+            workspacePath = workspacePath,
+            workspaceName = workspaceName,
             threadPath = null,
-            preview = null,
-            source = null,
+            preview = preview,
+            source = source,
             updatedAt = null,
-            model = null,
+            model = model,
             modelProvider = null,
             contextTokens = null,
             inputTokens = null,
