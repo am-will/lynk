@@ -61,19 +61,6 @@ import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.util.UUID
 
-private enum class ChatClientRoute {
-    Host,
-    Local
-}
-
-private data class PendingNewChatRequest(
-    val selectedModel: String,
-    val route: ChatClientRoute,
-    val model: String,
-    val workspacePath: String?,
-    val previousSessionKey: String?
-)
-
 private const val PHONE_CONTROL_COMPLETION_VISIBLE_MS = 30_000L
 private const val CODEX_WORKSPACE_NOT_FOUND_CODE = "codex.workspace_not_found"
 private const val CODEX_WORKSPACE_CREATE_MESSAGE = "Folder not found. Would you like to create it?"
@@ -92,11 +79,7 @@ class AgentForegroundService : Service() {
     private var isAgentTurnActive = false
     private var chatState = ChatState()
     private val chatMessageMutex = Mutex()
-    private var pendingNewChat = false
-    private var pendingNewChatPreviousSessionKey: String? = null
-    private var pendingNewChatHistorySessionKey: String? = null
-    private var pendingNewChatRequest: PendingNewChatRequest? = null
-    private var codexWorkspaceCreatePromptActive = false
+    private val newChatCoordinator = NewChatSessionCoordinator()
     private var notifiedReplySessions = emptySet<String>()
     private var recentsSuppressionStartedAtMs = 0L
     private var recentsRestoreCheck: Runnable? = null
@@ -849,10 +832,7 @@ class AgentForegroundService : Service() {
 
     private fun beginNewChatAttempt(request: PendingNewChatRequest, createWorkspaceIfMissing: Boolean) {
         markChatSessionRead(chatState.sessionKey, force = true)
-        pendingNewChatPreviousSessionKey = request.previousSessionKey
-        pendingNewChatHistorySessionKey = null
-        pendingNewChatRequest = request
-        pendingNewChat = true
+        newChatCoordinator.begin(request)
         val now = System.currentTimeMillis()
         chatState = chatState.copy(
             sessionKey = null,
@@ -884,9 +864,8 @@ class AgentForegroundService : Service() {
     private fun handleChatMessage(message: JSONObject) {
         serviceScope.launch {
             chatMessageMutex.withLock {
-                if (pendingNewChat && isCodexWorkspaceNotFoundError(message)) {
-                    val retryRequest = pendingNewChatRequest
-                    clearPendingNewChat()
+                if (newChatCoordinator.pending && isCodexWorkspaceNotFoundError(message)) {
+                    val retryRequest = newChatCoordinator.consumeWorkspaceNotFoundRetry()
                     chatState = chatState.copy(
                         isRunning = false,
                         status = "Folder not found",
@@ -899,14 +878,10 @@ class AgentForegroundService : Service() {
                     promptCreateCodexWorkspace(retryRequest)
                     return@withLock
                 }
-                if (pendingNewChat && message.optString("type") == "chat.history") {
+                if (newChatCoordinator.pending && message.optString("type") == "chat.history") {
                     val incomingSessionKey = message.optString("sessionKey").takeIf { it.isNotBlank() }
                     val activeSessionKey = chatState.sessionKey
-                    if (
-                        incomingSessionKey == null ||
-                        incomingSessionKey == pendingNewChatPreviousSessionKey ||
-                        (!activeSessionKey.isNullOrBlank() && incomingSessionKey != activeSessionKey)
-                    ) {
+                    if (newChatCoordinator.shouldIgnoreHistory(incomingSessionKey, activeSessionKey)) {
                         return@withLock
                     }
                 }
@@ -920,8 +895,8 @@ class AgentForegroundService : Service() {
                 val phoneControlStarted = isPhoneControlStartMessage(message)
                 val phoneControlCompleted = isTerminalChatMessage(message) && isRememberedPhoneControlRun(messageRunId)
                 chatState = ChatStateReducer.reduce(chatState, message)
-                if (pendingNewChat && message.optString("type") == "chat.history") {
-                    pendingNewChatHistorySessionKey = chatState.sessionKey
+                if (newChatCoordinator.pending && message.optString("type") == "chat.history") {
+                    newChatCoordinator.markHistoryLoaded(chatState.sessionKey)
                 }
                 publishBackendAvailability()
                 if (phoneControlStarted) {
@@ -944,18 +919,17 @@ class AgentForegroundService : Service() {
                     }
                 }
                 if (
-                    pendingNewChat &&
+                    newChatCoordinator.pending &&
                     message.optString("type") == "chat.state" &&
                     !chatState.sessionKey.isNullOrBlank()
                 ) {
-                    val hasLoadedNewHistory = pendingNewChatHistorySessionKey == chatState.sessionKey
-                    clearPendingNewChat()
+                    val hasLoadedNewHistory = newChatCoordinator.completeIfStateLoaded(chatState.sessionKey) == true
                     if (!hasLoadedNewHistory) {
                         chatState = chatState.copy(timeline = emptyList(), usage = ChatUsageSummary())
                     }
                 }
-                if (pendingNewChat && message.optString("type") == "chat.error") {
-                    clearPendingNewChat()
+                if (newChatCoordinator.pending && message.optString("type") == "chat.error") {
+                    newChatCoordinator.clear()
                 }
                 overlayController?.setChatState(chatState)
                 chatState.status?.takeIf { it.isNotBlank() }?.let { lastNotificationText = chatStatusText(it, chatState) }
@@ -970,13 +944,6 @@ class AgentForegroundService : Service() {
         }
     }
 
-    private fun clearPendingNewChat() {
-        pendingNewChat = false
-        pendingNewChatPreviousSessionKey = null
-        pendingNewChatHistorySessionKey = null
-        pendingNewChatRequest = null
-    }
-
     private fun isCodexWorkspaceNotFoundError(message: JSONObject): Boolean {
         if (message.optString("type") != "chat.error") return false
         return message.optString("code") == CODEX_WORKSPACE_NOT_FOUND_CODE
@@ -986,13 +953,12 @@ class AgentForegroundService : Service() {
         val retryRequest = request ?: return
         if (retryRequest.route != ChatClientRoute.Host || retryRequest.workspacePath.isNullOrBlank()) return
         if (!isCodexChatSelection(retryRequest.selectedModel)) return
-        if (codexWorkspaceCreatePromptActive) return
-        codexWorkspaceCreatePromptActive = true
+        if (!newChatCoordinator.startWorkspacePrompt()) return
         serviceScope.launch {
             val allow = overlayController
                 ?.askConfirmation(CODEX_WORKSPACE_CREATE_MESSAGE, retryRequest.workspacePath)
                 ?.await() == true
-            codexWorkspaceCreatePromptActive = false
+            newChatCoordinator.finishWorkspacePrompt()
             if (allow) {
                 beginNewChatAttempt(retryRequest, createWorkspaceIfMissing = true)
             } else {
