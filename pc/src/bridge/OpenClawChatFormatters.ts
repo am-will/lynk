@@ -3,12 +3,15 @@ import type {
   ChatSessionSummary,
   ChatToolSummary
 } from "../protocol/messages.js";
+import type { HarnessId } from "./AgentHarness.js";
+import { harnessForSessionKey } from "./AgentHarness.js";
 
 interface PendingRunSummary {
   sessionKey: string;
 }
 
 export interface ChatFormatterState {
+  harnessId?: HarnessId;
   sessionKey: string;
   runId?: string | null;
   model?: string | null;
@@ -113,21 +116,22 @@ export function formatTaskList(state: ChatFormatterState): string {
 
 export function formatStatusReport(state: ChatFormatterState, health: unknown): string {
   const record = health && typeof health === "object" ? health as Record<string, unknown> : undefined;
-  const eventLoop = record?.eventLoop && typeof record.eventLoop === "object" ? record.eventLoop as Record<string, unknown> : undefined;
-  const sessions = state.sessionSummaries.size;
-  return [
+  const harnessHealth = activeHarnessHealth(record, state.harnessId ?? harnessForSessionKey(state.sessionKey));
+  const eventLoop = harnessHealth?.eventLoop && typeof harnessHealth.eventLoop === "object" ? harnessHealth.eventLoop as Record<string, unknown> : undefined;
+  const lines = [
     "ℹ️ Status",
     "",
     `Session: ${state.sessionKey}`,
-    `Run: ${state.runId ?? "idle"}`,
     `Model: ${state.model ?? "default"}`,
     `Thinking: ${state.reasoningEffort ?? "default"}`,
     `Reasoning stream: ${state.reasoningStream === true ? "on" : "off"}`,
-    `Fast mode: ${state.fastMode === true ? "on" : state.fastMode === false ? "off" : "unknown"}`,
-    `Verbose: ${state.verboseLevel ?? "unknown"}`,
-    `Known sessions: ${sessions}`,
-    record ? `Gateway: ${record.ok === true ? "ok" : "not ok"}${eventLoop?.degraded === true ? " (degraded)" : ""}` : "Gateway: unavailable"
-  ].join("\n");
+    `Fast mode: ${state.fastMode === true ? "on" : "off"}`,
+    harnessHealth ? `Gateway: ${harnessHealth.ok === true ? "ok" : "not ok"}${eventLoop?.degraded === true ? " (degraded)" : ""}` : "Gateway: unavailable"
+  ];
+  if (state.runId) {
+    lines.splice(4, 0, `Run: ${state.runId}`);
+  }
+  return lines.join("\n");
 }
 
 export function previewText(text: string): string | null {
@@ -172,6 +176,21 @@ function commandLookup(commands: ChatCommandOption[]): Set<string> {
     command.name,
     ...(command.textAliases ?? []).map((alias) => alias.replace(/^\//, ""))
   ]));
+}
+
+function activeHarnessHealth(record: Record<string, unknown> | undefined, harnessId: HarnessId): Record<string, unknown> | undefined {
+  if (!record) {
+    return undefined;
+  }
+  const harnesses = record.harnesses && typeof record.harnesses === "object" ? record.harnesses as Record<string, unknown> : undefined;
+  const nested = harnesses?.[harnessId];
+  if (nested && typeof nested === "object") {
+    return nested as Record<string, unknown>;
+  }
+  if (harnesses) {
+    return undefined;
+  }
+  return record;
 }
 
 function groupBy<T>(items: T[], keyFor: (item: T) => string): Map<string, T[]> {
