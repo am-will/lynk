@@ -47,7 +47,7 @@ class DemoHtmlTermuxFallbackPolicyTest {
 
         val command = fallback?.args?.getString("command").orEmpty()
         assertNotNull(fallback)
-        assertTrue(command.contains("OpenClaw Calculator"))
+        assertTrue(command.contains("OpenAgent Calculator"))
         assertTrue(command.contains("android.intent.action.VIEW"))
     }
 }

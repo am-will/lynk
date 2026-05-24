@@ -21,7 +21,7 @@ class HostConnectionCopyTest {
     @Test
     fun messageFallsBackForBlankCustomCopy() {
         assertEquals(
-            "The Android app is registered with the OpenClaw bridge.",
+            "The Android app is registered with the OpenAgent bridge.",
             HostConnectionCopy.message(HostConnectionState(HostConnectionPhase.CONNECTED, " "))
         )
     }
