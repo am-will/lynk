@@ -182,6 +182,60 @@ class ChatPresentationHelpersTest {
     }
 
     @Test
+    fun harnessModelGroupsFilterDisabledHarnessesAndIncludeLocal() {
+        val groups = ChatPresentationHelpers.harnessModelGroups(
+            models = listOf(
+                model("gpt-5.5", harnessId = "openclaw"),
+                model("hermes:qwen", harnessId = "hermes"),
+                model("codex:gpt-5.3-codex", harnessId = "codex"),
+                model(AgentModelOptions.LOCAL_LITERT_MODEL_ID, harnessId = "local", provider = "android")
+            ),
+            enabledHarnessIds = setOf("hermes", "local")
+        )
+
+        assertEquals(listOf("hermes", "local"), groups.map { it.id })
+        assertEquals(listOf("Hermes", "Local"), groups.map { it.label })
+        assertEquals(listOf("hermes:qwen"), groups.first().models.map { it.id })
+    }
+
+    @Test
+    fun defaultModelForHarnessUsesConfiguredModelOrFirstAvailable() {
+        val models = listOf(
+            model("hermes:qwen", harnessId = "hermes"),
+            model("hermes:gpt-5.5", harnessId = "hermes"),
+            model("codex:gpt-5.3-codex", harnessId = "codex")
+        )
+
+        assertEquals(
+            "hermes:gpt-5.5",
+            ChatPresentationHelpers.defaultModelForHarness(
+                harnessId = "hermes",
+                configuredDefaultModel = "gpt-5.5",
+                models = models,
+                enabledHarnessIds = setOf("hermes", "codex")
+            )
+        )
+        assertEquals(
+            "hermes:qwen",
+            ChatPresentationHelpers.defaultModelForHarness(
+                harnessId = "hermes",
+                configuredDefaultModel = "missing",
+                models = models,
+                enabledHarnessIds = setOf("hermes", "codex")
+            )
+        )
+        assertEquals(
+            null,
+            ChatPresentationHelpers.defaultModelForHarness(
+                harnessId = "codex",
+                configuredDefaultModel = "codex:gpt-5.3-codex",
+                models = models,
+                enabledHarnessIds = setOf("hermes")
+            )
+        )
+    }
+
+    @Test
     fun modelPickerOptionsDoesNotFakeHostModelsWhenLocalSnapshotArrivesFirst() {
         val state = ChatState(
             models = listOf(ChatModelOption(

@@ -77,4 +77,42 @@ class AgentConfigModeTest {
         assertTrue(config.isModelHarnessEnabled("codex"))
         assertFalse(config.isModelHarnessEnabled("local"))
     }
+
+    @Test
+    fun harnessDefaultModelsAreBlankUntilConfigured() {
+        val config = AgentConfig(
+            hostUrl = "ws://127.0.0.1:8788/phone",
+            deviceId = "openclaw-agent",
+            token = "",
+            openAiApiKey = "",
+            systemPrompt = "prompt",
+            model = "gpt-5.5",
+            reasoningEffort = "medium"
+        )
+
+        assertEquals(null, config.defaultModelForHarness("openclaw"))
+        assertEquals(null, config.defaultModelForHarness("hermes"))
+        assertEquals(null, config.defaultModelForHarness("codex"))
+    }
+
+    @Test
+    fun harnessDefaultModelLookupTrimsConfiguredValues() {
+        val config = AgentConfig(
+            hostUrl = "ws://127.0.0.1:8788/phone",
+            deviceId = "openclaw-agent",
+            token = "",
+            openAiApiKey = "",
+            systemPrompt = "prompt",
+            model = "gpt-5.5",
+            reasoningEffort = "medium",
+            openClawDefaultModel = " gpt-5.4 ",
+            hermesDefaultModel = " hermes:qwen ",
+            codexDefaultModel = " codex:gpt-5.3-codex "
+        )
+
+        assertEquals("gpt-5.4", config.defaultModelForHarness("openclaw"))
+        assertEquals("hermes:qwen", config.defaultModelForHarness("hermes"))
+        assertEquals("codex:gpt-5.3-codex", config.defaultModelForHarness("codex"))
+        assertEquals(null, config.defaultModelForHarness("local"))
+    }
 }
