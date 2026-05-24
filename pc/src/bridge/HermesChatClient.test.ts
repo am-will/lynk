@@ -163,6 +163,66 @@ test("Hermes emits chat events for externally updated sessions after baseline", 
   });
 });
 
+test("Hermes baselines sessions that appear after an empty initial list", async () => {
+  const api = new FakeHermesApiClient();
+  api.sessionsPayload = { sessions: [] };
+  const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
+  const events: GatewayEvent[] = [];
+  client.addEventListener((event) => events.push(event));
+
+  await client.listSessions();
+  api.sessionsPayload = {
+    sessions: [{
+      session_id: "20260521_211022_1f4f0b",
+      model: "hermes-agent",
+      timestamp: "2026-05-22T03:10:22.000Z",
+      preview: "Existing Hermes chat"
+    }]
+  };
+  api.messagesPayload = {
+    messages: [{
+      message_id: "msg_2",
+      role: "assistant",
+      content: "Existing answer",
+      timestamp: "2026-05-22T03:10:22.000Z"
+    }]
+  };
+
+  await client.listSessions();
+  await client.listSessions();
+  assert.equal(events.length, 0);
+
+  api.sessionsPayload = {
+    sessions: [{
+      session_id: "20260521_211022_1f4f0b",
+      model: "hermes-agent",
+      timestamp: "2026-05-22T03:11:22.000Z",
+      preview: "New Hermes chat"
+    }]
+  };
+  api.messagesPayload = {
+    messages: [{
+      message_id: "msg_3",
+      role: "assistant",
+      content: "New answer",
+      timestamp: "2026-05-22T03:11:22.000Z"
+    }]
+  };
+
+  await client.listSessions();
+
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0], {
+    event: "chat",
+    payload: {
+      sessionKey: "hermes:20260521_211022_1f4f0b",
+      runId: "hermes-external:20260521_211022_1f4f0b:msg_3",
+      state: "final",
+      message: "New answer"
+    }
+  });
+});
+
 test("Hermes chat steering uses the active run driver", async () => {
   const api = new FakeHermesApiClient();
   const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);

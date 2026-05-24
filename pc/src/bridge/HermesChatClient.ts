@@ -284,8 +284,8 @@ export class HermesChatClient {
     const initialized = this.remoteSessionsInitialized;
     for (const session of remoteSessions) {
       const previous = this.remoteSessionObservations.get(session.key);
-      if (!initialized) {
-        this.remoteSessionObservations.set(session.key, { updatedAt: session.updatedAt ?? null });
+      if (!initialized || !previous) {
+        await this.baselineRemoteSession(session);
         continue;
       }
       if (!remoteSessionAdvanced(previous, session)) {
@@ -321,6 +321,14 @@ export class HermesChatClient {
       });
     }
     this.remoteSessionsInitialized = true;
+  }
+
+  private async baselineRemoteSession(session: ChatSessionSummary): Promise<void> {
+    const latest = await this.latestRemoteAssistantMessage(session);
+    this.remoteSessionObservations.set(session.key, {
+      updatedAt: session.updatedAt ?? null,
+      latestRunId: latest ? hermesExternalRunId(session, latest) : undefined
+    });
   }
 
   private async latestRemoteAssistantMessage(session: ChatSessionSummary): Promise<ChatHistoryMessage | undefined> {
