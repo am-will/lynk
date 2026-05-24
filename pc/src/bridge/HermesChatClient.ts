@@ -12,6 +12,11 @@ interface ActiveChatRun {
   active: HermesActiveRun;
 }
 
+interface RemoteSessionObservation {
+  updatedAt: number | null;
+  latestRunId?: string;
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
 }
@@ -68,6 +73,8 @@ export class HermesChatClient {
   private readonly sessions: InMemoryHarnessSessionStore;
   private readonly handlers = new Set<GatewayEventHandler>();
   private readonly activeRuns = new Map<string, ActiveChatRun>();
+  private readonly remoteSessionObservations = new Map<string, RemoteSessionObservation>();
+  private remoteSessionsInitialized = false;
 
   constructor(
     private readonly config: BridgeConfig,
@@ -209,6 +216,7 @@ export class HermesChatClient {
   async listSessions(limit = 50): Promise<unknown> {
     const remotePayload = await this.api.listSessions().catch(() => undefined);
     const remoteSessions = normalizeHermesSessions(remotePayload).slice(0, limit);
+    await this.detectRemoteSessionReplies(remoteSessions).catch(() => undefined);
     const byKey = new Map<string, ChatSessionSummary>();
     for (const session of this.sessions.listSessions(limit)) {
       byKey.set(session.key, session);
@@ -270,6 +278,58 @@ export class HermesChatClient {
       return active?.sessionKey === sessionKey ? active : undefined;
     }
     return [...this.activeRuns.values()].find((active) => active.sessionKey === sessionKey);
+  }
+
+  private async detectRemoteSessionReplies(remoteSessions: ChatSessionSummary[]): Promise<void> {
+    const initialized = this.remoteSessionsInitialized;
+    for (const session of remoteSessions) {
+      const previous = this.remoteSessionObservations.get(session.key);
+      if (!initialized) {
+        this.remoteSessionObservations.set(session.key, { updatedAt: session.updatedAt ?? null });
+        continue;
+      }
+      if (!remoteSessionAdvanced(previous, session)) {
+        continue;
+      }
+      if (this.activeRunFor(session.key)) {
+        this.remoteSessionObservations.set(session.key, {
+          updatedAt: session.updatedAt ?? null,
+          latestRunId: previous?.latestRunId
+        });
+        continue;
+      }
+      const latest = await this.latestRemoteAssistantMessage(session);
+      if (!latest) {
+        this.remoteSessionObservations.set(session.key, {
+          updatedAt: session.updatedAt ?? null,
+          latestRunId: previous?.latestRunId
+        });
+        continue;
+      }
+      const runId = hermesExternalRunId(session, latest);
+      if (previous?.latestRunId !== runId) {
+        this.emit("chat", {
+          sessionKey: session.key,
+          runId,
+          state: "final",
+          message: latest.text
+        });
+      }
+      this.remoteSessionObservations.set(session.key, {
+        updatedAt: session.updatedAt ?? null,
+        latestRunId: runId
+      });
+    }
+    this.remoteSessionsInitialized = true;
+  }
+
+  private async latestRemoteAssistantMessage(session: ChatSessionSummary): Promise<ChatHistoryMessage | undefined> {
+    const sessionId = session.sessionId ?? session.key.replace(/^hermes:/, "");
+    const payload = await this.api.listSessionMessages(sessionId).catch(() => undefined);
+    return normalizeHermesMessages(payload)
+      .slice()
+      .reverse()
+      .find((message) => message.role.toLowerCase() === "assistant" && message.text.trim());
   }
 
   private async processRun(sessionKey: string, active: HermesActiveRun): Promise<void> {
@@ -402,6 +462,31 @@ function normalizeHermesMessage(value: unknown): ChatHistoryMessage | undefined 
     text,
     timestamp: timestampMs(record.timestamp ?? record.created_at ?? record.updated_at)
   };
+}
+
+function remoteSessionAdvanced(previous: RemoteSessionObservation | undefined, session: ChatSessionSummary): boolean {
+  if (!previous) {
+    return true;
+  }
+  const updatedAt = session.updatedAt ?? null;
+  if (updatedAt == null || previous.updatedAt == null) {
+    return true;
+  }
+  return updatedAt > previous.updatedAt;
+}
+
+function hermesExternalRunId(session: ChatSessionSummary, message: ChatHistoryMessage): string {
+  const sessionMarker = session.sessionId ?? session.key;
+  const messageMarker = message.id ?? message.timestamp?.toString() ?? session.updatedAt?.toString() ?? hashString(message.text);
+  return `hermes-external:${sessionMarker}:${messageMarker}`;
+}
+
+function hashString(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash).toString(36);
 }
 
 function timestampMs(value: unknown): number | null {

@@ -3,6 +3,7 @@ import test from "node:test";
 import type { HermesApiClient } from "../dispatcher/HermesApiClient.js";
 import type { BridgeConfig } from "./config.js";
 import { HermesChatClient } from "./HermesChatClient.js";
+import type { GatewayEvent } from "./chat/ChatTransportTypes.js";
 
 const config: BridgeConfig = {
   host: "127.0.0.1",
@@ -114,6 +115,52 @@ test("Hermes history loads messages from dashboard API for selected sessions", a
     role: "assistant",
     text: "Hello back"
   }]);
+});
+
+test("Hermes emits chat events for externally updated sessions after baseline", async () => {
+  const api = new FakeHermesApiClient();
+  const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
+  const events: GatewayEvent[] = [];
+  client.addEventListener((event) => events.push(event));
+
+  await client.listSessions();
+  assert.equal(events.length, 0);
+
+  api.sessionsPayload = {
+    sessions: [{
+      session_id: "20260521_211022_1f4f0b",
+      model: "hermes-agent",
+      timestamp: "2026-05-22T03:11:22.000Z",
+      preview: "Cron Hermes chat"
+    }]
+  };
+  api.messagesPayload = {
+    messages: [{
+      message_id: "msg_1",
+      role: "user",
+      content: "Run the cron",
+      timestamp: "2026-05-22T03:11:00.000Z"
+    }, {
+      message_id: "msg_3",
+      role: "assistant",
+      content: "Cron complete",
+      timestamp: "2026-05-22T03:11:22.000Z"
+    }]
+  };
+
+  await client.listSessions();
+  await client.listSessions();
+
+  assert.equal(events.length, 1);
+  assert.deepEqual(events[0], {
+    event: "chat",
+    payload: {
+      sessionKey: "hermes:20260521_211022_1f4f0b",
+      runId: "hermes-external:20260521_211022_1f4f0b:msg_3",
+      state: "final",
+      message: "Cron complete"
+    }
+  });
 });
 
 test("Hermes chat steering uses the active run driver", async () => {
