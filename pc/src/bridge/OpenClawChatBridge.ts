@@ -561,7 +561,7 @@ export class OpenClawChatBridge {
 
   private async sendSessions(deviceId: string): Promise<void> {
     const state = this.stateFor(deviceId);
-    const payload = await this.client.listSessions(50, state.harnessId);
+    const payload = await this.client.listSessions(state.harnessId === "codex" ? 500 : 50, state.harnessId);
     const sessions = enrichSessionsWithModelContext(normalizeSessions(payload), state.modelOptions.values());
     state.sessionSummaries = new Map(sessions.map((session) => [session.key, session]));
     const selected = sessions.find((session) => session.key === state.sessionKey);

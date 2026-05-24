@@ -19,6 +19,8 @@ const CODEX_THREAD_CWD_KEY = "codexThreadCwd";
 const CODEX_THREAD_PATH_KEY = "codexThreadPath";
 const CODEX_THREAD_SESSION_KEY_PREFIX = "codex:";
 const CODEX_THREAD_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CODEX_THREAD_PAGE_SIZE = 100;
+const CODEX_THREAD_MAX_LIST = 500;
 
 interface CodexThreadRecord {
   id: string;
@@ -194,9 +196,7 @@ export class CodexChatClient {
   }
 
   async listSessions(limit = 50): Promise<unknown> {
-    const listThreads = (this.client as unknown as { listThreads?: (options: { limit?: number }) => Promise<unknown> }).listThreads;
-    const payload = listThreads ? await listThreads.call(this.client, { limit }).catch(() => undefined) : undefined;
-    const threads = normalizeCodexThreadList(payload);
+    const threads = await this.listCodexThreads(Math.max(limit, CODEX_THREAD_MAX_LIST));
     if (threads.length > 0) {
       for (const thread of threads) {
         this.rememberThread(thread);
@@ -374,6 +374,39 @@ export class CodexChatClient {
     });
     this.sessions.setSessionId(session, threadId);
     this.sessions.setMetadata(session, CODEX_BASE_INSTRUCTIONS_FINGERPRINT_KEY, promptFingerprint(PHONE_AGENT_SYSTEM_PROMPT));
+  }
+
+  private async listCodexThreads(maxThreads: number): Promise<CodexThreadRecord[]> {
+    const listThreads = (this.client as unknown as {
+      listThreads?: (options: { limit?: number; cursor?: string }) => Promise<unknown>;
+    }).listThreads;
+    if (!listThreads) {
+      return [];
+    }
+
+    const threads: CodexThreadRecord[] = [];
+    let cursor: string | undefined;
+    while (threads.length < maxThreads) {
+      const payload = await listThreads.call(this.client, {
+        limit: Math.min(CODEX_THREAD_PAGE_SIZE, maxThreads - threads.length),
+        ...(cursor ? { cursor } : {})
+      }).catch((error) => {
+        this.audit?.record("codex_thread_list_error", undefined, {
+          error: error instanceof Error ? error.message : String(error)
+        });
+        return undefined;
+      });
+      const page = normalizeCodexThreadList(payload);
+      if (page.length === 0) {
+        break;
+      }
+      threads.push(...page);
+      cursor = stringField(asRecord(payload), "nextCursor");
+      if (!cursor) {
+        break;
+      }
+    }
+    return threads;
   }
 
   private rememberThread(thread: CodexThreadRecord): void {

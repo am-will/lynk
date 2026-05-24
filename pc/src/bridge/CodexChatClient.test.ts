@@ -11,6 +11,7 @@ class FakeCodexAppServerClient {
   readonly steered: string[] = [];
   modelsPayload: unknown = { models: [] };
   threadsPayload: unknown = { data: [] };
+  threadPayloads: unknown[] = [];
   readThreadPayload: unknown = undefined;
   capabilitiesPayload: unknown = undefined;
   resultUsage?: Record<string, unknown>;
@@ -41,7 +42,7 @@ class FakeCodexAppServerClient {
   }
 
   async listThreads(): Promise<unknown> {
-    return this.threadsPayload;
+    return this.threadPayloads.shift() ?? this.threadsPayload;
   }
 
   async readThread(): Promise<unknown> {
@@ -147,6 +148,35 @@ test("Codex lists app-server threads as workspace-aware sessions", async () => {
   assert.equal(payload.sessions[0]?.threadPath, "/Users/am.will/.codex/sessions/2026/05/23/rollout.jsonl");
   assert.equal(payload.sessions[0]?.updatedAt, 1779575368000);
 });
+
+test("Codex paginates app-server thread listing for desktop history", async () => {
+  const fake = new FakeCodexAppServerClient();
+  fake.threadPayloads = [
+    {
+      data: [{
+        id: "019e56b1-639e-7ad2-b078-3106a2ee0874",
+        name: "First page",
+        cwd: "/Users/am.will/Applications/open-claw-agent"
+      }],
+      nextCursor: "next"
+    },
+    {
+      data: [{
+        id: "019e5a80-a4d1-7c12-a8e5-50ab3349df73",
+        name: "Second page",
+        cwd: "/Users/am.will/Applications/cryptoclub"
+      }],
+      nextCursor: null
+    }
+  ];
+  const client = new CodexChatClient(undefined, fake as unknown as CodexAppServerClient, null);
+
+  const payload = await client.listSessions() as { sessions: Array<Record<string, unknown>> };
+
+  assert.deepEqual(payload.sessions.map((session) => session.displayName), ["First page", "Second page"]);
+  assert.deepEqual(payload.sessions.map((session) => session.workspaceName), ["open-claw-agent", "cryptoclub"]);
+});
+
 
 test("Codex history reads persisted thread turns", async () => {
   const fake = new FakeCodexAppServerClient();

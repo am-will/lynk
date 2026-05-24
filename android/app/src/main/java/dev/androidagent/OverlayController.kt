@@ -1500,7 +1500,7 @@ class OverlayController(
         }
     }
 
-    private fun sessionPickerSections(limit: Int = 100): List<AnchoredPicker.Section> {
+    private fun sessionPickerSections(limit: Int = Int.MAX_VALUE): List<AnchoredPicker.Section> {
         if (!isCodexHarness()) {
             return listOf(AnchoredPicker.Section(null, sessionPickerRows(limit = 30)))
         }
