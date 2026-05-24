@@ -5,6 +5,7 @@ import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import dev.androidagent.AgentModelOptions
 import dev.androidagent.R
+import dev.androidagent.chat.ChatHarnessModelGroup
 import dev.androidagent.chat.ChatModelCatalog
 import dev.androidagent.chat.ChatModelOption
 import dev.androidagent.chat.ChatState
@@ -264,6 +265,26 @@ object ChatPresentationHelpers {
     fun modelHarnessId(model: ChatModelOption): String = ChatModelCatalog.modelHarnessId(model)
 
     fun modelHarnessSortOrder(harnessId: String): Int = ChatModelCatalog.modelHarnessSortOrder(harnessId)
+
+    fun harnessLabel(harnessId: String): String = ChatModelCatalog.harnessLabel(harnessId)
+
+    fun harnessModelGroups(
+        models: List<ChatModelOption>,
+        enabledHarnessIds: Set<String> = defaultEnabledHarnessIds()
+    ): List<ChatHarnessModelGroup> = ChatModelCatalog.harnessModelGroups(models, enabledHarnessIds)
+
+    fun modelsForHarness(
+        harnessId: String?,
+        models: List<ChatModelOption>,
+        enabledHarnessIds: Set<String> = defaultEnabledHarnessIds()
+    ): List<ChatModelOption> = ChatModelCatalog.modelsForHarness(harnessId, models, enabledHarnessIds)
+
+    fun defaultModelForHarness(
+        harnessId: String?,
+        configuredDefaultModel: String?,
+        models: List<ChatModelOption>,
+        enabledHarnessIds: Set<String> = defaultEnabledHarnessIds()
+    ): String? = ChatModelCatalog.defaultModelForHarness(harnessId, configuredDefaultModel, models, enabledHarnessIds)
 
     fun defaultEnabledHarnessIds(): Set<String> = ChatModelCatalog.defaultEnabledHarnessIds()
 

@@ -3,6 +3,12 @@ package dev.androidagent.chat
 import dev.androidagent.AgentConfig
 import dev.androidagent.AgentModelOptions
 
+data class ChatHarnessModelGroup(
+    val id: String,
+    val label: String,
+    val models: List<ChatModelOption>
+)
+
 object ChatModelCatalog {
     fun mergeModelOptions(
         gatewayModels: List<ChatModelOption>,
@@ -125,6 +131,57 @@ object ChatModelCatalog {
         return cleanModel
     }
 
+    fun harnessModelGroups(
+        models: List<ChatModelOption>,
+        enabledHarnessIds: Set<String> = defaultEnabledHarnessIds()
+    ): List<ChatHarnessModelGroup> {
+        return models
+            .filter { model -> model.available != false }
+            .filter { model -> modelHarnessId(model) in enabledHarnessIds }
+            .groupBy { model -> modelHarnessId(model) }
+            .map { (harnessId, harnessModels) ->
+                ChatHarnessModelGroup(
+                    id = harnessId,
+                    label = harnessModels.firstOrNull()?.let(::modelHarnessLabel) ?: harnessLabel(harnessId),
+                    models = harnessModels
+                )
+            }
+            .sortedWith(compareBy<ChatHarnessModelGroup> { modelHarnessSortOrder(it.id) }.thenBy { it.label })
+    }
+
+    fun modelsForHarness(
+        harnessId: String?,
+        models: List<ChatModelOption>,
+        enabledHarnessIds: Set<String> = defaultEnabledHarnessIds()
+    ): List<ChatModelOption> {
+        val normalizedHarness = normalizeHarnessId(harnessId) ?: return emptyList()
+        if (normalizedHarness !in enabledHarnessIds) return emptyList()
+        return models.filter { model ->
+            model.available != false && modelHarnessId(model) == normalizedHarness
+        }
+    }
+
+    fun defaultModelForHarness(
+        harnessId: String?,
+        configuredDefaultModel: String?,
+        models: List<ChatModelOption>,
+        enabledHarnessIds: Set<String> = defaultEnabledHarnessIds()
+    ): String? {
+        val normalizedHarness = normalizeHarnessId(harnessId) ?: return null
+        val harnessModels = modelsForHarness(normalizedHarness, models, enabledHarnessIds)
+        if (harnessModels.isEmpty()) return null
+
+        val configured = configuredDefaultModel?.trim()?.takeIf { it.isNotBlank() }
+        val normalizedDefault = normalizeModelForHarness(configured, normalizedHarness)
+        val candidates = listOfNotNull(configured, normalizedDefault).distinct()
+        val configuredMatch = candidates.firstNotNullOfOrNull { candidate ->
+            harnessModels.firstOrNull { model ->
+                model.id == candidate || model.modelId == candidate
+            }?.id
+        }
+        return configuredMatch ?: harnessModels.firstOrNull()?.id
+    }
+
     fun harnessForModel(model: String): String {
         if (model == AgentModelOptions.LOCAL_LITERT_MODEL_ID) return AgentConfig.HARNESS_LOCAL
         return harnessFromModelPrefix(model) ?: AgentConfig.HARNESS_OPENCLAW
@@ -188,6 +245,16 @@ object ChatModelCatalog {
             AgentConfig.HARNESS_CODEX -> 2
             AgentConfig.HARNESS_LOCAL -> 3
             else -> 4
+        }
+    }
+
+    fun harnessLabel(harnessId: String): String {
+        return when (harnessId.lowercase()) {
+            AgentConfig.HARNESS_OPENCLAW -> "OpenClaw"
+            AgentConfig.HARNESS_HERMES -> "Hermes"
+            AgentConfig.HARNESS_CODEX -> "Codex"
+            AgentConfig.HARNESS_LOCAL -> "Local"
+            else -> harnessId
         }
     }
 
