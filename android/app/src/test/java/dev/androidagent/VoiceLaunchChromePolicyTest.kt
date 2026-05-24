@@ -20,4 +20,17 @@ class VoiceLaunchChromePolicyTest {
     fun shellVoiceLaunchMinimizesHostApp() {
         assertTrue(shouldMinimizeHostAppAfterVoiceStart(PanelPresentation.Shell))
     }
+
+    @Test
+    fun disabledPetRealtimeVoiceUsesRuntimeOverrideUntilTimer() {
+        val policy = PhoneControlAttentionReducer()
+
+        assertTrue(PhoneControlAttentionEffect.ShowTransientPet in policy.activate(userPetEnabled = false))
+        assertTrue(policy.overrideVisible)
+
+        policy.holdAfterCompletion(userPetEnabled = false, sessionKey = null, runId = null)
+
+        assertTrue(PhoneControlAttentionEffect.HideTransientPet in policy.clearTimedAttention(userPetEnabled = false))
+        assertFalse(policy.overrideVisible)
+    }
 }

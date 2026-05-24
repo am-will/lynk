@@ -48,6 +48,7 @@ import dev.androidagent.overlay.PanelPresentation
 import dev.androidagent.overlay.ChatPresentationHelpers
 import dev.androidagent.settings.DiagnosticsBackendSnapshot
 import dev.androidagent.voice.VoiceRuntimeController
+import dev.androidagent.voice.VoiceRuntimeState
 import dev.androidagent.voice.transcription.VoiceTranscriptionManager
 import dev.androidagent.voice.transcription.VoiceTranscriptionState
 import kotlinx.coroutines.CoroutineScope
@@ -88,7 +89,10 @@ class AgentForegroundService : Service() {
     private var recentsSuppressionStartedAtMs = 0L
     private var recentsRestoreCheck: Runnable? = null
     private var phoneControlAttentionClear: Runnable? = null
+    private var realtimeVoiceAttentionClear: Runnable? = null
+    private var lastVoiceRuntimeState = VoiceRuntimeState()
     private val phoneControlPetPolicy = PhoneControlAttentionReducer()
+    private val realtimeVoicePetPolicy = PhoneControlAttentionReducer()
     private val closeSystemDialogsReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != Intent.ACTION_CLOSE_SYSTEM_DIALOGS) return
@@ -118,6 +122,7 @@ class AgentForegroundService : Service() {
             onStop = { requestStopTurn("Stopped from Android overlay") },
             onDismiss = { stopSelf() },
             onStartVoice = { tryStartVoiceSession() },
+            onRevealVoicePet = { activateRealtimeVoicePet() },
             onMinimizeHostApp = { requestAppShellMinimize() },
             onToggleVoiceMute = { voiceRuntimeController?.toggleMute() },
             onStopVoice = { voiceRuntimeController?.stopFromUi() },
@@ -161,7 +166,7 @@ class AgentForegroundService : Service() {
                 webSocketClient?.sendRealtimeStop(reason)
             },
             sendToolCall = { call -> webSocketClient?.sendRealtimeToolCall(call, AgentConfigStore.load(this)) },
-            onStateChanged = { state -> overlayController?.setVoiceState(state) }
+            onStateChanged = ::handleVoiceRuntimeStateChanged
         )
         registerCloseSystemDialogsReceiver()
     }
@@ -228,10 +233,20 @@ class AgentForegroundService : Service() {
     }
 
     private fun refreshPetVisibility() {
-        if (AgentConfigStore.load(this).petEnabled || phoneControlPetPolicy.overrideVisible) {
+        if (AgentConfigStore.load(this).petEnabled || phoneControlPetPolicy.overrideVisible || realtimeVoicePetPolicy.overrideVisible) {
             overlayController?.show()
         } else {
             overlayController?.hide()
+        }
+    }
+
+    private fun applyTransientPetVisibility() {
+        if (AgentConfigStore.load(this).petEnabled || phoneControlPetPolicy.overrideVisible || realtimeVoicePetPolicy.overrideVisible) {
+            if (Settings.canDrawOverlays(this)) {
+                overlayController?.showTransientPet()
+            }
+        } else {
+            overlayController?.hideTransientPet()
         }
     }
 
@@ -241,7 +256,7 @@ class AgentForegroundService : Service() {
         phoneControlAttentionClear = null
         phoneControlPetPolicy.activate(config.petEnabled)
         if (Settings.canDrawOverlays(this)) {
-            overlayController?.showForPhoneControl()
+            overlayController?.showTransientPet()
         }
     }
 
@@ -250,7 +265,7 @@ class AgentForegroundService : Service() {
         phoneControlPetPolicy.holdAfterCompletion(config.petEnabled, sessionKey, runId)
         if (!config.petEnabled) {
             if (Settings.canDrawOverlays(this)) {
-                overlayController?.showForPhoneControl()
+                overlayController?.showTransientPet()
             }
         }
         schedulePhoneControlPetRestore()
@@ -261,7 +276,7 @@ class AgentForegroundService : Service() {
         val clear = Runnable {
             phoneControlAttentionClear = null
             if (PhoneControlAttentionEffect.HideTransientPet in phoneControlPetPolicy.clearTimedAttention(AgentConfigStore.load(this).petEnabled)) {
-                overlayController?.hidePhoneControlPet()
+                applyTransientPetVisibility()
             }
         }
         phoneControlAttentionClear = clear
@@ -270,7 +285,7 @@ class AgentForegroundService : Service() {
 
     private fun restorePetAfterPhoneControlIfNeeded() {
         if (PhoneControlAttentionEffect.HideTransientPet in phoneControlPetPolicy.restoreOverrideIfNeeded(AgentConfigStore.load(this).petEnabled)) {
-            overlayController?.hidePhoneControlPet()
+            applyTransientPetVisibility()
         }
     }
 
@@ -299,7 +314,7 @@ class AgentForegroundService : Service() {
             phoneControlAttentionClear = null
         }
         if (PhoneControlAttentionEffect.HideTransientPet in effects) {
-            overlayController?.hidePhoneControlPet()
+            applyTransientPetVisibility()
         }
     }
 
@@ -312,8 +327,53 @@ class AgentForegroundService : Service() {
         holdPhoneControlPetAfterCompletion(chatState.sessionKey, chatState.activeRunId)
     }
 
+    private fun activateRealtimeVoicePet() {
+        val config = AgentConfigStore.load(this)
+        realtimeVoiceAttentionClear?.let(mainHandler::removeCallbacks)
+        realtimeVoiceAttentionClear = null
+        realtimeVoicePetPolicy.activate(config.petEnabled)
+        if (Settings.canDrawOverlays(this)) {
+            overlayController?.showTransientPet()
+        }
+    }
+
+    private fun holdRealtimeVoicePetAfterCall() {
+        val config = AgentConfigStore.load(this)
+        realtimeVoicePetPolicy.holdAfterCompletion(config.petEnabled, sessionKey = null, runId = null)
+        if (!config.petEnabled && Settings.canDrawOverlays(this)) {
+            overlayController?.showTransientPet()
+        }
+        scheduleRealtimeVoicePetRestore()
+    }
+
+    private fun scheduleRealtimeVoicePetRestore() {
+        realtimeVoiceAttentionClear?.let(mainHandler::removeCallbacks)
+        val clear = Runnable {
+            realtimeVoiceAttentionClear = null
+            if (PhoneControlAttentionEffect.HideTransientPet in realtimeVoicePetPolicy.clearTimedAttention(AgentConfigStore.load(this).petEnabled)) {
+                applyTransientPetVisibility()
+            }
+        }
+        realtimeVoiceAttentionClear = clear
+        mainHandler.postDelayed(clear, REALTIME_VOICE_COMPLETION_VISIBLE_MS)
+    }
+
+    private fun handleVoiceRuntimeStateChanged(state: VoiceRuntimeState) {
+        val wasActive = lastVoiceRuntimeState.isActive
+        lastVoiceRuntimeState = state
+        overlayController?.setVoiceState(state)
+        if (state.isActive) {
+            activateRealtimeVoicePet()
+        } else if (wasActive) {
+            holdRealtimeVoicePetAfterCall()
+        }
+    }
+
     private fun startVoiceFromShell() {
-        tryStartVoiceSession()
+        if (tryStartVoiceSession()) {
+            activateRealtimeVoicePet()
+            requestAppShellMinimize()
+        }
     }
 
     private fun tryStartVoiceSession(): Boolean {
@@ -334,6 +394,7 @@ class AgentForegroundService : Service() {
         }
         connectAgentClient(model)
         promoteVoiceForegroundIfAllowed()
+        activateRealtimeVoicePet()
         voiceRuntimeController?.start()
         return true
     }
@@ -351,6 +412,8 @@ class AgentForegroundService : Service() {
         webSocketClient?.close()
         recentsRestoreCheck?.let(mainHandler::removeCallbacks)
         recentsRestoreCheck = null
+        realtimeVoiceAttentionClear?.let(mainHandler::removeCallbacks)
+        realtimeVoiceAttentionClear = null
         unregisterCloseSystemDialogsReceiver()
         overlayController?.hide()
         isRunning = false
@@ -1239,6 +1302,7 @@ class AgentForegroundService : Service() {
         private const val RECENTS_RESTORE_CHECK_MS = 350L
         private const val RECENTS_MIN_SUPPRESSION_MS = 700L
         private const val RECENTS_RESTORE_WITHOUT_ACCESSIBILITY_MS = 2_500L
+        private const val REALTIME_VOICE_COMPLETION_VISIBLE_MS = 10_000L
         const val ACTION_STATE_CHANGED = "dev.openclawagent.action.AGENT_SERVICE_STATE_CHANGED"
         const val EXTRA_IS_RUNNING = "isRunning"
         const val CHANNEL_ID = "open-claw-agent"

@@ -94,6 +94,7 @@ class OverlayController(
     private val onStop: () -> Unit,
     private val onDismiss: () -> Unit,
     private val onStartVoice: () -> Boolean,
+    private val onRevealVoicePet: () -> Unit,
     private val onMinimizeHostApp: () -> Unit,
     private val onToggleVoiceMute: () -> Unit,
     private val onStopVoice: () -> Unit,
@@ -822,6 +823,7 @@ class OverlayController(
         panelView?.animate()?.cancel()
         panelScrimView?.animate()?.cancel()
         finalizePanelDismiss()
+        onRevealVoicePet()
         if (shouldMinimizeHostApp) {
             onMinimizeHostApp()
         }
