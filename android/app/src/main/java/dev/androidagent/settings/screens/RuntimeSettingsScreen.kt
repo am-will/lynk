@@ -7,10 +7,15 @@ import android.text.TextWatcher
 import android.view.View
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.Spinner
+import dev.androidagent.AgentConfig
 import dev.androidagent.AgentConfigStore
 import dev.androidagent.CodexWorkspacePaths
 import dev.androidagent.LocalModelBackend
 import dev.androidagent.R
+import dev.androidagent.chat.ChatModelCatalog
+import dev.androidagent.chat.ChatModelOption
+import dev.androidagent.settings.DiagnosticsBackendSnapshot
 import dev.androidagent.settings.SettingsButtonTone
 import dev.androidagent.settings.SettingsUi
 import dev.androidagent.ui.DesignTokens
@@ -42,6 +47,23 @@ object RuntimeSettingsScreen {
             addView(hermes, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
             addView(codex, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
             addView(local, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
+        }, SettingsUi.stackedParams(activity))
+
+        val defaultModelControls = mutableListOf<DefaultModelControl>()
+        root.addView(SettingsUi.card(activity, tokens).apply {
+            addView(SettingsUi.sectionHeader(activity, "Default Models", "Select the model used when switching to a harness.", tokens))
+            val enabledRows = addDefaultModelRows(
+                activity = activity,
+                tokens = tokens,
+                config = config,
+                controls = defaultModelControls
+            )
+            if (enabledRows == 0) {
+                addView(
+                    SettingsUi.body(activity, "Enable a host bridge harness above to choose default models.", tokens),
+                    SettingsUi.stackedParams(activity, DesignTokens.Spacing.md)
+                )
+            }
         }, SettingsUi.stackedParams(activity))
 
         val codexWorkspaceInput = SettingsUi.configField(
@@ -108,6 +130,18 @@ object RuntimeSettingsScreen {
                     openClawHarnessEnabled = openClaw.isChecked,
                     hermesHarnessEnabled = hermes.isChecked,
                     codexHarnessEnabled = codex.isChecked,
+                    openClawDefaultModel = defaultModelControls.selectedModel(
+                        AgentConfig.HARNESS_OPENCLAW,
+                        config.openClawDefaultModel
+                    ),
+                    hermesDefaultModel = defaultModelControls.selectedModel(
+                        AgentConfig.HARNESS_HERMES,
+                        config.hermesDefaultModel
+                    ),
+                    codexDefaultModel = defaultModelControls.selectedModel(
+                        AgentConfig.HARNESS_CODEX,
+                        config.codexDefaultModel
+                    ),
                     experimentalLocalModelsEnabled = local.isChecked,
                     localModelPath = localModelPathInput.text.toString().trim(),
                     localModelBackend = localBackends.getOrElse(localBackendSpinner.selectedItemPosition) { LocalModelBackend.Cpu },
@@ -124,6 +158,101 @@ object RuntimeSettingsScreen {
         )
 
         return root
+    }
+
+    private data class DefaultModelControl(
+        val harnessId: String,
+        val models: List<ChatModelOption>,
+        val spinner: Spinner?
+    )
+
+    private fun LinearLayout.addDefaultModelRows(
+        activity: Activity,
+        tokens: ThemeTokens,
+        config: AgentConfig,
+        controls: MutableList<DefaultModelControl>
+    ): Int {
+        val snapshot = DiagnosticsBackendSnapshot.current()
+        val specs = listOf(
+            DefaultModelSpec(
+                harnessId = AgentConfig.HARNESS_OPENCLAW,
+                label = "OpenClaw default",
+                enabled = config.openClawHarnessEnabled,
+                viewId = R.id.openclaw_default_model_spinner
+            ),
+            DefaultModelSpec(
+                harnessId = AgentConfig.HARNESS_HERMES,
+                label = "Hermes default",
+                enabled = config.hermesHarnessEnabled,
+                viewId = R.id.openclaw_hermes_default_model_spinner
+            ),
+            DefaultModelSpec(
+                harnessId = AgentConfig.HARNESS_CODEX,
+                label = "Codex default",
+                enabled = config.codexHarnessEnabled,
+                viewId = R.id.openclaw_codex_default_model_spinner
+            )
+        )
+        var visibleRows = 0
+        specs.filter { it.enabled }.forEach { spec ->
+            visibleRows += 1
+            val models = snapshot.modelsByHarness[spec.harnessId]
+                .orEmpty()
+                .filter { it.available != false }
+                .distinctBy { it.id }
+            if (models.isEmpty()) {
+                val spinner = SettingsUi.styledSpinner(
+                    activity,
+                    listOf("Connect to the bridge to load models"),
+                    0,
+                    tokens
+                ).apply {
+                    isEnabled = false
+                    alpha = 0.55f
+                    exposeToAccessibility(spec.viewId, "${spec.label}: connect to the bridge to load models")
+                }
+                addView(SettingsUi.labeledField(activity, spec.label, spinner, tokens, DesignTokens.Spacing.md))
+                controls.add(DefaultModelControl(spec.harnessId, emptyList(), null))
+            } else {
+                val selected = ChatModelCatalog.defaultModelForHarness(
+                    harnessId = spec.harnessId,
+                    configuredDefaultModel = config.defaultModelForHarness(spec.harnessId),
+                    models = models,
+                    enabledHarnessIds = setOf(spec.harnessId)
+                )
+                val selectedIndex = models.indexOfFirst { it.id == selected }.coerceAtLeast(0)
+                val spinner = SettingsUi.styledSpinner(
+                    activity,
+                    models.map { modelLabel(it) },
+                    selectedIndex,
+                    tokens
+                ).apply {
+                    exposeToAccessibility(spec.viewId, "${spec.label} model")
+                }
+                addView(SettingsUi.labeledField(activity, spec.label, spinner, tokens, DesignTokens.Spacing.md))
+                controls.add(DefaultModelControl(spec.harnessId, models, spinner))
+            }
+        }
+        return visibleRows
+    }
+
+    private data class DefaultModelSpec(
+        val harnessId: String,
+        val label: String,
+        val enabled: Boolean,
+        val viewId: Int
+    )
+
+    private fun List<DefaultModelControl>.selectedModel(harnessId: String, fallback: String): String {
+        val control = firstOrNull { it.harnessId == harnessId } ?: return fallback
+        val spinner = control.spinner ?: return fallback
+        return control.models.getOrNull(spinner.selectedItemPosition)?.id ?: fallback
+    }
+
+    private fun modelLabel(model: ChatModelOption): String {
+        return model.label.takeIf { it.isNotBlank() }
+            ?: model.modelId?.takeIf { it.isNotBlank() }
+            ?: model.id
     }
 
     private fun keepCodexHomePrefix(input: EditText) {
