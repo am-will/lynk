@@ -535,6 +535,7 @@ object ChatStateReducer {
             localModels = if (source == ChatModelSource.LOCAL) models else state.localModels,
             reasoningEffort = selectedReasoning ?: state.reasoningEffort?.takeIf { current -> reasoning.any { it.id == current } } ?: reasoning.firstOrNull()?.id,
             reasoningOptions = reasoning,
+            commands = if (source == ChatModelSource.LOCAL) emptyList() else state.commands,
             error = null
         )
         return nextState.copy(usage = usageWithModelContext(nextState, nextState.usage, nextState.selectedModel))

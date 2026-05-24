@@ -39,6 +39,7 @@ import android.widget.Space
 import android.widget.TextView
 import android.widget.FrameLayout
 import dev.androidagent.chat.ChatCommandOption
+import dev.androidagent.chat.ChatModelSource
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatModelOption
 import dev.androidagent.localmodel.LocalModelStore
@@ -158,7 +159,7 @@ class OverlayController(
     // don't silently mark replies as read while the user is on the home screen.
     private var panelHasWindowFocus = false
     private var lastChatState = ChatState()
-    private var showToolCalls = true
+    private var showToolCalls = false
     private var suppressComposerAutocomplete = false
     private var composerContainer: LinearLayout? = null
     private var keyboardSpacerView: View? = null
@@ -1484,7 +1485,8 @@ class OverlayController(
         val menuAnchor: View = anchorOverride ?: headerSessionAnchor ?: panelContent ?: panelHost ?: return
 
         val sessions = lastChatState.sessions
-        val commands = lastChatState.commands
+        val localMode = isLocalChatMode()
+        val commands = if (localMode) emptyList() else lastChatState.commands
 
         val sessionRows = mutableListOf<AnchoredPicker.Row>()
         sessionRows.add(AnchoredPicker.Row(
@@ -1532,6 +1534,7 @@ class OverlayController(
 
         val commandSkillRows = commandSkillMenuRows(
             commands = commands,
+            localMode = localMode,
             menuAnchor = menuAnchor,
             onDismiss = onDismiss
         )
@@ -1585,9 +1588,16 @@ class OverlayController(
 
     private fun commandSkillMenuRows(
         commands: List<ChatCommandOption>,
+        localMode: Boolean,
         menuAnchor: View,
         onDismiss: (() -> Unit)?
     ): List<AnchoredPicker.Row> {
+        if (localMode) {
+            return listOf(
+                unavailableCommandSkillRow(COMMAND_GROUP_COMMANDS, "Commands"),
+                unavailableCommandSkillRow(COMMAND_GROUP_SKILLS, "Skills")
+            )
+        }
         if (commands.isEmpty()) return emptyList()
         val slashCommands = commands.filterNot { it.isSkill }
         val skills = commands.filter { it.isSkill }
@@ -1613,6 +1623,18 @@ class OverlayController(
                 addAll(skills.map(::skillMenuRow))
             }
         }
+    }
+
+    private fun unavailableCommandSkillRow(groupId: String, label: String): AnchoredPicker.Row {
+        return AnchoredPicker.Row(
+            id = "commands-skills:$groupId",
+            label = label,
+            sublabel = "None available in local mode",
+            selectable = false,
+            enabled = false,
+            dismissOnSelect = false,
+            onSelect = {}
+        )
     }
 
     private fun MutableList<AnchoredPicker.Row>.addCommandSkillGroupRow(
@@ -1641,6 +1663,12 @@ class OverlayController(
                 showPlusMenu(anchorOverride = menuAnchor, replace = true, onDismiss = onDismiss)
             }
         ))
+    }
+
+    private fun isLocalChatMode(): Boolean {
+        return lastChatState.modelSource == ChatModelSource.LOCAL ||
+            lastChatState.harnessId == AgentConfig.HARNESS_LOCAL ||
+            lastChatState.selectedModel == AgentModelOptions.LOCAL_LITERT_MODEL_ID
     }
 
     private fun commandMenuRow(command: ChatCommandOption): AnchoredPicker.Row {

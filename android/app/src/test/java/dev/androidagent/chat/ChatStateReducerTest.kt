@@ -210,6 +210,31 @@ class ChatStateReducerTest {
     }
 
     @Test
+    fun localModelSnapshotClearsHostCommands() {
+        val withCommands = ChatState(
+            commands = listOf(ChatCommandOption(
+                name = "status",
+                description = "Show status",
+                category = null,
+                aliases = emptyList(),
+                acceptsArgs = false
+            ))
+        )
+
+        val localRefresh = ChatStateReducer.reduce(withCommands, JSONObject()
+            .put("type", "chat.models")
+            .put("source", "local")
+            .put("models", JSONArray()
+                .put(JSONObject()
+                    .put("id", AgentModelOptions.LOCAL_LITERT_MODEL_ID)
+                    .put("label", "Local LiteRT-LM")
+                    .put("provider", "android")
+                    .put("available", true))))
+
+        assertEquals(emptyList<ChatCommandOption>(), localRefresh.commands)
+    }
+
+    @Test
     fun modelSnapshotsStayScopedToExplicitSource() {
         val hostModels = ChatStateReducer.reduce(ChatState(), JSONObject()
             .put("type", "chat.models")
