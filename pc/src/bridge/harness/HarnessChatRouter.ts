@@ -149,9 +149,10 @@ export class HarnessChatRouter implements GatewayChatClient {
     const adapter = this.adapterForHarness(harnessId);
     const key = this.keyForHarness(harnessId, options.key);
     const created = await adapter.createSession({
-      ...options,
       key,
-      model: selection?.modelId ?? options.model
+      label: options.label,
+      model: selection?.modelId ?? options.model,
+      ...(harnessId === "codex" && options.workspacePath ? { workspacePath: options.workspacePath } : {})
     });
     return this.namespaceCreatedSession(created, harnessId, key);
   }

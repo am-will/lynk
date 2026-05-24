@@ -28,7 +28,7 @@ class FakeGatewayClient {
   readonly handlers = new Set<GatewayEventHandler>();
   readonly sent: Array<{ sessionKey: string; message: string; thinking?: string; idempotencyKey?: string }> = [];
   readonly steered: Array<{ sessionKey: string; runId?: string; message: string; thinking?: string; idempotencyKey?: string }> = [];
-  readonly created: Array<{ key?: string; label?: string; model?: string }> = [];
+  readonly created: Array<{ key?: string; label?: string; model?: string; workspacePath?: string }> = [];
   readonly patched: Array<{ sessionKey: string; patch: Record<string, unknown> }> = [];
   readonly aborted: Array<{ sessionKey: string; runId?: string }> = [];
   sessions: Array<Record<string, unknown>> = [];
@@ -239,6 +239,27 @@ test("new chats use uuid labels until first message display name is set", async 
   assert.deepEqual(client.patched.map((entry) => entry.patch), [
     { displayName: "Summarize my project and next steps" }
   ]);
+});
+
+test("new chat workspace path is forwarded only for Codex", async () => {
+  const { bridge, client } = createHarness();
+  const workspacePath = "/Users/am.will/Applications/cryptoclub";
+
+  await bridge.newSession({
+    type: "chat.new_session",
+    deviceId: "pixel",
+    model: "codex:gpt-5.3-codex",
+    workspacePath
+  });
+  await bridge.newSession({
+    type: "chat.new_session",
+    deviceId: "pixel",
+    model: "hermes:gpt-5.5",
+    workspacePath
+  });
+
+  assert.equal(client.created[0]?.workspacePath, workspacePath);
+  assert.equal(client.created[1]?.workspacePath, undefined);
 });
 
 test("backend readiness reports configured harnesses only when live models exist", async () => {

@@ -6,7 +6,7 @@ import type { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js
 import { CodexChatClient } from "./CodexChatClient.js";
 
 class FakeCodexAppServerClient {
-  readonly createdThreads: Array<{ model?: string; baseInstructions?: string }> = [];
+  readonly createdThreads: Array<{ model?: string; baseInstructions?: string; cwd?: string }> = [];
   readonly submitted: Array<{ text: string; options: AgentRequestOptions }> = [];
   readonly steered: string[] = [];
   modelsPayload: unknown = { models: [] };
@@ -17,7 +17,7 @@ class FakeCodexAppServerClient {
   resultUsage?: Record<string, unknown>;
   private nextThread = 1;
 
-  async createThread(options: { model?: string; baseInstructions?: string } = {}): Promise<string> {
+  async createThread(options: { model?: string; baseInstructions?: string; cwd?: string } = {}): Promise<string> {
     this.createdThreads.push(options);
     return `019e0000-0000-7000-8000-${String(this.nextThread++).padStart(12, "0")}`;
   }
@@ -98,6 +98,32 @@ test("Codex new sessions create and reuse app-server threads", async () => {
   assert.equal(fake.submitted[0]?.options.threadId, "019e0000-0000-7000-8000-000000000001");
   assert.equal(fake.submitted[0]?.options.useSessionInstructions, true);
   assert.equal(fake.submitted[0]?.text, "Hello");
+});
+
+test("Codex new sessions use requested workspace cwd", async () => {
+  const fake = new FakeCodexAppServerClient();
+  const client = new CodexChatClient(undefined, fake as unknown as CodexAppServerClient, null);
+  const workspacePath = "/Users/am.will/Applications/cryptoclub";
+
+  const created = await client.createSession({
+    key: "codex:chat",
+    label: "Chat",
+    model: "gpt-5.3-codex",
+    workspacePath
+  }) as { key?: string; sessionId?: string; workspacePath?: string; workspaceName?: string };
+
+  assert.equal(fake.createdThreads[0]?.cwd, workspacePath);
+  assert.equal(created.workspacePath, workspacePath);
+  assert.equal(created.workspaceName, "cryptoclub");
+
+  await client.sendChat({
+    sessionKey: created.key!,
+    message: "Hello",
+    idempotencyKey: "run_1"
+  });
+  await waitFor(() => fake.submitted.length === 1);
+
+  assert.equal(fake.submitted[0]?.options.cwd, workspacePath);
 });
 
 test("Codex sends from implicit sessions create a durable thread first", async () => {

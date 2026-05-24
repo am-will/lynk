@@ -27,7 +27,7 @@ const config: BridgeConfig = {
 };
 
 class FakeAdapter implements HarnessChatAdapter {
-  readonly created: Array<{ key?: string; label?: string; model?: string }> = [];
+  readonly created: Array<{ key?: string; label?: string; model?: string; workspacePath?: string }> = [];
   readonly sent: Array<{ sessionKey: string; message: string }> = [];
   readonly sessions: ChatSessionSummary[] = [];
   readonly models: ChatModelOption[] = [];
@@ -117,6 +117,19 @@ test("harness router lets explicit non-default session keys choose the harness",
   assert.equal(codex.created[0]?.key, "codex:phone-pixel-123");
   assert.equal(codex.created[0]?.model, "gpt-5.3-codex");
   assert.equal(created.key, "codex:phone-pixel-123");
+});
+
+test("harness router forwards workspace paths only to Codex", async () => {
+  const { router, openclaw, hermes, codex } = createRouter();
+  const workspacePath = "/Users/am.will/Applications/cryptoclub";
+
+  await router.createSession({ model: "gpt-5.5", workspacePath });
+  await router.createSession({ model: "hermes:gpt-5.5", workspacePath });
+  await router.createSession({ model: "codex:gpt-5.5", workspacePath });
+
+  assert.equal(openclaw.created[0]?.workspacePath, undefined);
+  assert.equal(hermes.created[0]?.workspacePath, undefined);
+  assert.equal(codex.created[0]?.workspacePath, workspacePath);
 });
 
 test("harness router scopes session lists to the active harness", async () => {
