@@ -47,7 +47,7 @@ object RuntimeSettingsScreen {
         val codexWorkspaceInput = SettingsUi.configField(
             activity,
             "Default workspace",
-            CodexWorkspacePaths.display(config.codexWorkspacePath),
+            CodexWorkspacePaths.editorText(config.codexWorkspacePath),
             tokens,
             InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
         ).apply {
@@ -56,7 +56,7 @@ object RuntimeSettingsScreen {
         root.addView(SettingsUi.card(activity, tokens).apply {
             addView(SettingsUi.sectionHeader(activity, "Codex Default Workspace", "New Codex chats start here when Codex is selected.", tokens))
             addView(SettingsUi.labeledField(activity, "Workspace path", codexWorkspaceInput, tokens, DesignTokens.Spacing.md))
-            addView(SettingsUi.body(activity, "The ~/ prefix means your user folder.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
+            addView(SettingsUi.body(activity, "Leave blank for QuickChats. The ~/ prefix means your user folder.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
         }, SettingsUi.stackedParams(activity))
 
         val localModelPathInput = SettingsUi.configField(activity, "Model file", config.localModelPath, tokens).apply {
@@ -135,6 +135,7 @@ object RuntimeSettingsScreen {
             override fun afterTextChanged(editable: Editable?) {
                 if (correcting) return
                 val text = editable?.toString().orEmpty()
+                if (text.isBlank()) return
                 if (text.startsWith("~/")) return
                 correcting = true
                 val normalized = CodexWorkspacePaths.display(text)
@@ -145,8 +146,8 @@ object RuntimeSettingsScreen {
                 correcting = false
             }
         })
-        if (!input.text.toString().startsWith("~/")) {
-            input.setText("~/")
+        if (input.text.isNotBlank() && !input.text.toString().startsWith("~/")) {
+            input.setText(CodexWorkspacePaths.display(input.text.toString()))
             input.setSelection(input.text.length)
         }
     }

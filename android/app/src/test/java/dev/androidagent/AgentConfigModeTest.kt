@@ -25,6 +25,23 @@ class AgentConfigModeTest {
     }
 
     @Test
+    fun blankCodexWorkspaceRemainsNoDefaultWorkspace() {
+        assertEquals("", CodexWorkspacePaths.normalizeInput(""))
+        assertEquals("", CodexWorkspacePaths.normalizeInput("   "))
+        assertEquals("", CodexWorkspacePaths.editorText(""))
+        assertEquals("No default workspace", CodexWorkspacePaths.defaultWorkspaceLabel(""))
+        assertFalse(CodexWorkspacePaths.hasDefault(""))
+    }
+
+    @Test
+    fun explicitCodexHomeWorkspaceIsPreserved() {
+        assertEquals("~/", CodexWorkspacePaths.normalizeInput("~"))
+        assertEquals("~/", CodexWorkspacePaths.normalizeInput("~/"))
+        assertEquals("~/Projects", CodexWorkspacePaths.normalizeInput("/Users/example/Projects"))
+        assertTrue(CodexWorkspacePaths.hasDefault("~/"))
+    }
+
+    @Test
     fun experimentalLocalModelsAreDisabledByDefault() {
         val config = AgentConfig(
             hostUrl = "ws://127.0.0.1:8788/phone",

@@ -1571,7 +1571,7 @@ class OverlayController(
             sessionRows.add(AnchoredPicker.Row(
                 id = "chat:codex-workspace",
                 label = "Current Workspace",
-                sublabel = CodexWorkspacePaths.display(onGetCodexWorkspacePath()),
+                sublabel = CodexWorkspacePaths.defaultWorkspaceLabel(onGetCodexWorkspacePath()),
                 iconRes = R.drawable.ic_file,
                 dismissOnSelect = false,
                 onSelect = { showCodexWorkspaceDialog() }
@@ -1678,7 +1678,7 @@ class OverlayController(
         val editor = EditText(context).apply {
             setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setText(CodexWorkspacePaths.display(onGetCodexWorkspacePath()))
+            setText(CodexWorkspacePaths.editorText(onGetCodexWorkspacePath()))
             selectAll()
             setTextColor(tokens.primaryText)
             setHintTextColor(tokens.tertiaryText)
@@ -1688,7 +1688,7 @@ class OverlayController(
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(12), dp(24), 0)
             addView(TextView(context).apply {
-                text = "New Codex chats will start in this workspace folder."
+                text = "New Codex chats will start in this workspace folder. Leave blank for QuickChats."
                 setTextColor(tokens.secondaryText)
                 textSize = 13f
             }, LinearLayout.LayoutParams(
@@ -1706,11 +1706,11 @@ class OverlayController(
             .setPositiveButton("Save") { _, _ ->
                 val path = CodexWorkspacePaths.normalizeInput(editor.text?.toString())
                 onSetCodexWorkspacePath(path)
-                setStatus("Codex workspace: ${CodexWorkspacePaths.display(path)}")
+                setStatus("Codex workspace: ${CodexWorkspacePaths.defaultWorkspaceLabel(path)}")
             }
             .setNeutralButton("Clear") { _, _ ->
                 onSetCodexWorkspacePath("")
-                setStatus("Codex workspace: ~/")
+                setStatus("Codex workspace: ${CodexWorkspacePaths.defaultWorkspaceLabel("")}")
             }
             .setNegativeButton("Cancel", null)
             .create()
