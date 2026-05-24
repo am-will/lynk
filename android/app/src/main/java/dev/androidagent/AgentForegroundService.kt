@@ -218,9 +218,21 @@ class AgentForegroundService : Service() {
                 return START_STICKY
             }
             ACTION_DETACH_SHELL_CHAT -> {
-                overlayController?.detachShellChat()
-                shellChatContainer = null
-                refreshPetVisibility()
+                val requestedToken = intent.getIntExtra(EXTRA_SHELL_CHAT_TOKEN, 0)
+                val requestedActivityId = intent.getIntExtra(EXTRA_SHELL_CHAT_ACTIVITY_ID, 0)
+                val ownsActiveShell = requestedToken == activeShellChatContainerToken &&
+                    requestedActivityId == activeShellChatActivityId
+                if (ownsActiveShell) {
+                    overlayController?.detachShellChat()
+                    if (requestedToken == shellChatContainerToken && requestedActivityId == shellChatContainerActivityId) {
+                        shellChatContainer = null
+                        shellChatContainerActivityId = 0
+                        shellChatContainerToken = 0
+                    }
+                    activeShellChatActivityId = 0
+                    activeShellChatContainerToken = 0
+                    refreshPetVisibility()
+                }
                 return START_STICKY
             }
         }
@@ -1054,6 +1066,10 @@ class AgentForegroundService : Service() {
 
     private fun attachShellChatFromIntent() {
         val container = shellChatContainer ?: return
+        val requestedToken = shellChatContainerToken
+        val requestedActivityId = shellChatContainerActivityId
+        activeShellChatContainerToken = requestedToken
+        activeShellChatActivityId = requestedActivityId
         openActiveChatConnection()
         overlayController?.attachShellChat(container)
     }
@@ -1387,6 +1403,8 @@ class AgentForegroundService : Service() {
         const val ACTION_REFRESH_PET_VISIBILITY = "dev.openclawagent.action.REFRESH_PET_VISIBILITY"
         const val ACTION_ATTACH_SHELL_CHAT = "dev.openclawagent.action.ATTACH_SHELL_CHAT"
         const val ACTION_DETACH_SHELL_CHAT = "dev.openclawagent.action.DETACH_SHELL_CHAT"
+        const val EXTRA_SHELL_CHAT_ACTIVITY_ID = "shellChatActivityId"
+        const val EXTRA_SHELL_CHAT_TOKEN = "shellChatToken"
         const val EXTRA_BUBBLE_SIZE_DP = "dev.openclawagent.extra.BUBBLE_SIZE_DP"
         const val EXTRA_PANEL_PRESENTATION = "panelPresentation"
         const val PANEL_PRESENTATION_POPUP = "popup"
@@ -1410,5 +1428,9 @@ class AgentForegroundService : Service() {
             private set
         @Volatile
         var shellChatContainer: FrameLayout? = null
+        var shellChatContainerActivityId: Int = 0
+        var shellChatContainerToken: Int = 0
+        private var activeShellChatActivityId: Int = 0
+        private var activeShellChatContainerToken: Int = 0
     }
 }

@@ -59,6 +59,8 @@ class AppShellActivity : ComponentActivity() {
     private var selectedTab = ShellTab.Chat
     private var bridgeConnected = false
     private var chatHost: FrameLayout? = null
+    private val activityInstanceId = System.identityHashCode(this)
+    private var shellChatAttachToken = 0
 
     private val backPressedCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() {
@@ -402,17 +404,24 @@ class AppShellActivity : ComponentActivity() {
 
     private fun attachShellChat() {
         val host = chatHost ?: return
+        shellChatAttachToken += 1
         AgentForegroundService.shellChatContainer = host
+        AgentForegroundService.shellChatContainerActivityId = activityInstanceId
+        AgentForegroundService.shellChatContainerToken = shellChatAttachToken
         ensureAgentService()
         val intent = Intent(this, AgentForegroundService::class.java)
             .setAction(AgentForegroundService.ACTION_ATTACH_SHELL_CHAT)
+            .putExtra(AgentForegroundService.EXTRA_SHELL_CHAT_ACTIVITY_ID, activityInstanceId)
+            .putExtra(AgentForegroundService.EXTRA_SHELL_CHAT_TOKEN, shellChatAttachToken)
         runCatching { ContextCompat.startForegroundService(this, intent) }
     }
 
     private fun detachShellChat() {
-        AgentForegroundService.shellChatContainer = null
+        val token = shellChatAttachToken
         val intent = Intent(this, AgentForegroundService::class.java)
             .setAction(AgentForegroundService.ACTION_DETACH_SHELL_CHAT)
+            .putExtra(AgentForegroundService.EXTRA_SHELL_CHAT_ACTIVITY_ID, activityInstanceId)
+            .putExtra(AgentForegroundService.EXTRA_SHELL_CHAT_TOKEN, token)
         runCatching { startService(intent) }
     }
 

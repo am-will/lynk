@@ -50,7 +50,6 @@ class ChatTimelineBinder(
         val container = historyContainer ?: return
         val scrollView = historyScrollView
         val tokens = tokens()
-        scrollView?.scrollTo(0, 0)
         container.removeAllViews()
         val plan = ChatTimelineRenderer.plan(state, showToolCalls)
         if (plan.isEmpty) {
