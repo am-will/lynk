@@ -134,6 +134,7 @@ test("Codex lists app-server threads as workspace-aware sessions", async () => {
       path: "/Users/am.will/.codex/sessions/2026/05/23/rollout.jsonl",
       source: "vscode",
       modelProvider: "openai",
+      gitInfo: { sha: "abc", branch: "main" },
       updatedAt: 1779575368
     }]
   };
@@ -156,7 +157,8 @@ test("Codex paginates app-server thread listing for desktop history", async () =
       data: [{
         id: "019e56b1-639e-7ad2-b078-3106a2ee0874",
         name: "First page",
-        cwd: "/Users/am.will/Applications/open-claw-agent"
+        cwd: "/Users/am.will/Applications/open-claw-agent",
+        gitInfo: { sha: "abc", branch: "main" }
       }],
       nextCursor: "next"
     },
@@ -174,7 +176,27 @@ test("Codex paginates app-server thread listing for desktop history", async () =
   const payload = await client.listSessions() as { sessions: Array<Record<string, unknown>> };
 
   assert.deepEqual(payload.sessions.map((session) => session.displayName), ["First page", "Second page"]);
-  assert.deepEqual(payload.sessions.map((session) => session.workspaceName), ["open-claw-agent", "cryptoclub"]);
+  assert.deepEqual(payload.sessions.map((session) => session.workspaceName), ["open-claw-agent", null]);
+});
+
+test("Codex marks non-workspace sessions as quick chats", async () => {
+  const fake = new FakeCodexAppServerClient();
+  fake.threadsPayload = {
+    data: [{
+      id: "019e580b-e691-7843-bce7-03c2312e9017",
+      name: null,
+      preview: "give me a quick answer",
+      cwd: "/Users/am.will/Documents/Codex/2026-05-23/give-me-a-quick-answer",
+      source: "vscode",
+      modelProvider: "openai"
+    }]
+  };
+  const client = new CodexChatClient(undefined, fake as unknown as CodexAppServerClient, null);
+
+  const payload = await client.listSessions() as { sessions: Array<Record<string, unknown>> };
+
+  assert.equal(payload.sessions[0]?.workspacePath, null);
+  assert.equal(payload.sessions[0]?.workspaceName, null);
 });
 
 

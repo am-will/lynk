@@ -1504,13 +1504,23 @@ class OverlayController(
         if (!isCodexHarness()) {
             return listOf(AnchoredPicker.Section(null, sessionPickerRows(limit = 30)))
         }
-        return lastChatState.sessions
-            .take(limit)
-            .groupBy { it.workspacePath ?: it.workspaceName ?: "Unknown workspace" }
-            .map { (workspaceKey, sessions) ->
+        val scoped = lastChatState.sessions.take(limit)
+        val workspaceSessions = scoped.filter { !it.workspacePath.isNullOrBlank() || !it.workspaceName.isNullOrBlank() }
+        val quickChatSessions = scoped.filter { it.workspacePath.isNullOrBlank() && it.workspaceName.isNullOrBlank() }
+        val sections = mutableListOf<AnchoredPicker.Section>()
+
+        workspaceSessions
+            .groupBy { it.workspacePath ?: it.workspaceName ?: "Workspace" }
+            .forEach { (workspaceKey, sessions) ->
                 val title = sessions.firstOrNull()?.workspaceName ?: workspaceKey
-                AnchoredPicker.Section(title, sessionPickerRows(sessions, limit = sessions.size))
+                sections.add(AnchoredPicker.Section(title, sessionPickerRows(sessions, limit = sessions.size)))
             }
+
+        if (quickChatSessions.isNotEmpty()) {
+            sections.add(AnchoredPicker.Section("Quick Chats", sessionPickerRows(quickChatSessions, limit = quickChatSessions.size)))
+        }
+
+        return sections
     }
 
     private fun codexSessionSublabel(session: ChatSessionRow): String? {

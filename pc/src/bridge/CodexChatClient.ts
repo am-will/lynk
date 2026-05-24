@@ -31,6 +31,7 @@ interface CodexThreadRecord {
   path?: string | null;
   source?: string | null;
   modelProvider?: string | null;
+  hasGitWorkspace?: boolean;
   updatedAt?: number | null;
   createdAt?: number | null;
 }
@@ -424,13 +425,14 @@ export class CodexChatClient {
 
   private threadToSessionSummary(thread: CodexThreadRecord): Record<string, unknown> {
     const displayName = codexThreadDisplayName(thread);
+    const workspacePath = thread.hasGitWorkspace ? thread.cwd ?? null : null;
     return {
       key: `${CODEX_THREAD_SESSION_KEY_PREFIX}${thread.id}`,
       sessionId: thread.id,
       label: displayName,
       displayName,
-      workspacePath: thread.cwd ?? null,
-      workspaceName: workspaceNameFromPath(thread.cwd),
+      workspacePath,
+      workspaceName: workspaceNameFromPath(workspacePath),
       threadPath: thread.path ?? null,
       preview: thread.preview ?? null,
       source: thread.source ?? null,
@@ -500,6 +502,7 @@ function normalizeCodexThread(value: unknown): CodexThreadRecord | undefined {
     path: stringField(record, "path") ?? null,
     source: stringField(record, "source") ?? null,
     modelProvider: stringField(record, "modelProvider") ?? null,
+    hasGitWorkspace: Boolean(asRecord(record?.gitInfo)),
     createdAt: numberField(record, "createdAt") ?? null,
     updatedAt: numberField(record, "updatedAt") ?? null
   };
