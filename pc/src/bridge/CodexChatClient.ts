@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, normalize } from "node:path";
 import type { AuditLog } from "./AuditLog.js";
@@ -23,6 +24,7 @@ const CODEX_THREAD_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 const CODEX_THREAD_PAGE_SIZE = 100;
 const CODEX_THREAD_MAX_LIST = 500;
 const CODEX_QUICK_CHAT_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+export const CODEX_WORKSPACE_NOT_FOUND_PREFIX = "CODEX_WORKSPACE_NOT_FOUND:";
 
 interface CodexThreadRecord {
   id: string;
@@ -234,8 +236,9 @@ export class CodexChatClient {
     };
   }
 
-  async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string }): Promise<unknown> {
+  async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string; createWorkspaceIfMissing?: boolean }): Promise<unknown> {
     const workspacePath = expandHomePath(options.workspacePath);
+    ensureWorkspaceDirectory(workspacePath, options.workspacePath, options.createWorkspaceIfMissing === true);
     const threadId = await this.client.createThread({
       model: options.model,
       baseInstructions: PHONE_AGENT_SYSTEM_PROMPT,
@@ -560,6 +563,21 @@ function expandHomePath(path: string | null | undefined): string | undefined {
     return join(homedir(), trimmed.slice(2));
   }
   return trimmed;
+}
+
+function ensureWorkspaceDirectory(path: string | undefined, displayPath: string | undefined, createIfMissing: boolean): void {
+  if (!path) {
+    return;
+  }
+  if (!existsSync(path)) {
+    if (!createIfMissing) {
+      throw new Error(`${CODEX_WORKSPACE_NOT_FOUND_PREFIX}${displayPath?.trim() || path}`);
+    }
+    mkdirSync(path, { recursive: true });
+  }
+  if (!statSync(path).isDirectory()) {
+    throw new Error(`Codex workspace path is not a folder: ${displayPath?.trim() || path}`);
+  }
 }
 
 function secondsToMillis(value: number | null | undefined): number | null {

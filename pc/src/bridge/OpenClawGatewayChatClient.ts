@@ -99,7 +99,7 @@ export class OpenClawGatewayChatClient {
     return await this.request("sessions.list", { limit });
   }
 
-  async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string }): Promise<unknown> {
+  async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string; createWorkspaceIfMissing?: boolean }): Promise<unknown> {
     return await this.request("sessions.create", {
       agentId: this.config.openClawChatAgentId,
       ...(options.key ? { key: options.key } : {}),

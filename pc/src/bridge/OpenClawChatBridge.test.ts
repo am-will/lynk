@@ -28,7 +28,7 @@ class FakeGatewayClient {
   readonly handlers = new Set<GatewayEventHandler>();
   readonly sent: Array<{ sessionKey: string; message: string; thinking?: string; idempotencyKey?: string }> = [];
   readonly steered: Array<{ sessionKey: string; runId?: string; message: string; thinking?: string; idempotencyKey?: string }> = [];
-  readonly created: Array<{ key?: string; label?: string; model?: string; workspacePath?: string }> = [];
+  readonly created: Array<{ key?: string; label?: string; model?: string; workspacePath?: string; createWorkspaceIfMissing?: boolean }> = [];
   readonly patched: Array<{ sessionKey: string; patch: Record<string, unknown> }> = [];
   readonly aborted: Array<{ sessionKey: string; runId?: string }> = [];
   sessions: Array<Record<string, unknown>> = [];
@@ -74,7 +74,7 @@ class FakeGatewayClient {
     return { sessions: this.sessions };
   }
 
-  async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string }): Promise<unknown> {
+  async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string; createWorkspaceIfMissing?: boolean }): Promise<unknown> {
     this.created.push(options);
     if (options.label && this.duplicateLabels.has(options.label)) {
       throw new Error(`Session label "${options.label}" is already used`);
@@ -241,7 +241,7 @@ test("new chats use uuid labels until first message display name is set", async 
   ]);
 });
 
-test("new chat workspace path is forwarded only for Codex", async () => {
+test("new chat workspace options are forwarded only for Codex", async () => {
   const { bridge, client } = createHarness();
   const workspacePath = "/Users/am.will/Applications/cryptoclub";
 
@@ -249,17 +249,21 @@ test("new chat workspace path is forwarded only for Codex", async () => {
     type: "chat.new_session",
     deviceId: "pixel",
     model: "codex:gpt-5.3-codex",
-    workspacePath
+    workspacePath,
+    createWorkspaceIfMissing: true
   });
   await bridge.newSession({
     type: "chat.new_session",
     deviceId: "pixel",
     model: "hermes:gpt-5.5",
-    workspacePath
+    workspacePath,
+    createWorkspaceIfMissing: true
   });
 
   assert.equal(client.created[0]?.workspacePath, workspacePath);
+  assert.equal(client.created[0]?.createWorkspaceIfMissing, true);
   assert.equal(client.created[1]?.workspacePath, undefined);
+  assert.equal(client.created[1]?.createWorkspaceIfMissing, undefined);
 });
 
 test("backend readiness reports configured harnesses only when live models exist", async () => {

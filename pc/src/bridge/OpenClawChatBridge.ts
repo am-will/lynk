@@ -455,7 +455,8 @@ export class OpenClawChatBridge {
       key: requestKey,
       label: explicitLabel ?? sessionUuid,
       model: selection?.modelId ?? this.states.rawModelForSelection(state.model) ?? undefined,
-      ...(workspacePath ? { workspacePath } : {})
+      ...(workspacePath ? { workspacePath } : {}),
+      ...(state.harnessId === "codex" && message.createWorkspaceIfMissing ? { createWorkspaceIfMissing: true } : {})
     });
     const record = created && typeof created === "object" ? created as Record<string, unknown> : {};
     const key = typeof record.key === "string" && record.key.trim() ? record.key.trim() : undefined;

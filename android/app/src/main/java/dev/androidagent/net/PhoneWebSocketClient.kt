@@ -148,13 +148,21 @@ class PhoneWebSocketClient(
         sendJson(message, reportChatError = true)
     }
 
-    fun sendChatNewSession(label: String? = null, model: String? = null, workspacePath: String? = null) {
+    fun sendChatNewSession(
+        label: String? = null,
+        model: String? = null,
+        workspacePath: String? = null,
+        createWorkspaceIfMissing: Boolean = false
+    ) {
         val message = JSONObject()
             .put("type", "chat.new_session")
             .put("deviceId", config.deviceId)
         label?.takeIf { it.isNotBlank() }?.let { message.put("label", it) }
         model?.takeIf { it.isNotBlank() }?.let { message.put("model", it) }
         workspacePath?.takeIf { it.isNotBlank() }?.let { message.put("workspacePath", it) }
+        if (createWorkspaceIfMissing) {
+            message.put("createWorkspaceIfMissing", true)
+        }
         sendJson(message, reportChatError = true)
     }
 

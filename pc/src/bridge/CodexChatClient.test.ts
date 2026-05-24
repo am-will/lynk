@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import type { AgentRequestOptions, AgentRunResult, AgentStatusSink } from "../dispatcher/AgentClient.js";
 import { normalizeCodexUsage } from "../dispatcher/CodexAppServerClient.js";
 import type { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js";
-import { CodexChatClient } from "./CodexChatClient.js";
+import { CODEX_WORKSPACE_NOT_FOUND_PREFIX, CodexChatClient } from "./CodexChatClient.js";
 
 class FakeCodexAppServerClient {
   readonly createdThreads: Array<{ model?: string; baseInstructions?: string; cwd?: string }> = [];
@@ -103,27 +106,100 @@ test("Codex new sessions create and reuse app-server threads", async () => {
 test("Codex new sessions use requested workspace cwd", async () => {
   const fake = new FakeCodexAppServerClient();
   const client = new CodexChatClient(undefined, fake as unknown as CodexAppServerClient, null);
-  const workspacePath = "/Users/am.will/Applications/cryptoclub";
+  const workspacePath = mkdtempSync(join(tmpdir(), "codex-chat-workspace-"));
 
-  const created = await client.createSession({
-    key: "codex:chat",
-    label: "Chat",
-    model: "gpt-5.3-codex",
-    workspacePath
-  }) as { key?: string; sessionId?: string; workspacePath?: string; workspaceName?: string };
+  try {
+    const created = await client.createSession({
+      key: "codex:chat",
+      label: "Chat",
+      model: "gpt-5.3-codex",
+      workspacePath
+    }) as { key?: string; sessionId?: string; workspacePath?: string; workspaceName?: string };
 
-  assert.equal(fake.createdThreads[0]?.cwd, workspacePath);
-  assert.equal(created.workspacePath, workspacePath);
-  assert.equal(created.workspaceName, "cryptoclub");
+    assert.equal(fake.createdThreads[0]?.cwd, workspacePath);
+    assert.equal(created.workspacePath, workspacePath);
+    assert.equal(created.workspaceName, workspacePath.substring(workspacePath.lastIndexOf("/") + 1));
 
-  await client.sendChat({
-    sessionKey: created.key!,
-    message: "Hello",
-    idempotencyKey: "run_1"
-  });
-  await waitFor(() => fake.submitted.length === 1);
+    await client.sendChat({
+      sessionKey: created.key!,
+      message: "Hello",
+      idempotencyKey: "run_1"
+    });
+    await waitFor(() => fake.submitted.length === 1);
 
-  assert.equal(fake.submitted[0]?.options.cwd, workspacePath);
+    assert.equal(fake.submitted[0]?.options.cwd, workspacePath);
+  } finally {
+    rmSync(workspacePath, { recursive: true, force: true });
+  }
+});
+
+test("Codex reports missing workspace folders unless creation is confirmed", async () => {
+  const fake = new FakeCodexAppServerClient();
+  const client = new CodexChatClient(undefined, fake as unknown as CodexAppServerClient, null);
+  const root = mkdtempSync(join(tmpdir(), "codex-chat-parent-"));
+  const workspacePath = join(root, "missing-workspace");
+
+  try {
+    await assert.rejects(
+      client.createSession({
+        key: "codex:chat",
+        label: "Chat",
+        model: "gpt-5.3-codex",
+        workspacePath
+      }),
+      { message: new RegExp(`^${CODEX_WORKSPACE_NOT_FOUND_PREFIX}`) }
+    );
+    assert.equal(fake.createdThreads.length, 0);
+    assert.equal(existsSync(workspacePath), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Codex creates missing workspace folders after confirmation", async () => {
+  const fake = new FakeCodexAppServerClient();
+  const client = new CodexChatClient(undefined, fake as unknown as CodexAppServerClient, null);
+  const root = mkdtempSync(join(tmpdir(), "codex-chat-parent-"));
+  const workspacePath = join(root, "created-workspace");
+
+  try {
+    await client.createSession({
+      key: "codex:chat",
+      label: "Chat",
+      model: "gpt-5.3-codex",
+      workspacePath,
+      createWorkspaceIfMissing: true
+    });
+
+    assert.equal(existsSync(workspacePath), true);
+    assert.equal(fake.createdThreads[0]?.cwd, workspacePath);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Codex rejects workspace paths that are files", async () => {
+  const fake = new FakeCodexAppServerClient();
+  const client = new CodexChatClient(undefined, fake as unknown as CodexAppServerClient, null);
+  const root = mkdtempSync(join(tmpdir(), "codex-chat-parent-"));
+  const workspacePath = join(root, "workspace-file");
+  writeFileSync(workspacePath, "not a folder");
+
+  try {
+    await assert.rejects(
+      client.createSession({
+        key: "codex:chat",
+        label: "Chat",
+        model: "gpt-5.3-codex",
+        workspacePath,
+        createWorkspaceIfMissing: true
+      }),
+      /Codex workspace path is not a folder/
+    );
+    assert.equal(fake.createdThreads.length, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("Codex sends from implicit sessions create a durable thread first", async () => {

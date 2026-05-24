@@ -19,7 +19,7 @@ interface AgentChatClient {
     ): Boolean
     fun stop(sessionKey: String? = null, runId: String? = null, reason: String = "Stopped from Android chat")
     fun selectSession(sessionKey: String)
-    fun newSession(label: String? = null, model: String? = null, workspacePath: String? = null)
+    fun newSession(label: String? = null, model: String? = null, workspacePath: String? = null, createWorkspaceIfMissing: Boolean = false)
     fun setModel(sessionKey: String?, model: String)
     fun setReasoning(sessionKey: String?, reasoningEffort: String)
     fun controlCommand(command: String, args: JSONObject = JSONObject())

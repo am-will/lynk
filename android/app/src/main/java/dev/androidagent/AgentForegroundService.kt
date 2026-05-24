@@ -66,7 +66,17 @@ private enum class ChatClientRoute {
     Local
 }
 
+private data class PendingNewChatRequest(
+    val selectedModel: String,
+    val route: ChatClientRoute,
+    val model: String,
+    val workspacePath: String?,
+    val previousSessionKey: String?
+)
+
 private const val PHONE_CONTROL_COMPLETION_VISIBLE_MS = 30_000L
+private const val CODEX_WORKSPACE_NOT_FOUND_PREFIX = "CODEX_WORKSPACE_NOT_FOUND:"
+private const val CODEX_WORKSPACE_CREATE_MESSAGE = "Folder not found. Would you like to create it?"
 
 class AgentForegroundService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -85,6 +95,8 @@ class AgentForegroundService : Service() {
     private var pendingNewChat = false
     private var pendingNewChatPreviousSessionKey: String? = null
     private var pendingNewChatHistorySessionKey: String? = null
+    private var pendingNewChatRequest: PendingNewChatRequest? = null
+    private var codexWorkspaceCreatePromptActive = false
     private var notifiedReplySessions = emptySet<String>()
     private var recentsSuppressionStartedAtMs = 0L
     private var recentsRestoreCheck: Runnable? = null
@@ -808,9 +820,38 @@ class AgentForegroundService : Service() {
     }
 
     private fun startNewChatFromUi() {
+        val config = AgentConfigStore.load(this)
+        val selectedModel = selectedChatModel(config)
+        if (selectedModel.isBlank()) {
+            val message = "Enable a model harness in Models & Harness first."
+            chatState = chatState.copy(status = message, isRunning = false)
+            overlayController?.setChatState(chatState)
+            overlayController?.setStatus(message)
+            lastNotificationText = message
+            isAgentTurnActive = false
+            updateNotification()
+            return
+        }
+        val route = routeForModel(selectedModel, config)
+        val workspacePath = config.codexWorkspacePath
+            .takeIf { route == ChatClientRoute.Host && isCodexChatSelection(selectedModel) }
+        beginNewChatAttempt(
+            request = PendingNewChatRequest(
+                selectedModel = selectedModel,
+                route = route,
+                model = modelForRoute(selectedModel, route, config),
+                workspacePath = workspacePath,
+                previousSessionKey = chatState.sessionKey
+            ),
+            createWorkspaceIfMissing = false
+        )
+    }
+
+    private fun beginNewChatAttempt(request: PendingNewChatRequest, createWorkspaceIfMissing: Boolean) {
         markChatSessionRead(chatState.sessionKey, force = true)
-        pendingNewChatPreviousSessionKey = chatState.sessionKey
+        pendingNewChatPreviousSessionKey = request.previousSessionKey
         pendingNewChatHistorySessionKey = null
+        pendingNewChatRequest = request
         pendingNewChat = true
         val now = System.currentTimeMillis()
         chatState = chatState.copy(
@@ -830,24 +871,10 @@ class AgentForegroundService : Service() {
             usage = ChatUsageSummary()
         )
         overlayController?.setChatState(chatState)
-        val config = AgentConfigStore.load(this)
-        val selectedModel = selectedChatModel(config)
-        if (selectedModel.isBlank()) {
-            val message = "Enable a model harness in Models & Harness first."
-            chatState = chatState.copy(status = message, isRunning = false)
-            overlayController?.setChatState(chatState)
-            overlayController?.setStatus(message)
-            lastNotificationText = message
-            isAgentTurnActive = false
-            updateNotification()
-            return
-        }
-        val route = routeForModel(selectedModel, config)
-        val workspacePath = config.codexWorkspacePath
-            .takeIf { route == ChatClientRoute.Host && isCodexChatSelection(selectedModel) }
-        connectAgentClient(selectedModel).newSession(
-            model = modelForRoute(selectedModel, route, config),
-            workspacePath = workspacePath
+        connectAgentClient(request.selectedModel).newSession(
+            model = request.model,
+            workspacePath = request.workspacePath,
+            createWorkspaceIfMissing = createWorkspaceIfMissing && request.route == ChatClientRoute.Host && isCodexChatSelection(request.selectedModel)
         )
         lastNotificationText = "Started a new chat"
         isAgentTurnActive = false
@@ -857,6 +884,21 @@ class AgentForegroundService : Service() {
     private fun handleChatMessage(message: JSONObject) {
         serviceScope.launch {
             chatMessageMutex.withLock {
+                if (pendingNewChat && isCodexWorkspaceNotFoundError(message)) {
+                    val retryRequest = pendingNewChatRequest
+                    clearPendingNewChat()
+                    chatState = chatState.copy(
+                        isRunning = false,
+                        status = "Folder not found",
+                        error = null
+                    )
+                    overlayController?.setChatState(chatState)
+                    lastNotificationText = "Folder not found"
+                    isAgentTurnActive = false
+                    updateNotification()
+                    promptCreateCodexWorkspace(retryRequest)
+                    return@withLock
+                }
                 if (pendingNewChat && message.optString("type") == "chat.history") {
                     val incomingSessionKey = message.optString("sessionKey").takeIf { it.isNotBlank() }
                     val activeSessionKey = chatState.sessionKey
@@ -907,12 +949,13 @@ class AgentForegroundService : Service() {
                     !chatState.sessionKey.isNullOrBlank()
                 ) {
                     val hasLoadedNewHistory = pendingNewChatHistorySessionKey == chatState.sessionKey
-                    pendingNewChat = false
-                    pendingNewChatPreviousSessionKey = null
-                    pendingNewChatHistorySessionKey = null
+                    clearPendingNewChat()
                     if (!hasLoadedNewHistory) {
                         chatState = chatState.copy(timeline = emptyList(), usage = ChatUsageSummary())
                     }
+                }
+                if (pendingNewChat && message.optString("type") == "chat.error") {
+                    clearPendingNewChat()
                 }
                 overlayController?.setChatState(chatState)
                 chatState.status?.takeIf { it.isNotBlank() }?.let { lastNotificationText = chatStatusText(it, chatState) }
@@ -923,6 +966,41 @@ class AgentForegroundService : Service() {
                     overlayController?.show()
                     overlayController?.openChatPanel(presentation = PanelPresentation.Popup)
                 }
+            }
+        }
+    }
+
+    private fun clearPendingNewChat() {
+        pendingNewChat = false
+        pendingNewChatPreviousSessionKey = null
+        pendingNewChatHistorySessionKey = null
+        pendingNewChatRequest = null
+    }
+
+    private fun isCodexWorkspaceNotFoundError(message: JSONObject): Boolean {
+        if (message.optString("type") != "chat.error") return false
+        return message.optString("message").startsWith(CODEX_WORKSPACE_NOT_FOUND_PREFIX)
+    }
+
+    private fun promptCreateCodexWorkspace(request: PendingNewChatRequest?) {
+        val retryRequest = request ?: return
+        if (retryRequest.route != ChatClientRoute.Host || retryRequest.workspacePath.isNullOrBlank()) return
+        if (!isCodexChatSelection(retryRequest.selectedModel)) return
+        if (codexWorkspaceCreatePromptActive) return
+        codexWorkspaceCreatePromptActive = true
+        serviceScope.launch {
+            val allow = overlayController
+                ?.askConfirmation(CODEX_WORKSPACE_CREATE_MESSAGE, retryRequest.workspacePath)
+                ?.await() == true
+            codexWorkspaceCreatePromptActive = false
+            if (allow) {
+                beginNewChatAttempt(retryRequest, createWorkspaceIfMissing = true)
+            } else {
+                chatState = chatState.copy(status = "Folder not found")
+                overlayController?.setChatState(chatState)
+                lastNotificationText = "Folder not found"
+                isAgentTurnActive = false
+                updateNotification()
             }
         }
     }

@@ -143,7 +143,7 @@ export class HarnessChatRouter implements GatewayChatClient {
     await this.adapterForHarness(harnessId).syncRemoteReplies?.(limit);
   }
 
-  async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string }): Promise<unknown> {
+  async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string; createWorkspaceIfMissing?: boolean }): Promise<unknown> {
     const selection = parseHarnessModel(options.model);
     const harnessId = explicitHarnessForSessionKey(options.key) ?? selection?.harnessId ?? harnessForSessionKey(options.key);
     const adapter = this.adapterForHarness(harnessId);
@@ -152,7 +152,8 @@ export class HarnessChatRouter implements GatewayChatClient {
       key,
       label: options.label,
       model: selection?.modelId ?? options.model,
-      ...(harnessId === "codex" && options.workspacePath ? { workspacePath: options.workspacePath } : {})
+      ...(harnessId === "codex" && options.workspacePath ? { workspacePath: options.workspacePath } : {}),
+      ...(harnessId === "codex" && options.createWorkspaceIfMissing ? { createWorkspaceIfMissing: true } : {})
     });
     return this.namespaceCreatedSession(created, harnessId, key);
   }

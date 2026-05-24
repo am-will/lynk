@@ -52,7 +52,7 @@ object RuntimeSettingsScreen {
         root.addView(SettingsUi.card(activity, tokens).apply {
             addView(SettingsUi.sectionHeader(activity, "Codex Default Workspace", "New Codex chats start here when Codex is selected.", tokens))
             addView(SettingsUi.labeledField(activity, "Workspace path", codexWorkspaceInput, tokens, DesignTokens.Spacing.md))
-            addView(SettingsUi.body(activity, "Use ~/ as shorthand for your Mac user folder.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
+            addView(SettingsUi.body(activity, "Use ~/ as shorthand for your user folder.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
         }, SettingsUi.stackedParams(activity))
 
         val localModelPathInput = SettingsUi.configField(activity, "Model file", config.localModelPath, tokens).apply {

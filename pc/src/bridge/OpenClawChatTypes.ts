@@ -55,7 +55,7 @@ export interface GatewayChatClient {
   listModels(): Promise<unknown>;
   listSessions(limit?: number, harnessId?: HarnessId): Promise<unknown>;
   syncRemoteReplies?(harnessId?: HarnessId, limit?: number): Promise<void>;
-  createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string }): Promise<unknown>;
+  createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string; createWorkspaceIfMissing?: boolean }): Promise<unknown>;
   patchSession(sessionKey: string, patch: Record<string, unknown>): Promise<unknown>;
   listCommands(sessionKey?: string): Promise<unknown>;
   effectiveTools(sessionKey: string): Promise<unknown>;
