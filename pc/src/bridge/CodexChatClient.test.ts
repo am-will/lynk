@@ -176,7 +176,7 @@ test("Codex paginates app-server thread listing for desktop history", async () =
   const payload = await client.listSessions() as { sessions: Array<Record<string, unknown>> };
 
   assert.deepEqual(payload.sessions.map((session) => session.displayName), ["First page", "Second page"]);
-  assert.deepEqual(payload.sessions.map((session) => session.workspaceName), ["open-claw-agent", null]);
+  assert.deepEqual(payload.sessions.map((session) => session.workspaceName), ["open-claw-agent", "cryptoclub"]);
 });
 
 test("Codex marks non-workspace sessions as quick chats", async () => {

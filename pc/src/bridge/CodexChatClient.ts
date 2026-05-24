@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { basename, join } from "node:path";
+import { basename, join, normalize } from "node:path";
 import type { AuditLog } from "./AuditLog.js";
 import type { AgentRunResult, AgentStatusSink } from "../dispatcher/AgentClient.js";
 import { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js";
@@ -21,6 +21,7 @@ const CODEX_THREAD_SESSION_KEY_PREFIX = "codex:";
 const CODEX_THREAD_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CODEX_THREAD_PAGE_SIZE = 100;
 const CODEX_THREAD_MAX_LIST = 500;
+const CODEX_QUICK_CHAT_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 interface CodexThreadRecord {
   id: string;
@@ -31,7 +32,7 @@ interface CodexThreadRecord {
   path?: string | null;
   source?: string | null;
   modelProvider?: string | null;
-  hasGitWorkspace?: boolean;
+  hasWorkspace?: boolean;
   updatedAt?: number | null;
   createdAt?: number | null;
 }
@@ -55,9 +56,18 @@ function arrayField(record: Record<string, unknown> | undefined, key: string): u
   return Array.isArray(value) ? value : [];
 }
 
-function hasGitWorkspace(record: Record<string, unknown> | undefined): boolean {
-  const gitInfo = asRecord(record?.gitInfo);
-  return Boolean(gitInfo && Object.keys(gitInfo).length > 0);
+function hasWorkspace(record: Record<string, unknown> | undefined): boolean {
+  const cwd = stringField(record, "cwd");
+  return Boolean(cwd && !isCodexQuickChatCwd(cwd));
+}
+
+function isCodexQuickChatCwd(path: string): boolean {
+  const segments = normalize(path).split(/[\\/]+/);
+  return segments.some((segment, index) =>
+    segment === "Documents"
+    && segments[index + 1] === "Codex"
+    && CODEX_QUICK_CHAT_DATE_PATTERN.test(segments[index + 2] ?? "")
+  );
 }
 
 function estimatePromptTokens(text: string): number {
@@ -430,7 +440,7 @@ export class CodexChatClient {
 
   private threadToSessionSummary(thread: CodexThreadRecord): Record<string, unknown> {
     const displayName = codexThreadDisplayName(thread);
-    const workspacePath = thread.hasGitWorkspace ? thread.cwd ?? null : null;
+    const workspacePath = thread.hasWorkspace ? thread.cwd ?? null : null;
     return {
       key: `${CODEX_THREAD_SESSION_KEY_PREFIX}${thread.id}`,
       sessionId: thread.id,
@@ -507,7 +517,7 @@ function normalizeCodexThread(value: unknown): CodexThreadRecord | undefined {
     path: stringField(record, "path") ?? null,
     source: stringField(record, "source") ?? null,
     modelProvider: stringField(record, "modelProvider") ?? null,
-    hasGitWorkspace: hasGitWorkspace(record),
+    hasWorkspace: hasWorkspace(record),
     createdAt: numberField(record, "createdAt") ?? null,
     updatedAt: numberField(record, "updatedAt") ?? null
   };
