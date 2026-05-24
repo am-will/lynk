@@ -12,6 +12,7 @@ class FakeCodexAppServerClient {
   readonly createdThreads: Array<{ model?: string; baseInstructions?: string; cwd?: string }> = [];
   readonly submitted: Array<{ text: string; options: AgentRequestOptions }> = [];
   readonly steered: string[] = [];
+  readonly threadListRequests: Array<{ limit?: number; cursor?: string }> = [];
   modelsPayload: unknown = { models: [] };
   threadsPayload: unknown = { data: [] };
   threadPayloads: unknown[] = [];
@@ -44,7 +45,8 @@ class FakeCodexAppServerClient {
     return this.modelsPayload;
   }
 
-  async listThreads(): Promise<unknown> {
+  async listThreads(options: { limit?: number; cursor?: string } = {}): Promise<unknown> {
+    this.threadListRequests.push(options);
     return this.threadPayloads.shift() ?? this.threadsPayload;
   }
 
@@ -279,6 +281,33 @@ test("Codex paginates app-server thread listing for desktop history", async () =
 
   assert.deepEqual(payload.sessions.map((session) => session.displayName), ["First page", "Second page"]);
   assert.deepEqual(payload.sessions.map((session) => session.workspaceName), ["open-claw-agent", "cryptoclub"]);
+});
+
+test("Codex session listing honors small metadata limits", async () => {
+  const fake = new FakeCodexAppServerClient();
+  fake.threadPayloads = [
+    {
+      data: [{
+        id: "019e56b1-639e-7ad2-b078-3106a2ee0874",
+        name: "Only needed session",
+        cwd: "/Users/am.will/Applications/open-claw-agent"
+      }],
+      nextCursor: "next"
+    },
+    {
+      data: [{
+        id: "019e5a80-a4d1-7c12-a8e5-50ab3349df73",
+        name: "Should not be fetched",
+        cwd: "/Users/am.will/Applications/cryptoclub"
+      }]
+    }
+  ];
+  const client = new CodexChatClient(undefined, fake as unknown as CodexAppServerClient, null);
+
+  const payload = await client.listSessions(1) as { sessions: Array<Record<string, unknown>> };
+
+  assert.deepEqual(payload.sessions.map((session) => session.displayName), ["Only needed session"]);
+  assert.deepEqual(fake.threadListRequests, [{ limit: 1 }]);
 });
 
 test("Codex marks non-workspace sessions as quick chats", async () => {

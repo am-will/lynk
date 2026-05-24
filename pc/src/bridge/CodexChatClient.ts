@@ -215,7 +215,7 @@ export class CodexChatClient {
   }
 
   async listSessions(limit = 50): Promise<unknown> {
-    const threads = await this.listCodexThreads(Math.max(limit, CODEX_THREAD_MAX_LIST));
+    const threads = await this.listCodexThreads(codexThreadListLimit(limit));
     if (threads.length > 0) {
       for (const thread of threads) {
         this.rememberThread(thread);
@@ -404,17 +404,10 @@ export class CodexChatClient {
   }
 
   private async listCodexThreads(maxThreads: number): Promise<CodexThreadRecord[]> {
-    const listThreads = (this.client as unknown as {
-      listThreads?: (options: { limit?: number; cursor?: string }) => Promise<unknown>;
-    }).listThreads;
-    if (!listThreads) {
-      return [];
-    }
-
     const threads: CodexThreadRecord[] = [];
     let cursor: string | undefined;
     while (threads.length < maxThreads) {
-      const payload = await listThreads.call(this.client, {
+      const payload = await this.client.listThreads({
         limit: Math.min(CODEX_THREAD_PAGE_SIZE, maxThreads - threads.length),
         ...(cursor ? { cursor } : {})
       }).catch((error) => {
@@ -628,6 +621,13 @@ function codexContentText(value: unknown): string {
   return stringField(record, "text")
     ?? stringField(record, "content")
     ?? "";
+}
+
+function codexThreadListLimit(limit: number): number {
+  if (!Number.isFinite(limit)) {
+    return CODEX_THREAD_PAGE_SIZE;
+  }
+  return Math.min(Math.max(Math.trunc(limit), 1), CODEX_THREAD_MAX_LIST);
 }
 
 function codexFallbackModel(id: string, name: string, defaultReasoningEffort: string): Record<string, unknown> {
