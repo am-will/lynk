@@ -295,6 +295,7 @@ object ChatStateReducer {
 
     private fun reduceState(state: ChatState, message: JSONObject): ChatState {
         val sessionKey = message.optNullableString("sessionKey") ?: state.sessionKey
+        val sessionChanged = !sessionKey.isNullOrBlank() && sessionKey != state.sessionKey
         val harnessId = normalizeHarnessId(message.optNullableString("harnessId"))
             ?: harnessFromSessionKey(sessionKey)
             ?: state.harnessId
@@ -315,6 +316,8 @@ object ChatStateReducer {
             reasoningStreamEnabled = message.optNullableBoolean("reasoningStream") ?: state.reasoningStreamEnabled,
             fastMode = message.optNullableBoolean("fastMode") ?: state.fastMode,
             verboseLevel = message.optNullableString("verboseLevel") ?: state.verboseLevel,
+            timeline = if (sessionChanged) emptyList() else state.timeline,
+            usage = if (sessionChanged) ChatUsageSummary() else state.usage,
             error = null
         )
     }
@@ -548,6 +551,7 @@ object ChatStateReducer {
     private fun reduceSessions(state: ChatState, message: JSONObject): ChatState {
         val sessions = parseSessions(message.optJSONArray("sessions"))
         val selectedKey = message.optNullableString("selectedSessionKey") ?: state.sessionKey
+        val sessionChanged = !selectedKey.isNullOrBlank() && selectedKey != state.sessionKey
         val selected = sessions.firstOrNull { it.key == selectedKey }
         val selectedHarnessId = normalizeHarnessId(selected?.harnessId)
             ?: harnessFromSessionKey(selectedKey)
@@ -576,7 +580,8 @@ object ChatStateReducer {
             reasoningStreamEnabled = selected?.reasoningLevel?.let(::reasoningStreamEnabled) ?: state.reasoningStreamEnabled,
             fastMode = selected?.fastMode ?: state.fastMode,
             verboseLevel = selected?.verboseLevel ?: state.verboseLevel,
-            usage = usage,
+            timeline = if (sessionChanged) emptyList() else state.timeline,
+            usage = if (sessionChanged && selected == null) ChatUsageSummary() else usage,
             unreadReplies = mergeUnreadSessionMetadata(state.unreadReplies, sessions),
             error = null
         )

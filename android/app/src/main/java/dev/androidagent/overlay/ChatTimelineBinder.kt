@@ -48,7 +48,9 @@ class ChatTimelineBinder(
 
     fun render(state: ChatState, showToolCalls: Boolean, brand: ClientBrandPresentation) {
         val container = historyContainer ?: return
+        val scrollView = historyScrollView
         val tokens = tokens()
+        scrollView?.scrollTo(0, 0)
         container.removeAllViews()
         val plan = ChatTimelineRenderer.plan(state, showToolCalls)
         if (plan.isEmpty) {
@@ -65,7 +67,7 @@ class ChatTimelineBinder(
                 ).apply { bottomMargin = dp(DesignTokens.Spacing.sm) })
             }
         }
-        historyScrollView?.post { historyScrollView?.fullScroll(View.FOCUS_DOWN) }
+        scrollView?.post { snapToBottom() }
     }
 
     fun snapToBottom() {

@@ -55,6 +55,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.util.UUID
 
@@ -78,7 +80,10 @@ class AgentForegroundService : Service() {
     private var lastNotificationText = DEFAULT_NOTIFICATION_TEXT
     private var isAgentTurnActive = false
     private var chatState = ChatState()
+    private val chatMessageMutex = Mutex()
     private var pendingNewChat = false
+    private var pendingNewChatPreviousSessionKey: String? = null
+    private var pendingNewChatHistorySessionKey: String? = null
     private var notifiedReplySessions = emptySet<String>()
     private var recentsSuppressionStartedAtMs = 0L
     private var recentsRestoreCheck: Runnable? = null
@@ -716,6 +721,8 @@ class AgentForegroundService : Service() {
 
     private fun startNewChatFromUi() {
         markChatSessionRead(chatState.sessionKey, force = true)
+        pendingNewChatPreviousSessionKey = chatState.sessionKey
+        pendingNewChatHistorySessionKey = null
         pendingNewChat = true
         val now = System.currentTimeMillis()
         chatState = chatState.copy(
@@ -756,59 +763,73 @@ class AgentForegroundService : Service() {
 
     private fun handleChatMessage(message: JSONObject) {
         serviceScope.launch {
-            if (pendingNewChat && message.optString("type") == "chat.history") {
-                val incomingSessionKey = message.optString("sessionKey")
-                val activeSessionKey = chatState.sessionKey
-                if (activeSessionKey.isNullOrBlank() || incomingSessionKey != activeSessionKey) {
-                    return@launch
+            chatMessageMutex.withLock {
+                if (pendingNewChat && message.optString("type") == "chat.history") {
+                    val incomingSessionKey = message.optString("sessionKey").takeIf { it.isNotBlank() }
+                    val activeSessionKey = chatState.sessionKey
+                    if (
+                        incomingSessionKey == null ||
+                        incomingSessionKey == pendingNewChatPreviousSessionKey ||
+                        (!activeSessionKey.isNullOrBlank() && incomingSessionKey != activeSessionKey)
+                    ) {
+                        return@withLock
+                    }
                 }
-            }
-            val replySessionKey = if (message.optString("type") == "chat.reply_available") {
-                message.optString("sessionKey").takeIf { it.isNotBlank() }
-            } else {
-                null
-            }
-            val messageRunId = message.optString("runId").takeIf { it.isNotBlank() }
-            val messageSessionKey = message.optString("sessionKey").takeIf { it.isNotBlank() }
-            val phoneControlStarted = isPhoneControlStartMessage(message)
-            val phoneControlCompleted = isTerminalChatMessage(message) && isRememberedPhoneControlRun(messageRunId)
-            chatState = ChatStateReducer.reduce(chatState, message)
-            publishBackendAvailability()
-            if (phoneControlStarted) {
-                rememberPhoneControlRun(
-                    sessionKey = messageSessionKey ?: chatState.sessionKey,
-                    runId = messageRunId ?: chatState.activeRunId
-                )
-                activatePhoneControlPet()
-            }
-            if (phoneControlCompleted) {
-                holdPhoneControlPetAfterCompletion(
-                    sessionKey = messageSessionKey ?: chatState.sessionKey,
-                    runId = messageRunId
-                )
-                forgetPhoneControlRun(messageRunId)
-            }
-            if (replySessionKey != null && overlayController?.isViewingChatSession(replySessionKey) == true) {
-                if (!shouldPreservePhoneControlUnread(replySessionKey)) {
-                    chatState = ChatStateReducer.markSessionRead(chatState, replySessionKey)
+                val replySessionKey = if (message.optString("type") == "chat.reply_available") {
+                    message.optString("sessionKey").takeIf { it.isNotBlank() }
+                } else {
+                    null
                 }
-            }
-            if (
-                pendingNewChat &&
-                message.optString("type") == "chat.state" &&
-                !chatState.sessionKey.isNullOrBlank()
-            ) {
-                pendingNewChat = false
-                chatState = chatState.copy(timeline = emptyList(), usage = ChatUsageSummary())
-            }
-            overlayController?.setChatState(chatState)
-            chatState.status?.takeIf { it.isNotBlank() }?.let { lastNotificationText = chatStatusText(it, chatState) }
-            isAgentTurnActive = chatState.isRunning
-            syncReplyNotifications()
-            updateNotification()
-            if (chatClientRoute == ChatClientRoute.Local && isTerminalChatMessage(message)) {
-                overlayController?.show()
-                overlayController?.openChatPanel(presentation = PanelPresentation.Popup)
+                val messageRunId = message.optString("runId").takeIf { it.isNotBlank() }
+                val messageSessionKey = message.optString("sessionKey").takeIf { it.isNotBlank() }
+                val phoneControlStarted = isPhoneControlStartMessage(message)
+                val phoneControlCompleted = isTerminalChatMessage(message) && isRememberedPhoneControlRun(messageRunId)
+                chatState = ChatStateReducer.reduce(chatState, message)
+                if (pendingNewChat && message.optString("type") == "chat.history") {
+                    pendingNewChatHistorySessionKey = chatState.sessionKey
+                }
+                publishBackendAvailability()
+                if (phoneControlStarted) {
+                    rememberPhoneControlRun(
+                        sessionKey = messageSessionKey ?: chatState.sessionKey,
+                        runId = messageRunId ?: chatState.activeRunId
+                    )
+                    activatePhoneControlPet()
+                }
+                if (phoneControlCompleted) {
+                    holdPhoneControlPetAfterCompletion(
+                        sessionKey = messageSessionKey ?: chatState.sessionKey,
+                        runId = messageRunId
+                    )
+                    forgetPhoneControlRun(messageRunId)
+                }
+                if (replySessionKey != null && overlayController?.isViewingChatSession(replySessionKey) == true) {
+                    if (!shouldPreservePhoneControlUnread(replySessionKey)) {
+                        chatState = ChatStateReducer.markSessionRead(chatState, replySessionKey)
+                    }
+                }
+                if (
+                    pendingNewChat &&
+                    message.optString("type") == "chat.state" &&
+                    !chatState.sessionKey.isNullOrBlank()
+                ) {
+                    val hasLoadedNewHistory = pendingNewChatHistorySessionKey == chatState.sessionKey
+                    pendingNewChat = false
+                    pendingNewChatPreviousSessionKey = null
+                    pendingNewChatHistorySessionKey = null
+                    if (!hasLoadedNewHistory) {
+                        chatState = chatState.copy(timeline = emptyList(), usage = ChatUsageSummary())
+                    }
+                }
+                overlayController?.setChatState(chatState)
+                chatState.status?.takeIf { it.isNotBlank() }?.let { lastNotificationText = chatStatusText(it, chatState) }
+                isAgentTurnActive = chatState.isRunning
+                syncReplyNotifications()
+                updateNotification()
+                if (chatClientRoute == ChatClientRoute.Local && isTerminalChatMessage(message)) {
+                    overlayController?.show()
+                    overlayController?.openChatPanel(presentation = PanelPresentation.Popup)
+                }
             }
         }
     }

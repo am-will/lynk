@@ -94,6 +94,51 @@ class ChatStateReducerTest {
     }
 
     @Test
+    fun stateSessionChangeClearsStaleTimeline() {
+        val stale = ChatState(
+            sessionKey = "agent:main:first",
+            timeline = listOf(ChatTimelineItem(
+                id = "a1",
+                kind = ChatTimelineKind.MESSAGE,
+                role = "assistant",
+                text = "Previous thread"
+            )),
+            usage = ChatUsageSummary(totalTokens = 100, contextTokens = 1_000)
+        )
+
+        val switched = ChatStateReducer.reduce(stale, JSONObject()
+            .put("type", "chat.state")
+            .put("sessionKey", "agent:main:second"))
+
+        assertEquals("agent:main:second", switched.sessionKey)
+        assertEquals(emptyList<ChatTimelineItem>(), switched.timeline)
+        assertEquals(ChatUsageSummary(), switched.usage)
+    }
+
+    @Test
+    fun sessionsSessionChangeClearsStaleTimeline() {
+        val stale = ChatState(
+            sessionKey = "agent:main:first",
+            timeline = listOf(ChatTimelineItem(
+                id = "a1",
+                kind = ChatTimelineKind.MESSAGE,
+                role = "assistant",
+                text = "Previous thread"
+            ))
+        )
+
+        val switched = ChatStateReducer.reduce(stale, JSONObject()
+            .put("type", "chat.sessions")
+            .put("selectedSessionKey", "agent:main:second")
+            .put("sessions", JSONArray().put(JSONObject()
+                .put("key", "agent:main:second")
+                .put("displayName", "Second"))))
+
+        assertEquals("agent:main:second", switched.sessionKey)
+        assertEquals(emptyList<ChatTimelineItem>(), switched.timeline)
+    }
+
+    @Test
     fun historyMergesLocalStatusMessagesChronologicallyWhenTimestampsExist() {
         val withNotice = ChatStateReducer.reduce(ChatState(), JSONObject()
             .put("type", "chat.message")
