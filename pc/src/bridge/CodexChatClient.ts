@@ -1,15 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { basename, join, normalize } from "node:path";
 import type { AuditLog } from "./AuditLog.js";
 import type { AgentRunResult, AgentStatusSink } from "../dispatcher/AgentClient.js";
 import { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js";
 import { PHONE_AGENT_SYSTEM_PROMPT } from "../dispatcher/promptPolicy.js";
-import { ChatClientError, CODEX_WORKSPACE_NOT_FOUND_CODE } from "./chat/ChatErrors.js";
 import { codexAppServerContextWindow, DEFAULT_REASONING_OPTIONS } from "./chat/ModelCatalog.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "./harness/InMemoryHarnessSessionStore.js";
 import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "./chat/ChatTransportTypes.js";
+import { prepareCodexWorkspace } from "./codex/CodexWorkspace.js";
 
 interface ActiveRun {
   sessionKey: string;
@@ -237,8 +235,7 @@ export class CodexChatClient {
   }
 
   async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string; createWorkspaceIfMissing?: boolean }): Promise<unknown> {
-    const workspacePath = expandHomePath(options.workspacePath);
-    ensureWorkspaceDirectory(workspacePath, options.workspacePath, options.createWorkspaceIfMissing === true);
+    const workspacePath = prepareCodexWorkspace(options.workspacePath, options.createWorkspaceIfMissing === true);
     const threadId = await this.client.createThread({
       model: options.model,
       baseInstructions: PHONE_AGENT_SYSTEM_PROMPT,
@@ -542,39 +539,6 @@ function workspaceNameFromPath(path: string | null | undefined): string | null {
     return null;
   }
   return basename(path) || path;
-}
-
-function expandHomePath(path: string | null | undefined): string | undefined {
-  const trimmed = path?.trim();
-  if (!trimmed) {
-    return undefined;
-  }
-  if (trimmed === "~") {
-    return homedir();
-  }
-  if (trimmed.startsWith("~/")) {
-    return join(homedir(), trimmed.slice(2));
-  }
-  return trimmed;
-}
-
-function ensureWorkspaceDirectory(path: string | undefined, displayPath: string | undefined, createIfMissing: boolean): void {
-  if (!path) {
-    return;
-  }
-  if (!existsSync(path)) {
-    if (!createIfMissing) {
-      const workspacePath = displayPath?.trim() || path;
-      throw new ChatClientError(`Codex workspace folder not found: ${workspacePath}`, {
-        code: CODEX_WORKSPACE_NOT_FOUND_CODE,
-        workspacePath
-      });
-    }
-    mkdirSync(path, { recursive: true });
-  }
-  if (!statSync(path).isDirectory()) {
-    throw new Error(`Codex workspace path is not a folder: ${displayPath?.trim() || path}`);
-  }
 }
 
 function secondsToMillis(value: number | null | undefined): number | null {
