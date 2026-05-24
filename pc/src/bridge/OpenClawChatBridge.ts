@@ -138,13 +138,17 @@ export class OpenClawChatBridge {
     const modelCounts = await this.harnessModelCounts();
     const harnesses: Record<string, unknown> = {};
     for (const info of harnessInfos(this.config)) {
+      const modelCount = modelCounts[info.id] ?? 0;
+      const ready = info.enabled && modelCount > 0;
       harnesses[info.id] = {
-        ok: info.enabled,
+        ok: ready,
         configured: info.enabled,
         label: info.label,
-        modelCount: modelCounts[info.id] ?? 0,
-        message: info.enabled
-          ? `${info.label} is configured on the PC bridge.`
+        modelCount,
+        message: ready
+          ? `${info.label} backend is ready.`
+          : info.enabled
+            ? `${info.label} is configured on the PC bridge, but no live models are available yet.`
           : `${info.label} is not configured on the PC bridge.`
       };
     }

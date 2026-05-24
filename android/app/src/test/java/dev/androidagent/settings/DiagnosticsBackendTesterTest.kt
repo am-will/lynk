@@ -22,6 +22,21 @@ class DiagnosticsBackendTesterTest {
     }
 
     @Test
+    fun liveAvailabilityIgnoresStaleModelCatalogSignal() {
+        DiagnosticsBackendSnapshot.update(
+            modelCounts = mapOf("hermes" to 2),
+            activeHarnessIds = emptySet()
+        )
+
+        val result = DiagnosticsBackendTester.liveAvailabilityResult(
+            DiagnosticsBackendId.Hermes,
+            nowMs = System.currentTimeMillis() + 3 * 60 * 1000L
+        )
+
+        assertEquals(null, result)
+    }
+
+    @Test
     fun deriveHttpBaseConvertsWebSocketUrlToBridgeRoot() {
         assertEquals(
             "http://192.168.1.10:8788",
@@ -53,8 +68,20 @@ class DiagnosticsBackendTesterTest {
         )
 
         assertFalse(result.ok)
-        assertEquals(DiagnosticsEventLevel.Error, result.level)
+        assertEquals(DiagnosticsEventLevel.Warning, result.level)
         assertEquals("Hermes is not configured on the PC bridge.", result.message)
+    }
+
+    @Test
+    fun parseHarnessReadinessWarnsWhenConfiguredHarnessHasNoLiveModels() {
+        val result = DiagnosticsBackendTester.parseHarnessReadiness(
+            DiagnosticsBackendId.OpenClaw,
+            JSONObject("""{"harnesses":{"openclaw":{"ok":false,"configured":true,"modelCount":0,"message":"OpenClaw is configured on the PC bridge, but no live models are available yet."}}}""")
+        )
+
+        assertFalse(result.ok)
+        assertEquals(DiagnosticsEventLevel.Warning, result.level)
+        assertEquals("OpenClaw is configured on the PC bridge, but no live models are available yet.", result.message)
     }
 
     @Test

@@ -110,9 +110,13 @@ object DiagnosticsBackendTester {
         }
     }
 
-    internal fun liveAvailabilityResult(backend: DiagnosticsBackendId): DiagnosticsBackendTestResult? {
+    internal fun liveAvailabilityResult(
+        backend: DiagnosticsBackendId,
+        nowMs: Long = System.currentTimeMillis()
+    ): DiagnosticsBackendTestResult? {
         val availability = DiagnosticsBackendSnapshot.current()
         if (availability.updatedAtMs <= 0L) return null
+        if (nowMs - availability.updatedAtMs > LIVE_AVAILABILITY_MAX_AGE_MS) return null
         if (!availability.isReady(backend.harnessId)) return null
         val modelCount = availability.modelCounts.getOrDefault(backend.harnessId, 0)
         val detail = if (modelCount > 0) {
@@ -148,15 +152,27 @@ object DiagnosticsBackendTester {
             backend,
             "${backend.label} is not configured on the PC bridge."
         )
-        if (isHealthy(harness)) {
+        if (harness.optBoolean("ok", false)) {
             val modelCount = harness.optInt("modelCount", 0)
             val suffix = if (modelCount > 0) " ($modelCount models available)" else ""
             return success(backend, "${backend.label} backend is ready$suffix.")
         }
+        val detail = firstMeaningfulString(harness, listOf("error", "message", "reason", "detail"))
+        if (!harness.optBoolean("configured", true)) {
+            return warning(
+                backend,
+                detail ?: "${backend.label} is not configured on the PC bridge."
+            )
+        }
+        if (harness.optInt("modelCount", 0) <= 0) {
+            return warning(
+                backend,
+                detail ?: "${backend.label} is configured, but no live models are available yet."
+            )
+        }
         return error(
             backend,
-            firstMeaningfulString(harness, listOf("error", "message", "reason", "detail"))
-                ?: "${backend.label} backend reported not ready."
+            detail ?: "${backend.label} backend reported not ready."
         )
     }
 
@@ -167,20 +183,6 @@ object DiagnosticsBackendTester {
             DiagnosticsBackendId.Codex -> config.codexHarnessEnabled
             DiagnosticsBackendId.Local -> config.experimentalLocalModelsEnabled
         }
-
-    private fun isHealthy(payload: JSONObject): Boolean {
-        if (payload.has("ok")) {
-            return payload.optBoolean("ok", false)
-        }
-        val status = payload.optString("status").lowercase()
-        if (status in setOf("ok", "healthy", "ready", "connected", "running")) {
-            return true
-        }
-        if (firstMeaningfulString(payload, listOf("error", "message", "reason", "detail")) != null) {
-            return false
-        }
-        return payload.length() > 0
-    }
 
     private fun firstMeaningfulString(value: Any?, keys: List<String>): String? {
         return when (value) {
@@ -209,4 +211,6 @@ object DiagnosticsBackendTester {
 
     private fun error(backend: DiagnosticsBackendId, message: String): DiagnosticsBackendTestResult =
         DiagnosticsBackendTestResult(backend, ok = false, DiagnosticsEventLevel.Error, "${backend.label} Test Failed", message)
+
+    private const val LIVE_AVAILABILITY_MAX_AGE_MS = 2 * 60 * 1000L
 }

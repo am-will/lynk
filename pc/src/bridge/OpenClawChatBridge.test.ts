@@ -241,6 +241,40 @@ test("new chats use uuid labels until first message display name is set", async 
   ]);
 });
 
+test("backend readiness reports configured harnesses only when live models exist", async () => {
+  const { bridge, client } = createHarness();
+  client.models = [
+    { id: "gpt-5.5" },
+    { id: "codex:gpt-5.3-codex" }
+  ];
+
+  assert.deepEqual(await bridge.backendReadiness(), {
+    harnesses: {
+      openclaw: {
+        ok: true,
+        configured: true,
+        label: "OpenClaw",
+        modelCount: 1,
+        message: "OpenClaw backend is ready."
+      },
+      hermes: {
+        ok: false,
+        configured: false,
+        label: "Hermes",
+        modelCount: 0,
+        message: "Hermes is not configured on the PC bridge."
+      },
+      codex: {
+        ok: true,
+        configured: true,
+        label: "Codex",
+        modelCount: 1,
+        message: "Codex backend is ready."
+      }
+    }
+  });
+});
+
 test("explicit phone chat uses gateway session so session fast mode applies", async () => {
   const { bridge, client, fallbackCalls } = createHarness();
 

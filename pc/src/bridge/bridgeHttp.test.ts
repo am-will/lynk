@@ -56,7 +56,7 @@ class FakeChatBridge {
   async backendReadiness(): Promise<unknown> {
     return {
       harnesses: {
-        openclaw: { ok: true, configured: true, label: "OpenClaw", modelCount: 0 },
+        openclaw: { ok: false, configured: true, label: "OpenClaw", modelCount: 0, message: "OpenClaw is configured on the PC bridge, but no live models are available yet." },
         hermes: { ok: false, configured: false, label: "Hermes", modelCount: 0, message: "Hermes is not configured on the PC bridge." },
         codex: { ok: true, configured: true, label: "Codex", modelCount: 5 }
       }
@@ -162,7 +162,7 @@ test("bridge HTTP serves authenticated harness readiness", async () => {
     assert.deepEqual(await response.json(), {
       ok: true,
       harnesses: {
-        openclaw: { ok: true, configured: true, label: "OpenClaw", modelCount: 0 },
+        openclaw: { ok: false, configured: true, label: "OpenClaw", modelCount: 0, message: "OpenClaw is configured on the PC bridge, but no live models are available yet." },
         hermes: { ok: false, configured: false, label: "Hermes", modelCount: 0, message: "Hermes is not configured on the PC bridge." },
         codex: { ok: true, configured: true, label: "Codex", modelCount: 5 }
       }
