@@ -1,7 +1,9 @@
 package dev.androidagent.settings.screens
 
 import android.app.Activity
+import android.text.Editable
 import android.text.InputType
+import android.text.TextWatcher
 import android.view.View
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -48,11 +50,13 @@ object RuntimeSettingsScreen {
             CodexWorkspacePaths.display(config.codexWorkspacePath),
             tokens,
             InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-        )
+        ).apply {
+            keepCodexHomePrefix(this)
+        }
         root.addView(SettingsUi.card(activity, tokens).apply {
             addView(SettingsUi.sectionHeader(activity, "Codex Default Workspace", "New Codex chats start here when Codex is selected.", tokens))
             addView(SettingsUi.labeledField(activity, "Workspace path", codexWorkspaceInput, tokens, DesignTokens.Spacing.md))
-            addView(SettingsUi.body(activity, "Use ~/ as shorthand for your user folder.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
+            addView(SettingsUi.body(activity, "The ~/ prefix means your user folder.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
         }, SettingsUi.stackedParams(activity))
 
         val localModelPathInput = SettingsUi.configField(activity, "Model file", config.localModelPath, tokens).apply {
@@ -120,5 +124,30 @@ object RuntimeSettingsScreen {
         )
 
         return root
+    }
+
+    private fun keepCodexHomePrefix(input: EditText) {
+        var correcting = false
+        input.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+
+            override fun afterTextChanged(editable: Editable?) {
+                if (correcting) return
+                val text = editable?.toString().orEmpty()
+                if (text.startsWith("~/")) return
+                correcting = true
+                val normalized = CodexWorkspacePaths.display(text)
+                val suffix = normalized.removePrefix("~").trimStart('/')
+                val next = if (suffix.isBlank()) "~/" else "~/$suffix"
+                input.setText(next)
+                input.setSelection(next.length)
+                correcting = false
+            }
+        })
+        if (!input.text.toString().startsWith("~/")) {
+            input.setText("~/")
+            input.setSelection(input.text.length)
+        }
     }
 }

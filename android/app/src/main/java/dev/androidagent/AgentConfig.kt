@@ -179,7 +179,7 @@ object CodexWorkspacePaths {
     fun normalizeInput(path: String?): String {
         val trimmed = path?.trim().orEmpty()
         return when {
-            trimmed.isBlank() -> ""
+            trimmed.isBlank() -> "~/"
             trimmed == "~" -> "~/"
             else -> display(trimmed)
         }
