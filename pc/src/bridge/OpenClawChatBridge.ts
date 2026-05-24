@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AgentRunResult, AgentTaskKind } from "../dispatcher/AgentClient.js";
 import type { Dispatcher } from "../dispatcher/dispatcher.js";
+import type { HarnessId } from "./AgentHarness.js";
 import {
   defaultSessionKeyForHarness,
   harnessForSessionKey,
@@ -63,6 +64,18 @@ import {
 import { OpenClawRealtimeSessions } from "./OpenClawRealtimeSessions.js";
 import { OpenClawRunWaiters } from "./OpenClawRunWaiters.js";
 import { PhoneHub } from "./PhoneHub.js";
+
+export interface HarnessReadinessStatus {
+  ok: boolean;
+  configured: boolean;
+  label: string;
+  modelCount: number;
+  message: string;
+}
+
+export interface BackendReadinessStatus {
+  harnesses: Record<HarnessId, HarnessReadinessStatus>;
+}
 
 export class OpenClawChatBridge {
   private readonly client: GatewayChatClient;
@@ -134,9 +147,9 @@ export class OpenClawChatBridge {
     return await this.client.health();
   }
 
-  async backendReadiness(): Promise<unknown> {
+  async backendReadiness(): Promise<BackendReadinessStatus> {
     const modelCounts = await this.harnessModelCounts();
-    const harnesses: Record<string, unknown> = {};
+    const harnesses = {} as Record<HarnessId, HarnessReadinessStatus>;
     for (const info of harnessInfos(this.config)) {
       const modelCount = modelCounts[info.id] ?? 0;
       const ready = info.enabled && modelCount > 0;
@@ -511,6 +524,8 @@ export class OpenClawChatBridge {
   private async refreshMetadata(deviceId: string): Promise<void> {
     await this.sendModels(deviceId).catch(() => undefined);
     await this.sendSessions(deviceId).catch(() => undefined);
+    const state = this.stateFor(deviceId);
+    await this.client.syncRemoteReplies?.(state.harnessId, 50).catch(() => undefined);
   }
 
   private async ensureSession(deviceId: string): Promise<void> {

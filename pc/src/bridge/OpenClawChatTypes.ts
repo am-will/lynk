@@ -54,6 +54,7 @@ export interface GatewayChatClient {
   abort(sessionKey: string, runId?: string): Promise<unknown>;
   listModels(): Promise<unknown>;
   listSessions(limit?: number, harnessId?: HarnessId): Promise<unknown>;
+  syncRemoteReplies?(harnessId?: HarnessId, limit?: number): Promise<void>;
   createSession(options: { key?: string; label?: string; model?: string }): Promise<unknown>;
   patchSession(sessionKey: string, patch: Record<string, unknown>): Promise<unknown>;
   listCommands(sessionKey?: string): Promise<unknown>;

@@ -59,6 +59,7 @@ export interface HarnessChatAdapter {
   abort(sessionKey: string, runId?: string): Promise<unknown>;
   listModels(): Promise<ChatModelOption[]>;
   listSessions(limit?: number): Promise<HarnessSessionList>;
+  syncRemoteReplies?(limit?: number): Promise<void>;
   createSession(options: { key?: string; label?: string; model?: string }): Promise<HarnessCreatedSession>;
   patchSession(sessionKey: string, patch: Record<string, unknown>): Promise<unknown>;
   listCommands(sessionKey?: string): Promise<ChatCommandOption[]>;
@@ -88,6 +89,7 @@ interface RawHarnessClient {
   abort(sessionKey: string, runId?: string): Promise<unknown>;
   listModels(): Promise<unknown>;
   listSessions(limit?: number): Promise<unknown>;
+  syncRemoteReplies?(limit?: number): Promise<void>;
   createSession(options: { key?: string; label?: string; model?: string }): Promise<unknown>;
   patchSession(sessionKey: string, patch: Record<string, unknown>): Promise<unknown>;
   listCommands(sessionKey?: string): Promise<unknown>;
@@ -154,6 +156,10 @@ export class NormalizedHarnessAdapter implements HarnessChatAdapter {
       sessions: normalizeSessions(payload),
       reasoningOptions: normalizeReasoningOptions(payload)
     };
+  }
+
+  async syncRemoteReplies(limit?: number): Promise<void> {
+    await this.client.syncRemoteReplies?.(limit);
   }
 
   async createSession(options: { key?: string; label?: string; model?: string }): Promise<HarnessCreatedSession> {

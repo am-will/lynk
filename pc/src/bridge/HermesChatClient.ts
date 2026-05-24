@@ -216,7 +216,6 @@ export class HermesChatClient {
   async listSessions(limit = 50): Promise<unknown> {
     const remotePayload = await this.api.listSessions().catch(() => undefined);
     const remoteSessions = normalizeHermesSessions(remotePayload).slice(0, limit);
-    await this.detectRemoteSessionReplies(remoteSessions).catch(() => undefined);
     const byKey = new Map<string, ChatSessionSummary>();
     for (const session of this.sessions.listSessions(limit)) {
       byKey.set(session.key, session);
@@ -235,6 +234,12 @@ export class HermesChatClient {
         thinkingLevels: ["low", "medium", "high", "xhigh"]
       }
     };
+  }
+
+  async syncRemoteReplies(limit = 50): Promise<void> {
+    const remotePayload = await this.api.listSessions().catch(() => undefined);
+    const remoteSessions = normalizeHermesSessions(remotePayload).slice(0, limit);
+    await this.detectRemoteSessionReplies(remoteSessions);
   }
 
   async createSession(options: { key?: string; label?: string; model?: string }): Promise<unknown> {

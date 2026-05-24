@@ -117,13 +117,41 @@ test("Hermes history loads messages from dashboard API for selected sessions", a
   }]);
 });
 
-test("Hermes emits chat events for externally updated sessions after baseline", async () => {
+test("Hermes session listing does not emit remote reply notifications", async () => {
   const api = new FakeHermesApiClient();
   const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
   const events: GatewayEvent[] = [];
   client.addEventListener((event) => events.push(event));
 
   await client.listSessions();
+  api.sessionsPayload = {
+    sessions: [{
+      session_id: "20260521_211022_1f4f0b",
+      model: "hermes-agent",
+      timestamp: "2026-05-22T03:11:22.000Z",
+      preview: "Cron Hermes chat"
+    }]
+  };
+  api.messagesPayload = {
+    messages: [{
+      message_id: "msg_3",
+      role: "assistant",
+      content: "Cron complete",
+      timestamp: "2026-05-22T03:11:22.000Z"
+    }]
+  };
+  await client.listSessions();
+
+  assert.equal(events.length, 0);
+});
+
+test("Hermes emits chat events for externally updated sessions after baseline", async () => {
+  const api = new FakeHermesApiClient();
+  const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
+  const events: GatewayEvent[] = [];
+  client.addEventListener((event) => events.push(event));
+
+  await client.syncRemoteReplies();
   assert.equal(events.length, 0);
 
   api.sessionsPayload = {
@@ -148,8 +176,8 @@ test("Hermes emits chat events for externally updated sessions after baseline", 
     }]
   };
 
-  await client.listSessions();
-  await client.listSessions();
+  await client.syncRemoteReplies();
+  await client.syncRemoteReplies();
 
   assert.equal(events.length, 1);
   assert.deepEqual(events[0], {
@@ -170,7 +198,7 @@ test("Hermes baselines sessions that appear after an empty initial list", async 
   const events: GatewayEvent[] = [];
   client.addEventListener((event) => events.push(event));
 
-  await client.listSessions();
+  await client.syncRemoteReplies();
   api.sessionsPayload = {
     sessions: [{
       session_id: "20260521_211022_1f4f0b",
@@ -188,8 +216,8 @@ test("Hermes baselines sessions that appear after an empty initial list", async 
     }]
   };
 
-  await client.listSessions();
-  await client.listSessions();
+  await client.syncRemoteReplies();
+  await client.syncRemoteReplies();
   assert.equal(events.length, 0);
 
   api.sessionsPayload = {
@@ -209,7 +237,7 @@ test("Hermes baselines sessions that appear after an empty initial list", async 
     }]
   };
 
-  await client.listSessions();
+  await client.syncRemoteReplies();
 
   assert.equal(events.length, 1);
   assert.deepEqual(events[0], {

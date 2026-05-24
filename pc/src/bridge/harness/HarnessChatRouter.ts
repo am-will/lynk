@@ -139,6 +139,10 @@ export class HarnessChatRouter implements GatewayChatClient {
     };
   }
 
+  async syncRemoteReplies(harnessId: HarnessId = DEFAULT_HARNESS_ID, limit = 50): Promise<void> {
+    await this.adapterForHarness(harnessId).syncRemoteReplies?.(limit);
+  }
+
   async createSession(options: { key?: string; label?: string; model?: string }): Promise<unknown> {
     const selection = parseHarnessModel(options.model);
     const harnessId = explicitHarnessForSessionKey(options.key) ?? selection?.harnessId ?? harnessForSessionKey(options.key);

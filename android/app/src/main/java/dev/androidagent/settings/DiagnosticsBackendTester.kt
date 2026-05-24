@@ -60,7 +60,6 @@ object DiagnosticsBackendTester {
         if (!isHarnessEnabled(config, backend)) {
             return warning(backend, "${backend.label} is disabled in Models & Harness.")
         }
-        liveAvailabilityResult(backend)?.let { return it }
         val httpBase = deriveHttpBase(config.hostUrl) ?: return warning(
             backend,
             "Bridge URL is missing. Configure the host URL in Connection settings."
@@ -108,23 +107,6 @@ object DiagnosticsBackendTester {
         } catch (throwable: Throwable) {
             error(backend, throwable.message ?: "Backend test failed.")
         }
-    }
-
-    internal fun liveAvailabilityResult(
-        backend: DiagnosticsBackendId,
-        nowMs: Long = System.currentTimeMillis()
-    ): DiagnosticsBackendTestResult? {
-        val availability = DiagnosticsBackendSnapshot.current()
-        if (availability.updatedAtMs <= 0L) return null
-        if (nowMs - availability.updatedAtMs > LIVE_AVAILABILITY_MAX_AGE_MS) return null
-        if (!availability.isReady(backend.harnessId)) return null
-        val modelCount = availability.modelCounts.getOrDefault(backend.harnessId, 0)
-        val detail = if (modelCount > 0) {
-            "${backend.label} is available in the current model picker ($modelCount models)."
-        } else {
-            "${backend.label} has an active or recent chat session in this app."
-        }
-        return success(backend, detail)
     }
 
     internal fun deriveHttpBase(hostUrl: String): String? {
@@ -211,6 +193,4 @@ object DiagnosticsBackendTester {
 
     private fun error(backend: DiagnosticsBackendId, message: String): DiagnosticsBackendTestResult =
         DiagnosticsBackendTestResult(backend, ok = false, DiagnosticsEventLevel.Error, "${backend.label} Test Failed", message)
-
-    private const val LIVE_AVAILABILITY_MAX_AGE_MS = 2 * 60 * 1000L
 }

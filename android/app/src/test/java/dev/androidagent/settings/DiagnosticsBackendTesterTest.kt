@@ -8,35 +8,6 @@ import org.junit.Test
 
 class DiagnosticsBackendTesterTest {
     @Test
-    fun liveAvailabilityUsesModelCatalogSignal() {
-        DiagnosticsBackendSnapshot.update(
-            modelCounts = mapOf("hermes" to 2),
-            activeHarnessIds = emptySet()
-        )
-
-        val result = DiagnosticsBackendTester.liveAvailabilityResult(DiagnosticsBackendId.Hermes)
-
-        assertEquals(true, result?.ok)
-        assertEquals(DiagnosticsEventLevel.Success, result?.level)
-        assertEquals("Hermes is available in the current model picker (2 models).", result?.message)
-    }
-
-    @Test
-    fun liveAvailabilityIgnoresStaleModelCatalogSignal() {
-        DiagnosticsBackendSnapshot.update(
-            modelCounts = mapOf("hermes" to 2),
-            activeHarnessIds = emptySet()
-        )
-
-        val result = DiagnosticsBackendTester.liveAvailabilityResult(
-            DiagnosticsBackendId.Hermes,
-            nowMs = System.currentTimeMillis() + 3 * 60 * 1000L
-        )
-
-        assertEquals(null, result)
-    }
-
-    @Test
     fun deriveHttpBaseConvertsWebSocketUrlToBridgeRoot() {
         assertEquals(
             "http://192.168.1.10:8788",
