@@ -60,7 +60,7 @@ class FakeAdapter implements HarnessChatAdapter {
     return { sessions: this.sessions, reasoningOptions: [] };
   }
 
-  async createSession(options: { key?: string; label?: string; model?: string }): Promise<HarnessCreatedSession> {
+  async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string }): Promise<HarnessCreatedSession> {
     this.created.push(options);
     return { key: options.key ?? `${this.harnessId}:created`, sessionId: `${this.harnessId}_session` };
   }

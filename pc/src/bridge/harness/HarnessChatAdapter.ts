@@ -60,7 +60,7 @@ export interface HarnessChatAdapter {
   listModels(): Promise<ChatModelOption[]>;
   listSessions(limit?: number): Promise<HarnessSessionList>;
   syncRemoteReplies?(limit?: number): Promise<void>;
-  createSession(options: { key?: string; label?: string; model?: string }): Promise<HarnessCreatedSession>;
+  createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string }): Promise<HarnessCreatedSession>;
   patchSession(sessionKey: string, patch: Record<string, unknown>): Promise<unknown>;
   listCommands(sessionKey?: string): Promise<ChatCommandOption[]>;
   effectiveTools(sessionKey: string): Promise<ChatToolSummary[]>;
@@ -90,7 +90,7 @@ interface RawHarnessClient {
   listModels(): Promise<unknown>;
   listSessions(limit?: number): Promise<unknown>;
   syncRemoteReplies?(limit?: number): Promise<void>;
-  createSession(options: { key?: string; label?: string; model?: string }): Promise<unknown>;
+  createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string }): Promise<unknown>;
   patchSession(sessionKey: string, patch: Record<string, unknown>): Promise<unknown>;
   listCommands(sessionKey?: string): Promise<unknown>;
   effectiveTools(sessionKey: string): Promise<unknown>;
@@ -162,7 +162,7 @@ export class NormalizedHarnessAdapter implements HarnessChatAdapter {
     await this.client.syncRemoteReplies?.(limit);
   }
 
-  async createSession(options: { key?: string; label?: string; model?: string }): Promise<HarnessCreatedSession> {
+  async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string }): Promise<HarnessCreatedSession> {
     const created = await this.client.createSession(options);
     const record = asRecord(created) ?? {};
     return {

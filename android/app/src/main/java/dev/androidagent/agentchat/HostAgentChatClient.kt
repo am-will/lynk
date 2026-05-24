@@ -20,8 +20,8 @@ class HostAgentChatClient(
         webSocketClient.sendChatSelectSession(sessionKey)
     }
 
-    override fun newSession(label: String?, model: String?) {
-        webSocketClient.sendChatNewSession(label, model)
+    override fun newSession(label: String?, model: String?, workspacePath: String?) {
+        webSocketClient.sendChatNewSession(label, model, workspacePath)
     }
 
     override fun setModel(sessionKey: String?, model: String) {

@@ -575,6 +575,12 @@ class AgentForegroundService : Service() {
         setCodexWorkspacePath(workspacePath)
     }
 
+    private fun isCodexChatSelection(model: String): Boolean {
+        return chatState.harnessId == AgentConfig.HARNESS_CODEX ||
+            ChatModelCatalog.harnessForModel(model) == AgentConfig.HARNESS_CODEX ||
+            chatState.sessionKey?.startsWith("${AgentConfig.HARNESS_CODEX}:") == true
+    }
+
     private fun commandExecutor(): AccessibilityCommandExecutor {
         return commandExecutor ?: AccessibilityCommandExecutor(
             context = this,
@@ -837,7 +843,12 @@ class AgentForegroundService : Service() {
             return
         }
         val route = routeForModel(selectedModel, config)
-        connectAgentClient(selectedModel).newSession(model = modelForRoute(selectedModel, route, config))
+        val workspacePath = config.codexWorkspacePath
+            .takeIf { route == ChatClientRoute.Host && isCodexChatSelection(selectedModel) }
+        connectAgentClient(selectedModel).newSession(
+            model = modelForRoute(selectedModel, route, config),
+            workspacePath = workspacePath
+        )
         lastNotificationText = "Started a new chat"
         isAgentTurnActive = false
         updateNotification()

@@ -74,7 +74,7 @@ class FakeGatewayClient {
     return { sessions: this.sessions };
   }
 
-  async createSession(options: { key?: string; label?: string; model?: string }): Promise<unknown> {
+  async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string }): Promise<unknown> {
     this.created.push(options);
     if (options.label && this.duplicateLabels.has(options.label)) {
       throw new Error(`Session label "${options.label}" is already used`);

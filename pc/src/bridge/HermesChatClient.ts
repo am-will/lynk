@@ -242,7 +242,7 @@ export class HermesChatClient {
     await this.detectRemoteSessionReplies(remoteSessions);
   }
 
-  async createSession(options: { key?: string; label?: string; model?: string }): Promise<unknown> {
+  async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string }): Promise<unknown> {
     return this.sessions.createSession(options);
   }
 

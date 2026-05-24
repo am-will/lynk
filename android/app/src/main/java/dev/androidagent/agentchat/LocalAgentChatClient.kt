@@ -100,7 +100,7 @@ class LocalAgentChatClient(
         refresh(activeSessionKey, "Switched local session")
     }
 
-    override fun newSession(label: String?, model: String?) {
+    override fun newSession(label: String?, model: String?, workspacePath: String?) {
         activeRun?.cancel()
         activeRun = null
         val session = store.create(label)

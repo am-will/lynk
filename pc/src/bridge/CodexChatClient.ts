@@ -233,7 +233,7 @@ export class CodexChatClient {
     };
   }
 
-  async createSession(options: { key?: string; label?: string; model?: string }): Promise<unknown> {
+  async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string }): Promise<unknown> {
     const threadId = await this.client.createThread({
       model: options.model,
       baseInstructions: PHONE_AGENT_SYSTEM_PROMPT

@@ -194,8 +194,10 @@ Android can stop active chat work, switch or create sessions, update model/reaso
 ```
 
 ```json
-{ "type": "chat.new_session", "deviceId": "openclaw-agent", "label": "Android bubble" }
+{ "type": "chat.new_session", "deviceId": "openclaw-agent", "label": "Android bubble", "workspacePath": "/Users/me/project" }
 ```
+
+`workspacePath` is optional and Codex-only. When present on a Codex `chat.new_session`, the bridge passes it as the app-server thread `cwd` so the new thread starts in that workspace. Other harnesses ignore it.
 
 ```json
 { "type": "chat.set_model", "deviceId": "openclaw-agent", "sessionKey": "agent:main:main", "model": "codex:gpt-5.3-codex" }

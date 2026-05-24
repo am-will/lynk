@@ -207,7 +207,8 @@ export const chatNewSessionMessageSchema = z.object({
   deviceId: z.string().min(1),
   key: z.string().min(1).optional(),
   label: z.string().min(1).optional(),
-  model: z.string().min(1).optional()
+  model: z.string().min(1).optional(),
+  workspacePath: z.string().min(1).optional()
 });
 
 export const chatSetModelMessageSchema = z.object({
