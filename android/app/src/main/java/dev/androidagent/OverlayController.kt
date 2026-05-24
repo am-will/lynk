@@ -3,6 +3,7 @@ package dev.androidagent
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
 import android.animation.AnimatorSet
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.graphics.Canvas
@@ -15,6 +16,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.text.Editable
+import android.text.InputType
 import android.text.Spanned
 import android.text.TextWatcher
 import android.text.style.ForegroundColorSpan
@@ -104,6 +106,8 @@ class OverlayController(
     private val onCancelTranscription: () -> Unit,
     private val onSelectChatSession: (String) -> Unit = {},
     private val onNewChatSession: () -> Unit = {},
+    private val onGetCodexWorkspacePath: () -> String = { "" },
+    private val onSetCodexWorkspacePath: (String) -> Unit = {},
     private val onSetChatModel: (String) -> Unit = {},
     private val onSetChatReasoning: (String) -> Unit = {},
     private val onChatControlCommand: (String, JSONObject) -> Unit = { _, _ -> },
@@ -1561,6 +1565,16 @@ class OverlayController(
             iconRes = R.drawable.ic_new_chat,
             onSelect = { startNewChatSession() }
         ))
+        if (isCodexHarness()) {
+            sessionRows.add(AnchoredPicker.Row(
+                id = "chat:codex-workspace",
+                label = "Current Workspace",
+                sublabel = onGetCodexWorkspacePath().takeIf { it.isNotBlank() } ?: "Bridge default",
+                iconRes = R.drawable.ic_file,
+                dismissOnSelect = false,
+                onSelect = { showCodexWorkspaceDialog() }
+            ))
+        }
         if (sessions.isNotEmpty()) {
             val sessionCount = sessions.size.coerceAtMost(30)
             val workspaceCount = sessions.mapNotNull { it.workspacePath ?: it.workspaceName }.distinct().size
@@ -1655,6 +1669,66 @@ class OverlayController(
             heightFraction = if (expandedCommandPickerGroups.isNotEmpty()) 0.65f else null,
             onDismiss = onDismiss
         )
+    }
+
+    private fun showCodexWorkspaceDialog() {
+        val tokens = DesignTokens.resolve(context)
+        val editor = EditText(context).apply {
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            setText(onGetCodexWorkspacePath())
+            selectAll()
+            setTextColor(tokens.primaryText)
+            setHintTextColor(tokens.tertiaryText)
+            hint = "/Users/you/path/to/workspace"
+        }
+        val content = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(12), dp(24), 0)
+            addView(TextView(context).apply {
+                text = "New Codex chats will start in this workspace folder."
+                setTextColor(tokens.secondaryText)
+                textSize = 13f
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+            addView(editor, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(12) })
+        }
+        val dialog = AlertDialog.Builder(context)
+            .setTitle("Current Workspace")
+            .setView(content)
+            .setPositiveButton("Save") { _, _ ->
+                val path = editor.text?.toString()?.trim().orEmpty()
+                onSetCodexWorkspacePath(path)
+                setStatus(if (path.isBlank()) "Codex workspace uses bridge default" else "Codex workspace: $path")
+            }
+            .setNeutralButton("Clear") { _, _ ->
+                onSetCodexWorkspacePath("")
+                setStatus("Codex workspace uses bridge default")
+            }
+            .setNegativeButton("Cancel", null)
+            .create()
+        dialog.window?.setType(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_PHONE
+            }
+        )
+        dialog.setOnShowListener {
+            dialog.window?.setBackgroundDrawable(Drawables.glassSurface(context, tokens, DesignTokens.Radius.lg))
+            dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(tokens.accent)
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(tokens.secondaryText)
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(tokens.secondaryText)
+            editor.requestFocus()
+        }
+        dialog.show()
     }
 
     private fun commandSkillMenuRows(
