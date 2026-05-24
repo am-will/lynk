@@ -63,6 +63,14 @@ export interface RealtimeSession {
   realtimeSessionId?: string | null;
 }
 
+export interface CodexThreadListOptions {
+  limit?: number;
+  cursor?: string;
+  cwd?: string | string[];
+  searchTerm?: string;
+  archived?: boolean | null;
+}
+
 interface ActiveRealtimeSession {
   deviceId: string;
   threadId: string;
@@ -246,9 +254,10 @@ export class CodexAppServerClient implements AgentClient {
     await this.ensureStarted();
     const baseInstructions = options.systemPrompt?.trim() || PHONE_AGENT_SYSTEM_PROMPT;
     const threadId = options.threadId
-      ? await this.resumeThread({ threadId: options.threadId, model: options.model })
+      ? await this.resumeThread({ threadId: options.threadId, model: options.model, cwd: options.cwd })
       : await this.createThread({
         model: options.model,
+        cwd: options.cwd,
         ...(options.useSessionInstructions ? { baseInstructions } : {})
       });
     this.audit?.record("codex_turn_starting", undefined, { threadId, text, model: options.model, reasoningEffort: options.reasoningEffort });
@@ -265,7 +274,7 @@ export class CodexAppServerClient implements AgentClient {
     const result = await this.request("turn/start", {
       threadId,
       input: [{ type: "text", text: turnInput }],
-      cwd: this.cwd,
+      cwd: options.cwd ?? this.cwd,
       approvalPolicy: this.approvalPolicy,
       model: options.model,
       effort: options.reasoningEffort,
@@ -354,11 +363,30 @@ export class CodexAppServerClient implements AgentClient {
     });
   }
 
-  async createThread(options: { model?: string; baseInstructions?: string } = {}): Promise<string> {
+  async listThreads(options: CodexThreadListOptions = {}): Promise<unknown> {
+    await this.ensureStarted();
+    return await this.request("thread/list", {
+      limit: options.limit ?? 50,
+      sortKey: "updated_at",
+      sortDirection: "desc",
+      sourceKinds: [],
+      ...(options.cursor ? { cursor: options.cursor } : {}),
+      ...(options.cwd ? { cwd: options.cwd } : {}),
+      ...(options.searchTerm ? { searchTerm: options.searchTerm } : {}),
+      ...(options.archived !== undefined ? { archived: options.archived } : {})
+    });
+  }
+
+  async readThread(threadId: string, includeTurns = false): Promise<unknown> {
+    await this.ensureStarted();
+    return await this.request("thread/read", { threadId, includeTurns });
+  }
+
+  async createThread(options: { model?: string; baseInstructions?: string; cwd?: string } = {}): Promise<string> {
     await this.ensureStarted();
     const result = await this.request("thread/start", {
       model: options.model,
-      cwd: this.cwd,
+      cwd: options.cwd ?? this.cwd,
       approvalPolicy: this.approvalPolicy,
       sandbox: this.sandbox,
       personality: "pragmatic",
@@ -373,14 +401,14 @@ export class CodexAppServerClient implements AgentClient {
     return thread.id;
   }
 
-  async resumeThread(options: { threadId: string; model?: string }): Promise<string> {
+  async resumeThread(options: { threadId: string; model?: string; cwd?: string }): Promise<string> {
     await this.ensureStarted();
     if (this.loadedThreads.has(options.threadId)) {
       return options.threadId;
     }
     const result = await this.request("thread/resume", {
       threadId: options.threadId,
-      cwd: this.cwd,
+      cwd: options.cwd ?? this.cwd,
       approvalPolicy: this.approvalPolicy,
       sandbox: this.sandbox,
       personality: "pragmatic",

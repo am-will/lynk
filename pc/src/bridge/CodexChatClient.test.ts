@@ -10,13 +10,15 @@ class FakeCodexAppServerClient {
   readonly submitted: Array<{ text: string; options: AgentRequestOptions }> = [];
   readonly steered: string[] = [];
   modelsPayload: unknown = { models: [] };
+  threadsPayload: unknown = { data: [] };
+  readThreadPayload: unknown = undefined;
   capabilitiesPayload: unknown = undefined;
   resultUsage?: Record<string, unknown>;
   private nextThread = 1;
 
   async createThread(options: { model?: string; baseInstructions?: string } = {}): Promise<string> {
     this.createdThreads.push(options);
-    return `thread_${this.nextThread++}`;
+    return `019e0000-0000-7000-8000-${String(this.nextThread++).padStart(12, "0")}`;
   }
 
   async submitUserRequest(
@@ -36,6 +38,14 @@ class FakeCodexAppServerClient {
 
   async listModels(): Promise<unknown> {
     return this.modelsPayload;
+  }
+
+  async listThreads(): Promise<unknown> {
+    return this.threadsPayload;
+  }
+
+  async readThread(): Promise<unknown> {
+    return this.readThreadPayload;
   }
 
   async readModelProviderCapabilities(): Promise<unknown> {
@@ -71,20 +81,20 @@ test("Codex new sessions create and reuse app-server threads", async () => {
     model: "gpt-5.3-codex"
   }) as { key?: string; sessionId?: string };
 
-  assert.equal(created.key, "codex:chat");
-  assert.equal(created.sessionId, "thread_1");
+  assert.equal(created.key, "codex:019e0000-0000-7000-8000-000000000001");
+  assert.equal(created.sessionId, "019e0000-0000-7000-8000-000000000001");
   assert.equal(fake.createdThreads[0]?.model, "gpt-5.3-codex");
   assert.match(fake.createdThreads[0]?.baseInstructions ?? "", /android-control skill/);
 
   await client.sendChat({
-    sessionKey: "codex:chat",
+    sessionKey: created.key!,
     message: "Hello",
     idempotencyKey: "run_1"
   });
   await waitFor(() => fake.submitted.length === 1);
 
   assert.equal(fake.createdThreads.length, 1);
-  assert.equal(fake.submitted[0]?.options.threadId, "thread_1");
+  assert.equal(fake.submitted[0]?.options.threadId, "019e0000-0000-7000-8000-000000000001");
   assert.equal(fake.submitted[0]?.options.useSessionInstructions, true);
   assert.equal(fake.submitted[0]?.text, "Hello");
 });
@@ -102,13 +112,65 @@ test("Codex sends from implicit sessions create a durable thread first", async (
 
   assert.equal(fake.createdThreads.length, 1);
   assert.match(fake.createdThreads[0]?.baseInstructions ?? "", /android-control skill/);
-  assert.equal(fake.submitted[0]?.options.threadId, "thread_1");
+  assert.equal(fake.submitted[0]?.options.threadId, "019e0000-0000-7000-8000-000000000001");
   assert.equal(fake.submitted[0]?.options.useSessionInstructions, true);
   assert.equal(fake.submitted[0]?.text, "Hello");
 
   const payload = await client.listSessions() as { sessions: Array<{ key?: string; sessionId?: string }> };
   assert.deepEqual(payload.sessions.map((session) => [session.key, session.sessionId]), [
-    ["codex:default", "thread_1"]
+    ["codex:default", "019e0000-0000-7000-8000-000000000001"]
+  ]);
+});
+
+test("Codex lists app-server threads as workspace-aware sessions", async () => {
+  const fake = new FakeCodexAppServerClient();
+  fake.threadsPayload = {
+    data: [{
+      id: "019e56b1-639e-7ad2-b078-3106a2ee0874",
+      name: "Design harness icon ideas",
+      preview: "help me come up with a grid of icon ideas",
+      cwd: "/Users/am.will/Applications/open-claw-agent",
+      path: "/Users/am.will/.codex/sessions/2026/05/23/rollout.jsonl",
+      source: "vscode",
+      modelProvider: "openai",
+      updatedAt: 1779575368
+    }]
+  };
+  const client = new CodexChatClient(undefined, fake as unknown as CodexAppServerClient, null);
+
+  const payload = await client.listSessions() as { sessions: Array<Record<string, unknown>> };
+
+  assert.equal(payload.sessions[0]?.key, "codex:019e56b1-639e-7ad2-b078-3106a2ee0874");
+  assert.equal(payload.sessions[0]?.displayName, "Design harness icon ideas");
+  assert.equal(payload.sessions[0]?.workspaceName, "open-claw-agent");
+  assert.equal(payload.sessions[0]?.workspacePath, "/Users/am.will/Applications/open-claw-agent");
+  assert.equal(payload.sessions[0]?.threadPath, "/Users/am.will/.codex/sessions/2026/05/23/rollout.jsonl");
+  assert.equal(payload.sessions[0]?.updatedAt, 1779575368000);
+});
+
+test("Codex history reads persisted thread turns", async () => {
+  const fake = new FakeCodexAppServerClient();
+  fake.readThreadPayload = {
+    thread: {
+      id: "019e56b1-639e-7ad2-b078-3106a2ee0874",
+      cwd: "/Users/am.will/Applications/open-claw-agent",
+      turns: [{
+        id: "turn_1",
+        items: [
+          { type: "userMessage", id: "item-1", content: [{ type: "text", text: "hello" }] },
+          { type: "agentMessage", id: "item-2", text: "hi there" },
+          { type: "reasoning", id: "item-3", text: "hidden" }
+        ]
+      }]
+    }
+  };
+  const client = new CodexChatClient(undefined, fake as unknown as CodexAppServerClient, null);
+
+  const history = await client.history("codex:019e56b1-639e-7ad2-b078-3106a2ee0874") as { messages: Array<Record<string, unknown>> };
+
+  assert.deepEqual(history.messages.map((message) => [message.role, message.text]), [
+    ["user", "hello"],
+    ["assistant", "hi there"]
   ]);
 });
 

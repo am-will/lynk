@@ -42,6 +42,7 @@ import dev.androidagent.chat.ChatCommandOption
 import dev.androidagent.chat.ChatModelSource
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatModelOption
+import dev.androidagent.chat.ChatSessionRow
 import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.overlay.BubbleOverlay
 import dev.androidagent.overlay.ChatPresentationHelpers
@@ -1481,19 +1482,49 @@ class OverlayController(
             ?.start()
     }
 
-    private fun sessionPickerRows(limit: Int = 30): List<AnchoredPicker.Row> {
-        return lastChatState.sessions.take(limit).map { session ->
+    private fun sessionPickerRows(
+        sessions: List<ChatSessionRow> = lastChatState.sessions,
+        limit: Int = 30
+    ): List<AnchoredPicker.Row> {
+        return sessions.take(limit).map { session ->
             val label = ChatPresentationHelpers.sessionLabel(session)
             AnchoredPicker.Row(
                 id = "session:${session.key}",
                 label = label.take(40),
-                sublabel = session.model,
+                sublabel = codexSessionSublabel(session) ?: session.model,
                 iconRes = R.drawable.ic_notification_bubble,
                 badgeCount = lastChatState.unreadCountForSession(session.key),
                 selected = session.key == lastChatState.sessionKey,
                 onSelect = { onSelectChatSession(session.key) }
             )
         }
+    }
+
+    private fun sessionPickerSections(limit: Int = 100): List<AnchoredPicker.Section> {
+        if (!isCodexHarness()) {
+            return listOf(AnchoredPicker.Section(null, sessionPickerRows(limit = 30)))
+        }
+        return lastChatState.sessions
+            .take(limit)
+            .groupBy { it.workspacePath ?: it.workspaceName ?: "Unknown workspace" }
+            .map { (workspaceKey, sessions) ->
+                val title = sessions.firstOrNull()?.workspaceName ?: workspaceKey
+                AnchoredPicker.Section(title, sessionPickerRows(sessions, limit = sessions.size))
+            }
+    }
+
+    private fun codexSessionSublabel(session: ChatSessionRow): String? {
+        if (!isCodexHarness()) return null
+        return session.workspacePath
+            ?: session.preview?.lineSequence()?.firstOrNull { it.isNotBlank() }?.take(64)
+            ?: session.source
+            ?: session.model
+    }
+
+    private fun isCodexHarness(): Boolean {
+        return lastChatState.harnessId == AgentConfig.HARNESS_CODEX ||
+            lastChatState.selectedModel?.startsWith("${AgentConfig.HARNESS_CODEX}:") == true ||
+            lastChatState.sessionKey?.startsWith("${AgentConfig.HARNESS_CODEX}:") == true
     }
 
     private fun startNewChatSession() {
@@ -1522,10 +1553,15 @@ class OverlayController(
         ))
         if (sessions.isNotEmpty()) {
             val sessionCount = sessions.size.coerceAtMost(30)
+            val workspaceCount = sessions.mapNotNull { it.workspacePath ?: it.workspaceName }.distinct().size
             sessionRows.add(AnchoredPicker.Row(
                 id = "chat:previous",
-                label = "Previous chats",
-                sublabel = "Last $sessionCount",
+                label = if (isCodexHarness()) "Previous Codex sessions" else "Previous chats",
+                sublabel = if (isCodexHarness() && workspaceCount > 0) {
+                    "$sessionCount across $workspaceCount folders"
+                } else {
+                    "Last $sessionCount"
+                },
                 iconRes = R.drawable.ic_notification_bubble,
                 badgeCount = lastChatState.totalUnreadReplies,
                 dismissOnSelect = false,
@@ -1805,15 +1841,15 @@ class OverlayController(
 
     private fun showSessionsMenu(anchorOverride: View? = null) {
         val anchor = anchorOverride ?: headerSessionAnchor ?: panelHost ?: return
-        val rows = sessionPickerRows()
-        if (rows.isEmpty()) {
+        val sections = sessionPickerSections()
+        if (sections.all { it.rows.isEmpty() }) {
             setStatus("No previous chats yet.")
             return
         }
         showAnchoredPicker(
             anchor,
-            "Previous chats",
-            listOf(AnchoredPicker.Section(null, rows)),
+            if (isCodexHarness()) "Previous Codex sessions" else "Previous chats",
+            sections,
             toggleSameAnchor = false,
             onDismiss = if (anchor === headerSessionAnchor) {
                 { animateHeaderSessionChevron(expanded = false) }

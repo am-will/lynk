@@ -347,6 +347,11 @@ export interface ChatSessionSummary {
   displayName?: string | null;
   harnessId?: string | null;
   harnessLabel?: string | null;
+  workspacePath?: string | null;
+  workspaceName?: string | null;
+  threadPath?: string | null;
+  preview?: string | null;
+  source?: string | null;
   updatedAt?: number | null;
   model?: string | null;
   modelProvider?: string | null;
@@ -662,6 +667,11 @@ export const chatSessionSummarySchema = z.object({
   displayName: z.string().optional().nullable(),
   harnessId: z.string().optional().nullable(),
   harnessLabel: z.string().optional().nullable(),
+  workspacePath: z.string().optional().nullable(),
+  workspaceName: z.string().optional().nullable(),
+  threadPath: z.string().optional().nullable(),
+  preview: z.string().optional().nullable(),
+  source: z.string().optional().nullable(),
   updatedAt: z.number().optional().nullable(),
   model: z.string().optional().nullable(),
   modelProvider: z.string().optional().nullable(),
