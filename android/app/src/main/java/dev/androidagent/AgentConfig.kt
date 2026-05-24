@@ -50,6 +50,7 @@ data class AgentConfig(
     val openClawHarnessEnabled: Boolean = true,
     val hermesHarnessEnabled: Boolean = true,
     val codexHarnessEnabled: Boolean = true,
+    val codexWorkspacePath: String = "",
     val activeSendMode: ChatActiveSendMode = ChatActiveSendMode.Steer,
     val petEnabled: Boolean = true
 ) {
@@ -99,6 +100,7 @@ object AgentConfigStore {
     private const val OPENCLAW_HARNESS_ENABLED = "openclaw_harness_enabled"
     private const val HERMES_HARNESS_ENABLED = "hermes_harness_enabled"
     private const val CODEX_HARNESS_ENABLED = "codex_harness_enabled"
+    private const val CODEX_WORKSPACE_PATH = "codex_workspace_path"
     private const val ACTIVE_SEND_MODE = "active_send_mode"
     private const val PET_ENABLED = "pet_enabled"
     private const val DEFAULT_LOCAL_CONTEXT_TOKENS = 4096
@@ -127,6 +129,7 @@ object AgentConfigStore {
             openClawHarnessEnabled = prefs.getBoolean(OPENCLAW_HARNESS_ENABLED, true),
             hermesHarnessEnabled = prefs.getBoolean(HERMES_HARNESS_ENABLED, true),
             codexHarnessEnabled = prefs.getBoolean(CODEX_HARNESS_ENABLED, true),
+            codexWorkspacePath = prefs.getString(CODEX_WORKSPACE_PATH, "") ?: "",
             activeSendMode = ChatActiveSendMode.fromKey(prefs.getString(ACTIVE_SEND_MODE, ChatActiveSendMode.Steer.key)),
             petEnabled = prefs.getBoolean(PET_ENABLED, true)
         )
@@ -151,6 +154,7 @@ object AgentConfigStore {
             .putBoolean(OPENCLAW_HARNESS_ENABLED, config.openClawHarnessEnabled)
             .putBoolean(HERMES_HARNESS_ENABLED, config.hermesHarnessEnabled)
             .putBoolean(CODEX_HARNESS_ENABLED, config.codexHarnessEnabled)
+            .putString(CODEX_WORKSPACE_PATH, config.codexWorkspacePath.trim())
             .putString(ACTIVE_SEND_MODE, config.activeSendMode.key)
             .putBoolean(PET_ENABLED, config.petEnabled)
             .apply()

@@ -130,11 +130,14 @@ class AgentForegroundService : Service() {
             onStopTranscription = { stopComposerTranscription() },
             onCancelTranscription = { cancelComposerTranscription() },
             onSelectChatSession = { sessionKey ->
+                maybeUpdateCodexWorkspaceFromSession(sessionKey)
                 val route = routeForSessionKey(sessionKey)
                 connectAgentClient(routeOverride = route).selectSession(sessionKey)
                 markChatSessionRead(sessionKey, force = true)
             },
             onNewChatSession = { startNewChatFromUi() },
+            onGetCodexWorkspacePath = { AgentConfigStore.load(this).codexWorkspacePath },
+            onSetCodexWorkspacePath = { path -> setCodexWorkspacePath(path) },
             onSetChatModel = { model ->
                 setChatModelFromUi(model)
             },
@@ -557,6 +560,19 @@ class AgentForegroundService : Service() {
             return routeForSessionKey(sessionKey, config)
         }
         return routeForModel(selectedChatModel(config), config)
+    }
+
+    private fun setCodexWorkspacePath(path: String) {
+        val config = AgentConfigStore.load(this)
+        AgentConfigStore.save(this, config.copy(codexWorkspacePath = path.trim()))
+    }
+
+    private fun maybeUpdateCodexWorkspaceFromSession(sessionKey: String) {
+        val session = chatState.sessions.firstOrNull { it.key == sessionKey } ?: return
+        val harnessId = session.harnessId ?: harnessFromSessionKey(session.key)
+        if (harnessId != AgentConfig.HARNESS_CODEX) return
+        val workspacePath = session.workspacePath?.trim()?.takeIf { it.isNotBlank() } ?: return
+        setCodexWorkspacePath(workspacePath)
     }
 
     private fun commandExecutor(): AccessibilityCommandExecutor {
@@ -987,6 +1003,7 @@ class AgentForegroundService : Service() {
         presentation: PanelPresentation
     ) {
         restoreAgentChromeAfterRecents()
+        maybeUpdateCodexWorkspaceFromSession(sessionKey)
         val route = routeForSessionKey(sessionKey)
         connectAgentClient(routeOverride = route).selectSession(sessionKey)
         markChatSessionRead(sessionKey, force = true)
