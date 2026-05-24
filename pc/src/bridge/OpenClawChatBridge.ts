@@ -448,10 +448,14 @@ export class OpenClawChatBridge {
     const explicitLabel = typeof message.label === "string" && message.label.trim()
       ? message.label.trim()
       : undefined;
+    const workspacePath = state.harnessId === "codex" && typeof message.workspacePath === "string" && message.workspacePath.trim()
+      ? message.workspacePath.trim()
+      : undefined;
     const created = await this.client.createSession({
       key: requestKey,
       label: explicitLabel ?? sessionUuid,
-      model: selection?.modelId ?? this.states.rawModelForSelection(state.model) ?? undefined
+      model: selection?.modelId ?? this.states.rawModelForSelection(state.model) ?? undefined,
+      ...(workspacePath ? { workspacePath } : {})
     });
     const record = created && typeof created === "object" ? created as Record<string, unknown> : {};
     const key = typeof record.key === "string" && record.key.trim() ? record.key.trim() : undefined;

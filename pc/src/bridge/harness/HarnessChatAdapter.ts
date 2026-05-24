@@ -35,6 +35,8 @@ export interface HarnessCreatedSession {
   displayName?: string | null;
   harnessId?: string | null;
   harnessLabel?: string | null;
+  workspacePath?: string | null;
+  workspaceName?: string | null;
 }
 
 export interface HarnessChatAdapter {
@@ -169,7 +171,9 @@ export class NormalizedHarnessAdapter implements HarnessChatAdapter {
       key: stringField(record, "key"),
       sessionId: stringField(record, "sessionId"),
       label: stringField(record, "label") ?? null,
-      displayName: stringField(record, "displayName") ?? null
+      displayName: stringField(record, "displayName") ?? null,
+      workspacePath: stringField(record, "workspacePath") ?? null,
+      workspaceName: stringField(record, "workspaceName") ?? null
     };
   }
 

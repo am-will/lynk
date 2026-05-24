@@ -234,9 +234,11 @@ export class CodexChatClient {
   }
 
   async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string }): Promise<unknown> {
+    const workspacePath = options.workspacePath?.trim();
     const threadId = await this.client.createThread({
       model: options.model,
-      baseInstructions: PHONE_AGENT_SYSTEM_PROMPT
+      baseInstructions: PHONE_AGENT_SYSTEM_PROMPT,
+      ...(workspacePath ? { cwd: workspacePath } : {})
     });
     const key = `${CODEX_THREAD_SESSION_KEY_PREFIX}${threadId}`;
     const created = this.sessions.createSession({
@@ -247,9 +249,14 @@ export class CodexChatClient {
     const session = this.sessions.ensureSession(key, threadId);
     this.sessions.setSessionId(session, threadId);
     this.sessions.setMetadata(session, CODEX_BASE_INSTRUCTIONS_FINGERPRINT_KEY, promptFingerprint(PHONE_AGENT_SYSTEM_PROMPT));
+    if (workspacePath) {
+      this.sessions.setMetadata(session, CODEX_THREAD_CWD_KEY, workspacePath);
+    }
     return {
       ...created,
-      sessionId: session.sessionId
+      sessionId: session.sessionId,
+      workspacePath: workspacePath ?? null,
+      workspaceName: workspaceNameFromPath(workspacePath)
     };
   }
 
