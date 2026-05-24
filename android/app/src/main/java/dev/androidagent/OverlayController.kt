@@ -216,10 +216,18 @@ class OverlayController(
     }
 
     fun showForPhoneControl() {
-        showInternal(allowDuringFullscreenPanel = false)
+        showTransientPet()
     }
 
     fun hidePhoneControlPet() {
+        hideTransientPet()
+    }
+
+    fun showTransientPet() {
+        showInternal(allowDuringFullscreenPanel = false)
+    }
+
+    fun hideTransientPet() {
         restoreBubbleAfterAutomation = false
         restoreBubbleAfterFullscreen = false
         restoreBubbleAfterRecents = false
