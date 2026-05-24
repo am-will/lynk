@@ -50,6 +50,9 @@ data class AgentConfig(
     val openClawHarnessEnabled: Boolean = true,
     val hermesHarnessEnabled: Boolean = true,
     val codexHarnessEnabled: Boolean = true,
+    val openClawDefaultModel: String = "",
+    val hermesDefaultModel: String = "",
+    val codexDefaultModel: String = "",
     val codexWorkspacePath: String = "",
     val activeSendMode: ChatActiveSendMode = ChatActiveSendMode.Steer,
     val petEnabled: Boolean = true
@@ -71,6 +74,15 @@ data class AgentConfig(
             HARNESS_LOCAL -> experimentalLocalModelsEnabled
             else -> true
         }
+    }
+
+    fun defaultModelForHarness(harnessId: String?): String? {
+        return when (harnessId?.lowercase()) {
+            HARNESS_OPENCLAW -> openClawDefaultModel
+            HARNESS_HERMES -> hermesDefaultModel
+            HARNESS_CODEX -> codexDefaultModel
+            else -> null
+        }?.trim()?.takeIf { it.isNotBlank() }
     }
 
     companion object {
@@ -100,6 +112,9 @@ object AgentConfigStore {
     private const val OPENCLAW_HARNESS_ENABLED = "openclaw_harness_enabled"
     private const val HERMES_HARNESS_ENABLED = "hermes_harness_enabled"
     private const val CODEX_HARNESS_ENABLED = "codex_harness_enabled"
+    private const val OPENCLAW_DEFAULT_MODEL = "openclaw_default_model"
+    private const val HERMES_DEFAULT_MODEL = "hermes_default_model"
+    private const val CODEX_DEFAULT_MODEL = "codex_default_model"
     private const val CODEX_WORKSPACE_PATH = "codex_workspace_path"
     private const val ACTIVE_SEND_MODE = "active_send_mode"
     private const val PET_ENABLED = "pet_enabled"
@@ -129,6 +144,9 @@ object AgentConfigStore {
             openClawHarnessEnabled = prefs.getBoolean(OPENCLAW_HARNESS_ENABLED, true),
             hermesHarnessEnabled = prefs.getBoolean(HERMES_HARNESS_ENABLED, true),
             codexHarnessEnabled = prefs.getBoolean(CODEX_HARNESS_ENABLED, true),
+            openClawDefaultModel = prefs.getString(OPENCLAW_DEFAULT_MODEL, "") ?: "",
+            hermesDefaultModel = prefs.getString(HERMES_DEFAULT_MODEL, "") ?: "",
+            codexDefaultModel = prefs.getString(CODEX_DEFAULT_MODEL, "") ?: "",
             codexWorkspacePath = prefs.getString(CODEX_WORKSPACE_PATH, "") ?: "",
             activeSendMode = ChatActiveSendMode.fromKey(prefs.getString(ACTIVE_SEND_MODE, ChatActiveSendMode.Steer.key)),
             petEnabled = prefs.getBoolean(PET_ENABLED, true)
@@ -154,6 +172,9 @@ object AgentConfigStore {
             .putBoolean(OPENCLAW_HARNESS_ENABLED, config.openClawHarnessEnabled)
             .putBoolean(HERMES_HARNESS_ENABLED, config.hermesHarnessEnabled)
             .putBoolean(CODEX_HARNESS_ENABLED, config.codexHarnessEnabled)
+            .putString(OPENCLAW_DEFAULT_MODEL, config.openClawDefaultModel.trim())
+            .putString(HERMES_DEFAULT_MODEL, config.hermesDefaultModel.trim())
+            .putString(CODEX_DEFAULT_MODEL, config.codexDefaultModel.trim())
             .putString(CODEX_WORKSPACE_PATH, config.codexWorkspacePath.trim())
             .putString(ACTIVE_SEND_MODE, config.activeSendMode.key)
             .putBoolean(PET_ENABLED, config.petEnabled)
