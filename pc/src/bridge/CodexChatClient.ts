@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { homedir } from "node:os";
 import { basename, join, normalize } from "node:path";
 import type { AuditLog } from "./AuditLog.js";
 import type { AgentRunResult, AgentStatusSink } from "../dispatcher/AgentClient.js";
@@ -234,7 +235,7 @@ export class CodexChatClient {
   }
 
   async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string }): Promise<unknown> {
-    const workspacePath = options.workspacePath?.trim();
+    const workspacePath = expandHomePath(options.workspacePath);
     const threadId = await this.client.createThread({
       model: options.model,
       baseInstructions: PHONE_AGENT_SYSTEM_PROMPT,
@@ -545,6 +546,20 @@ function workspaceNameFromPath(path: string | null | undefined): string | null {
     return null;
   }
   return basename(path) || path;
+}
+
+function expandHomePath(path: string | null | undefined): string | undefined {
+  const trimmed = path?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (trimmed === "~") {
+    return homedir();
+  }
+  if (trimmed.startsWith("~/")) {
+    return join(homedir(), trimmed.slice(2));
+  }
+  return trimmed;
 }
 
 function secondsToMillis(value: number | null | undefined): number | null {

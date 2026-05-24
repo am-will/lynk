@@ -166,6 +166,26 @@ object AgentConfigStore {
     }
 }
 
+object CodexWorkspacePaths {
+    private val macHomePrefix = Regex("^/Users/[^/]+(?=/|$)")
+
+    fun display(path: String?): String {
+        val trimmed = path?.trim().orEmpty()
+        if (trimmed.isBlank()) return "~/"
+        if (trimmed == "~" || trimmed.startsWith("~/")) return trimmed
+        return macHomePrefix.replaceFirst(trimmed, "~")
+    }
+
+    fun normalizeInput(path: String?): String {
+        val trimmed = path?.trim().orEmpty()
+        return when {
+            trimmed.isBlank() -> ""
+            trimmed == "~" -> "~/"
+            else -> display(trimmed)
+        }
+    }
+}
+
 enum class PanelAnimationStyle(val key: String) {
     Circular("circular"),
     Slide("slide");

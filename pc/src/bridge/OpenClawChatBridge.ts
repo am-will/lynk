@@ -448,7 +448,7 @@ export class OpenClawChatBridge {
     const explicitLabel = typeof message.label === "string" && message.label.trim()
       ? message.label.trim()
       : undefined;
-    const workspacePath = state.harnessId === "codex" && typeof message.workspacePath === "string" && message.workspacePath.trim()
+    const workspacePath = state.harnessId === "codex" && typeof message.workspacePath === "string"
       ? message.workspacePath.trim()
       : undefined;
     const created = await this.client.createSession({

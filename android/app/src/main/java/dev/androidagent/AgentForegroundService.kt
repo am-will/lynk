@@ -564,7 +564,7 @@ class AgentForegroundService : Service() {
 
     private fun setCodexWorkspacePath(path: String) {
         val config = AgentConfigStore.load(this)
-        AgentConfigStore.save(this, config.copy(codexWorkspacePath = path.trim()))
+        AgentConfigStore.save(this, config.copy(codexWorkspacePath = CodexWorkspacePaths.normalizeInput(path)))
     }
 
     private fun maybeUpdateCodexWorkspaceFromSession(sessionKey: String) {

@@ -1516,7 +1516,9 @@ class OverlayController(
         workspaceSessions
             .groupBy { it.workspacePath ?: it.workspaceName ?: "Workspace" }
             .forEach { (workspaceKey, sessions) ->
-                val title = sessions.firstOrNull()?.workspaceName ?: workspaceKey
+                val title = sessions.firstOrNull()?.workspacePath?.let(CodexWorkspacePaths::display)
+                    ?: sessions.firstOrNull()?.workspaceName
+                    ?: CodexWorkspacePaths.display(workspaceKey)
                 sections.add(AnchoredPicker.Section(title, sessionPickerRows(sessions, limit = sessions.size)))
             }
 
@@ -1529,7 +1531,7 @@ class OverlayController(
 
     private fun codexSessionSublabel(session: ChatSessionRow): String? {
         if (!isCodexHarness()) return null
-        return session.workspacePath
+        return session.workspacePath?.let(CodexWorkspacePaths::display)
             ?: session.preview?.lineSequence()?.firstOrNull { it.isNotBlank() }?.take(64)
             ?: session.source
             ?: session.model
@@ -1569,7 +1571,7 @@ class OverlayController(
             sessionRows.add(AnchoredPicker.Row(
                 id = "chat:codex-workspace",
                 label = "Current Workspace",
-                sublabel = onGetCodexWorkspacePath().takeIf { it.isNotBlank() } ?: "Bridge default",
+                sublabel = CodexWorkspacePaths.display(onGetCodexWorkspacePath()),
                 iconRes = R.drawable.ic_file,
                 dismissOnSelect = false,
                 onSelect = { showCodexWorkspaceDialog() }
@@ -1676,11 +1678,11 @@ class OverlayController(
         val editor = EditText(context).apply {
             setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setText(onGetCodexWorkspacePath())
+            setText(CodexWorkspacePaths.display(onGetCodexWorkspacePath()))
             selectAll()
             setTextColor(tokens.primaryText)
             setHintTextColor(tokens.tertiaryText)
-            hint = "/Users/you/path/to/workspace"
+            hint = "~/Applications/project"
         }
         val content = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -1702,13 +1704,13 @@ class OverlayController(
             .setTitle("Current Workspace")
             .setView(content)
             .setPositiveButton("Save") { _, _ ->
-                val path = editor.text?.toString()?.trim().orEmpty()
+                val path = CodexWorkspacePaths.normalizeInput(editor.text?.toString())
                 onSetCodexWorkspacePath(path)
-                setStatus(if (path.isBlank()) "Codex workspace uses bridge default" else "Codex workspace: $path")
+                setStatus("Codex workspace: ${CodexWorkspacePaths.display(path)}")
             }
             .setNeutralButton("Clear") { _, _ ->
                 onSetCodexWorkspacePath("")
-                setStatus("Codex workspace uses bridge default")
+                setStatus("Codex workspace: ~/")
             }
             .setNegativeButton("Cancel", null)
             .create()
