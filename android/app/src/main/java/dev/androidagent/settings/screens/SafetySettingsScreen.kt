@@ -128,5 +128,6 @@ object SafetySettingsScreen {
         dialog.show()
     }
 
-    internal fun savedSystemPrompt(text: String): String = text.trim()
+    internal fun savedSystemPrompt(text: String): String =
+        text.trim().ifBlank { DefaultSystemPrompt.text }
 }
