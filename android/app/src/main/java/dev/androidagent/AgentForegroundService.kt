@@ -117,19 +117,8 @@ class AgentForegroundService : Service() {
             onSubmit = { text -> submitChatText(text) },
             onStop = { requestStopTurn("Stopped from Android overlay") },
             onDismiss = { stopSelf() },
-            onStartVoice = {
-                val config = AgentConfigStore.load(this)
-                val model = selectedChatModel(config)
-                if (model.isBlank()) {
-                    overlayController?.setStatus("Enable a host model harness before starting voice.")
-                } else if (model == AgentModelOptions.LOCAL_LITERT_MODEL_ID) {
-                    overlayController?.setStatus("Realtime voice still requires a host model.")
-                } else {
-                    connectAgentClient(model)
-                    promoteVoiceForegroundIfAllowed()
-                    voiceRuntimeController?.start()
-                }
-            },
+            onStartVoice = { tryStartVoiceSession() },
+            onMinimizeHostApp = { requestAppShellMinimize() },
             onToggleVoiceMute = { voiceRuntimeController?.toggleMute() },
             onStopVoice = { voiceRuntimeController?.stopFromUi() },
             onStartTranscription = { startComposerTranscription() },
@@ -324,19 +313,33 @@ class AgentForegroundService : Service() {
     }
 
     private fun startVoiceFromShell() {
+        tryStartVoiceSession()
+    }
+
+    private fun tryStartVoiceSession(): Boolean {
         val config = AgentConfigStore.load(this)
         val model = selectedChatModel(config)
         if (model.isBlank()) {
             overlayController?.setStatus("Enable a host model harness before starting voice.")
-            return
+            return false
         }
         if (model == AgentModelOptions.LOCAL_LITERT_MODEL_ID) {
             overlayController?.setStatus("Realtime voice still requires a host model.")
-            return
+            return false
+        }
+        if (!hasMicPermission()) {
+            overlayController?.setStatus("Microphone permission is required for voice mode.")
+            openMicPermissionScreen()
+            return false
         }
         connectAgentClient(model)
         promoteVoiceForegroundIfAllowed()
         voiceRuntimeController?.start()
+        return true
+    }
+
+    private fun requestAppShellMinimize() {
+        sendBroadcast(Intent(AppShellActivity.ACTION_MINIMIZE_APP).setPackage(packageName))
     }
 
     override fun onDestroy() {

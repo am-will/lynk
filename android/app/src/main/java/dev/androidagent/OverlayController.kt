@@ -80,12 +80,21 @@ import kotlin.math.roundToInt
 
 private class SkillTokenSpan(color: Int) : ForegroundColorSpan(color)
 
+internal fun shouldMinimizeHostAppAfterVoiceStart(presentation: PanelPresentation): Boolean {
+    return when (presentation) {
+        PanelPresentation.Popup -> false
+        PanelPresentation.Fullscreen,
+        PanelPresentation.Shell -> true
+    }
+}
+
 class OverlayController(
     private val context: Context,
     private val onSubmit: (String) -> Boolean,
     private val onStop: () -> Unit,
     private val onDismiss: () -> Unit,
-    private val onStartVoice: () -> Unit,
+    private val onStartVoice: () -> Boolean,
+    private val onMinimizeHostApp: () -> Unit,
     private val onToggleVoiceMute: () -> Unit,
     private val onStopVoice: () -> Unit,
     private val onStartTranscription: () -> Unit,
@@ -798,10 +807,16 @@ class OverlayController(
         }
         anchoredPicker?.dismiss()
         anchoredPicker = null
+        val shouldMinimizeHostApp = shouldMinimizeHostAppAfterVoiceStart(activePanelPresentation)
+        if (!onStartVoice()) {
+            return
+        }
         panelView?.animate()?.cancel()
         panelScrimView?.animate()?.cancel()
         finalizePanelDismiss()
-        onStartVoice()
+        if (shouldMinimizeHostApp) {
+            onMinimizeHostApp()
+        }
     }
 
     private fun handlePanelBackPressed() {
@@ -2392,8 +2407,10 @@ class OverlayController(
         headerBrandLogo = null
         headerBrandTitle = null
         connectionIndicatorButton = null
-        if (dismissedPresentation == PanelPresentation.Fullscreen) {
-            restoreBubbleAfterFullscreenDismiss()
+        when (dismissedPresentation) {
+            PanelPresentation.Fullscreen -> restoreBubbleAfterFullscreenDismiss()
+            PanelPresentation.Shell -> restoreBubbleAfterShellChatDismiss()
+            PanelPresentation.Popup -> Unit
         }
     }
 

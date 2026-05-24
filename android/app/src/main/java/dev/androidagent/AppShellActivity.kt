@@ -94,7 +94,15 @@ class AppShellActivity : ComponentActivity() {
             }
         }
     }
+    private val minimizeAppReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == ACTION_MINIMIZE_APP) {
+                moveTaskToBack(true)
+            }
+        }
+    }
     private var serviceStateReceiverRegistered = false
+    private var minimizeAppReceiverRegistered = false
 
     override fun attachBaseContext(newBase: Context) {
         // Force a dark UI configuration regardless of system theme.
@@ -125,6 +133,7 @@ class AppShellActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         registerServiceStateReceiver()
+        registerMinimizeAppReceiver()
         refreshShellState()
     }
 
@@ -132,6 +141,7 @@ class AppShellActivity : ComponentActivity() {
         if (selectedTab == ShellTab.Chat) {
             detachShellChat()
         }
+        unregisterMinimizeAppReceiver()
         unregisterServiceStateReceiver()
         super.onStop()
     }
@@ -492,6 +502,23 @@ class AppShellActivity : ComponentActivity() {
         serviceStateReceiverRegistered = false
     }
 
+    private fun registerMinimizeAppReceiver() {
+        if (minimizeAppReceiverRegistered) return
+        ContextCompat.registerReceiver(
+            this,
+            minimizeAppReceiver,
+            IntentFilter(ACTION_MINIMIZE_APP),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        minimizeAppReceiverRegistered = true
+    }
+
+    private fun unregisterMinimizeAppReceiver() {
+        if (!minimizeAppReceiverRegistered) return
+        unregisterReceiver(minimizeAppReceiver)
+        minimizeAppReceiverRegistered = false
+    }
+
     private fun applySystemBars() {
         val tokens = tokens()
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -517,6 +544,7 @@ class AppShellActivity : ComponentActivity() {
         const val EXTRA_INITIAL_TAB = "initialTab"
         const val EXTRA_OPEN_CHAT = "openChat"
         const val EXTRA_REQUEST_MIC_PERMISSION = "requestMicPermission"
+        const val ACTION_MINIMIZE_APP = "dev.openclawagent.action.MINIMIZE_APP"
         private const val REQUEST_MIC_PERMISSION = 20
         private const val REQUEST_LOCATION_PERMISSION = 21
         private const val REQUEST_NOTIFICATIONS = 10
