@@ -55,6 +55,11 @@ function arrayField(record: Record<string, unknown> | undefined, key: string): u
   return Array.isArray(value) ? value : [];
 }
 
+function hasGitWorkspace(record: Record<string, unknown> | undefined): boolean {
+  const gitInfo = asRecord(record?.gitInfo);
+  return Boolean(gitInfo && Object.keys(gitInfo).length > 0);
+}
+
 function estimatePromptTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
@@ -502,7 +507,7 @@ function normalizeCodexThread(value: unknown): CodexThreadRecord | undefined {
     path: stringField(record, "path") ?? null,
     source: stringField(record, "source") ?? null,
     modelProvider: stringField(record, "modelProvider") ?? null,
-    hasGitWorkspace: Boolean(asRecord(record?.gitInfo)),
+    hasGitWorkspace: hasGitWorkspace(record),
     createdAt: numberField(record, "createdAt") ?? null,
     updatedAt: numberField(record, "updatedAt") ?? null
   };

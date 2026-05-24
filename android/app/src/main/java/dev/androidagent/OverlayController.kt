@@ -1517,7 +1517,7 @@ class OverlayController(
             }
 
         if (quickChatSessions.isNotEmpty()) {
-            sections.add(AnchoredPicker.Section("Quick Chats", sessionPickerRows(quickChatSessions, limit = quickChatSessions.size)))
+            sections.add(AnchoredPicker.Section("QuickChats", sessionPickerRows(quickChatSessions, limit = quickChatSessions.size)))
         }
 
         return sections

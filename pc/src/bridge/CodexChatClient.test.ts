@@ -188,7 +188,8 @@ test("Codex marks non-workspace sessions as quick chats", async () => {
       preview: "give me a quick answer",
       cwd: "/Users/am.will/Documents/Codex/2026-05-23/give-me-a-quick-answer",
       source: "vscode",
-      modelProvider: "openai"
+      modelProvider: "openai",
+      gitInfo: {}
     }]
   };
   const client = new CodexChatClient(undefined, fake as unknown as CodexAppServerClient, null);
