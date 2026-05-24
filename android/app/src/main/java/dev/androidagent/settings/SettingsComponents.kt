@@ -217,7 +217,6 @@ object SettingsComponents {
             )
             val pad = dp(context, if (avatarSizeDp >= 60) 10 else 8)
             setPadding(pad, pad, pad, pad)
-            setColorFilter(tokens.accent)
         }
         row.addView(avatar)
 

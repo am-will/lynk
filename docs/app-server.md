@@ -1,6 +1,6 @@
 # Legacy Codex App-Server Dispatcher
 
-This document describes the hand-written Codex app-server compatibility adapter that is still present in the prototype. It is useful for legacy testing, but Open Claw Agent's default path is the adapter that talks to an installed Open Claw session on the remote PC. See `docs/open-claw-migration-plan.md`.
+This document describes the hand-written Codex app-server compatibility adapter that is still present in the prototype. It is useful for legacy testing, but OpenAgent's default path is the adapter that talks to an installed OpenClaw session on the remote PC. See `docs/open-claw-migration-plan.md`.
 
 The dispatcher starts Codex app-server with:
 

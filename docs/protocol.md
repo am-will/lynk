@@ -81,15 +81,15 @@ Coordinate taps use full-screen pixels, including the status and navigation bars
 }
 ```
 
-Observation node IDs such as `n17` are ephemeral and only valid until the next observation. Prefer `viewIdResourceName`, visible `text`, or `contentDescription` as stable selectors when available. Android exports OpenClaw resource IDs for meaningful controls under `dev.openclawagent:id/...`; decorative artwork is intentionally hidden from accessibility so the tree stays focused on actionable UI.
+Observation node IDs such as `n17` are ephemeral and only valid until the next observation. Prefer `viewIdResourceName`, visible `text`, or `contentDescription` as stable selectors when available. Android exports OpenAgent resource IDs for meaningful controls under `dev.openclawagent:id/...`; decorative artwork is intentionally hidden from accessibility so the tree stays focused on actionable UI.
 
 `take_screenshot` results include `screenshotBase64` plus `screenshot.widthPx` and `screenshot.heightPx`. Those dimensions are the source of truth for mapping visual screenshot positions back to phone coordinates.
 
-## OpenClaw ADB and UIAutomator Selectors
+## OpenAgent ADB and UIAutomator Selectors
 
-OpenClaw's own Android UI is exposed as a normal accessibility tree. Canonical selectors include:
+OpenAgent's own Android UI is exposed as a normal accessibility tree. Canonical selectors include:
 
-- Bubble: `dev.openclawagent:id/openclaw_bubble` or content description `Open Claw Agent`
+- Bubble: `dev.openclawagent:id/openclaw_bubble` or content description `OpenAgent`
 - Chat composer: `dev.openclawagent:id/openclaw_composer_input`
 - Send or stop: `dev.openclawagent:id/openclaw_send_stop_button`
 - Model selector: `dev.openclawagent:id/openclaw_model_selector`
@@ -106,7 +106,7 @@ adb shell uiautomator dump --compressed /sdcard/window.xml
 adb shell cmd package resolve-activity dev.openclawagent
 ```
 
-When the active window package is `dev.openclawagent`, Android keeps OpenClaw chrome attached during phone-control commands so `observe_screen`, `tap_node`, text entry, and screenshots can target the OpenClaw UI itself. When another app owns the active window, OpenClaw chrome is still suppressed during automation to avoid blocking taps and screenshots.
+When the active window package is `dev.openclawagent`, Android keeps OpenAgent chrome attached during phone-control commands so `observe_screen`, `tap_node`, text entry, and screenshots can target the OpenAgent UI itself. When another app owns the active window, OpenAgent chrome is still suppressed during automation to avoid blocking taps and screenshots.
 
 ## User Request
 

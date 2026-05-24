@@ -82,7 +82,7 @@ object SafetySettingsScreen {
 
         root.addView(
             SettingsUi.actionButton(activity, "Save", dev.androidagent.settings.SettingsButtonTone.Primary, tokens) {
-                AgentConfigStore.save(activity, config.copy(systemPrompt = promptDraft.trim().ifBlank { DefaultSystemPrompt.text }))
+                AgentConfigStore.save(activity, config.copy(systemPrompt = savedSystemPrompt(promptDraft)))
                 callbacks.onBack()
             },
             SettingsUi.stackedParams(activity, DesignTokens.Spacing.xl)
@@ -120,7 +120,7 @@ object SafetySettingsScreen {
             .setNegativeButton("Cancel", null)
             .setNeutralButton("Reset") { _, _ -> onSave(DefaultSystemPrompt.text) }
             .setPositiveButton("Save") { _, _ ->
-                onSave(editor.text.toString().trim().ifBlank { DefaultSystemPrompt.text })
+                onSave(savedSystemPrompt(editor.text.toString()))
             }
             .create()
         dialog.setOnShowListener {
@@ -131,4 +131,6 @@ object SafetySettingsScreen {
         }
         dialog.show()
     }
+
+    internal fun savedSystemPrompt(text: String): String = text.trim()
 }

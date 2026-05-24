@@ -95,7 +95,7 @@ class BubbleOverlay(
             background = bubbleBackgroundForVoiceState(voiceState, tokens)
             exposeToAccessibility(
                 viewId = R.id.openclaw_bubble,
-                description = "Open Claw Agent",
+                description = "OpenAgent",
                 focusable = true
             )
             elevation = dp(DesignTokens.Elevation.mid).toFloat()
@@ -239,12 +239,12 @@ class BubbleOverlay(
         if (count <= 0) {
             badge.visibility = View.GONE
             badge.text = ""
-            bubbleView?.contentDescription = "Open Claw Agent"
+            bubbleView?.contentDescription = "OpenAgent"
             return
         }
         badge.text = badgeText(count)
         badge.visibility = View.VISIBLE
-        bubbleView?.contentDescription = "Open Claw Agent, $count unread replies"
+        bubbleView?.contentDescription = "OpenAgent, $count unread replies"
     }
 
     fun applyVoiceIndicator(state: VoiceRuntimeState) {
@@ -452,7 +452,7 @@ class BubbleOverlay(
             background = trashTargetBackground(isActive = false)
             exposeToAccessibility(
                 viewId = R.id.openclaw_bubble_trash_target,
-                description = "Close Open Claw Agent bubble"
+                description = "Close OpenAgent bubble"
             )
             elevation = dp(DesignTokens.Elevation.high).toFloat()
             setPadding(

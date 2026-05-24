@@ -11,9 +11,9 @@ object HostConnectionCopy {
 
     fun message(state: HostConnectionState): String {
         return state.message.takeIf { it.isNotBlank() } ?: when (state.phase) {
-            HostConnectionPhase.CONNECTING -> "Trying to reach the OpenClaw bridge on the host machine."
-            HostConnectionPhase.CONNECTED -> "The Android app is registered with the OpenClaw bridge."
-            HostConnectionPhase.ERROR -> "The Android app could not reach or register with the OpenClaw bridge."
+            HostConnectionPhase.CONNECTING -> "Trying to reach the OpenAgent bridge on the host machine."
+            HostConnectionPhase.CONNECTED -> "The Android app is registered with the OpenAgent bridge."
+            HostConnectionPhase.ERROR -> "The Android app could not reach or register with the OpenAgent bridge."
         }
     }
 }

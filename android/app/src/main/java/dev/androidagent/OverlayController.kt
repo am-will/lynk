@@ -631,7 +631,7 @@ class OverlayController(
         val settingsButton = iconButton(
             tokens = tokens,
             drawableRes = R.drawable.ic_settings_gear,
-            contentDescription = "Open Claw Agent settings",
+            contentDescription = "OpenAgent settings",
             viewId = R.id.openclaw_header_settings_button,
             compact = true
         ) {

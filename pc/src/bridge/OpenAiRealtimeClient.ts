@@ -18,7 +18,7 @@ export interface OpenAiRealtimeSession {
 }
 
 const VOICE_PROMPT = `
-You are OpenClawAgent in a live voice conversation from the user's Android phone. Keep responses short and conversational.
+You are OpenAgent in a live voice conversation from the user's Android phone. Keep responses short and conversational.
 For normal remote-agent work on the PC, briefly acknowledge it and call ${REALTIME_TOOL_NAMES.delegateAgentTask}; the bridge routes that task to the currently selected harness.
 Use ${REALTIME_TOOL_NAMES.runPhoneTask} only when the user asks to inspect/control the Android phone or the request clearly needs phone screen/app context.
 Do not claim delegated work is complete until tool output is returned.

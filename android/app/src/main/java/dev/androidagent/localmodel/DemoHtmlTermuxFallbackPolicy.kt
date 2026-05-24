@@ -12,12 +12,12 @@ internal object DemoHtmlTermuxFallbackPolicy {
     fun replacementFor(userText: String, args: JSONObject): DemoHtmlTermuxFallback? {
         if (!isDemoFallbackEnabled()) return null
         if (!shouldReplaceTermuxCommand(userText, args)) return null
-        return fallback(userText, "The model supplied an unreliable Termux command for an HTML/browser task. OpenClaw replaced it with a known-good command for the requested project.")
+        return fallback(userText, "The model supplied an unreliable Termux command for an HTML/browser task. OpenAgent replaced it with a known-good command for the requested project.")
     }
 
     fun fallbackForEmptyCommand(userText: String): DemoHtmlTermuxFallback? {
         if (!isDemoFallbackEnabled()) return null
-        return fallback(userText, "The model called termux_command without a command. OpenClaw supplied a concrete Termux command for the user's requested HTML project.")
+        return fallback(userText, "The model called termux_command without a command. OpenAgent supplied a concrete Termux command for the user's requested HTML project.")
     }
 
     private fun isDemoFallbackEnabled(): Boolean =
@@ -79,7 +79,7 @@ internal object DemoHtmlTermuxFallbackPolicy {
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>OpenClaw Calculator</title>
+          <title>OpenAgent Calculator</title>
           <style>
             * { box-sizing: border-box; }
             body {
@@ -199,7 +199,7 @@ internal object DemoHtmlTermuxFallbackPolicy {
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>OpenClaw Project</title>
+          <title>OpenAgent Project</title>
           <style>
             body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: system-ui, sans-serif; background: #101827; color: white; }
             main { max-width: 720px; padding: 32px; }
@@ -207,7 +207,7 @@ internal object DemoHtmlTermuxFallbackPolicy {
         </head>
         <body>
           <main>
-            <h1>OpenClaw Project</h1>
+            <h1>OpenAgent Project</h1>
             <p>${userText.take(500)}</p>
           </main>
         </body>

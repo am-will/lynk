@@ -35,7 +35,7 @@ cd pc
 npm run demo:open-settings
 ```
 
-On Samsung devices that reset adb accessibility settings, this command still validates the WebSocket bridge and Android app-launch path. Full `phone_observe` and gesture tools require the Open Claw Agent accessibility service to show as enabled and bound in Android Settings.
+On Samsung devices that reset adb accessibility settings, this command still validates the WebSocket bridge and Android app-launch path. Full `phone_observe` and gesture tools require the OpenAgent accessibility service to show as enabled and bound in Android Settings.
 
 ## Test 2: Starbucks Stop Before Payment
 

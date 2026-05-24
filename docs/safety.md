@@ -3,7 +3,7 @@
 Safety policy ownership depends on the path:
 
 - Primary `chat.*` messages stream through the installed OpenClaw Gateway session. That session and its configured tools own system-level policy enforcement for ordinary Gateway chat; the bridge does not currently inject the Android default system prompt into this path.
-- Explicit phone tasks, legacy `user_request` requests, and realtime delegated tasks are wrapped by the bridge/dispatcher with the Open Claw Agent phone-safety context before reaching the active session adapter.
+- Explicit phone tasks, legacy `user_request` requests, and realtime delegated tasks are wrapped by the bridge/dispatcher with the OpenAgent phone-safety context before reaching the active session adapter.
 - The Android **System prompt** setting is saved locally and sent with legacy/realtime request metadata. It mirrors the canonical phone-control policy for paths that consume that field.
 
 The active session adapter must call `phone_ask_user_confirmation` before:

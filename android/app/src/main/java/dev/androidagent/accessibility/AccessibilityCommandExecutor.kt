@@ -341,7 +341,7 @@ class AccessibilityCommandExecutor(
         }
         val encoded = suspendCancellableCoroutine<EncodedScreenshot?> { continuation ->
             val screenshotExecutor = Executors.newSingleThreadExecutor { runnable ->
-                Thread(runnable, "OpenClaw-Screenshot").apply { isDaemon = true }
+                Thread(runnable, "OpenAgent-Screenshot").apply { isDaemon = true }
             }
             continuation.invokeOnCancellation {
                 screenshotExecutor.shutdownNow()
@@ -389,7 +389,7 @@ class AccessibilityCommandExecutor(
 
     private suspend fun <T> withAgentChromeSuppressed(block: suspend () -> T): T {
         val controller = overlayController ?: return block()
-        if (isOpenClawActiveWindow()) {
+        if (isOpenAgentActiveWindow()) {
             return block()
         }
         controller.suppressAgentChromeForAutomation()
@@ -401,7 +401,7 @@ class AccessibilityCommandExecutor(
         }
     }
 
-    private fun isOpenClawActiveWindow(): Boolean {
+    private fun isOpenAgentActiveWindow(): Boolean {
         val service = PhoneAccessibilityService.instance ?: return false
         val root = service.rootInActiveWindow ?: return false
         return try {

@@ -128,7 +128,7 @@ export function defaultSessionKeyForDevice(
 }
 
 export function defaultSessionLabelForDevice(deviceId: string): string {
-  return `Open Claw Agent (${deviceId})`;
+  return `OpenAgent (${deviceId})`;
 }
 
 function deviceSessionSuffix(deviceId: string): string {

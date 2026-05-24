@@ -1,6 +1,6 @@
-# Open Claw Agent
+# OpenAgent
 
-Open Claw Agent is an Android bubble endpoint for delegating work to an installed Open Claw session on the user's remote PC, with an optional local-phone mode for on-device LiteRT-LM models. The phone app is the always-available chat and voice surface; Host mode does most work on the remote PC, while Local mode can chat and call Android/local tools directly on the device.
+OpenAgent is an Android bubble endpoint for delegating work to an installed OpenClaw session on the user's remote PC, with an optional local-phone mode for on-device LiteRT-LM models. The phone app is the always-available chat and voice surface; Host mode does most work on the remote PC, while Local mode can chat and call Android/local tools directly on the device.
 
 Target control loop:
 

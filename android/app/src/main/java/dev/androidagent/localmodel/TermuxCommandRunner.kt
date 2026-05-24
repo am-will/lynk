@@ -26,10 +26,10 @@ class TermuxCommandRunner(private val context: Context) {
             return JSONObject().put("ok", false).put("error", "No Termux command supplied.")
         }
         if (!isTermuxInstalled()) {
-            return setupError("Termux is not installed or is not visible to OpenClaw.")
+            return setupError("Termux is not installed or is not visible to OpenAgent.")
         }
         if (!hasRunCommandPermission()) {
-            return setupError("OpenClaw does not have Termux RUN_COMMAND permission. Grant it in Android Settings > Apps > OpenClaw > Permissions > Additional permissions.")
+            return setupError("OpenAgent does not have Termux RUN_COMMAND permission. Grant it in Android Settings > Apps > OpenAgent > Permissions > Additional permissions.")
         }
 
         val executionId = nextExecutionId.incrementAndGet()
@@ -53,8 +53,8 @@ class TermuxCommandRunner(private val context: Context) {
             .putExtra(EXTRA_BACKGROUND, true)
             .putExtra(EXTRA_RUNNER, RUNNER_APP_SHELL)
             .putExtra(EXTRA_PENDING_INTENT, pendingIntent)
-            .putExtra(EXTRA_COMMAND_LABEL, "OpenClaw local command")
-            .putExtra(EXTRA_COMMAND_DESCRIPTION, "Command requested by the local OpenClaw agent.")
+            .putExtra(EXTRA_COMMAND_LABEL, "OpenAgent local command")
+            .putExtra(EXTRA_COMMAND_DESCRIPTION, "Command requested by the local OpenAgent agent.")
 
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -67,7 +67,7 @@ class TermuxCommandRunner(private val context: Context) {
         } catch (error: TimeoutCancellationException) {
             setupError("Timed out waiting for Termux command output. Check Termux has allow-external-apps=true in ~/.termux/termux.properties and that Termux is allowed to run in the background.")
         } catch (error: SecurityException) {
-            setupError("OpenClaw does not have Termux RUN_COMMAND permission. Grant it in Android Settings > Apps > OpenClaw > Permissions > Additional permissions.")
+            setupError("OpenAgent does not have Termux RUN_COMMAND permission. Grant it in Android Settings > Apps > OpenAgent > Permissions > Additional permissions.")
         } catch (error: IllegalStateException) {
             setupError("Android refused to start Termux. Open Termux once, disable battery restrictions if needed, and ensure allow-external-apps=true in ~/.termux/termux.properties.")
         } catch (error: Throwable) {
@@ -85,7 +85,7 @@ class TermuxCommandRunner(private val context: Context) {
         JSONObject()
             .put("ok", false)
             .put("error", message)
-            .put("setup", "Termux must be installed from F-Droid/GitHub, OpenClaw must have com.termux.permission.RUN_COMMAND, and Termux must set allow-external-apps=true.")
+            .put("setup", "Termux must be installed from F-Droid/GitHub, OpenAgent must have com.termux.permission.RUN_COMMAND, and Termux must set allow-external-apps=true.")
 
     private fun isTermuxInstalled(): Boolean =
         runCatching { context.packageManager.getPackageInfo(TERMUX_PACKAGE, 0) }.isSuccess

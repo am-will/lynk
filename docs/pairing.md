@@ -11,7 +11,7 @@ echo "$PHONE_AGENT_TOKEN"
 
 Paste that exact printed value into the Android **Auth token** field:
 
-1. Open the **Open Claw Agent** Android app.
+1. Open the **OpenAgent** Android app.
 2. Tap **Open Connection & Config**.
 3. In the **Connection & Config** dialog, find the **Bridge** section.
 4. Paste the value into **Auth token**.
@@ -52,7 +52,7 @@ npm run bridge
 
 `OPENCLAW_GATEWAY_URL` should stay on `127.0.0.1`; only the phone-facing bridge uses the tailnet path.
 
-5. On Android, open **Open Claw Agent**, tap **Open Connection & Config**, then set these fields in the **Bridge** section:
+5. On Android, open **OpenAgent**, tap **Open Connection & Config**, then set these fields in the **Bridge** section:
 
 - WebSocket URL: `ws://<pc-tailnet-name-or-ip>:8788/phone`
 - Device ID: `openclaw-agent`
@@ -115,7 +115,7 @@ If that is empty, inspect active interfaces:
 ifconfig | rg "inet .*broadcast|status: active|^[a-z].*:"
 ```
 
-3. On Android, open **Open Claw Agent**, tap **Open Connection & Config**, then set these fields in the **Bridge** section:
+3. On Android, open **OpenAgent**, tap **Open Connection & Config**, then set these fields in the **Bridge** section:
 
 - WebSocket URL: `ws://<pc-lan-ip>:8788/phone`
 - Device ID: `openclaw-agent`
@@ -165,4 +165,3 @@ ws://127.0.0.1:8788/phone
 ```
 
 Run `npm run phone:usb` again after reconnecting USB.
-

@@ -313,6 +313,7 @@ object SettingsUi {
 
     fun systemPromptPreview(text: String): String {
         val normalized = text.trim().replace(Regex("\\s+"), " ")
+        if (normalized.isEmpty()) return "No system prompt configured."
         return if (normalized.length <= 140) normalized else "${normalized.take(137)}..."
     }
 }

@@ -103,7 +103,7 @@ if (status?.Self?.Online === false) {
 }
 console.log("");
 console.log("Android app path:");
-console.log("  Open Claw Agent -> Open Connection & Config -> Bridge");
+console.log("  OpenAgent -> Open Connection & Config -> Bridge");
 console.log("");
 console.log("Bridge fields:");
 console.log(`- WebSocket URL: ${wsUrl}`);

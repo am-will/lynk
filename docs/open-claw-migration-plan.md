@@ -5,7 +5,7 @@
 
 ## Overview
 
-Open Claw Agent should primarily be a phone-native endpoint into the user's installed Open Claw session on a remote PC. The Android bubble is the product surface: instead of opening Telegram, Discord, or another chat client to reach Open Claw, the user can tap the floating bubble, type or speak a request, and delegate work directly to Open Claw.
+OpenAgent should primarily be a phone-native endpoint into the user's installed OpenClaw session on a remote PC. The Android bubble is the product surface: instead of opening Telegram, Discord, or another chat client to reach OpenClaw, the user can tap the floating bubble, type or speak a request, and delegate work directly to OpenClaw.
 
 Phone control remains valuable, but it is a secondary capability. Most delegated work should happen on the remote PC where Open Claw is installed. The phone should act as an input surface, notification/status surface, and optional tool target only when the task actually requires interacting with the Android device.
 

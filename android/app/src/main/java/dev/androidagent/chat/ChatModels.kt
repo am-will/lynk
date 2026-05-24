@@ -439,7 +439,7 @@ object ChatStateReducer {
     }
 
     private fun reduceError(state: ChatState, message: JSONObject): ChatState {
-        val text = message.optString("message", "OpenClaw chat failed")
+        val text = message.optString("message", "OpenAgent chat failed")
         val runId = message.optNullableString("runId") ?: state.activeRunId
         return state.copy(
             sessionKey = message.optNullableString("sessionKey") ?: state.sessionKey,

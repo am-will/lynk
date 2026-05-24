@@ -31,7 +31,7 @@ internal object LocalPromptBuilder {
             - For ordinary questions, explanations, brainstorming, coding help, or general chat, answer directly without calling tools.
             - For file/project creation requests, decide the commands yourself. Do not ask the user to provide commands.
             - For HTML or files that should open in the browser, use Termux/shared storage, not the app-private local workspace.
-            - Final answers should read naturally. Do not prefix final answers with TASK_COMPLETE, BLOCKED, or debug labels. Do not emit an empty response.
+            - Final answers should read naturally. Do not prefix final answers with TASK_COMPLETE, BLOCKED, or debug labels unless a loaded skill explicitly requires that format. Do not emit an empty response.
 
             $toolPolicy
         """.trimIndent()

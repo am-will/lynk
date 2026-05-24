@@ -228,7 +228,7 @@ test("new chats use uuid labels until first message display name is set", async 
 
   assert.equal(client.created.length, 1);
   assert.match(client.created[0]?.label ?? "", /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-  assert.notEqual(client.created[0]?.label, "Open Claw Agent");
+  assert.notEqual(client.created[0]?.label, "OpenAgent");
 
   await bridge.send({
     type: "chat.send",
