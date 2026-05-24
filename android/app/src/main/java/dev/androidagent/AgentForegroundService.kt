@@ -137,6 +137,9 @@ class AgentForegroundService : Service() {
             onSetChatModel = { model ->
                 setChatModelFromUi(model)
             },
+            onSetChatHarness = { harnessId ->
+                setChatHarnessFromUi(harnessId)
+            },
             onSetChatReasoning = { reasoning ->
                 val config = AgentConfigStore.load(this)
                 val model = selectedChatModel(config)
@@ -722,6 +725,22 @@ class AgentForegroundService : Service() {
         connectAgentClient(model).setModel(sessionKeyForRoute(route), modelForRoute(model, route, config))
         lastNotificationText = chatStatusText(chatState.status, chatState)
         updateNotification()
+    }
+
+    private fun setChatHarnessFromUi(harnessId: String) {
+        val config = AgentConfigStore.load(this)
+        val available = availableChatModels(config)
+        val model = ChatPresentationHelpers.defaultModelForHarness(
+            harnessId = harnessId,
+            configuredDefaultModel = config.defaultModelForHarness(harnessId),
+            models = available,
+            enabledHarnessIds = config.enabledModelHarnessIds()
+        )
+        if (model.isNullOrBlank()) {
+            overlayController?.setStatus("No models available for ${ChatPresentationHelpers.harnessLabel(harnessId)}.")
+            return
+        }
+        setChatModelFromUi(model)
     }
 
     private fun chatModelDisplayLabel(model: String, route: ChatClientRoute): String {

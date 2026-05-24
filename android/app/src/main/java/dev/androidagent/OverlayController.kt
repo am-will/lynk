@@ -41,6 +41,7 @@ import android.widget.Space
 import android.widget.TextView
 import android.widget.FrameLayout
 import dev.androidagent.chat.ChatCommandOption
+import dev.androidagent.chat.ChatModelCatalog
 import dev.androidagent.chat.ChatModelSource
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatModelOption
@@ -110,6 +111,7 @@ class OverlayController(
     private val onGetCodexWorkspacePath: () -> String = { "" },
     private val onSetCodexWorkspacePath: (String) -> Unit = {},
     private val onSetChatModel: (String) -> Unit = {},
+    private val onSetChatHarness: (String) -> Unit = {},
     private val onSetChatReasoning: (String) -> Unit = {},
     private val onChatControlCommand: (String, JSONObject) -> Unit = { _, _ -> },
     private val onToggleChatTool: (String) -> Unit = {},
@@ -1329,36 +1331,20 @@ class OverlayController(
         val anchor = anchorOverride ?: modelButton ?: return
         val config = AgentConfigStore.load(context)
         val localLiteRtAvailable = isExperimentalLocalModelAvailable(config)
-        val merged = ChatPresentationHelpers.modelPickerOptions(
-            lastChatState,
-            localLiteRtAvailable,
-            config.enabledModelHarnessIds()
-        )
+        val merged = availableModelOptions(config, localLiteRtAvailable)
         if (merged.isEmpty()) {
             setStatus("No models available.")
             return
         }
-        val selectedId = ChatPresentationHelpers.selectedModelId(lastChatState.selectedModel, localLiteRtAvailable, merged)
-        val selectedModel = merged.firstOrNull { it.id == selectedId }
-        val activeHarnessId = selectedModel?.let { ChatPresentationHelpers.modelHarnessId(it) }
-            ?: lastChatState.harnessId?.takeIf { it.isNotBlank() }?.lowercase()
-            ?: "openclaw"
+        val selectedId = selectedModelId(merged, localLiteRtAvailable)
+        val activeHarnessId = activeHarnessId(merged, localLiteRtAvailable)
         if (modelPickerActiveHarnessId != activeHarnessId) {
             expandedModelHarnesses.clear()
             modelPickerActiveHarnessId = activeHarnessId
             expandedModelHarnesses.add(activeHarnessId)
         }
 
-        val groups = merged
-            .groupBy { ChatPresentationHelpers.modelHarnessId(it) }
-            .map { (harnessId, models) ->
-                ModelHarnessGroup(
-                    id = harnessId,
-                    label = models.firstOrNull()?.let { ChatPresentationHelpers.modelHarnessLabel(it) } ?: harnessId,
-                    models = models
-                )
-            }
-            .sortedWith(compareBy<ModelHarnessGroup> { ChatPresentationHelpers.modelHarnessSortOrder(it.id) }.thenBy { it.label })
+        val groups = ChatPresentationHelpers.harnessModelGroups(merged, config.enabledModelHarnessIds())
 
         val sections = groups.map { group ->
             val expanded = group.id in expandedModelHarnesses
@@ -1425,15 +1411,67 @@ class OverlayController(
         )
     }
 
+    private fun showHarnessChoices(anchorOverride: View? = null, replace: Boolean = false) {
+        val anchor = anchorOverride ?: headerSessionAnchor ?: panelContent ?: panelHost ?: return
+        val config = AgentConfigStore.load(context)
+        val localLiteRtAvailable = isExperimentalLocalModelAvailable(config)
+        val merged = availableModelOptions(config, localLiteRtAvailable)
+        val groups = ChatPresentationHelpers.harnessModelGroups(merged, config.enabledModelHarnessIds())
+        if (groups.size < 2) {
+            setStatus("Only one harness is available.")
+            return
+        }
+
+        val activeHarnessId = activeHarnessId(merged, localLiteRtAvailable)
+        val rows = groups.map { group ->
+            AnchoredPicker.Row(
+                id = "harness:${group.id}",
+                label = group.label,
+                sublabel = if (group.id == activeHarnessId) "Active harness" else null,
+                iconRes = R.drawable.ic_model,
+                selected = group.id == activeHarnessId,
+                onSelect = {
+                    onSetChatHarness(group.id)
+                    setStatus("Harness: ${group.label}")
+                }
+            )
+        }
+
+        showAnchoredPicker(
+            anchor = anchor,
+            title = "Harness",
+            sections = listOf(AnchoredPicker.Section(null, rows)),
+            toggleSameAnchor = !replace,
+            replaceShowing = replace
+        )
+    }
+
+    private fun availableModelOptions(
+        config: AgentConfig = AgentConfigStore.load(context),
+        localLiteRtAvailable: Boolean = isExperimentalLocalModelAvailable(config)
+    ): List<ChatModelOption> {
+        return ChatPresentationHelpers.modelPickerOptions(
+            lastChatState,
+            localLiteRtAvailable,
+            config.enabledModelHarnessIds()
+        )
+    }
+
+    private fun selectedModelId(models: List<ChatModelOption>, localLiteRtAvailable: Boolean): String {
+        return ChatPresentationHelpers.selectedModelId(lastChatState.selectedModel, localLiteRtAvailable, models)
+    }
+
+    private fun activeHarnessId(models: List<ChatModelOption>, localLiteRtAvailable: Boolean): String {
+        val selectedId = selectedModelId(models, localLiteRtAvailable)
+        return models.firstOrNull { it.id == selectedId }?.let { ChatPresentationHelpers.modelHarnessId(it) }
+            ?: lastChatState.harnessId?.takeIf { it.isNotBlank() }?.lowercase()
+            ?: ChatModelCatalog.harnessFromSessionKey(lastChatState.sessionKey)
+            ?: AgentConfig.HARNESS_OPENCLAW
+    }
+
     private fun isExperimentalLocalModelAvailable(config: AgentConfig = AgentConfigStore.load(context)): Boolean {
         return config.experimentalLocalModelsEnabled && LocalModelStore.exists(config.localModelPath)
     }
-
-    private data class ModelHarnessGroup(
-        val id: String,
-        val label: String,
-        val models: List<ChatModelOption>
-    )
 
     private fun showReasoningChoices(anchorOverride: View? = null, replace: Boolean = false) {
         val anchor = anchorOverride ?: reasoningButton ?: return
@@ -1537,6 +1575,11 @@ class OverlayController(
     ) {
         val menuAnchor: View = anchorOverride ?: headerSessionAnchor ?: panelContent ?: panelHost ?: return
 
+        val config = AgentConfigStore.load(context)
+        val localLiteRtAvailable = isExperimentalLocalModelAvailable(config)
+        val modelOptions = availableModelOptions(config, localLiteRtAvailable)
+        val harnessGroups = ChatPresentationHelpers.harnessModelGroups(modelOptions, config.enabledModelHarnessIds())
+        val currentHarnessId = activeHarnessId(modelOptions, localLiteRtAvailable)
         val sessions = lastChatState.sessions
         val localMode = isLocalChatMode()
         val commands = if (localMode) emptyList() else lastChatState.commands
@@ -1575,17 +1618,24 @@ class OverlayController(
                 onSelect = { showSessionsMenu(menuAnchor) }
             ))
         }
+        if (harnessGroups.size >= 2) {
+            sessionRows.add(AnchoredPicker.Row(
+                id = "picker:harness",
+                label = "Harness",
+                sublabel = harnessGroups.firstOrNull { it.id == currentHarnessId }?.label
+                    ?: ChatPresentationHelpers.harnessLabel(currentHarnessId),
+                iconRes = R.drawable.ic_model,
+                dismissOnSelect = false,
+                onSelect = { showHarnessChoices(anchorOverride = menuAnchor, replace = true) }
+            ))
+        }
         sessionRows.add(AnchoredPicker.Row(
             id = "picker:model",
             label = "Model",
             sublabel = ChatPresentationHelpers.formatModelLabel(
                 model = lastChatState.selectedModel ?: lastChatState.models.firstOrNull()?.id,
-                models = ChatPresentationHelpers.modelPickerOptions(
-                    lastChatState,
-                    isExperimentalLocalModelAvailable(),
-                    AgentConfigStore.load(context).enabledModelHarnessIds()
-                ),
-                localLiteRtAvailable = isExperimentalLocalModelAvailable()
+                models = modelOptions,
+                localLiteRtAvailable = localLiteRtAvailable
             ),
             iconRes = R.drawable.ic_model,
             dismissOnSelect = false,
