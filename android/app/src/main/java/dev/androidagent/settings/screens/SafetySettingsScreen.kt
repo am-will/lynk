@@ -53,6 +53,10 @@ object SafetySettingsScreen {
                     showEditor(activity, tokens, promptDraft) { updated ->
                         promptDraft = updated
                         promptSummary.text = SettingsUi.systemPromptPreview(promptDraft)
+                        AgentConfigStore.save(
+                            activity,
+                            AgentConfigStore.load(activity).copy(systemPrompt = promptDraft)
+                        )
                     }
                 }.exposeToAccessibility(R.id.openclaw_system_prompt_button, "Edit system prompt"),
                 SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm + 2)
@@ -79,14 +83,6 @@ object SafetySettingsScreen {
             }, SettingsUi.stackedParams(activity, DesignTokens.Spacing.md))
             addView(SettingsUi.body(activity, "Risky phone actions still require the confirmation overlay at runtime.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.md))
         }, SettingsUi.stackedParams(activity))
-
-        root.addView(
-            SettingsUi.actionButton(activity, "Save", dev.androidagent.settings.SettingsButtonTone.Primary, tokens) {
-                AgentConfigStore.save(activity, config.copy(systemPrompt = savedSystemPrompt(promptDraft)))
-                callbacks.onBack()
-            },
-            SettingsUi.stackedParams(activity, DesignTokens.Spacing.xl)
-        )
 
         return root
     }
