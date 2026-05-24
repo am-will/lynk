@@ -33,6 +33,7 @@ import dev.androidagent.agentchat.LocalAgentChatClient
 import dev.androidagent.avatar.AvatarLibrary
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatModelCatalog
+import dev.androidagent.chat.ChatModelSource
 import dev.androidagent.chat.ChatStateReducer
 import dev.androidagent.chat.ChatTimelineItem
 import dev.androidagent.chat.ChatTimelineKind
@@ -991,6 +992,13 @@ class AgentForegroundService : Service() {
         val modelCounts = models
             .groupingBy { ChatPresentationHelpers.modelHarnessId(it) }
             .eachCount()
+        val liveHostModels = chatState.hostModels.ifEmpty {
+            if (chatState.modelSource == ChatModelSource.HOST) chatState.models else emptyList()
+        }
+            .filter { it.available != false }
+            .filter { ChatPresentationHelpers.modelHarnessId(it) != AgentConfig.HARNESS_LOCAL }
+            .filter { ChatPresentationHelpers.modelHarnessId(it) in config.enabledModelHarnessIds() }
+        val liveHostModelsByHarness = liveHostModels.groupBy { ChatPresentationHelpers.modelHarnessId(it) }
         val activeHarnessIds = buildSet {
             chatState.harnessId?.takeIf { it.isNotBlank() }?.let { add(it.lowercase()) }
             chatState.selectedModel?.takeIf { it.isNotBlank() }?.let { add(ChatModelCatalog.harnessForModel(it)) }
@@ -999,7 +1007,7 @@ class AgentForegroundService : Service() {
                 session.model?.takeIf { it.isNotBlank() }?.let { add(ChatModelCatalog.harnessForModel(it)) }
             }
         }
-        DiagnosticsBackendSnapshot.update(modelCounts, activeHarnessIds)
+        DiagnosticsBackendSnapshot.update(modelCounts, activeHarnessIds, liveHostModelsByHarness)
     }
 
     private fun isTerminalChatMessage(message: JSONObject): Boolean {
