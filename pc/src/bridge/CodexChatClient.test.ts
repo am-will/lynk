@@ -6,7 +6,8 @@ import test from "node:test";
 import type { AgentRequestOptions, AgentRunResult, AgentStatusSink } from "../dispatcher/AgentClient.js";
 import { normalizeCodexUsage } from "../dispatcher/CodexAppServerClient.js";
 import type { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js";
-import { CODEX_WORKSPACE_NOT_FOUND_PREFIX, CodexChatClient } from "./CodexChatClient.js";
+import { CODEX_WORKSPACE_NOT_FOUND_CODE } from "./chat/ChatErrors.js";
+import { CodexChatClient } from "./CodexChatClient.js";
 
 class FakeCodexAppServerClient {
   readonly createdThreads: Array<{ model?: string; baseInstructions?: string; cwd?: string }> = [];
@@ -149,7 +150,7 @@ test("Codex reports missing workspace folders unless creation is confirmed", asy
         model: "gpt-5.3-codex",
         workspacePath
       }),
-      { message: new RegExp(`^${CODEX_WORKSPACE_NOT_FOUND_PREFIX}`) }
+      { code: CODEX_WORKSPACE_NOT_FOUND_CODE, workspacePath }
     );
     assert.equal(fake.createdThreads.length, 0);
     assert.equal(existsSync(workspacePath), false);

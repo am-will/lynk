@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { OpenClawChatBridge } from "./OpenClawChatBridge.js";
+import { ChatClientError, CODEX_WORKSPACE_NOT_FOUND_CODE } from "./chat/ChatErrors.js";
 import type { BridgeConfig } from "./config.js";
 import type { PhoneHub } from "./PhoneHub.js";
 import type { ChatOutboundMessage } from "../protocol/messages.js";
@@ -348,6 +349,26 @@ test("non-OpenClaw send failure emits chat error without gateway fallback", asyn
   assert.equal(client.sent.length, 0);
   const error = chatMessages.find((message) => message.type === "chat.error");
   assert.equal(error?.message, "hermes unavailable");
+});
+
+test("coded chat failures preserve structured error details", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+  client.sendError = new ChatClientError("Codex workspace folder not found: ~/missing", {
+    code: CODEX_WORKSPACE_NOT_FOUND_CODE,
+    workspacePath: "~/missing"
+  });
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Use Codex",
+    model: "codex:gpt-5.3-codex"
+  });
+
+  const error = chatMessages.find((message) => message.type === "chat.error");
+  assert.equal(error?.message, "Codex workspace folder not found: ~/missing");
+  assert.equal(error?.code, CODEX_WORKSPACE_NOT_FOUND_CODE);
+  assert.equal(error?.workspacePath, "~/missing");
 });
 
 test("default gateway chat sessions are scoped per device", async () => {

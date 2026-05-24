@@ -499,6 +499,8 @@ export interface ChatErrorMessage {
   sessionKey?: string;
   runId?: string;
   message: string;
+  code?: string | null;
+  workspacePath?: string | null;
 }
 
 export interface ChatReplyAvailableMessage {
@@ -811,7 +813,9 @@ export const chatErrorMessageSchema = z.object({
   deviceId: z.string().min(1),
   sessionKey: z.string().optional(),
   runId: z.string().optional(),
-  message: z.string()
+  message: z.string(),
+  code: z.string().optional().nullable(),
+  workspacePath: z.string().optional().nullable()
 });
 
 export const chatReplyAvailableMessageSchema = z.object({

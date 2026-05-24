@@ -300,6 +300,19 @@ Reasoning stream deltas are temporary UI blocks. Android renders them while a ru
 }
 ```
 
+Structured chat failures use `chat.error`. `message` is the user-readable fallback, while optional `code` and detail fields drive client UI flows without parsing text. For example, Codex missing workspace prompts use `code: "codex.workspace_not_found"` and `workspacePath`:
+
+```json
+{
+  "type": "chat.error",
+  "deviceId": "openclaw-agent",
+  "sessionKey": "codex:019e56b1-639e-7ad2-b078-3106a2ee0874",
+  "message": "Codex workspace folder not found: ~/missing",
+  "code": "codex.workspace_not_found",
+  "workspacePath": "~/missing"
+}
+```
+
 When a user-initiated run reaches a terminal reply, the bridge also emits a per-session unread signal. Android uses this for native notification-tray entries, the floating bubble unread badge, and badges in the previous-chats picker. This message is sent even if the user has switched away from the session, so `chat.final`/`chat.error` timeline delivery can remain scoped to the selected session.
 
 ```json

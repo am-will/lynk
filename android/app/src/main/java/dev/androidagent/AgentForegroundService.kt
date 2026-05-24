@@ -75,7 +75,7 @@ private data class PendingNewChatRequest(
 )
 
 private const val PHONE_CONTROL_COMPLETION_VISIBLE_MS = 30_000L
-private const val CODEX_WORKSPACE_NOT_FOUND_PREFIX = "CODEX_WORKSPACE_NOT_FOUND:"
+private const val CODEX_WORKSPACE_NOT_FOUND_CODE = "codex.workspace_not_found"
 private const val CODEX_WORKSPACE_CREATE_MESSAGE = "Folder not found. Would you like to create it?"
 
 class AgentForegroundService : Service() {
@@ -979,7 +979,7 @@ class AgentForegroundService : Service() {
 
     private fun isCodexWorkspaceNotFoundError(message: JSONObject): Boolean {
         if (message.optString("type") != "chat.error") return false
-        return message.optString("message").startsWith(CODEX_WORKSPACE_NOT_FOUND_PREFIX)
+        return message.optString("code") == CODEX_WORKSPACE_NOT_FOUND_CODE
     }
 
     private fun promptCreateCodexWorkspace(request: PendingNewChatRequest?) {

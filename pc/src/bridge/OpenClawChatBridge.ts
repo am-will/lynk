@@ -61,6 +61,7 @@ import {
   stringField,
   usageFromSession
 } from "./chat/ChatNormalizers.js";
+import { buildChatErrorMessage } from "./chat/ChatErrors.js";
 import { OpenClawRealtimeSessions } from "./OpenClawRealtimeSessions.js";
 import { OpenClawRunWaiters } from "./OpenClawRunWaiters.js";
 import { PhoneHub } from "./PhoneHub.js";
@@ -236,8 +237,7 @@ export class OpenClawChatBridge {
       });
       this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} is working`);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      await this.handleSendFailure(message, state, idempotencyKey, taskKind, errorMessage);
+      await this.handleSendFailure(message, state, idempotencyKey, taskKind, error);
     }
   }
 
@@ -246,15 +246,14 @@ export class OpenClawChatBridge {
     state: DeviceChatState,
     idempotencyKey: string,
     taskKind: "general" | "phone",
-    errorMessage: string
+    error: unknown
   ): Promise<void> {
-    this.sendChat(message.deviceId, {
-      type: "chat.error",
+    this.sendChat(message.deviceId, buildChatErrorMessage({
       deviceId: message.deviceId,
       sessionKey: state.sessionKey,
       runId: idempotencyKey,
-      message: errorMessage
-    });
+      error
+    }));
     if (state.harnessId !== "openclaw") {
       return;
     }
@@ -269,13 +268,12 @@ export class OpenClawChatBridge {
       await this.client.abort(sessionKey, runId);
     } catch (error) {
       await this.dispatcher.stopActiveTurn(message.deviceId, message.reason ?? "Stopped from Android chat");
-      this.sendChat(message.deviceId, {
-        type: "chat.error",
+      this.sendChat(message.deviceId, buildChatErrorMessage({
         deviceId: message.deviceId,
         sessionKey,
         runId,
-        message: error instanceof Error ? error.message : String(error)
-      });
+        error
+      }));
     } finally {
       state.runId = null;
       state.activeTaskKind = null;
@@ -820,12 +818,11 @@ export class OpenClawChatBridge {
   }
 
   private sendChatError(deviceId: string, sessionKey: string, error: unknown): void {
-    this.sendChat(deviceId, {
-      type: "chat.error",
+    this.sendChat(deviceId, buildChatErrorMessage({
       deviceId,
       sessionKey,
-      message: error instanceof Error ? error.message : String(error)
-    });
+      error
+    }));
   }
 
   private async harnessModelCounts(): Promise<Record<string, number>> {

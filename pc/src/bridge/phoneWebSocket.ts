@@ -7,6 +7,7 @@ import type { BridgeConfig } from "./config.js";
 import type { PhoneHub } from "./PhoneHub.js";
 import { REALTIME_TOOL_NAMES, inboundPhoneMessageSchema } from "../protocol/messages.js";
 import type { BridgeRealtime } from "./bridgeRealtime.js";
+import { buildChatErrorMessage } from "./chat/ChatErrors.js";
 
 export interface PhoneWebSocketDependencies {
   config: Pick<BridgeConfig, "token">;
@@ -90,95 +91,87 @@ export function bindPhoneSocket(socket: WebSocket, deps: PhoneWebSocketDependenc
 
       if (message.type === "chat.open") {
         deps.chatBridge.open(message).catch((error) => {
-          deps.hub.sendChat(message.deviceId, {
-            type: "chat.error",
+          deps.hub.sendChat(message.deviceId, buildChatErrorMessage({
             deviceId: message.deviceId,
             sessionKey: message.sessionKey,
-            message: error instanceof Error ? error.message : String(error)
-          });
+            error
+          }));
         });
         return;
       }
 
       if (message.type === "chat.send") {
         deps.chatBridge.send(message).catch((error) => {
-          deps.hub.sendChat(message.deviceId, {
-            type: "chat.error",
+          deps.hub.sendChat(message.deviceId, buildChatErrorMessage({
             deviceId: message.deviceId,
             sessionKey: message.sessionKey,
-            message: error instanceof Error ? error.message : String(error)
-          });
+            error
+          }));
         });
         return;
       }
 
       if (message.type === "chat.stop") {
         deps.chatBridge.stop(message).catch((error) => {
-          deps.hub.sendChat(message.deviceId, {
-            type: "chat.error",
+          deps.hub.sendChat(message.deviceId, buildChatErrorMessage({
             deviceId: message.deviceId,
             sessionKey: message.sessionKey,
             runId: message.runId,
-            message: error instanceof Error ? error.message : String(error)
-          });
+            error
+          }));
         });
         return;
       }
 
       if (message.type === "chat.select_session") {
         deps.chatBridge.selectSession(message).catch((error) => {
-          deps.hub.sendChat(message.deviceId, {
-            type: "chat.error",
+          deps.hub.sendChat(message.deviceId, buildChatErrorMessage({
             deviceId: message.deviceId,
             sessionKey: message.sessionKey,
-            message: error instanceof Error ? error.message : String(error)
-          });
+            error
+          }));
         });
         return;
       }
 
       if (message.type === "chat.new_session") {
         deps.chatBridge.newSession(message).catch((error) => {
-          deps.hub.sendChat(message.deviceId, {
-            type: "chat.error",
+          deps.hub.sendChat(message.deviceId, buildChatErrorMessage({
             deviceId: message.deviceId,
-            message: error instanceof Error ? error.message : String(error)
-          });
+            error
+          }));
         });
         return;
       }
 
       if (message.type === "chat.set_model") {
         deps.chatBridge.setModel(message).catch((error) => {
-          deps.hub.sendChat(message.deviceId, {
-            type: "chat.error",
+          deps.hub.sendChat(message.deviceId, buildChatErrorMessage({
             deviceId: message.deviceId,
             sessionKey: message.sessionKey,
-            message: error instanceof Error ? error.message : String(error)
-          });
+            error
+          }));
         });
         return;
       }
 
       if (message.type === "chat.set_reasoning") {
         deps.chatBridge.setReasoning(message).catch((error) => {
-          deps.hub.sendChat(message.deviceId, {
-            type: "chat.error",
+          deps.hub.sendChat(message.deviceId, buildChatErrorMessage({
             deviceId: message.deviceId,
             sessionKey: message.sessionKey,
-            message: error instanceof Error ? error.message : String(error)
-          });
+            error
+          }));
         });
         return;
       }
 
       if (message.type === "chat.control_command") {
         deps.chatBridge.controlCommand(message).catch((error) => {
-          deps.hub.sendChat(message.deviceId, {
-            type: "chat.error",
+          deps.hub.sendChat(message.deviceId, buildChatErrorMessage({
             deviceId: message.deviceId,
-            message: error instanceof Error ? error.message : String(error)
-          });
+            error
+          }));
         });
         return;
       }

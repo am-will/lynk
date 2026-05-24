@@ -6,6 +6,7 @@ import type { AuditLog } from "./AuditLog.js";
 import type { AgentRunResult, AgentStatusSink } from "../dispatcher/AgentClient.js";
 import { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js";
 import { PHONE_AGENT_SYSTEM_PROMPT } from "../dispatcher/promptPolicy.js";
+import { ChatClientError, CODEX_WORKSPACE_NOT_FOUND_CODE } from "./chat/ChatErrors.js";
 import { codexAppServerContextWindow, DEFAULT_REASONING_OPTIONS } from "./chat/ModelCatalog.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "./harness/InMemoryHarnessSessionStore.js";
 import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "./chat/ChatTransportTypes.js";
@@ -24,7 +25,6 @@ const CODEX_THREAD_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4
 const CODEX_THREAD_PAGE_SIZE = 100;
 const CODEX_THREAD_MAX_LIST = 500;
 const CODEX_QUICK_CHAT_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-export const CODEX_WORKSPACE_NOT_FOUND_PREFIX = "CODEX_WORKSPACE_NOT_FOUND:";
 
 interface CodexThreadRecord {
   id: string;
@@ -564,7 +564,11 @@ function ensureWorkspaceDirectory(path: string | undefined, displayPath: string 
   }
   if (!existsSync(path)) {
     if (!createIfMissing) {
-      throw new Error(`${CODEX_WORKSPACE_NOT_FOUND_PREFIX}${displayPath?.trim() || path}`);
+      const workspacePath = displayPath?.trim() || path;
+      throw new ChatClientError(`Codex workspace folder not found: ${workspacePath}`, {
+        code: CODEX_WORKSPACE_NOT_FOUND_CODE,
+        workspacePath
+      });
     }
     mkdirSync(path, { recursive: true });
   }

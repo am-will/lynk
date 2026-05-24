@@ -4,6 +4,7 @@ import test from "node:test";
 import { WebSocket } from "ws";
 
 import { bindPhoneSocket } from "./phoneWebSocket.js";
+import { ChatClientError, CODEX_WORKSPACE_NOT_FOUND_CODE } from "./chat/ChatErrors.js";
 import type { RegisterMessage } from "../protocol/messages.js";
 
 const token = "test-token";
@@ -75,6 +76,7 @@ class FakeDispatcher {
 
 class FakeChatBridge {
   readonly opens: unknown[] = [];
+  newSessionError?: Error;
 
   async open(message: unknown): Promise<void> {
     this.opens.push(message);
@@ -83,7 +85,11 @@ class FakeChatBridge {
   async send(): Promise<void> {}
   async stop(): Promise<void> {}
   async selectSession(): Promise<void> {}
-  async newSession(): Promise<void> {}
+  async newSession(): Promise<void> {
+    if (this.newSessionError) {
+      throw this.newSessionError;
+    }
+  }
   async setModel(): Promise<void> {}
   async setReasoning(): Promise<void> {}
   async controlCommand(): Promise<void> {}
@@ -180,6 +186,31 @@ test("phone websocket routes chat.open and agent stop controls", async () => {
 
   assert.deepEqual(chatBridge.opens, [{ type: "chat.open", deviceId: "phone", sessionKey: "chat" }]);
   assert.deepEqual(stops, [{ deviceId: "phone", reason: "enough" }]);
+});
+
+test("phone websocket preserves structured chat errors", async () => {
+  const { socket, hub, chatBridge } = bindFakes();
+  chatBridge.newSessionError = new ChatClientError("Codex workspace folder not found: ~/missing", {
+    code: CODEX_WORKSPACE_NOT_FOUND_CODE,
+    workspacePath: "~/missing"
+  });
+  register(socket);
+
+  socket.receive({
+    type: "chat.new_session",
+    deviceId: "phone",
+    model: "codex:gpt-5.3-codex",
+    workspacePath: "~/missing"
+  });
+  await flushPromises();
+
+  assert.deepEqual(hub.chats[0], {
+    type: "chat.error",
+    deviceId: "phone",
+    message: "Codex workspace folder not found: ~/missing",
+    code: CODEX_WORKSPACE_NOT_FOUND_CODE,
+    workspacePath: "~/missing"
+  });
 });
 
 test("phone websocket reports realtime device mismatches and malformed realtime messages", () => {
