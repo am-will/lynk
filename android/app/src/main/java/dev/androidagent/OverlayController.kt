@@ -40,8 +40,8 @@ import android.widget.LinearLayout
 import android.widget.Space
 import android.widget.TextView
 import android.widget.FrameLayout
-import dev.androidagent.chat.ChatAttachment
 import dev.androidagent.chat.ChatAttachmentKind
+import dev.androidagent.chat.StoredChatAttachment
 import dev.androidagent.chat.ChatCommandOption
 import dev.androidagent.chat.ChatModelCatalog
 import dev.androidagent.chat.ChatModelSource
@@ -97,7 +97,7 @@ internal fun shouldMinimizeHostAppAfterVoiceStart(presentation: PanelPresentatio
 
 class OverlayController(
     private val context: Context,
-    private val onSubmit: (String, List<ChatAttachment>) -> Boolean,
+    private val onSubmit: (String, List<StoredChatAttachment>) -> Boolean,
     private val onStop: () -> Unit,
     private val onDismiss: () -> Unit,
     private val onStartVoice: () -> Boolean,
@@ -192,7 +192,7 @@ class OverlayController(
     private var composerInput: EditText? = null
     private var transcriptionMicButton: ImageButton? = null
     private var lastTranscriptionState = VoiceTranscriptionState()
-    private val pendingChatAttachments = mutableListOf<ChatAttachment>()
+    private val pendingChatAttachments = mutableListOf<StoredChatAttachment>()
     private var automationSuppressionDepth = 0
     private var restoreBubbleAfterAutomation = false
     private var restoreBubbleAfterFullscreen = false
@@ -472,7 +472,7 @@ class OverlayController(
         }
     }
 
-    fun addChatAttachment(attachment: ChatAttachment) {
+    fun addChatAttachment(attachment: StoredChatAttachment) {
         mainHandler.post {
             pendingChatAttachments.removeAll { it.id == attachment.id }
             pendingChatAttachments.add(attachment)
@@ -1156,7 +1156,7 @@ class OverlayController(
         renderComposerActionButtons(tokens(), lastChatState, lastTranscriptionState)
     }
 
-    private fun attachmentChipPrefix(attachment: ChatAttachment): String {
+    private fun attachmentChipPrefix(attachment: StoredChatAttachment): String {
         return if (attachment.isImage) "Image" else "File"
     }
 

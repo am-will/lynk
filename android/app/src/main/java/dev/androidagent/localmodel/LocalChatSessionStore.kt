@@ -1,8 +1,8 @@
 package dev.androidagent.localmodel
 
 import android.content.Context
-import dev.androidagent.chat.ChatAttachment
-import dev.androidagent.chat.ChatAttachmentJson
+import dev.androidagent.chat.ChatAttachmentPreview
+import dev.androidagent.chat.ChatAttachmentPreviewJson
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -13,7 +13,7 @@ data class LocalChatMessage(
     val role: String,
     val text: String,
     val timestamp: Long,
-    val attachments: List<ChatAttachment> = emptyList()
+    val attachments: List<ChatAttachmentPreview> = emptyList()
 )
 
 data class LocalChatSession(
@@ -59,7 +59,7 @@ class LocalChatSessionStore(context: Context) {
         role: String,
         text: String,
         id: String = "${role}_${UUID.randomUUID()}",
-        attachments: List<ChatAttachment> = emptyList()
+        attachments: List<ChatAttachmentPreview> = emptyList()
     ): LocalChatSession {
         val sessions = all()
         val current = sessions.firstOrNull { it.key == sessionKey } ?: defaultSession(sessionKey)
@@ -109,7 +109,7 @@ class LocalChatSessionStore(context: Context) {
         val id = value.optString("id").takeIf { it.isNotBlank() } ?: return null
         val role = value.optString("role").takeIf { it.isNotBlank() } ?: return null
         val text = value.optString("text")
-        val attachments = ChatAttachmentJson.fromJsonArray(value.optJSONArray("attachments"))
+        val attachments = ChatAttachmentPreviewJson.fromJsonArray(value.optJSONArray("attachments"))
         if (text.isBlank() && attachments.isEmpty()) return null
         return LocalChatMessage(
             id = id,
@@ -133,7 +133,7 @@ class LocalChatSessionStore(context: Context) {
             .put("role", role)
             .put("text", text)
             .put("timestamp", timestamp)
-            .put("attachments", ChatAttachmentJson.toJsonArray(attachments))
+            .put("attachments", ChatAttachmentPreviewJson.toJsonArray(attachments))
 
     private fun defaultSession(key: String = "local:main"): LocalChatSession =
         LocalChatSession(key = key, label = "Local chat", updatedAt = System.currentTimeMillis(), messages = emptyList())

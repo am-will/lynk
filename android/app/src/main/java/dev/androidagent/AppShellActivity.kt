@@ -435,7 +435,7 @@ class AppShellActivity : ComponentActivity() {
         }.onSuccess { attachment ->
             val intent = Intent(this, AgentForegroundService::class.java)
                 .setAction(AgentForegroundService.ACTION_ADD_CHAT_ATTACHMENT)
-                .putExtra(AgentForegroundService.EXTRA_CHAT_ATTACHMENT_JSON, attachment.toJson().toString())
+                .putExtra(AgentForegroundService.EXTRA_CHAT_ATTACHMENT_JSON, attachment.toStoredJson().toString())
             runCatching { startService(intent) }
             DiagnosticsEventLog.append(DiagnosticsEventLevel.Success, "Attached ${attachment.displayName}")
         }.onFailure { error ->

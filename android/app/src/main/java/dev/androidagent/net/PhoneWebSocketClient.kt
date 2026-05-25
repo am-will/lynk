@@ -12,8 +12,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import dev.androidagent.agentchat.ChatSendDelivery
-import dev.androidagent.chat.ChatAttachment
-import dev.androidagent.chat.ChatAttachmentJson
+import dev.androidagent.chat.ChatAttachmentWireEncoder
+import dev.androidagent.chat.StoredChatAttachment
 import dev.androidagent.voice.RealtimeToolCall
 import org.json.JSONArray
 import org.json.JSONObject
@@ -120,7 +120,7 @@ class PhoneWebSocketClient(
         model: String? = null,
         reasoningEffort: String? = null,
         delivery: ChatSendDelivery = ChatSendDelivery.Normal,
-        attachments: List<ChatAttachment> = emptyList()
+        attachments: List<StoredChatAttachment> = emptyList()
     ): Boolean {
         val message = JSONObject()
             .put("type", "chat.send")
@@ -133,11 +133,7 @@ class PhoneWebSocketClient(
         if (attachments.isNotEmpty()) {
             message.put(
                 "attachments",
-                ChatAttachmentJson.toJsonArray(
-                    attachments,
-                    includeContent = true,
-                    includeLocalPath = false
-                )
+                ChatAttachmentWireEncoder.toJsonArray(attachments)
             )
         }
         return sendJson(message, reportChatError = true)

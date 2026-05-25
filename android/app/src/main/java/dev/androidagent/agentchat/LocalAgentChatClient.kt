@@ -4,8 +4,9 @@ import android.content.Context
 import dev.androidagent.AgentConfig
 import dev.androidagent.AgentModelOptions
 import dev.androidagent.accessibility.AccessibilityCommandExecutor
-import dev.androidagent.chat.ChatAttachment
-import dev.androidagent.chat.ChatAttachmentJson
+import dev.androidagent.chat.ChatAttachmentPolicy
+import dev.androidagent.chat.ChatAttachmentPreviewJson
+import dev.androidagent.chat.StoredChatAttachment
 import dev.androidagent.localmodel.LiteRtLmRuntime
 import dev.androidagent.localmodel.LocalAgentController
 import dev.androidagent.localmodel.LocalChatSession
@@ -21,23 +22,6 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
-
-private const val LOCAL_TEXT_ATTACHMENT_MAX_BYTES = 64 * 1024
-private const val LOCAL_TEXT_ATTACHMENT_MAX_CHARS = 32_000
-private val LOCAL_TEXT_ATTACHMENT_EXTENSIONS = setOf(
-    ".txt",
-    ".md",
-    ".json",
-    ".csv",
-    ".log",
-    ".xml",
-    ".html",
-    ".kt",
-    ".java",
-    ".js",
-    ".ts",
-    ".py"
-)
 
 class LocalAgentChatClient(
     context: Context,
@@ -79,7 +63,7 @@ class LocalAgentChatClient(
         model: String?,
         reasoningEffort: String?,
         delivery: ChatSendDelivery,
-        attachments: List<ChatAttachment>
+        attachments: List<StoredChatAttachment>
     ): Boolean {
         val trimmed = text.trim()
         if (trimmed.isBlank() && attachments.isEmpty()) return false
@@ -93,7 +77,7 @@ class LocalAgentChatClient(
             emit(error(activeSessionKey, "A local turn is already running. Stop it before sending another request."))
             return false
         }
-        val session = store.append(sessionKey ?: activeSessionKey, "user", trimmed, attachments = attachments)
+        val session = store.append(sessionKey ?: activeSessionKey, "user", trimmed, attachments = attachments.map { it.preview() })
         activeSessionKey = session.key
         val runId = "local_run_${UUID.randomUUID()}"
         activeRun = scope.launch {
@@ -131,14 +115,12 @@ class LocalAgentChatClient(
         return true
     }
 
-    private fun prepareLocalAttachments(text: String, attachments: List<ChatAttachment>): PreparedLocalAttachments {
+    private fun prepareLocalAttachments(text: String, attachments: List<StoredChatAttachment>): PreparedLocalAttachments {
         if (attachments.isEmpty()) {
             return PreparedLocalAttachments(promptText = text, imagePaths = emptyList())
         }
         val imageAttachments = attachments.filter { it.isImage }
-        if (imageAttachments.size > 1) {
-            throw IllegalArgumentException("Local LiteRT-LM supports one image attachment at a time.")
-        }
+        ChatAttachmentPolicy.validateSingleLocalImage(attachments)
         val fileSections = attachments
             .filterNot { it.isImage }
             .map { attachment -> localTextFileSection(attachment) }
@@ -157,7 +139,7 @@ class LocalAgentChatClient(
         )
     }
 
-    private fun localTextFileSection(attachment: ChatAttachment): String {
+    private fun localTextFileSection(attachment: StoredChatAttachment): String {
         if (!isSupportedLocalTextAttachment(attachment)) {
             throw IllegalArgumentException("Local mode supports image attachments and small text files only. ${attachment.displayName} is ${attachment.mimeType}.")
         }
@@ -165,18 +147,15 @@ class LocalAgentChatClient(
         if (!file.isFile) {
             throw IllegalArgumentException("Could not read ${attachment.displayName}.")
         }
-        if (file.length() > LOCAL_TEXT_ATTACHMENT_MAX_BYTES) {
+        if (file.length() > ChatAttachmentPolicy.LOCAL_TEXT_ATTACHMENT_MAX_BYTES) {
             throw IllegalArgumentException("${attachment.displayName} is too large for local text attachment input.")
         }
-        val text = file.readText(Charsets.UTF_8).take(LOCAL_TEXT_ATTACHMENT_MAX_CHARS)
+        val text = file.readText(Charsets.UTF_8).take(ChatAttachmentPolicy.LOCAL_TEXT_ATTACHMENT_MAX_CHARS)
         return "Attached file (${attachment.displayName}, ${attachment.mimeType}):\n```\n$text\n```"
     }
 
-    private fun isSupportedLocalTextAttachment(attachment: ChatAttachment): Boolean {
-        if (attachment.mimeType.startsWith("text/")) return true
-        val name = attachment.displayName.lowercase()
-        return LOCAL_TEXT_ATTACHMENT_EXTENSIONS.any { name.endsWith(it) }
-    }
+    private fun isSupportedLocalTextAttachment(attachment: StoredChatAttachment): Boolean =
+        ChatAttachmentPolicy.isSupportedLocalTextAttachment(attachment)
 
     override fun stop(sessionKey: String?, runId: String?, reason: String) {
         val key = sessionKey ?: activeSessionKey
@@ -340,7 +319,7 @@ class LocalAgentChatClient(
                             message.text
                         })
                         .put("timestamp", message.timestamp)
-                        .put("attachments", ChatAttachmentJson.toJsonArray(message.attachments)))
+                        .put("attachments", ChatAttachmentPreviewJson.toJsonArray(message.attachments)))
                 }
             })
 

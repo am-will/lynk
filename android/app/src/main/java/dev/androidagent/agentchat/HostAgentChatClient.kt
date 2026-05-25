@@ -1,6 +1,6 @@
 package dev.androidagent.agentchat
 
-import dev.androidagent.chat.ChatAttachment
+import dev.androidagent.chat.StoredChatAttachment
 import dev.androidagent.net.PhoneWebSocketClient
 import org.json.JSONObject
 
@@ -16,7 +16,7 @@ class HostAgentChatClient(
         model: String?,
         reasoningEffort: String?,
         delivery: ChatSendDelivery,
-        attachments: List<ChatAttachment>
+        attachments: List<StoredChatAttachment>
     ): Boolean =
         webSocketClient.sendChatMessage(text, sessionKey, model, reasoningEffort, delivery, attachments)
 

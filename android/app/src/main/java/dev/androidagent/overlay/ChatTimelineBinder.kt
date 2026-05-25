@@ -13,7 +13,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.view.isNotEmpty
 import dev.androidagent.R
-import dev.androidagent.chat.ChatAttachment
+import dev.androidagent.chat.ChatAttachmentPreview
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatTimelineItem
 import dev.androidagent.chat.ChatTimelineKind
@@ -228,7 +228,7 @@ class ChatTimelineBinder(
     }
 
     private fun attachmentListView(
-        attachments: List<ChatAttachment>,
+        attachments: List<ChatAttachmentPreview>,
         tokens: ThemeTokens,
         isUser: Boolean,
         maxWidth: Int

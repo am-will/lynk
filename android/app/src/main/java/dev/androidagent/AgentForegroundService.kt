@@ -31,7 +31,6 @@ import dev.androidagent.agentchat.ChatSendDelivery
 import dev.androidagent.agentchat.HostAgentChatClient
 import dev.androidagent.agentchat.LocalAgentChatClient
 import dev.androidagent.avatar.AvatarLibrary
-import dev.androidagent.chat.ChatAttachment
 import dev.androidagent.chat.ChatAttachmentKind
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatModelCatalog
@@ -41,6 +40,7 @@ import dev.androidagent.chat.ChatTimelineItem
 import dev.androidagent.chat.ChatTimelineKind
 import dev.androidagent.chat.ChatUnreadReply
 import dev.androidagent.chat.ChatUsageSummary
+import dev.androidagent.chat.StoredChatAttachment
 import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.net.BridgeConnectionPhase
 import dev.androidagent.net.BridgeConnectionState
@@ -705,7 +705,7 @@ class AgentForegroundService : Service() {
         overlayController?.restoreAgentChromeAfterSystemRecents()
     }
 
-    private fun submitChatText(text: String, attachments: List<ChatAttachment> = emptyList()): Boolean {
+    private fun submitChatText(text: String, attachments: List<StoredChatAttachment> = emptyList()): Boolean {
         parseChatDeliveryOverride(text)?.let { override ->
             return submitChatPrompt(override.text, override.delivery, attachments)
         }
@@ -726,7 +726,7 @@ class AgentForegroundService : Service() {
 
     private fun addChatAttachmentFromIntent(intent: Intent) {
         val payload = intent.getStringExtra(EXTRA_CHAT_ATTACHMENT_JSON) ?: return
-        val attachment = runCatching { ChatAttachment.fromJson(JSONObject(payload)) }.getOrNull()
+        val attachment = runCatching { StoredChatAttachment.fromStoredJson(JSONObject(payload)) }.getOrNull()
         if (attachment == null) {
             overlayController?.setStatus("Could not read selected attachment")
             return
@@ -737,7 +737,7 @@ class AgentForegroundService : Service() {
     private fun submitChatPrompt(
         text: String,
         delivery: ChatSendDelivery,
-        attachments: List<ChatAttachment> = emptyList()
+        attachments: List<StoredChatAttachment> = emptyList()
     ): Boolean {
         markChatSessionRead(chatState.sessionKey, force = true)
         chatState = ChatStateReducer.localUserMessage(chatState, text, attachments)

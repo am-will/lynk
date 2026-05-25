@@ -3,7 +3,6 @@ package dev.androidagent.chat
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
-import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -20,7 +19,7 @@ enum class ChatAttachmentKind(val wireValue: String) {
     }
 }
 
-data class ChatAttachment(
+data class StoredChatAttachment(
     val id: String,
     val kind: ChatAttachmentKind,
     val displayName: String,
@@ -31,30 +30,32 @@ data class ChatAttachment(
     val isImage: Boolean
         get() = kind == ChatAttachmentKind.IMAGE || mimeType.startsWith("image/")
 
-    fun toJson(includeContent: Boolean = false, includeLocalPath: Boolean = true): JSONObject {
-        val json = JSONObject()
+    fun preview(): ChatAttachmentPreview =
+        ChatAttachmentPreview(
+            id = id,
+            kind = kind,
+            displayName = displayName,
+            mimeType = mimeType,
+            sizeBytes = sizeBytes
+        )
+
+    fun toStoredJson(): JSONObject =
+        JSONObject()
             .put("id", id)
             .put("kind", kind.wireValue)
             .put("displayName", displayName)
             .put("mimeType", mimeType)
             .put("sizeBytes", sizeBytes)
-        if (includeLocalPath) {
-            json.put("localPath", localPath)
-        }
-        if (includeContent) {
-            json.put("contentBase64", Base64.encodeToString(File(localPath).readBytes(), Base64.NO_WRAP))
-        }
-        return json
-    }
+            .put("localPath", localPath)
 
     companion object {
-        fun fromJson(value: JSONObject?): ChatAttachment? {
+        fun fromStoredJson(value: JSONObject?): StoredChatAttachment? {
             value ?: return null
             val id = value.optString("id").takeIf { it.isNotBlank() } ?: return null
             val displayName = value.optString("displayName").takeIf { it.isNotBlank() } ?: "Attachment"
             val mimeType = value.optString("mimeType").takeIf { it.isNotBlank() } ?: "application/octet-stream"
-            val localPath = value.optString("localPath").takeIf { it.isNotBlank() } ?: ""
-            return ChatAttachment(
+            val localPath = value.optString("localPath").takeIf { it.isNotBlank() } ?: return null
+            return StoredChatAttachment(
                 id = id,
                 kind = ChatAttachmentKind.fromWireValue(value.optString("kind")),
                 displayName = displayName,
@@ -66,24 +67,55 @@ data class ChatAttachment(
     }
 }
 
-object ChatAttachmentJson {
-    fun toJsonArray(
-        attachments: List<ChatAttachment>,
-        includeContent: Boolean = false,
-        includeLocalPath: Boolean = true
-    ): JSONArray {
+data class ChatAttachmentPreview(
+    val id: String,
+    val kind: ChatAttachmentKind,
+    val displayName: String,
+    val mimeType: String,
+    val sizeBytes: Long
+) {
+    val isImage: Boolean
+        get() = kind == ChatAttachmentKind.IMAGE || mimeType.startsWith("image/")
+
+    fun toJson(): JSONObject =
+        JSONObject()
+            .put("id", id)
+            .put("kind", kind.wireValue)
+            .put("displayName", displayName)
+            .put("mimeType", mimeType)
+            .put("sizeBytes", sizeBytes)
+
+    companion object {
+        fun fromJson(value: JSONObject?): ChatAttachmentPreview? {
+            value ?: return null
+            val id = value.optString("id").takeIf { it.isNotBlank() } ?: return null
+            val displayName = value.optString("displayName").takeIf { it.isNotBlank() } ?: "Attachment"
+            val mimeType = value.optString("mimeType").takeIf { it.isNotBlank() } ?: "application/octet-stream"
+            return ChatAttachmentPreview(
+                id = id,
+                kind = ChatAttachmentKind.fromWireValue(value.optString("kind")),
+                displayName = displayName,
+                mimeType = mimeType,
+                sizeBytes = value.optLong("sizeBytes", 0L)
+            )
+        }
+    }
+}
+
+object ChatAttachmentPreviewJson {
+    fun toJsonArray(attachments: List<ChatAttachmentPreview>): JSONArray {
         return JSONArray().also { array ->
             attachments.forEach { attachment ->
-                array.put(attachment.toJson(includeContent = includeContent, includeLocalPath = includeLocalPath))
+                array.put(attachment.toJson())
             }
         }
     }
 
-    fun fromJsonArray(array: JSONArray?): List<ChatAttachment> {
+    fun fromJsonArray(array: JSONArray?): List<ChatAttachmentPreview> {
         if (array == null) return emptyList()
         return buildList {
             for (index in 0 until array.length()) {
-                ChatAttachment.fromJson(array.optJSONObject(index))?.let { add(it) }
+                ChatAttachmentPreview.fromJson(array.optJSONObject(index))?.let { add(it) }
             }
         }
     }
@@ -93,7 +125,7 @@ class ChatAttachmentStore(private val context: Context) {
     private val directory: File
         get() = File(context.filesDir, "chat-attachments")
 
-    fun importUri(uri: Uri, requestedKind: ChatAttachmentKind): ChatAttachment {
+    fun importUri(uri: Uri, requestedKind: ChatAttachmentKind): StoredChatAttachment {
         val resolver = context.contentResolver
         val metadata = queryMetadata(uri)
         val mimeType = resolver.getType(uri)
@@ -107,7 +139,7 @@ class ChatAttachmentStore(private val context: Context) {
             outputFile.outputStream().use { output -> input.copyTo(output) }
         } ?: throw IllegalArgumentException("Could not open selected file")
         val sizeBytes = metadata.sizeBytes?.takeIf { it >= 0L } ?: outputFile.length()
-        return ChatAttachment(
+        return StoredChatAttachment(
             id = id,
             kind = if (mimeType.startsWith("image/")) ChatAttachmentKind.IMAGE else requestedKind,
             displayName = displayName,
