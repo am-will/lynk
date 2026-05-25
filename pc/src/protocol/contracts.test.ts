@@ -5,6 +5,7 @@ import test from "node:test";
 
 import {
   AGENT_MODEL_IDS,
+  CHAT_ATTACHMENT_MAX_BYTES,
   CHAT_SEND_DELIVERIES,
   MCP_PHONE_TOOL_NAME_BY_COMMAND,
   PHONE_COMMANDS,
@@ -112,6 +113,27 @@ test("chat send accepts inline file attachments", () => {
     text: "",
     attachments: [attachment]
   }).success, true);
+});
+
+test("chat attachments enforce base64 and size limits", () => {
+  const oversizedAttachment = {
+    id: "att_large",
+    kind: "file",
+    displayName: "large.bin",
+    mimeType: "application/octet-stream",
+    sizeBytes: CHAT_ATTACHMENT_MAX_BYTES + 1
+  };
+  const invalidContentAttachment = {
+    id: "att_invalid",
+    kind: "file",
+    displayName: "data.bin",
+    mimeType: "application/octet-stream",
+    sizeBytes: 12,
+    contentBase64: "not valid base64?"
+  };
+
+  assert.equal(chatAttachmentSchema.safeParse(oversizedAttachment).success, false);
+  assert.equal(chatAttachmentSchema.safeParse(invalidContentAttachment).success, false);
 });
 
 test("realtime start accepts selected chat backend model IDs", () => {
