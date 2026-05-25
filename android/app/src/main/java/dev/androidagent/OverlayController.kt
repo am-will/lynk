@@ -40,6 +40,8 @@ import android.widget.LinearLayout
 import android.widget.Space
 import android.widget.TextView
 import android.widget.FrameLayout
+import dev.androidagent.chat.ChatAttachment
+import dev.androidagent.chat.ChatAttachmentKind
 import dev.androidagent.chat.ChatCommandOption
 import dev.androidagent.chat.ChatModelCatalog
 import dev.androidagent.chat.ChatModelSource
@@ -95,7 +97,7 @@ internal fun shouldMinimizeHostAppAfterVoiceStart(presentation: PanelPresentatio
 
 class OverlayController(
     private val context: Context,
-    private val onSubmit: (String) -> Boolean,
+    private val onSubmit: (String, List<ChatAttachment>) -> Boolean,
     private val onStop: () -> Unit,
     private val onDismiss: () -> Unit,
     private val onStartVoice: () -> Boolean,
@@ -113,6 +115,7 @@ class OverlayController(
     private val onSetChatModel: (String) -> Unit = {},
     private val onSetChatHarness: (String) -> Unit = {},
     private val onSetChatReasoning: (String) -> Unit = {},
+    private val onPickChatAttachment: (ChatAttachmentKind) -> Unit = {},
     private val onChatControlCommand: (String, JSONObject) -> Unit = { _, _ -> },
     private val onToggleChatTool: (String) -> Unit = {},
     private val onChatSessionViewed: (String) -> Unit = {},
@@ -180,6 +183,7 @@ class OverlayController(
     private var showToolCalls = false
     private var suppressComposerAutocomplete = false
     private var composerContainer: LinearLayout? = null
+    private var attachmentChipContainer: LinearLayout? = null
     private var keyboardSpacerView: View? = null
     private var sendStopButton: ImageButton? = null
     private var modelButton: TextView? = null
@@ -188,6 +192,7 @@ class OverlayController(
     private var composerInput: EditText? = null
     private var transcriptionMicButton: ImageButton? = null
     private var lastTranscriptionState = VoiceTranscriptionState()
+    private val pendingChatAttachments = mutableListOf<ChatAttachment>()
     private var automationSuppressionDepth = 0
     private var restoreBubbleAfterAutomation = false
     private var restoreBubbleAfterFullscreen = false
@@ -464,6 +469,16 @@ class OverlayController(
             input.setText(next)
             input.setSelection(next.length)
             setStatus("Transcript added to composer for review.")
+        }
+    }
+
+    fun addChatAttachment(attachment: ChatAttachment) {
+        mainHandler.post {
+            pendingChatAttachments.removeAll { it.id == attachment.id }
+            pendingChatAttachments.add(attachment)
+            renderPendingAttachmentChips(tokens())
+            renderComposerActionButtons(tokens(), lastChatState, lastTranscriptionState)
+            setStatus("Attached ${attachment.displayName}")
         }
     }
 
@@ -920,7 +935,18 @@ class OverlayController(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ))
+            val chips = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                visibility = View.GONE
+            }
+            attachmentChipContainer = chips
+            addView(chips, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ))
         }
+        renderPendingAttachmentChips(tokens)
 
         val controlSize = dp(DesignTokens.Sizes.compact)
         val sendSize = dp(DesignTokens.Sizes.compactAction)
@@ -1010,12 +1036,14 @@ class OverlayController(
             accent = true
         ) {
             val text = input.text.toString().trim()
+            val attachments = pendingChatAttachments.toList()
             if (lastTranscriptionState.isRecording) {
                 onStopTranscription()
                 setStatus("Transcribing audio...")
-            } else if (text.isNotEmpty()) {
-                if (onSubmit(text)) {
+            } else if (text.isNotEmpty() || attachments.isNotEmpty()) {
+                if (onSubmit(text, attachments)) {
                     input.setText("")
+                    clearPendingChatAttachments()
                     setStatus(brandPresentationFor(lastChatState).copy.sentStatus)
                 }
             } else if (lastChatState.isRunning) {
@@ -1071,6 +1099,65 @@ class OverlayController(
             setPadding(dp(pad), dp(pad), dp(pad), dp(pad))
             setOnClickListener { onClick() }
         }
+    }
+
+    private fun renderPendingAttachmentChips(tokens: ThemeTokens) {
+        val container = attachmentChipContainer ?: return
+        container.removeAllViews()
+        container.visibility = if (pendingChatAttachments.isEmpty()) View.GONE else View.VISIBLE
+        if (pendingChatAttachments.isEmpty()) {
+            return
+        }
+        container.setPadding(
+            dp(DesignTokens.Spacing.sm),
+            0,
+            dp(DesignTokens.Spacing.sm),
+            dp(DesignTokens.Spacing.xs)
+        )
+        pendingChatAttachments.forEach { attachment ->
+            container.addView(TextView(context).apply {
+                text = "${attachmentChipPrefix(attachment)} ${attachment.displayName}  x"
+                textSize = DesignTokens.Text.caption
+                maxWidth = dp(190)
+                setSingleLine(true)
+                ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+                includeFontPadding = false
+                gravity = Gravity.CENTER_VERTICAL
+                setTextColor(tokens.primaryText)
+                background = Drawables.pillSurface(context, tokens)
+                backgroundTintList = null
+                setPadding(
+                    dp(DesignTokens.Spacing.sm),
+                    dp(DesignTokens.Spacing.xs),
+                    dp(DesignTokens.Spacing.sm),
+                    dp(DesignTokens.Spacing.xs)
+                )
+                exposeToAccessibility(
+                    description = "Remove attachment ${attachment.displayName}",
+                    focusable = true
+                )
+                setOnClickListener {
+                    pendingChatAttachments.removeAll { it.id == attachment.id }
+                    renderPendingAttachmentChips(tokens())
+                    renderComposerActionButtons(tokens(), lastChatState, lastTranscriptionState)
+                }
+            }, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                rightMargin = dp(DesignTokens.Spacing.xs)
+            })
+        }
+    }
+
+    private fun clearPendingChatAttachments() {
+        pendingChatAttachments.clear()
+        renderPendingAttachmentChips(tokens())
+        renderComposerActionButtons(tokens(), lastChatState, lastTranscriptionState)
+    }
+
+    private fun attachmentChipPrefix(attachment: ChatAttachment): String {
+        return if (attachment.isImage) "Image" else "File"
     }
 
     private fun compactPill(tokens: ThemeTokens, label: String, iconRes: Int): TextView {
@@ -1497,6 +1584,39 @@ class OverlayController(
         )
     }
 
+    private fun showUploadFileChoices(anchorOverride: View? = null, replace: Boolean = false) {
+        val anchor = anchorOverride ?: headerSessionAnchor ?: panelContent ?: panelHost ?: return
+        val rows = listOf(
+            AnchoredPicker.Row(
+                id = "upload:image",
+                label = "Image",
+                sublabel = "Choose any image file",
+                iconRes = R.drawable.ic_file,
+                onSelect = {
+                    onPickChatAttachment(ChatAttachmentKind.IMAGE)
+                    setStatus("Choose an image to attach")
+                }
+            ),
+            AnchoredPicker.Row(
+                id = "upload:file",
+                label = "File",
+                sublabel = "Choose any file",
+                iconRes = R.drawable.ic_file,
+                onSelect = {
+                    onPickChatAttachment(ChatAttachmentKind.FILE)
+                    setStatus("Choose a file to attach")
+                }
+            )
+        )
+        showAnchoredPicker(
+            anchor = anchor,
+            title = "Upload File",
+            sections = listOf(AnchoredPicker.Section(null, rows)),
+            toggleSameAnchor = !replace,
+            replaceShowing = replace
+        )
+    }
+
     private fun cycleReasoningChoice() {
         val options = lastChatState.reasoningOptions.ifEmpty { ChatState.defaultReasoningOptions }
         val current = lastChatState.reasoningEffort
@@ -1648,6 +1768,14 @@ class OverlayController(
             iconRes = R.drawable.ic_reasoning,
             dismissOnSelect = false,
             onSelect = { showReasoningChoices(anchorOverride = menuAnchor, replace = true) }
+        ))
+        sessionRows.add(AnchoredPicker.Row(
+            id = "picker:upload-file",
+            label = "Upload File",
+            sublabel = "Image or file",
+            iconRes = R.drawable.ic_file,
+            dismissOnSelect = false,
+            onSelect = { showUploadFileChoices(anchorOverride = menuAnchor, replace = true) }
         ))
 
         val commandSkillRows = commandSkillMenuRows(
@@ -2560,6 +2688,7 @@ class OverlayController(
         voicePanel.clear()
         chatTimelineBinder.clear()
         composerContainer = null
+        attachmentChipContainer = null
         keyboardSpacerView = null
         sendStopButton = null
         modelButton = null
@@ -2627,11 +2756,12 @@ class OverlayController(
 
         sendStopButton?.apply {
             val hasComposerText = composerInput?.text?.toString()?.trim()?.isNotEmpty() == true
-            val shouldShowStop = transcriptionState.isRecording || (chatState.isRunning && !hasComposerText)
+            val hasComposerContent = hasComposerText || pendingChatAttachments.isNotEmpty()
+            val shouldShowStop = transcriptionState.isRecording || (chatState.isRunning && !hasComposerContent)
             setImageResource(if (shouldShowStop) R.drawable.ic_stop else R.drawable.ic_send)
             updateAccessibilityState(description = when {
                 transcriptionState.isRecording -> "Stop recording and transcribe"
-                chatState.isRunning && hasComposerText -> "Send ${activeSendModeLabel().lowercase()} message"
+                chatState.isRunning && hasComposerContent -> "Send ${activeSendModeLabel().lowercase()} message"
                 chatState.isRunning -> brandPresentationFor(chatState).copy.stopTurnDescription
                 else -> "Send message"
             })

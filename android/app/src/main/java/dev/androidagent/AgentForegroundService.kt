@@ -31,6 +31,8 @@ import dev.androidagent.agentchat.ChatSendDelivery
 import dev.androidagent.agentchat.HostAgentChatClient
 import dev.androidagent.agentchat.LocalAgentChatClient
 import dev.androidagent.avatar.AvatarLibrary
+import dev.androidagent.chat.ChatAttachment
+import dev.androidagent.chat.ChatAttachmentKind
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatModelCatalog
 import dev.androidagent.chat.ChatModelSource
@@ -114,7 +116,7 @@ class AgentForegroundService : Service() {
         voiceTranscriptionManager = VoiceTranscriptionManager(onStateChanged = ::handleTranscriptionState)
         overlayController = OverlayController(
             context = this,
-            onSubmit = { text -> submitChatText(text) },
+            onSubmit = { text, attachments -> submitChatText(text, attachments) },
             onStop = { requestStopTurn("Stopped from Android overlay") },
             onDismiss = { stopSelf() },
             onStartVoice = { tryStartVoiceSession() },
@@ -150,6 +152,7 @@ class AgentForegroundService : Service() {
                     connectAgentClient(model).setReasoning(sessionKeyForRoute(route), reasoning)
                 }
             },
+            onPickChatAttachment = { kind -> requestChatAttachmentPicker(kind) },
             onChatControlCommand = { command, args -> submitChatControlCommand(command, args) },
             onToggleChatTool = { eventId ->
                 chatState = ChatStateReducer.toggleTool(chatState, eventId)
@@ -233,6 +236,10 @@ class AgentForegroundService : Service() {
                     activeShellChatContainerToken = 0
                     refreshPetVisibility()
                 }
+                return START_STICKY
+            }
+            ACTION_ADD_CHAT_ATTACHMENT -> {
+                addChatAttachmentFromIntent(intent)
                 return START_STICKY
             }
         }
@@ -657,7 +664,14 @@ class AgentForegroundService : Service() {
         overlayController?.restoreAgentChromeAfterSystemRecents()
     }
 
-    private fun submitChatText(text: String): Boolean {
+    private fun submitChatText(text: String, attachments: List<ChatAttachment> = emptyList()): Boolean {
+        if (attachments.isNotEmpty()) {
+            val message = "Attachment transport is not ready yet."
+            overlayController?.setStatus(message)
+            chatState = ChatStateReducer.localSystemMessage(chatState, message)
+            overlayController?.setChatState(chatState)
+            return false
+        }
         parseChatDeliveryOverride(text)?.let { override ->
             return submitChatPrompt(override.text, override.delivery)
         }
@@ -666,6 +680,24 @@ class AgentForegroundService : Service() {
         }
         val delivery = activeTurnDelivery(AgentConfigStore.load(this))
         return submitChatPrompt(text, delivery)
+    }
+
+    private fun requestChatAttachmentPicker(kind: ChatAttachmentKind) {
+        runCatching {
+            startActivity(AppShellActivity.openChatAttachmentPickerIntent(this, kind))
+        }.onFailure { error ->
+            overlayController?.setStatus(error.message ?: "Could not open file picker")
+        }
+    }
+
+    private fun addChatAttachmentFromIntent(intent: Intent) {
+        val payload = intent.getStringExtra(EXTRA_CHAT_ATTACHMENT_JSON) ?: return
+        val attachment = runCatching { ChatAttachment.fromJson(JSONObject(payload)) }.getOrNull()
+        if (attachment == null) {
+            overlayController?.setStatus("Could not read selected attachment")
+            return
+        }
+        overlayController?.addChatAttachment(attachment)
     }
 
     private fun submitChatPrompt(text: String, delivery: ChatSendDelivery): Boolean {
@@ -1403,8 +1435,10 @@ class AgentForegroundService : Service() {
         const val ACTION_REFRESH_PET_VISIBILITY = "dev.openclawagent.action.REFRESH_PET_VISIBILITY"
         const val ACTION_ATTACH_SHELL_CHAT = "dev.openclawagent.action.ATTACH_SHELL_CHAT"
         const val ACTION_DETACH_SHELL_CHAT = "dev.openclawagent.action.DETACH_SHELL_CHAT"
+        const val ACTION_ADD_CHAT_ATTACHMENT = "dev.openclawagent.action.ADD_CHAT_ATTACHMENT"
         const val EXTRA_SHELL_CHAT_ACTIVITY_ID = "shellChatActivityId"
         const val EXTRA_SHELL_CHAT_TOKEN = "shellChatToken"
+        const val EXTRA_CHAT_ATTACHMENT_JSON = "chatAttachmentJson"
         const val EXTRA_BUBBLE_SIZE_DP = "dev.openclawagent.extra.BUBBLE_SIZE_DP"
         const val EXTRA_PANEL_PRESENTATION = "panelPresentation"
         const val PANEL_PRESENTATION_POPUP = "popup"

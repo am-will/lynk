@@ -30,6 +30,8 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import dev.androidagent.chat.ChatAttachmentKind
+import dev.androidagent.chat.ChatAttachmentStore
 import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.settings.DiagnosticsEventLog
 import dev.androidagent.settings.DiagnosticsEventLevel
@@ -87,6 +89,14 @@ class AppShellActivity : ComponentActivity() {
         }.onFailure { error ->
             DiagnosticsEventLog.append(DiagnosticsEventLevel.Error, error.message ?: "Import failed")
         }
+    }
+
+    private val chatImagePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        handleChatAttachmentPicked(uri, ChatAttachmentKind.IMAGE)
+    }
+
+    private val chatFilePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        handleChatAttachmentPicked(uri, ChatAttachmentKind.FILE)
     }
 
     private val serviceStateReceiver = object : BroadcastReceiver() {
@@ -400,6 +410,37 @@ class AppShellActivity : ComponentActivity() {
         if (intent?.getBooleanExtra(EXTRA_REQUEST_MIC_PERMISSION, false) == true) {
             requestMicPermissionInternal()
         }
+        val attachmentKind = ChatAttachmentKind.fromWireValue(intent?.getStringExtra(EXTRA_REQUEST_CHAT_ATTACHMENT_KIND))
+        if (intent?.hasExtra(EXTRA_REQUEST_CHAT_ATTACHMENT_KIND) == true) {
+            intent.removeExtra(EXTRA_REQUEST_CHAT_ATTACHMENT_KIND)
+            selectTab(ShellTab.Chat)
+            launchChatAttachmentPicker(attachmentKind)
+        }
+    }
+
+    private fun launchChatAttachmentPicker(kind: ChatAttachmentKind) {
+        when (kind) {
+            ChatAttachmentKind.IMAGE -> chatImagePicker.launch(arrayOf("image/*"))
+            ChatAttachmentKind.FILE -> chatFilePicker.launch(arrayOf("*/*"))
+        }
+    }
+
+    private fun handleChatAttachmentPicked(uri: Uri?, kind: ChatAttachmentKind) {
+        if (uri == null) {
+            DiagnosticsEventLog.append(DiagnosticsEventLevel.Info, "Attachment picker cancelled")
+            return
+        }
+        runCatching {
+            ChatAttachmentStore(this).importUri(uri, kind)
+        }.onSuccess { attachment ->
+            val intent = Intent(this, AgentForegroundService::class.java)
+                .setAction(AgentForegroundService.ACTION_ADD_CHAT_ATTACHMENT)
+                .putExtra(AgentForegroundService.EXTRA_CHAT_ATTACHMENT_JSON, attachment.toJson().toString())
+            runCatching { startService(intent) }
+            DiagnosticsEventLog.append(DiagnosticsEventLevel.Success, "Attached ${attachment.displayName}")
+        }.onFailure { error ->
+            DiagnosticsEventLog.append(DiagnosticsEventLevel.Error, error.message ?: "Could not attach file")
+        }
     }
 
     private fun attachShellChat() {
@@ -553,6 +594,7 @@ class AppShellActivity : ComponentActivity() {
         const val EXTRA_INITIAL_TAB = "initialTab"
         const val EXTRA_OPEN_CHAT = "openChat"
         const val EXTRA_REQUEST_MIC_PERMISSION = "requestMicPermission"
+        const val EXTRA_REQUEST_CHAT_ATTACHMENT_KIND = "requestChatAttachmentKind"
         const val ACTION_MINIMIZE_APP = "dev.openclawagent.action.MINIMIZE_APP"
         private const val REQUEST_MIC_PERMISSION = 20
         private const val REQUEST_LOCATION_PERMISSION = 21
@@ -562,6 +604,13 @@ class AppShellActivity : ComponentActivity() {
             return Intent(context, AppShellActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 .putExtra(EXTRA_SHOW_SETTINGS, true)
+        }
+
+        fun openChatAttachmentPickerIntent(context: Context, kind: ChatAttachmentKind): Intent {
+            return Intent(context, AppShellActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra(EXTRA_OPEN_CHAT, true)
+                .putExtra(EXTRA_REQUEST_CHAT_ATTACHMENT_KIND, kind.wireValue)
         }
     }
 }
