@@ -4,10 +4,10 @@ import android.content.Context
 import dev.androidagent.AgentConfig
 import dev.androidagent.AgentModelOptions
 import dev.androidagent.accessibility.AccessibilityCommandExecutor
-import dev.androidagent.chat.ChatAttachmentPolicy
 import dev.androidagent.chat.ChatAttachmentPreviewJson
 import dev.androidagent.chat.StoredChatAttachment
 import dev.androidagent.localmodel.LiteRtLmRuntime
+import dev.androidagent.localmodel.LocalAttachmentInputPreparer
 import dev.androidagent.localmodel.LocalAgentController
 import dev.androidagent.localmodel.LocalChatSession
 import dev.androidagent.localmodel.LocalChatSessionStore
@@ -20,7 +20,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
 import java.util.UUID
 
 class LocalAgentChatClient(
@@ -46,11 +45,6 @@ class LocalAgentChatClient(
         val contextTokens: Long
     )
 
-    private data class PreparedLocalAttachments(
-        val promptText: String,
-        val imagePaths: List<String>
-    )
-
     override fun open(sessionKey: String?): Boolean {
         activeSessionKey = store.session(sessionKey).key
         refresh(activeSessionKey, "Local phone model ready")
@@ -68,7 +62,7 @@ class LocalAgentChatClient(
         val trimmed = text.trim()
         if (trimmed.isBlank() && attachments.isEmpty()) return false
         val preparedAttachments = try {
-            prepareLocalAttachments(trimmed, attachments)
+            LocalAttachmentInputPreparer.prepare(trimmed, attachments)
         } catch (error: IllegalArgumentException) {
             emit(error(activeSessionKey, error.message ?: "Local attachments are not supported."))
             return false
@@ -114,48 +108,6 @@ class LocalAgentChatClient(
         }
         return true
     }
-
-    private fun prepareLocalAttachments(text: String, attachments: List<StoredChatAttachment>): PreparedLocalAttachments {
-        if (attachments.isEmpty()) {
-            return PreparedLocalAttachments(promptText = text, imagePaths = emptyList())
-        }
-        val imageAttachments = attachments.filter { it.isImage }
-        ChatAttachmentPolicy.validateSingleLocalImage(attachments)
-        val fileSections = attachments
-            .filterNot { it.isImage }
-            .map { attachment -> localTextFileSection(attachment) }
-        val prompt = buildString {
-            append(text.ifBlank {
-                if (imageAttachments.isNotEmpty()) "Describe the attached image." else "Review the attached file."
-            })
-            fileSections.forEach { section ->
-                append("\n\n")
-                append(section)
-            }
-        }
-        return PreparedLocalAttachments(
-            promptText = prompt,
-            imagePaths = imageAttachments.map { it.localPath }
-        )
-    }
-
-    private fun localTextFileSection(attachment: StoredChatAttachment): String {
-        if (!isSupportedLocalTextAttachment(attachment)) {
-            throw IllegalArgumentException("Local mode supports image attachments and small text files only. ${attachment.displayName} is ${attachment.mimeType}.")
-        }
-        val file = File(attachment.localPath)
-        if (!file.isFile) {
-            throw IllegalArgumentException("Could not read ${attachment.displayName}.")
-        }
-        if (file.length() > ChatAttachmentPolicy.LOCAL_TEXT_ATTACHMENT_MAX_BYTES) {
-            throw IllegalArgumentException("${attachment.displayName} is too large for local text attachment input.")
-        }
-        val text = file.readText(Charsets.UTF_8).take(ChatAttachmentPolicy.LOCAL_TEXT_ATTACHMENT_MAX_CHARS)
-        return "Attached file (${attachment.displayName}, ${attachment.mimeType}):\n```\n$text\n```"
-    }
-
-    private fun isSupportedLocalTextAttachment(attachment: StoredChatAttachment): Boolean =
-        ChatAttachmentPolicy.isSupportedLocalTextAttachment(attachment)
 
     override fun stop(sessionKey: String?, runId: String?, reason: String) {
         val key = sessionKey ?: activeSessionKey
