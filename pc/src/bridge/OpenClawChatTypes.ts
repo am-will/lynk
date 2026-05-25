@@ -1,4 +1,4 @@
-import type { ChatModelOption, ChatSendMessage, ChatSessionSummary, ChatTaskKind } from "../protocol/messages.js";
+import type { ChatAttachment, ChatModelOption, ChatSendMessage, ChatSessionSummary, ChatTaskKind } from "../protocol/messages.js";
 import type { HarnessId } from "./AgentHarness.js";
 import type { BridgeConfig } from "./config.js";
 import type { GatewayChatSendResult, GatewayEventHandler } from "./chat/ChatTransportTypes.js";
@@ -40,6 +40,7 @@ export interface GatewayChatClient {
     sessionKey: string;
     sessionId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult>;
@@ -48,6 +49,7 @@ export interface GatewayChatClient {
     sessionId?: string;
     runId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult>;

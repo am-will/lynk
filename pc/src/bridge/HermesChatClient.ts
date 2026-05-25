@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { HermesApiClient } from "../dispatcher/HermesApiClient.js";
 import { HermesRunDriver, type HermesActiveRun, type HermesRunDriverEvent } from "../dispatcher/HermesRunDriver.js";
-import type { ChatHistoryMessage, ChatSessionSummary } from "../protocol/messages.js";
+import type { ChatAttachment, ChatHistoryMessage, ChatSessionSummary } from "../protocol/messages.js";
 import type { BridgeConfig } from "./config.js";
 import { discoverHermesModels } from "./HermesModelDiscovery.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "./harness/InMemoryHarnessSessionStore.js";
@@ -122,6 +122,7 @@ export class HermesChatClient {
     sessionKey: string;
     sessionId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {

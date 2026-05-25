@@ -163,7 +163,7 @@ Android opens or refreshes the selected Gateway session after registration:
 }
 ```
 
-Android sends user text, optional model, and optional reasoning selection:
+Android sends user text, optional model, optional reasoning selection, and optional attachments. A `chat.send` should include either non-empty `text` or at least one attachment:
 
 ```json
 {
@@ -173,11 +173,21 @@ Android sends user text, optional model, and optional reasoning selection:
   "text": "Summarize my current project status",
   "model": "hermes:gpt-5.5",
   "reasoningEffort": "high",
-  "delivery": "normal"
+  "delivery": "normal",
+  "attachments": [
+    {
+      "id": "att_123",
+      "kind": "image",
+      "displayName": "screenshot.png",
+      "mimeType": "image/png",
+      "sizeBytes": 153244,
+      "contentBase64": "..."
+    }
+  ]
 }
 ```
 
-`delivery` is optional and defaults to `"normal"`. Android uses `"queue"` or `"steer"` when the user sends text while a turn is already active:
+Attachment `kind` is `"image"` or `"file"`. Android sends selected files inline as base64 in `contentBase64`; host harnesses may reject attachments they cannot handle. `delivery` is optional and defaults to `"normal"`. Android uses `"queue"` or `"steer"` when the user sends text while a turn is already active:
 
 - `"queue"` keeps the message FIFO and starts it as the next turn after the active run settles.
 - `"steer"` sends the message into the active run at the next supported harness boundary. OpenClaw uses its explicit `/steer` path, Hermes uses active session steering, and Codex app-server uses `turn/steer` with the active turn id.

@@ -1,4 +1,5 @@
 import type {
+  ChatAttachment,
   ChatCommandOption,
   ChatHistoryMessage,
   ChatModelOption,
@@ -47,6 +48,7 @@ export interface HarnessChatAdapter {
     sessionKey: string;
     sessionId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult>;
@@ -55,6 +57,7 @@ export interface HarnessChatAdapter {
     sessionId?: string;
     runId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult>;
@@ -77,6 +80,7 @@ interface RawHarnessClient {
     sessionKey: string;
     sessionId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult>;
@@ -85,6 +89,7 @@ interface RawHarnessClient {
     sessionId?: string;
     runId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult>;
@@ -124,6 +129,7 @@ export class NormalizedHarnessAdapter implements HarnessChatAdapter {
     sessionKey: string;
     sessionId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
@@ -135,6 +141,7 @@ export class NormalizedHarnessAdapter implements HarnessChatAdapter {
     sessionId?: string;
     runId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {

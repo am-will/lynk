@@ -80,6 +80,7 @@ export const AGENT_MODEL_IDS = ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-c
 export const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh"] as const;
 export const CHAT_SEND_DELIVERIES = ["normal", "queue", "steer"] as const;
 export const CHAT_TASK_KINDS = ["general", "phone"] as const;
+export const CHAT_ATTACHMENT_KINDS = ["image", "file"] as const;
 export type ChatTaskKind = typeof CHAT_TASK_KINDS[number];
 
 export const registerMessageSchema = z.object({
@@ -176,16 +177,26 @@ export const chatOpenMessageSchema = z.object({
   sessionKey: z.string().min(1).optional()
 });
 
+export const chatAttachmentSchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum(CHAT_ATTACHMENT_KINDS),
+  displayName: z.string().min(1),
+  mimeType: z.string().min(1),
+  sizeBytes: z.number().int().nonnegative(),
+  contentBase64: z.string().min(1).optional()
+});
+
 export const chatSendMessageSchema = z.object({
   type: z.literal("chat.send"),
   deviceId: z.string().min(1),
-  text: z.string().min(1),
+  text: z.string().default(""),
   sessionKey: z.string().min(1).optional(),
   sessionId: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   reasoningEffort: z.string().min(1).optional(),
   idempotencyKey: z.string().min(1).optional(),
-  delivery: z.enum(CHAT_SEND_DELIVERIES).optional()
+  delivery: z.enum(CHAT_SEND_DELIVERIES).optional(),
+  attachments: z.array(chatAttachmentSchema).optional()
 });
 
 export const chatStopMessageSchema = z.object({
@@ -262,6 +273,7 @@ export type RealtimeToolCallMessage = z.infer<typeof realtimeToolCallMessageSche
 export type AgentStatusMessage = z.infer<typeof agentStatusMessageSchema>;
 export type AgentControlMessage = z.infer<typeof agentControlMessageSchema>;
 export type ChatOpenMessage = z.infer<typeof chatOpenMessageSchema>;
+export type ChatAttachment = z.infer<typeof chatAttachmentSchema>;
 export type ChatSendMessage = z.infer<typeof chatSendMessageSchema>;
 export type ChatStopMessage = z.infer<typeof chatStopMessageSchema>;
 export type ChatSelectSessionMessage = z.infer<typeof chatSelectSessionMessageSchema>;
@@ -373,6 +385,7 @@ export interface ChatHistoryMessage {
   id?: string | null;
   role: string;
   text: string;
+  attachments?: ChatAttachment[];
   timestamp?: number | null;
 }
 
@@ -661,6 +674,7 @@ export const chatHistoryMessageSchema = z.object({
   id: z.string().optional().nullable(),
   role: z.string().min(1),
   text: z.string(),
+  attachments: z.array(chatAttachmentSchema).optional(),
   timestamp: z.number().optional().nullable()
 });
 

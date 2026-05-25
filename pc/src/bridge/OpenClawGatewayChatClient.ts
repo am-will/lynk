@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
+import type { ChatAttachment } from "../protocol/messages.js";
 import type { BridgeConfig } from "./config.js";
 import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "./chat/ChatTransportTypes.js";
 import { asRecord, stringField } from "./chat/ChatNormalizers.js";
@@ -52,6 +53,7 @@ export class OpenClawGatewayChatClient {
     sessionKey: string;
     sessionId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
@@ -75,6 +77,7 @@ export class OpenClawGatewayChatClient {
     sessionId?: string;
     runId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {

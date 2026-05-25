@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { AuditLog } from "./AuditLog.js";
 import type { AgentRunResult, AgentStatusSink } from "../dispatcher/AgentClient.js";
+import type { ChatAttachment } from "../protocol/messages.js";
 import { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js";
 import { PHONE_AGENT_SYSTEM_PROMPT } from "../dispatcher/promptPolicy.js";
 import { codexAppServerContextWindow, DEFAULT_REASONING_OPTIONS } from "./chat/ModelCatalog.js";
@@ -98,6 +99,7 @@ export class CodexChatClient {
     sessionKey: string;
     sessionId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
@@ -142,6 +144,7 @@ export class CodexChatClient {
     sessionId?: string;
     runId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {

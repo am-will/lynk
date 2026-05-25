@@ -12,7 +12,7 @@ import {
 } from "../AgentHarness.js";
 import { CodexChatClient } from "../CodexChatClient.js";
 import type { BridgeConfig } from "../config.js";
-import type { ChatCommandOption } from "../../protocol/messages.js";
+import type { ChatAttachment, ChatCommandOption } from "../../protocol/messages.js";
 import { HermesChatClient } from "../HermesChatClient.js";
 import type { GatewayChatClient } from "../OpenClawChatTypes.js";
 import type { GatewayChatSendResult, GatewayEventHandler } from "../chat/ChatTransportTypes.js";
@@ -86,6 +86,7 @@ export class HarnessChatRouter implements GatewayChatClient {
     sessionKey: string;
     sessionId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
@@ -97,6 +98,7 @@ export class HarnessChatRouter implements GatewayChatClient {
     sessionId?: string;
     runId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {

@@ -171,7 +171,8 @@ export class OpenClawChatBridge {
 
   async send(message: ChatSendMessage): Promise<void> {
     const text = message.text.trim();
-    if (!text) {
+    const attachments = message.attachments ?? [];
+    if (!text && attachments.length === 0) {
       return;
     }
     const state = this.stateFor(message.deviceId);
@@ -182,7 +183,7 @@ export class OpenClawChatBridge {
     }
 
     const idempotencyKey = message.idempotencyKey ?? randomUUID();
-    if (await this.commandRouter.handleVisibleSlashCommand(message.deviceId, text, state.sessionKey)) {
+    if (text && attachments.length === 0 && await this.commandRouter.handleVisibleSlashCommand(message.deviceId, text, state.sessionKey)) {
       return;
     }
     const taskKind = isExplicitPhoneTask(text) ? "phone" : "general";
@@ -197,7 +198,8 @@ export class OpenClawChatBridge {
         sessionKey: state.sessionKey,
         runId: state.runId,
         queued: state.queuedSends.length,
-        length: text.length
+        length: text.length,
+        attachments: attachments.length
       });
       this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} queued message for next turn`);
       return;
@@ -217,6 +219,7 @@ export class OpenClawChatBridge {
         sessionKey: state.sessionKey,
         sessionId: message.sessionId,
         message: messageForGateway(text, taskKind),
+        attachments,
         thinking: state.reasoningEffort ?? undefined,
         idempotencyKey
       });
@@ -233,7 +236,8 @@ export class OpenClawChatBridge {
       this.audit?.record("openclaw_chat_send", message.deviceId, {
         sessionKey: result.sessionKey,
         runId: result.runId,
-        length: text.length
+        length: text.length,
+        attachments: attachments.length
       });
       this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} is working`);
     } catch (error) {
@@ -292,6 +296,7 @@ export class OpenClawChatBridge {
     idempotencyKey: string,
     taskKind: AgentTaskKind
   ): Promise<void> {
+    const attachments = message.attachments ?? [];
     try {
       state.reasoningEffort = normalizeThinkingLevel(message.reasoningEffort, state.reasoningEffort);
       if (this.client.steerChat) {
@@ -300,6 +305,7 @@ export class OpenClawChatBridge {
           sessionId: message.sessionId ?? state.sessionId ?? undefined,
           runId: state.runId ?? undefined,
           message: messageForGateway(text, taskKind),
+          attachments,
           thinking: state.reasoningEffort ?? undefined,
           idempotencyKey
         });
@@ -308,6 +314,7 @@ export class OpenClawChatBridge {
           sessionKey: state.sessionKey,
           sessionId: message.sessionId ?? state.sessionId ?? undefined,
           message: `/steer ${messageForGateway(text, taskKind)}`,
+          attachments,
           thinking: state.reasoningEffort ?? undefined,
           idempotencyKey
         });
@@ -315,7 +322,8 @@ export class OpenClawChatBridge {
       this.audit?.record("chat_send_steered", message.deviceId, {
         sessionKey: state.sessionKey,
         runId: state.runId,
-        length: text.length
+        length: text.length,
+        attachments: attachments.length
       });
       this.sendState(message.deviceId, `Steered ${harnessLabel(state.harnessId)}`);
     } catch (error) {
