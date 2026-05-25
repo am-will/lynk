@@ -33,7 +33,7 @@ export class OpenClawRealtimeSessions {
     const { created, requestKey } = await this.createRealtimeSessionWithUniqueLabel(deviceId, state, baseLabel, existingLabels);
     const record = created && typeof created === "object" ? created as Record<string, unknown> : {};
     const key = typeof record.key === "string" && record.key.trim() ? record.key.trim() : undefined;
-    state.sessionKey = key ?? `agent:${this.options.config.openClawChatAgentId}:explicit:${requestKey}`;
+    state.sessionKey = key ?? fallbackSessionKey(this.options.config, state, requestKey);
     state.sessionId = typeof record.sessionId === "string" ? record.sessionId : null;
     state.runId = null;
     state.pendingFirstMessageDisplayName = false;
@@ -53,7 +53,7 @@ export class OpenClawRealtimeSessions {
       if (existingLabels.has(label.toLowerCase())) {
         continue;
       }
-      const requestKey = `realtime-${deviceId}-${randomUUID()}`;
+      const requestKey = realtimeRequestKey(deviceId, state);
       try {
         const created = await this.options.client.createSession({
           key: requestKey,
@@ -70,7 +70,7 @@ export class OpenClawRealtimeSessions {
       }
     }
 
-    const requestKey = `realtime-${deviceId}-${randomUUID()}`;
+    const requestKey = realtimeRequestKey(deviceId, state);
     const suffix = Date.now().toString(36).slice(-4);
     try {
       const created = await this.options.client.createSession({
@@ -83,4 +83,20 @@ export class OpenClawRealtimeSessions {
       throw lastDuplicateError instanceof Error ? lastDuplicateError : new Error("Could not create a unique realtime chat session label");
     }
   }
+}
+
+function realtimeRequestKey(deviceId: string, state: DeviceChatState): string {
+  const requestKey = `realtime-${deviceId}-${randomUUID()}`;
+  return state.harnessId === "openclaw" ? requestKey : `${state.harnessId}:${requestKey}`;
+}
+
+function fallbackSessionKey(
+  config: Pick<BridgeConfig, "openClawChatAgentId">,
+  state: DeviceChatState,
+  requestKey: string
+): string {
+  if (state.harnessId === "openclaw") {
+    return `agent:${config.openClawChatAgentId}:explicit:${requestKey}`;
+  }
+  return requestKey;
 }
