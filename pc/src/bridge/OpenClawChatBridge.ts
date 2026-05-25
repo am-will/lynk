@@ -889,6 +889,7 @@ export class OpenClawChatBridge {
     }
     const state = this.stateFor(deviceId);
     const session = state.sessionSummaries.get(sessionKey);
+    const sourceHarnessId = harnessForSessionKey(sessionKey);
     const reply: ChatReplyAvailableMessage = {
       type: "chat.reply_available",
       deviceId,
@@ -898,7 +899,10 @@ export class OpenClawChatBridge {
       textPreview: previewText(message.type === "chat.final" ? message.text : message.message),
       sessionId: session?.sessionId ?? pendingRun?.sessionId ?? null,
       sessionLabel: session?.label ?? null,
-      sessionDisplayName: session?.displayName ?? null
+      sessionDisplayName: session?.displayName ?? null,
+      harnessId: session?.harnessId ?? sourceHarnessId,
+      harnessLabel: session?.harnessLabel ?? harnessLabel(sourceHarnessId),
+      model: session?.model ?? (sessionKey === state.sessionKey ? state.model : null)
     };
     this.sendChat(deviceId, reply);
   }

@@ -551,6 +551,9 @@ export interface ChatReplyAvailableMessage {
   sessionId?: string | null;
   sessionLabel?: string | null;
   sessionDisplayName?: string | null;
+  harnessId?: string | null;
+  harnessLabel?: string | null;
+  model?: string | null;
 }
 
 export interface ChatToolEventMessage {
@@ -866,7 +869,10 @@ export const chatReplyAvailableMessageSchema = z.object({
   textPreview: z.string().optional().nullable(),
   sessionId: z.string().optional().nullable(),
   sessionLabel: z.string().optional().nullable(),
-  sessionDisplayName: z.string().optional().nullable()
+  sessionDisplayName: z.string().optional().nullable(),
+  harnessId: z.string().optional().nullable(),
+  harnessLabel: z.string().optional().nullable(),
+  model: z.string().optional().nullable()
 });
 
 export const chatToolEventMessageSchema = z.object({

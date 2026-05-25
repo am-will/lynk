@@ -334,7 +334,10 @@ When a user-initiated run reaches a terminal reply, the bridge also emits a per-
   "status": "completed",
   "textPreview": "Done.",
   "sessionId": "session_abc",
-  "sessionDisplayName": "Trip planning"
+  "sessionDisplayName": "Trip planning",
+  "harnessId": "openclaw",
+  "harnessLabel": "OpenClaw",
+  "model": "gpt-5.5-high-fast"
 }
 ```
 

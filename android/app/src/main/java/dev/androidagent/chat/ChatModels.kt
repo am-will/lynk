@@ -117,7 +117,11 @@ data class ChatUnreadReply(
     val latestStatus: String? = null,
     val sessionId: String? = null,
     val sessionLabel: String? = null,
-    val sessionDisplayName: String? = null
+    val sessionDisplayName: String? = null,
+    val harnessId: String? = null,
+    val harnessLabel: String? = null,
+    val model: String? = null,
+    val receivedAt: Long = 0L
 ) {
     fun displayNameFor(sessionKey: String): String {
         return sessionDisplayName ?: sessionLabel ?: sessionId ?: sessionKey.substringAfterLast(":")
@@ -159,6 +163,22 @@ data class ChatState(
     fun unreadCountForSession(sessionKey: String?): Int {
         if (sessionKey.isNullOrBlank()) return 0
         return unreadReplies[sessionKey]?.count ?: 0
+    }
+
+    fun unreadCountForHarness(harnessId: String?): Int {
+        val normalized = ChatModelCatalog.normalizeHarnessId(harnessId) ?: return 0
+        return unreadReplies.entries.sumOf { (sessionKey, unread) ->
+            val sourceHarnessId = ChatModelCatalog.normalizeHarnessId(unread.harnessId)
+                ?: ChatModelCatalog.harnessFromSessionKey(sessionKey)
+            if (sourceHarnessId == normalized) unread.count else 0
+        }
+    }
+
+    fun latestUnreadSessionKey(): String? {
+        return unreadReplies.maxWithOrNull(
+            compareBy<Map.Entry<String, ChatUnreadReply>> { it.value.receivedAt }
+                .thenBy { it.value.latestRunId.orEmpty() }
+        )?.key
     }
 
     companion object {
@@ -478,6 +498,9 @@ object ChatStateReducer {
         if (existing?.runIds?.contains(runId) == true) {
             return state
         }
+        val harnessId = normalizeHarnessId(message.optNullableString("harnessId"))
+            ?: harnessFromSessionKey(sessionKey)
+            ?: existing?.harnessId
         val updated = ChatUnreadReply(
             count = (existing?.count ?: 0) + 1,
             runIds = (existing?.runIds ?: emptySet()) + runId,
@@ -486,7 +509,13 @@ object ChatStateReducer {
             latestStatus = message.optNullableString("status") ?: existing?.latestStatus,
             sessionId = message.optNullableString("sessionId") ?: existing?.sessionId,
             sessionLabel = message.optNullableString("sessionLabel") ?: existing?.sessionLabel,
-            sessionDisplayName = message.optNullableString("sessionDisplayName") ?: existing?.sessionDisplayName
+            sessionDisplayName = message.optNullableString("sessionDisplayName") ?: existing?.sessionDisplayName,
+            harnessId = harnessId,
+            harnessLabel = message.optNullableString("harnessLabel")
+                ?: existing?.harnessLabel
+                ?: harnessId?.let(ChatModelCatalog::harnessLabel),
+            model = message.optNullableString("model") ?: existing?.model,
+            receivedAt = message.optNullableLong("receivedAt") ?: System.currentTimeMillis()
         )
         return state.copy(
             unreadReplies = state.unreadReplies + (sessionKey to updated),
@@ -633,10 +662,18 @@ object ChatStateReducer {
         val sessionsByKey = sessions.associateBy { it.key }
         return unreadReplies.mapValues { (sessionKey, unread) ->
             val session = sessionsByKey[sessionKey] ?: return@mapValues unread
+            val harnessId = normalizeHarnessId(session.harnessId)
+                ?: session.model?.takeIf { it.isNotBlank() }?.let(::harnessForModel)
+                ?: unread.harnessId
             unread.copy(
                 sessionId = session.sessionId ?: unread.sessionId,
                 sessionLabel = session.label ?: unread.sessionLabel,
-                sessionDisplayName = session.displayName ?: unread.sessionDisplayName
+                sessionDisplayName = session.displayName ?: unread.sessionDisplayName,
+                harnessId = harnessId,
+                harnessLabel = session.harnessLabel
+                    ?: unread.harnessLabel
+                    ?: harnessId?.let(ChatModelCatalog::harnessLabel),
+                model = session.model ?: unread.model
             )
         }
     }

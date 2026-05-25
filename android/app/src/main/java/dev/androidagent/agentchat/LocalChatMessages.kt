@@ -128,6 +128,9 @@ object LocalChatMessages {
             .put("textPreview", LocalResponseTextNormalizer.normalize(text).take(180))
             .put("sessionLabel", session.label)
             .put("sessionDisplayName", session.label)
+            .put("harnessId", AgentConfig.HARNESS_LOCAL)
+            .put("harnessLabel", "Local")
+            .put("model", AgentModelOptions.LOCAL_LITERT_MODEL_ID)
 
     private fun messageBody(message: LocalChatMessage): JSONObject =
         JSONObject()
