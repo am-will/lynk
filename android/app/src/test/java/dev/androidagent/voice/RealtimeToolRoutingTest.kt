@@ -4,7 +4,6 @@ import dev.androidagent.AgentModelOptions
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RealtimeToolRoutingTest {
@@ -12,15 +11,24 @@ class RealtimeToolRoutingTest {
     fun localModelRoutesDelegatedTasksLocally() {
         assertEquals(
             RealtimeToolExecutionRoute.Local,
-            RealtimeToolRouting.routeFor(AgentModelOptions.LOCAL_LITERT_MODEL_ID, "delegate_agent_task")
+            RealtimeToolRouting.routeFor(
+                AgentModelOptions.LOCAL_LITERT_MODEL_ID,
+                RealtimeToolRouting.intentFor("delegate_agent_task", JSONObject().put("instruction", "Summarize"))
+            )
         )
         assertEquals(
             RealtimeToolExecutionRoute.Local,
-            RealtimeToolRouting.routeFor(AgentModelOptions.LOCAL_LITERT_MODEL_ID, "run_phone_task")
+            RealtimeToolRouting.routeFor(
+                AgentModelOptions.LOCAL_LITERT_MODEL_ID,
+                RealtimeToolRouting.intentFor("run_phone_task", JSONObject().put("instruction", "Open Settings"))
+            )
         )
         assertEquals(
             RealtimeToolExecutionRoute.Local,
-            RealtimeToolRouting.routeFor(AgentModelOptions.LOCAL_LITERT_MODEL_ID, "stop_agent_task")
+            RealtimeToolRouting.routeFor(
+                AgentModelOptions.LOCAL_LITERT_MODEL_ID,
+                RealtimeToolRouting.intentFor("stop_agent_task", JSONObject().put("reason", "stop"))
+            )
         )
     }
 
@@ -46,15 +54,52 @@ class RealtimeToolRoutingTest {
 
     @Test
     fun instructionAcceptsInstructionTaskOrGuidance() {
-        assertEquals("Open Settings", RealtimeToolRouting.instruction(JSONObject().put("instruction", " Open Settings ")))
-        assertEquals("Summarize", RealtimeToolRouting.instruction(JSONObject().put("task", "Summarize")))
-        assertEquals("Focus on unread", RealtimeToolRouting.instruction(JSONObject().put("guidance", "Focus on unread")))
+        assertEquals(
+            RealtimeToolIntent.StartTask(RealtimeTaskIntentKind.Phone, "Open Settings"),
+            RealtimeToolRouting.intentFor("run_phone_task", JSONObject().put("instruction", " Open Settings "))
+        )
+        assertEquals(
+            RealtimeToolIntent.StartTask(RealtimeTaskIntentKind.General, "Summarize"),
+            RealtimeToolRouting.intentFor("delegate_agent_task", JSONObject().put("task", "Summarize"))
+        )
+        assertEquals(
+            RealtimeToolIntent.SteerTask(RealtimeTaskIntentKind.General, "Focus on unread"),
+            RealtimeToolRouting.intentFor("steer_agent_task", JSONObject().put("guidance", "Focus on unread"))
+        )
     }
 
     @Test
     fun stopToolDetectionCoversAgentAndPhoneStops() {
-        assertTrue(RealtimeToolRouting.isStopTool("stop_agent_task"))
-        assertTrue(RealtimeToolRouting.isStopTool("stop_phone_task"))
-        assertFalse(RealtimeToolRouting.isStopTool("delegate_agent_task"))
+        assertEquals(
+            RealtimeToolIntent.StopTask(RealtimeTaskIntentKind.General, "Stop now"),
+            RealtimeToolRouting.intentFor("stop_agent_task", JSONObject().put("reason", "Stop now"))
+        )
+        assertEquals(
+            RealtimeToolIntent.StopTask(RealtimeTaskIntentKind.Phone, "Stopped by realtime voice"),
+            RealtimeToolRouting.intentFor("stop_phone_task", JSONObject())
+        )
+        assertFalse(RealtimeToolRouting.intentFor("delegate_agent_task", JSONObject()) is RealtimeToolIntent.StopTask)
+    }
+
+    @Test
+    fun bridgeOnlyAndUnsupportedToolsDoNotRouteLocal() {
+        assertEquals(
+            RealtimeToolIntent.BridgeOnly,
+            RealtimeToolRouting.intentFor("web_search", JSONObject().put("query", "news"))
+        )
+        assertEquals(
+            RealtimeToolExecutionRoute.Bridge,
+            RealtimeToolRouting.routeFor(
+                AgentModelOptions.LOCAL_LITERT_MODEL_ID,
+                RealtimeToolRouting.intentFor("web_search", JSONObject().put("query", "news"))
+            )
+        )
+        assertEquals(
+            RealtimeToolExecutionRoute.Bridge,
+            RealtimeToolRouting.routeFor(
+                AgentModelOptions.LOCAL_LITERT_MODEL_ID,
+                RealtimeToolRouting.intentFor("unknown_tool", JSONObject())
+            )
+        )
     }
 }
