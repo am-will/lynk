@@ -115,6 +115,17 @@ export const resultMessageSchema = z.object({
   error: z.string().optional().nullable()
 });
 
+export const selectedChatBackendModelSchema = z.string().min(1).refine((value) => {
+  const trimmed = value.trim();
+  if (trimmed !== value) {
+    return false;
+  }
+  if ((AGENT_MODEL_IDS as readonly string[]).includes(trimmed) || trimmed === "local-litertlm") {
+    return true;
+  }
+  return /^(hermes|codex):\S+$/.test(trimmed);
+}, "Expected a bare OpenClaw model id, a Hermes/Codex namespaced model id, or local-litertlm");
+
 export const userRequestMessageSchema = z.object({
   type: z.literal("user_request"),
   deviceId: z.string().min(1),
@@ -138,8 +149,8 @@ export const realtimeStartMessageSchema = z.object({
   deviceId: z.string().min(1),
   sdp: z.string().min(1),
   systemPrompt: z.string().optional(),
-  model: z.string().min(1).optional(),
-  reasoningEffort: z.string().min(1).optional(),
+  model: selectedChatBackendModelSchema.optional(),
+  reasoningEffort: z.enum(REASONING_EFFORTS).optional(),
   openAiApiKey: z.string().optional(),
   location: phoneLocationSchema.optional()
 });
@@ -156,8 +167,8 @@ export const realtimeToolCallMessageSchema = z.object({
   callId: z.string().min(1),
   itemId: z.string().optional().nullable(),
   name: z.string().min(1),
-  model: z.string().min(1).optional(),
-  reasoningEffort: z.string().min(1).optional(),
+  model: selectedChatBackendModelSchema.optional(),
+  reasoningEffort: z.enum(REASONING_EFFORTS).optional(),
   arguments: z.record(z.string(), z.unknown()).default({})
 });
 

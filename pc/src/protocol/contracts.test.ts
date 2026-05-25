@@ -16,6 +16,7 @@ import {
   chatSendMessageSchema,
   phoneOutboundMessageSchema,
   realtimeStartMessageSchema,
+  realtimeToolCallMessageSchema,
   validatePhoneOutboundMessage
 } from "./messages.js";
 
@@ -152,6 +153,40 @@ test("realtime start accepts selected chat backend model IDs", () => {
     deviceId: "pixel",
     sdp: "v=0\r\n...",
     model: ""
+  }).success, false);
+  assert.equal(realtimeStartMessageSchema.safeParse({
+    type: "realtime.start",
+    deviceId: "pixel",
+    sdp: "v=0\r\n...",
+    model: "other:gpt-5.5"
+  }).success, false);
+  assert.equal(realtimeStartMessageSchema.safeParse({
+    type: "realtime.start",
+    deviceId: "pixel",
+    sdp: "v=0\r\n...",
+    reasoningEffort: "extreme"
+  }).success, false);
+});
+
+test("realtime tool calls accept selected backend routing context", () => {
+  assert.equal(realtimeToolCallMessageSchema.safeParse({
+    type: "realtime.tool_call",
+    deviceId: "pixel",
+    callId: "call_1",
+    name: "delegate_agent_task",
+    model: "codex:gpt-5.3-codex",
+    reasoningEffort: "high",
+    arguments: { instruction: "Summarize" }
+  }).success, true);
+
+  assert.equal(realtimeToolCallMessageSchema.safeParse({
+    type: "realtime.tool_call",
+    deviceId: "pixel",
+    callId: "call_1",
+    name: "delegate_agent_task",
+    model: "local-litertlm",
+    reasoningEffort: "extreme",
+    arguments: { instruction: "Summarize" }
   }).success, false);
 });
 
