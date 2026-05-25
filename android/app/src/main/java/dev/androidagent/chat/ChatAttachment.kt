@@ -31,14 +31,16 @@ data class ChatAttachment(
     val isImage: Boolean
         get() = kind == ChatAttachmentKind.IMAGE || mimeType.startsWith("image/")
 
-    fun toJson(includeContent: Boolean = false): JSONObject {
+    fun toJson(includeContent: Boolean = false, includeLocalPath: Boolean = true): JSONObject {
         val json = JSONObject()
             .put("id", id)
             .put("kind", kind.wireValue)
             .put("displayName", displayName)
             .put("mimeType", mimeType)
             .put("sizeBytes", sizeBytes)
-            .put("localPath", localPath)
+        if (includeLocalPath) {
+            json.put("localPath", localPath)
+        }
         if (includeContent) {
             json.put("contentBase64", Base64.encodeToString(File(localPath).readBytes(), Base64.NO_WRAP))
         }
@@ -65,9 +67,15 @@ data class ChatAttachment(
 }
 
 object ChatAttachmentJson {
-    fun toJsonArray(attachments: List<ChatAttachment>, includeContent: Boolean = false): JSONArray {
+    fun toJsonArray(
+        attachments: List<ChatAttachment>,
+        includeContent: Boolean = false,
+        includeLocalPath: Boolean = true
+    ): JSONArray {
         return JSONArray().also { array ->
-            attachments.forEach { attachment -> array.put(attachment.toJson(includeContent)) }
+            attachments.forEach { attachment ->
+                array.put(attachment.toJson(includeContent = includeContent, includeLocalPath = includeLocalPath))
+            }
         }
     }
 

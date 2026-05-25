@@ -1,5 +1,6 @@
 package dev.androidagent.agentchat
 
+import dev.androidagent.chat.ChatAttachment
 import dev.androidagent.net.PhoneWebSocketClient
 import org.json.JSONObject
 
@@ -9,8 +10,15 @@ class HostAgentChatClient(
     override fun open(sessionKey: String?): Boolean =
         webSocketClient.sendChatOpen(sessionKey)
 
-    override fun send(text: String, sessionKey: String?, model: String?, reasoningEffort: String?, delivery: ChatSendDelivery): Boolean =
-        webSocketClient.sendChatMessage(text, sessionKey, model, reasoningEffort, delivery)
+    override fun send(
+        text: String,
+        sessionKey: String?,
+        model: String?,
+        reasoningEffort: String?,
+        delivery: ChatSendDelivery,
+        attachments: List<ChatAttachment>
+    ): Boolean =
+        webSocketClient.sendChatMessage(text, sessionKey, model, reasoningEffort, delivery, attachments)
 
     override fun stop(sessionKey: String?, runId: String?, reason: String) {
         webSocketClient.sendChatStop(sessionKey, runId, reason)

@@ -4,6 +4,8 @@ import android.content.Context
 import dev.androidagent.AgentConfig
 import dev.androidagent.AgentModelOptions
 import dev.androidagent.accessibility.AccessibilityCommandExecutor
+import dev.androidagent.chat.ChatAttachment
+import dev.androidagent.chat.ChatAttachmentJson
 import dev.androidagent.localmodel.LiteRtLmRuntime
 import dev.androidagent.localmodel.LocalAgentController
 import dev.androidagent.localmodel.LocalChatSession
@@ -48,9 +50,20 @@ class LocalAgentChatClient(
         return true
     }
 
-    override fun send(text: String, sessionKey: String?, model: String?, reasoningEffort: String?, delivery: ChatSendDelivery): Boolean {
+    override fun send(
+        text: String,
+        sessionKey: String?,
+        model: String?,
+        reasoningEffort: String?,
+        delivery: ChatSendDelivery,
+        attachments: List<ChatAttachment>
+    ): Boolean {
         val trimmed = text.trim()
-        if (trimmed.isBlank()) return false
+        if (trimmed.isBlank() && attachments.isEmpty()) return false
+        if (attachments.isNotEmpty()) {
+            emit(error(activeSessionKey, "Local attachments are not supported yet."))
+            return false
+        }
         if (activeRun?.isActive == true) {
             emit(error(activeSessionKey, "A local turn is already running. Stop it before sending another request."))
             return false
@@ -248,7 +261,8 @@ class LocalAgentChatClient(
                         } else {
                             message.text
                         })
-                        .put("timestamp", message.timestamp))
+                        .put("timestamp", message.timestamp)
+                        .put("attachments", ChatAttachmentJson.toJsonArray(message.attachments)))
                 }
             })
 

@@ -15,6 +15,7 @@ data class ChatTimelineItem(
     val kind: ChatTimelineKind,
     val role: String? = null,
     val text: String = "",
+    val attachments: List<ChatAttachment> = emptyList(),
     val timestamp: Long? = null,
     val runId: String? = null,
     val isStreaming: Boolean = false,
@@ -175,15 +176,20 @@ data class ChatState(
 object ChatStateReducer {
     private const val SYSTEM_MESSAGE_DEDUPE_WINDOW_MS = 10_000L
 
-    fun localUserMessage(state: ChatState, text: String): ChatState {
+    fun localUserMessage(
+        state: ChatState,
+        text: String,
+        attachments: List<ChatAttachment> = emptyList()
+    ): ChatState {
         val trimmed = text.trim()
-        if (trimmed.isBlank()) return state
+        if (trimmed.isBlank() && attachments.isEmpty()) return state
         return state.copy(
             timeline = state.timeline + ChatTimelineItem(
                 id = "local_${UUID.randomUUID()}",
                 kind = ChatTimelineKind.MESSAGE,
                 role = "user",
                 text = trimmed,
+                attachments = attachments,
                 timestamp = System.currentTimeMillis()
             ),
             status = "Sent",
@@ -712,12 +718,14 @@ object ChatStateReducer {
     private fun parseHistoryMessage(item: JSONObject?, fallbackId: String): ChatTimelineItem? {
         if (item == null) return null
         val text = item.optString("text")
-        if (text.isBlank()) return null
+        val attachments = ChatAttachmentJson.fromJsonArray(item.optJSONArray("attachments"))
+        if (text.isBlank() && attachments.isEmpty()) return null
         return ChatTimelineItem(
             id = item.optNullableString("id") ?: fallbackId,
             kind = ChatTimelineKind.MESSAGE,
             role = item.optString("role", "assistant"),
             text = text,
+            attachments = attachments,
             timestamp = item.optNullableLong("timestamp")
         )
     }

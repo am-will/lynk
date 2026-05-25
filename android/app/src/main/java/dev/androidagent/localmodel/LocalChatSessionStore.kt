@@ -1,6 +1,8 @@
 package dev.androidagent.localmodel
 
 import android.content.Context
+import dev.androidagent.chat.ChatAttachment
+import dev.androidagent.chat.ChatAttachmentJson
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -10,7 +12,8 @@ data class LocalChatMessage(
     val id: String,
     val role: String,
     val text: String,
-    val timestamp: Long
+    val timestamp: Long,
+    val attachments: List<ChatAttachment> = emptyList()
 )
 
 data class LocalChatSession(
@@ -51,10 +54,16 @@ class LocalChatSessionStore(context: Context) {
         return session
     }
 
-    fun append(sessionKey: String, role: String, text: String, id: String = "${role}_${UUID.randomUUID()}"): LocalChatSession {
+    fun append(
+        sessionKey: String,
+        role: String,
+        text: String,
+        id: String = "${role}_${UUID.randomUUID()}",
+        attachments: List<ChatAttachment> = emptyList()
+    ): LocalChatSession {
         val sessions = all()
         val current = sessions.firstOrNull { it.key == sessionKey } ?: defaultSession(sessionKey)
-        val message = LocalChatMessage(id, role, text, System.currentTimeMillis())
+        val message = LocalChatMessage(id, role, text, System.currentTimeMillis(), attachments)
         val updated = current.copy(
             updatedAt = message.timestamp,
             label = if (current.messages.isEmpty() && role == "user") text.take(40).ifBlank { current.label } else current.label,
@@ -99,8 +108,16 @@ class LocalChatSessionStore(context: Context) {
         value ?: return null
         val id = value.optString("id").takeIf { it.isNotBlank() } ?: return null
         val role = value.optString("role").takeIf { it.isNotBlank() } ?: return null
-        val text = value.optString("text").takeIf { it.isNotBlank() } ?: return null
-        return LocalChatMessage(id, role, text, value.optLong("timestamp", System.currentTimeMillis()))
+        val text = value.optString("text")
+        val attachments = ChatAttachmentJson.fromJsonArray(value.optJSONArray("attachments"))
+        if (text.isBlank() && attachments.isEmpty()) return null
+        return LocalChatMessage(
+            id = id,
+            role = role,
+            text = text,
+            timestamp = value.optLong("timestamp", System.currentTimeMillis()),
+            attachments = attachments
+        )
     }
 
     private fun LocalChatSession.toJson(): JSONObject =
@@ -116,6 +133,7 @@ class LocalChatSessionStore(context: Context) {
             .put("role", role)
             .put("text", text)
             .put("timestamp", timestamp)
+            .put("attachments", ChatAttachmentJson.toJsonArray(attachments))
 
     private fun defaultSession(key: String = "local:main"): LocalChatSession =
         LocalChatSession(key = key, label = "Local chat", updatedAt = System.currentTimeMillis(), messages = emptyList())

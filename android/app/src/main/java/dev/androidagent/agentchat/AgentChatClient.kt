@@ -1,5 +1,6 @@
 package dev.androidagent.agentchat
 
+import dev.androidagent.chat.ChatAttachment
 import org.json.JSONObject
 
 enum class ChatSendDelivery(val key: String) {
@@ -15,7 +16,8 @@ interface AgentChatClient {
         sessionKey: String? = null,
         model: String? = null,
         reasoningEffort: String? = null,
-        delivery: ChatSendDelivery = ChatSendDelivery.Normal
+        delivery: ChatSendDelivery = ChatSendDelivery.Normal,
+        attachments: List<ChatAttachment> = emptyList()
     ): Boolean
     fun stop(sessionKey: String? = null, runId: String? = null, reason: String = "Stopped from Android chat")
     fun selectSession(sessionKey: String)

@@ -13,6 +13,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.view.isNotEmpty
 import dev.androidagent.R
+import dev.androidagent.chat.ChatAttachment
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatTimelineItem
 import dev.androidagent.chat.ChatTimelineKind
@@ -214,6 +215,54 @@ class ChatTimelineBinder(
             ).apply {
                 this.gravity = if (isUser) Gravity.END else Gravity.START
             })
+            if (item.attachments.isNotEmpty()) {
+                addView(attachmentListView(item.attachments, tokens, isUser, maxWidth), LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = dp(DesignTokens.Spacing.xs)
+                    this.gravity = if (isUser) Gravity.END else Gravity.START
+                })
+            }
+        }
+    }
+
+    private fun attachmentListView(
+        attachments: List<ChatAttachment>,
+        tokens: ThemeTokens,
+        isUser: Boolean,
+        maxWidth: Int
+    ): LinearLayout {
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            attachments.forEach { attachment ->
+                addView(TextView(context).apply {
+                    Typography.applyCaption(this, tokens, emphasis = true)
+                    setTextColor(if (isUser) tokens.bubbleUserInk else tokens.bubbleAssistantInk)
+                    background = if (isUser) {
+                        Drawables.chatBubbleUser(context, tokens)
+                    } else {
+                        Drawables.chatBubbleAssistant(context, tokens)
+                    }
+                    setPadding(
+                        dp(DesignTokens.Spacing.sm),
+                        dp(DesignTokens.Spacing.xs),
+                        dp(DesignTokens.Spacing.sm),
+                        dp(DesignTokens.Spacing.xs)
+                    )
+                    this.maxWidth = maxWidth
+                    text = if (attachment.isImage) {
+                        "Image: ${attachment.displayName}"
+                    } else {
+                        "File: ${attachment.displayName}"
+                    }
+                }, LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    bottomMargin = dp(DesignTokens.Spacing.xs)
+                })
+            }
         }
     }
 

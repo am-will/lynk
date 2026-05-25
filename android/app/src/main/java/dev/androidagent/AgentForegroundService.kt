@@ -665,21 +665,14 @@ class AgentForegroundService : Service() {
     }
 
     private fun submitChatText(text: String, attachments: List<ChatAttachment> = emptyList()): Boolean {
-        if (attachments.isNotEmpty()) {
-            val message = "Attachment transport is not ready yet."
-            overlayController?.setStatus(message)
-            chatState = ChatStateReducer.localSystemMessage(chatState, message)
-            overlayController?.setChatState(chatState)
-            return false
-        }
         parseChatDeliveryOverride(text)?.let { override ->
-            return submitChatPrompt(override.text, override.delivery)
+            return submitChatPrompt(override.text, override.delivery, attachments)
         }
-        if (text.trimStart().startsWith("/")) {
+        if (attachments.isEmpty() && text.trimStart().startsWith("/")) {
             return submitSlashCommand(text)
         }
         val delivery = activeTurnDelivery(AgentConfigStore.load(this))
-        return submitChatPrompt(text, delivery)
+        return submitChatPrompt(text, delivery, attachments)
     }
 
     private fun requestChatAttachmentPicker(kind: ChatAttachmentKind) {
@@ -700,9 +693,13 @@ class AgentForegroundService : Service() {
         overlayController?.addChatAttachment(attachment)
     }
 
-    private fun submitChatPrompt(text: String, delivery: ChatSendDelivery): Boolean {
+    private fun submitChatPrompt(
+        text: String,
+        delivery: ChatSendDelivery,
+        attachments: List<ChatAttachment> = emptyList()
+    ): Boolean {
         markChatSessionRead(chatState.sessionKey, force = true)
-        chatState = ChatStateReducer.localUserMessage(chatState, text)
+        chatState = ChatStateReducer.localUserMessage(chatState, text, attachments)
         overlayController?.setChatState(chatState)
         val requestConfig = AgentConfigStore.load(this)
         val selectedModel = selectedChatModel(requestConfig)
@@ -723,7 +720,8 @@ class AgentForegroundService : Service() {
             sessionKey = sessionKeyForRoute(route),
             model = modelForRoute(selectedModel, route, requestConfig),
             reasoningEffort = chatState.reasoningEffort ?: requestConfig.reasoningEffort,
-            delivery = delivery
+            delivery = delivery,
+            attachments = attachments
         )
         if (sent) {
             lastNotificationText = brandPresentationFor(chatState).copy.sentStatus

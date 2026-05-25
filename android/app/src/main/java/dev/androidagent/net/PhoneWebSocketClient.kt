@@ -12,6 +12,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import dev.androidagent.agentchat.ChatSendDelivery
+import dev.androidagent.chat.ChatAttachment
+import dev.androidagent.chat.ChatAttachmentJson
 import dev.androidagent.voice.RealtimeToolCall
 import org.json.JSONArray
 import org.json.JSONObject
@@ -117,7 +119,8 @@ class PhoneWebSocketClient(
         sessionKey: String? = null,
         model: String? = null,
         reasoningEffort: String? = null,
-        delivery: ChatSendDelivery = ChatSendDelivery.Normal
+        delivery: ChatSendDelivery = ChatSendDelivery.Normal,
+        attachments: List<ChatAttachment> = emptyList()
     ): Boolean {
         val message = JSONObject()
             .put("type", "chat.send")
@@ -127,6 +130,16 @@ class PhoneWebSocketClient(
         sessionKey?.takeIf { it.isNotBlank() }?.let { message.put("sessionKey", it) }
         model?.takeIf { it.isNotBlank() }?.let { message.put("model", it) }
         reasoningEffort?.takeIf { it.isNotBlank() }?.let { message.put("reasoningEffort", it) }
+        if (attachments.isNotEmpty()) {
+            message.put(
+                "attachments",
+                ChatAttachmentJson.toJsonArray(
+                    attachments,
+                    includeContent = true,
+                    includeLocalPath = false
+                )
+            )
+        }
         return sendJson(message, reportChatError = true)
     }
 
