@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">AgentRelay</string>
-    <string name="accessibility_service_description">Allows AgentRelay to observe the screen and perform requested phone actions.</string>
+    <string name="app_name">AgentLink</string>
+    <string name="accessibility_service_description">Allows AgentLink to observe the screen and perform requested phone actions.</string>
 </resources>
