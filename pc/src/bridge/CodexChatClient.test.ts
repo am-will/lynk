@@ -106,6 +106,28 @@ test("Codex new sessions create and reuse app-server threads", async () => {
   assert.equal(fake.submitted[0]?.text, "Hello");
 });
 
+test("Codex rejects attachments until app-server input schema is verified", async () => {
+  const fake = new FakeCodexAppServerClient();
+  const client = new CodexChatClient(undefined, fake as unknown as CodexAppServerClient, null);
+
+  await assert.rejects(
+    client.sendChat({
+      sessionKey: "codex:default",
+      message: "Review this",
+      attachments: [{
+        id: "att_1",
+        kind: "image",
+        displayName: "photo.png",
+        mimeType: "image/png",
+        sizeBytes: 12,
+        contentBase64: "aGVsbG8="
+      }]
+    }),
+    /attachments are not supported/
+  );
+  assert.equal(fake.submitted.length, 0);
+});
+
 test("Codex new sessions use requested workspace cwd", async () => {
   const fake = new FakeCodexAppServerClient();
   const client = new CodexChatClient(undefined, fake as unknown as CodexAppServerClient, null);

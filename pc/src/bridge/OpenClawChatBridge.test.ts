@@ -4,7 +4,7 @@ import { OpenClawChatBridge } from "./OpenClawChatBridge.js";
 import { ChatClientError, CODEX_WORKSPACE_NOT_FOUND_CODE } from "./chat/ChatErrors.js";
 import type { BridgeConfig } from "./config.js";
 import type { PhoneHub } from "./PhoneHub.js";
-import type { ChatOutboundMessage } from "../protocol/messages.js";
+import type { ChatAttachment, ChatOutboundMessage } from "../protocol/messages.js";
 import type { GatewayEvent, GatewayEventHandler } from "./OpenClawGatewayChatClient.js";
 
 const config: BridgeConfig = {
@@ -27,8 +27,8 @@ const config: BridgeConfig = {
 
 class FakeGatewayClient {
   readonly handlers = new Set<GatewayEventHandler>();
-  readonly sent: Array<{ sessionKey: string; message: string; thinking?: string; idempotencyKey?: string }> = [];
-  readonly steered: Array<{ sessionKey: string; runId?: string; message: string; thinking?: string; idempotencyKey?: string }> = [];
+  readonly sent: Array<{ sessionKey: string; message: string; attachments?: ChatAttachment[]; thinking?: string; idempotencyKey?: string }> = [];
+  readonly steered: Array<{ sessionKey: string; runId?: string; message: string; attachments?: ChatAttachment[]; thinking?: string; idempotencyKey?: string }> = [];
   readonly created: Array<{ key?: string; label?: string; model?: string; workspacePath?: string; createWorkspaceIfMissing?: boolean }> = [];
   readonly patched: Array<{ sessionKey: string; patch: Record<string, unknown> }> = [];
   readonly aborted: Array<{ sessionKey: string; runId?: string }> = [];
@@ -48,7 +48,7 @@ class FakeGatewayClient {
     return { sessionId: `${sessionKey}:id`, messages: [] };
   }
 
-  async sendChat(options: { sessionKey: string; message: string; thinking?: string; idempotencyKey?: string }): Promise<{ runId: string; sessionKey: string }> {
+  async sendChat(options: { sessionKey: string; message: string; attachments?: ChatAttachment[]; thinking?: string; idempotencyKey?: string }): Promise<{ runId: string; sessionKey: string }> {
     if (this.sendError) {
       throw this.sendError;
     }
@@ -57,7 +57,7 @@ class FakeGatewayClient {
     return { runId: `run_${this.runCount}`, sessionKey: options.sessionKey };
   }
 
-  async steerChat(options: { sessionKey: string; runId?: string; message: string; thinking?: string; idempotencyKey?: string }): Promise<{ runId: string; sessionKey: string }> {
+  async steerChat(options: { sessionKey: string; runId?: string; message: string; attachments?: ChatAttachment[]; thinking?: string; idempotencyKey?: string }): Promise<{ runId: string; sessionKey: string }> {
     this.steered.push(options);
     return { runId: options.runId ?? `run_${this.runCount}`, sessionKey: options.sessionKey };
   }
@@ -348,6 +348,29 @@ test("explicit phone chat uses gateway session so session fast mode applies", as
   assert.match(client.sent[0]?.message ?? "", /Phone-control turn hint/);
   assert.match(client.sent[0]?.message ?? "", /User request:\nOpen the Settings app on my phone/);
   assert.equal(client.sent[0]?.thinking, "low");
+});
+
+test("chat send forwards attachments to the gateway client", async () => {
+  const { bridge, client } = createHarness();
+  const attachment: ChatAttachment = {
+    id: "att_1",
+    kind: "image",
+    displayName: "photo.png",
+    mimeType: "image/png",
+    sizeBytes: 12,
+    contentBase64: "aGVsbG8="
+  };
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "",
+    attachments: [attachment]
+  });
+
+  assert.equal(client.sent.length, 1);
+  assert.equal(client.sent[0]?.message, "Please review the attached image.");
+  assert.deepEqual(client.sent[0]?.attachments, [attachment]);
 });
 
 test("gateway fallback preserves explicit phone task kind", async () => {

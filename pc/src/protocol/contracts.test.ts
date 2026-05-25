@@ -10,6 +10,8 @@ import {
   PHONE_COMMANDS,
   REASONING_EFFORTS,
   REALTIME_TOOL_NAMES,
+  chatAttachmentSchema,
+  chatHistoryMessageSchema,
   chatSendMessageSchema,
   phoneOutboundMessageSchema,
   realtimeStartMessageSchema,
@@ -84,6 +86,32 @@ test("chat send delivery accepts normal queue and steer modes", () => {
     text: "Adjust the current turn",
     delivery: "later"
   }).success, false);
+});
+
+test("chat send accepts inline file attachments", () => {
+  const attachment = {
+    id: "att_1",
+    kind: "image",
+    displayName: "photo.png",
+    mimeType: "image/png",
+    sizeBytes: 12,
+    contentBase64: "aGVsbG8="
+  };
+
+  assert.equal(chatAttachmentSchema.safeParse(attachment).success, true);
+  const parsed = chatSendMessageSchema.parse({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "",
+    attachments: [attachment]
+  });
+  assert.equal(parsed.text, "");
+  assert.deepEqual(parsed.attachments, [attachment]);
+  assert.equal(chatHistoryMessageSchema.safeParse({
+    role: "user",
+    text: "",
+    attachments: [attachment]
+  }).success, true);
 });
 
 test("realtime start accepts selected chat backend model IDs", () => {

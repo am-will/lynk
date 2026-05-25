@@ -25,6 +25,31 @@ class ChatStateReducerTest {
     }
 
     @Test
+    fun historyAcceptsAttachmentOnlyMessages() {
+        val state = ChatStateReducer.reduce(ChatState(), JSONObject()
+            .put("type", "chat.history")
+            .put("sessionKey", "agent:main:main")
+            .put("messages", JSONArray()
+                .put(JSONObject()
+                    .put("id", "u1")
+                    .put("role", "user")
+                    .put("text", "")
+                    .put("attachments", JSONArray()
+                        .put(JSONObject()
+                            .put("id", "att_1")
+                            .put("kind", "image")
+                            .put("displayName", "photo.png")
+                            .put("mimeType", "image/png")
+                            .put("sizeBytes", 12L)
+                            .put("localPath", "/tmp/photo.png"))))))
+
+        assertEquals(1, state.timeline.size)
+        assertEquals("", state.timeline[0].text)
+        assertEquals("photo.png", state.timeline[0].attachments.single().displayName)
+        assertTrue(state.timeline[0].attachments.single().isImage)
+    }
+
+    @Test
     fun messageAppendsAndUpsertsWithoutReplacingTimeline() {
         val withHistory = ChatStateReducer.reduce(ChatState(), JSONObject()
             .put("type", "chat.history")
