@@ -136,8 +136,8 @@ export const realtimeStartMessageSchema = z.object({
   deviceId: z.string().min(1),
   sdp: z.string().min(1),
   systemPrompt: z.string().optional(),
-  model: z.enum(AGENT_MODEL_IDS).optional(),
-  reasoningEffort: z.enum(REASONING_EFFORTS).optional(),
+  model: z.string().min(1).optional(),
+  reasoningEffort: z.string().min(1).optional(),
   openAiApiKey: z.string().optional(),
   location: phoneLocationSchema.optional()
 });

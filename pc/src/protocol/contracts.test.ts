@@ -12,6 +12,7 @@ import {
   REALTIME_TOOL_NAMES,
   chatSendMessageSchema,
   phoneOutboundMessageSchema,
+  realtimeStartMessageSchema,
   validatePhoneOutboundMessage
 } from "./messages.js";
 
@@ -82,6 +83,25 @@ test("chat send delivery accepts normal queue and steer modes", () => {
     deviceId: "pixel",
     text: "Adjust the current turn",
     delivery: "later"
+  }).success, false);
+});
+
+test("realtime start accepts selected chat backend model IDs", () => {
+  for (const model of ["gpt-5.5", "hermes:gpt-5.5", "codex:gpt-5.3-codex", "local-litertlm"]) {
+    assert.equal(realtimeStartMessageSchema.safeParse({
+      type: "realtime.start",
+      deviceId: "pixel",
+      sdp: "v=0\r\n...",
+      model,
+      reasoningEffort: "medium"
+    }).success, true, `expected ${model} to parse`);
+  }
+
+  assert.equal(realtimeStartMessageSchema.safeParse({
+    type: "realtime.start",
+    deviceId: "pixel",
+    sdp: "v=0\r\n...",
+    model: ""
   }).success, false);
 });
 

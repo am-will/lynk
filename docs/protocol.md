@@ -374,6 +374,8 @@ Android sends:
   "type": "realtime.start",
   "deviceId": "openclaw-agent",
   "sdp": "v=0\r\n...",
+  "model": "hermes:gpt-5.5",
+  "reasoningEffort": "medium",
   "location": {
     "latitude": 31.7619,
     "longitude": -106.485,
@@ -385,7 +387,7 @@ Android sends:
 }
 ```
 
-Optional fields: `systemPrompt`, `model`, `reasoningEffort`, `location`, and `openAiApiKey`. `systemPrompt` is applied once when the realtime session starts; it is not resent per utterance or delegated task. Android sends `location` only when the user has granted location permission and the device has a recent best-effort location available. The bridge uses it as context for localized realtime answers and web searches.
+Optional fields: `systemPrompt`, `model`, `reasoningEffort`, `location`, and `openAiApiKey`. `model` and `reasoningEffort` are the selected chat backend routing hints for delegated voice tool work; they do not change the OpenAI Realtime speech model, which is still controlled by `OPENAI_REALTIME_MODEL`. `model` may be a bare OpenClaw model id, a namespaced host model such as `hermes:gpt-5.5` or `codex:gpt-5.3-codex`, or `local-litertlm` for Android local mode. `systemPrompt` is applied once when the realtime session starts; it is not resent per utterance or delegated task. Android sends `location` only when the user has granted location permission and the device has a recent best-effort location available. The bridge uses it as context for localized realtime answers and web searches.
 
 The bridge replies with the remote SDP answer:
 
