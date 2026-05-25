@@ -14,13 +14,7 @@ export interface BridgeRealtimeDependencies {
   hub: Pick<PhoneHub, "sendRealtime">;
   audit: Pick<AuditLog, "record">;
   realtimeClient: Pick<OpenAiRealtimeClient, "start" | "stop">;
-  syncRealtimeChatContext?: (message: RealtimeStartMessage) => void | Promise<void>;
   stopAgentWork: (deviceId: string, reason: string) => Promise<void>;
-}
-
-export interface RealtimeChatRoutingContext {
-  model?: string;
-  reasoningEffort?: string;
 }
 
 export class BridgeRealtime {
@@ -34,17 +28,6 @@ export class BridgeRealtime {
 
   getRealtimeLocation(deviceId: string): PhoneLocation | undefined {
     return this.realtimeSessions.get(deviceId)?.location;
-  }
-
-  getRealtimeRoutingContext(deviceId: string): RealtimeChatRoutingContext | undefined {
-    const session = this.realtimeSessions.get(deviceId);
-    if (!session) {
-      return undefined;
-    }
-    return {
-      model: session.model,
-      reasoningEffort: session.reasoningEffort
-    };
   }
 
   sendRealtime(deviceId: string, message: RealtimeOutboundMessage): void {
@@ -75,7 +58,6 @@ export class BridgeRealtime {
     }
 
     try {
-      await this.deps.syncRealtimeChatContext?.(message);
       this.deps.audit.record("openai_realtime_starting", message.deviceId, {
         model: this.deps.config.openAiRealtimeModel,
         chatModel: message.model ?? null,
@@ -91,11 +73,7 @@ export class BridgeRealtime {
         apiKey: message.openAiApiKey,
         location: message.location
       });
-      this.realtimeSessions.set(message.deviceId, {
-        ...session,
-        model: trimmedOrUndefined(message.model),
-        reasoningEffort: trimmedOrUndefined(message.reasoningEffort)
-      });
+      this.realtimeSessions.set(message.deviceId, session);
       this.deps.audit.record("openai_realtime_started", message.deviceId, {
         callId: session.callId ?? null,
         answerSdpLength: answerSdp.length
@@ -156,8 +134,4 @@ export class BridgeRealtime {
       console.warn(`[realtime] ${deviceId}: failed to stop after disconnect: ${error instanceof Error ? error.message : String(error)}`);
     });
   }
-}
-
-function trimmedOrUndefined(value: string | undefined): string | undefined {
-  return value?.trim() || undefined;
 }

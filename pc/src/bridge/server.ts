@@ -33,7 +33,6 @@ const realtime = new BridgeRealtime({
   hub,
   audit,
   realtimeClient,
-  syncRealtimeChatContext: (message) => chatBridge.syncRealtimeChatContext(message),
   stopAgentWork
 });
 
@@ -43,8 +42,7 @@ realtimeTaskManager = new RealtimeTaskManager({
   sendRealtime: (deviceId, message) => realtime.sendRealtime(deviceId, message),
   webSearch: webSearchClient,
   getRealtimeApiKey: (deviceId) => realtime.getRealtimeApiKey(deviceId),
-  getRealtimeLocation: (deviceId) => realtime.getRealtimeLocation(deviceId),
-  getRealtimeRoutingContext: (deviceId) => realtime.getRealtimeRoutingContext(deviceId)
+  getRealtimeLocation: (deviceId) => realtime.getRealtimeLocation(deviceId)
 });
 
 const handleHttp = createBridgeHttpHandler({

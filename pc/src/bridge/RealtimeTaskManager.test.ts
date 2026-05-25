@@ -126,16 +126,12 @@ function createHarnessWithSearch(output = "search result") {
   return { dispatcher, manager, messages, queries, locations };
 }
 
-function createHarnessWithDelegate(options: { taskTimeoutMs?: number; model?: string; reasoningEffort?: string } = {}) {
+function createHarnessWithDelegate(options: { taskTimeoutMs?: number } = {}) {
   const delegate = new FakeTaskDelegate();
   const messages: RealtimeOutboundMessage[] = [];
   const manager = new RealtimeTaskManager({
     taskDelegate: delegate,
     sendRealtime: (_deviceId, message) => messages.push(message),
-    getRealtimeRoutingContext: () => ({
-      model: options.model,
-      reasoningEffort: options.reasoningEffort
-    }),
     taskTimeoutMs: options.taskTimeoutMs
   });
   return { delegate, manager, messages };
@@ -353,13 +349,18 @@ test("generic agent realtime tools route general harness work", async () => {
 });
 
 test("task delegate receives realtime routing context", async () => {
-  const { delegate, manager, messages } = createHarnessWithDelegate({
+  const { delegate, manager, messages } = createHarnessWithDelegate();
+
+  await manager.handleToolCall({
+    ...namedToolCall("call_general", "delegate_agent_task", { instruction: "Summarize my inbox" }),
     model: "hermes:gpt-5.5",
     reasoningEffort: "high"
   });
-
-  await manager.handleToolCall(namedToolCall("call_general", "delegate_agent_task", { instruction: "Summarize my inbox" }));
-  await manager.handleToolCall(namedToolCall("call_steer", "steer_agent_task", { guidance: "Focus on unread messages." }));
+  await manager.handleToolCall({
+    ...namedToolCall("call_steer", "steer_agent_task", { guidance: "Focus on unread messages." }),
+    model: "hermes:gpt-5.5",
+    reasoningEffort: "high"
+  });
   await waitFor(() => results(messages).length === 2);
 
   assert.deepEqual(delegate.requests[0], {

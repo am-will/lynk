@@ -15,8 +15,6 @@ export interface OpenAiRealtimeSession {
   callId?: string;
   apiKey?: string;
   location?: PhoneLocation;
-  model?: string;
-  reasoningEffort?: string;
 }
 
 const VOICE_PROMPT = `

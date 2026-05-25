@@ -19,7 +19,6 @@ interface RealtimeTaskManagerOptions {
   };
   getRealtimeApiKey?: (deviceId: string) => string | undefined;
   getRealtimeLocation?: (deviceId: string) => PhoneLocation | undefined;
-  getRealtimeRoutingContext?: (deviceId: string) => RealtimeTaskRoutingContext | undefined;
   audit?: AuditLog;
   maxQueueSize?: number;
   taskTimeoutMs?: number;
@@ -121,7 +120,7 @@ export class RealtimeTaskManager {
       return;
     }
 
-    const routingContext = this.routingContextFor(message.deviceId);
+    const routingContext = this.routingContextFor(message);
     const task: QueuedTask = {
       deviceId: message.deviceId,
       callId: message.callId,
@@ -196,7 +195,7 @@ export class RealtimeTaskManager {
     }
 
     const state = this.stateFor(message.deviceId);
-    const routingContext = this.routingContextFor(message.deviceId);
+    const routingContext = this.routingContextFor(message);
     if (!state.active) {
       const task: QueuedTask = {
         deviceId: message.deviceId,
@@ -578,10 +577,9 @@ export class RealtimeTaskManager {
     });
   }
 
-  private routingContextFor(deviceId: string): RealtimeTaskRoutingContext | undefined {
-    const context = this.options.getRealtimeRoutingContext?.(deviceId);
-    const model = context?.model?.trim();
-    const reasoningEffort = context?.reasoningEffort?.trim();
+  private routingContextFor(message: Pick<RealtimeToolCallMessage, "model" | "reasoningEffort">): RealtimeTaskRoutingContext | undefined {
+    const model = message.model?.trim();
+    const reasoningEffort = message.reasoningEffort?.trim();
     if (!model && !reasoningEffort) {
       return undefined;
     }

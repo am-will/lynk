@@ -238,6 +238,8 @@ class PhoneWebSocketClient(
             .put("callId", call.callId)
             .put("name", call.name)
             .put("arguments", call.arguments)
+            .put("model", requestConfig.model)
+            .put("reasoningEffort", requestConfig.reasoningEffort)
         call.itemId?.let { message.put("itemId", it) }
         val sent = sendJson(message)
         Log.i(TAG, "sendRealtimeToolCall sent=$sent callId=${call.callId} name=${call.name}")

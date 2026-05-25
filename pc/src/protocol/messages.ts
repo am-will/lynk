@@ -156,6 +156,8 @@ export const realtimeToolCallMessageSchema = z.object({
   callId: z.string().min(1),
   itemId: z.string().optional().nullable(),
   name: z.string().min(1),
+  model: z.string().min(1).optional(),
+  reasoningEffort: z.string().min(1).optional(),
   arguments: z.record(z.string(), z.unknown()).default({})
 });
 

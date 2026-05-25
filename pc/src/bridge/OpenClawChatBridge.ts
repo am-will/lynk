@@ -22,7 +22,6 @@ import type {
   ChatSetModelMessage,
   ChatSetReasoningMessage,
   ChatStopMessage,
-  RealtimeStartMessage,
   UserRequestMessage
 } from "../protocol/messages.js";
 import type { AuditLog } from "./AuditLog.js";
@@ -176,11 +175,6 @@ export class OpenClawChatBridge {
       };
     }
     return { harnesses };
-  }
-
-  syncRealtimeChatContext(message: Pick<RealtimeStartMessage, "deviceId" | "model" | "reasoningEffort">): void {
-    const state = this.stateFor(message.deviceId);
-    this.applyRealtimeChatOptions(message.deviceId, state, message);
   }
 
   async send(message: ChatSendMessage): Promise<void> {
