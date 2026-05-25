@@ -387,7 +387,7 @@ Android sends:
 }
 ```
 
-Optional fields: `systemPrompt`, `model`, `reasoningEffort`, `location`, and `openAiApiKey`. `model` and `reasoningEffort` are the selected chat backend routing hints for delegated voice tool work; they do not change the OpenAI Realtime speech model, which is still controlled by `OPENAI_REALTIME_MODEL`. `model` may be a bare OpenClaw model id, a namespaced host model such as `hermes:gpt-5.5` or `codex:gpt-5.3-codex`, or `local-litertlm` for Android local mode. `systemPrompt` is applied once when the realtime session starts; it is not resent per utterance or delegated task. Android sends `location` only when the user has granted location permission and the device has a recent best-effort location available. The bridge uses it as context for localized realtime answers and web searches.
+Optional fields: `systemPrompt`, `model`, `reasoningEffort`, `location`, and `openAiApiKey`. `model` and `reasoningEffort` describe the selected chat backend when the voice session starts; delegated voice tool calls also send the current values per call so routing does not depend on stale speech-session state. These fields do not change the OpenAI Realtime speech model, which is still controlled by `OPENAI_REALTIME_MODEL`. `model` may be a bare OpenClaw model id, a namespaced host model such as `hermes:gpt-5.5` or `codex:gpt-5.3-codex`, or `local-litertlm` for Android local mode. `reasoningEffort` must be one of the shared reasoning option ids. `systemPrompt` is applied once when the realtime session starts; it is not resent per utterance or delegated task. Android sends `location` only when the user has granted location permission and the device has a recent best-effort location available. The bridge uses it as context for localized realtime answers and web searches.
 
 The bridge replies with the remote SDP answer:
 
@@ -446,6 +446,8 @@ Use `delegate_agent_task` for general work that should happen in the currently s
   "deviceId": "openclaw-agent",
   "callId": "call_general",
   "name": "delegate_agent_task",
+  "model": "hermes:gpt-5.5",
+  "reasoningEffort": "medium",
   "arguments": {
     "instruction": "Summarize my current project status",
     "urgency": "normal"
@@ -464,6 +466,8 @@ Use `run_phone_task` for new actionable phone tasks:
   "callId": "call_abc",
   "itemId": "item_abc",
   "name": "run_phone_task",
+  "model": "codex:gpt-5.3-codex",
+  "reasoningEffort": "medium",
   "arguments": {
     "instruction": "Open Facebook messages",
     "urgency": "normal"
@@ -471,7 +475,7 @@ Use `run_phone_task` for new actionable phone tasks:
 }
 ```
 
-The bridge validates that `name` is `run_phone_task`, rejects empty or oversized instructions, and routes the task through the same visible chat session. Only one realtime task runs per device. Later calls queue FIFO up to the bridge limit; calls with `"urgency": "interrupt"` interrupt the active task before starting the new task.
+For bridge-routed work, the bridge validates `model` and `reasoningEffort` on each tool call, rejects empty or oversized instructions, and routes the task through the same visible chat session. Only one realtime task runs per device. Later calls queue FIFO up to the bridge limit; calls with `"urgency": "interrupt"` interrupt the active task before starting the new task.
 
 Realtime chat reuses the previous realtime session for 15 minutes after the last accepted realtime task, steer, or stop. If the window has expired, the bridge starts a fresh chat before sending the realtime request so the viewfinder shows a clean task thread.
 
