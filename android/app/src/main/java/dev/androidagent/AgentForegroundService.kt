@@ -211,6 +211,10 @@ class AgentForegroundService : Service() {
                 }
                 return START_STICKY
             }
+            ACTION_DISMISS_CHAT_SESSION_NOTIFICATION -> {
+                markChatSessionRead(intent.getStringExtra(EXTRA_SESSION_KEY), force = true)
+                return START_STICKY
+            }
             ACTION_START_VOICE -> {
                 startVoiceFromShell()
                 return START_STICKY
@@ -315,6 +319,7 @@ class AgentForegroundService : Service() {
             if (PhoneControlAttentionEffect.HideTransientPet in phoneControlPetPolicy.clearTimedAttention(AgentConfigStore.load(this).petEnabled)) {
                 applyTransientPetVisibility()
             }
+            clearViewedUnreadReplies()
         }
         phoneControlAttentionClear = clear
         mainHandler.postDelayed(clear, PHONE_CONTROL_COMPLETION_VISIBLE_MS)
@@ -450,6 +455,7 @@ class AgentForegroundService : Service() {
         realtimeVoiceAttentionClear?.let(mainHandler::removeCallbacks)
         realtimeVoiceAttentionClear = null
         unregisterCloseSystemDialogsReceiver()
+        cancelAllReplyNotifications()
         overlayController?.hide()
         isRunning = false
         broadcastRunningState()
@@ -1118,6 +1124,13 @@ class AgentForegroundService : Service() {
         updateNotification()
     }
 
+    private fun clearViewedUnreadReplies() {
+        chatState.unreadReplies.keys
+            .filter { overlayController?.isViewingChatSession(it) == true }
+            .toList()
+            .forEach { markChatSessionRead(it) }
+    }
+
     private fun attachShellChatFromIntent() {
         val container = shellChatContainer ?: return
         val requestedToken = shellChatContainerToken
@@ -1370,16 +1383,27 @@ class AgentForegroundService : Service() {
         notifiedReplySessions = notifiedReplySessions - sessionKey
     }
 
+    private fun cancelAllReplyNotifications() {
+        val manager = getSystemService(NotificationManager::class.java)
+        (notifiedReplySessions + chatState.unreadReplies.keys).forEach { sessionKey ->
+            manager.cancel(replyNotificationId(sessionKey))
+        }
+        notifiedReplySessions = emptySet()
+    }
+
     private fun notification(): Notification {
         val stopIntent = Intent(this, AgentForegroundService::class.java).setAction(ACTION_STOP_TURN)
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val stopPendingIntent = PendingIntent.getService(this, 0, stopIntent, flags)
+        val latestUnreadSessionKey = chatState.latestUnreadSessionKey()
+        val openIntent = Intent(this, AgentForegroundService::class.java)
+            .setAction(if (latestUnreadSessionKey != null) ACTION_OPEN_CHAT_SESSION else ACTION_OPEN_CHAT)
+            .putExtra(EXTRA_PANEL_PRESENTATION, PANEL_PRESENTATION_AUTO)
+        latestUnreadSessionKey?.let { openIntent.putExtra(EXTRA_SESSION_KEY, it) }
         val openPendingIntent = PendingIntent.getService(
             this,
             REQUEST_OPEN_CHAT,
-            Intent(this, AgentForegroundService::class.java)
-                .setAction(ACTION_OPEN_CHAT)
-                .putExtra(EXTRA_PANEL_PRESENTATION, PANEL_PRESENTATION_AUTO),
+            openIntent,
             flags
         )
         val unreadCount = chatState.totalUnreadReplies
@@ -1414,6 +1438,15 @@ class AgentForegroundService : Service() {
             .putExtra(EXTRA_SESSION_KEY, sessionKey)
             .putExtra(EXTRA_PANEL_PRESENTATION, PANEL_PRESENTATION_AUTO)
         val contentIntent = PendingIntent.getService(this, replyNotificationId(sessionKey), openIntent, flags)
+        val deleteIntent = Intent(this, AgentForegroundService::class.java)
+            .setAction(ACTION_DISMISS_CHAT_SESSION_NOTIFICATION)
+            .putExtra(EXTRA_SESSION_KEY, sessionKey)
+        val deletePendingIntent = PendingIntent.getService(
+            this,
+            replyNotificationId(sessionKey) + REQUEST_DISMISS_REPLY_OFFSET,
+            deleteIntent,
+            flags
+        )
         val label = unread.displayNameFor(sessionKey)
         val count = unread.count
         val copy = brandPresentationFor(chatState, sessionKey).copy
@@ -1426,10 +1459,11 @@ class AgentForegroundService : Service() {
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(contentIntent)
+            .setDeleteIntent(deletePendingIntent)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setNumber(count)
-            .setOngoing(true)
+            .setAutoCancel(true)
             .build()
     }
 
@@ -1452,6 +1486,7 @@ class AgentForegroundService : Service() {
         const val ACTION_ENSURE_SERVICE = "dev.openclawagent.action.ENSURE_SERVICE"
         const val ACTION_START_VOICE = "dev.openclawagent.action.START_VOICE"
         private const val ACTION_OPEN_CHAT_SESSION = "dev.openclawagent.action.OPEN_CHAT_SESSION"
+        private const val ACTION_DISMISS_CHAT_SESSION_NOTIFICATION = "dev.openclawagent.action.DISMISS_CHAT_SESSION_NOTIFICATION"
         const val ACTION_REFRESH_AVATAR = "dev.openclawagent.action.REFRESH_AVATAR"
         const val ACTION_RESIZE_BUBBLE = "dev.openclawagent.action.RESIZE_BUBBLE"
         const val ACTION_REFRESH_PET_VISIBILITY = "dev.openclawagent.action.REFRESH_PET_VISIBILITY"
@@ -1470,6 +1505,7 @@ class AgentForegroundService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val REPLY_NOTIFICATION_ID_BASE = 10_000
         private const val REQUEST_OPEN_CHAT = 2
+        private const val REQUEST_DISMISS_REPLY_OFFSET = 500_000
         private const val DEFAULT_NOTIFICATION_TEXT = "Floating chat bubble is running"
         private const val SYSTEM_DIALOG_REASON = "reason"
         private const val RECENTS_RESTORE_CHECK_MS = 350L
