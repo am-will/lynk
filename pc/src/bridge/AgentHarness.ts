@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ChatModelOption, ChatSessionSummary } from "../protocol/messages.js";
 import type { BridgeConfig } from "./config.js";
 import { defaultSessionKeyForDevice } from "./OpenClawChatTypes.js";
@@ -97,6 +98,26 @@ export function defaultSessionKeyForHarness(
       return exhaustive;
     }
   }
+}
+
+export interface RealtimeHarnessSessionKeys {
+  requestKey: string;
+  fallbackSessionKey: string;
+}
+
+export function realtimeSessionKeysForHarness(
+  harnessId: HarnessId,
+  deviceId: string,
+  config: Pick<BridgeConfig, "openClawChatAgentId">
+): RealtimeHarnessSessionKeys {
+  const baseRequestKey = `realtime-${sanitizeSessionSegment(deviceId)}-${randomUUID()}`;
+  const requestKey = harnessId === DEFAULT_HARNESS_ID ? baseRequestKey : `${harnessId}:${baseRequestKey}`;
+  return {
+    requestKey,
+    fallbackSessionKey: harnessId === DEFAULT_HARNESS_ID
+      ? `agent:${config.openClawChatAgentId}:explicit:${requestKey}`
+      : requestKey
+  };
 }
 
 export function namespaceModelOption(model: ChatModelOption, harnessId: HarnessId): ChatModelOption {

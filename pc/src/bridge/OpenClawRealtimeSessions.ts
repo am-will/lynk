@@ -1,5 +1,6 @@
-import { randomUUID } from "node:crypto";
 import type { BridgeConfig } from "./config.js";
+import type { RealtimeHarnessSessionKeys } from "./AgentHarness.js";
+import { realtimeSessionKeysForHarness } from "./AgentHarness.js";
 import {
   isDuplicateSessionLabelError,
   numberedLabel,
@@ -30,10 +31,10 @@ export class OpenClawRealtimeSessions {
 
     const baseLabel = realtimeSessionLabel(firstRequestText);
     const existingLabels = new Set<string>();
-    const { created, requestKey } = await this.createRealtimeSessionWithUniqueLabel(deviceId, state, baseLabel, existingLabels);
+    const { created, keys } = await this.createRealtimeSessionWithUniqueLabel(deviceId, state, baseLabel, existingLabels);
     const record = created && typeof created === "object" ? created as Record<string, unknown> : {};
     const key = typeof record.key === "string" && record.key.trim() ? record.key.trim() : undefined;
-    state.sessionKey = key ?? fallbackSessionKey(this.options.config, state, requestKey);
+    state.sessionKey = key ?? keys.fallbackSessionKey;
     state.sessionId = typeof record.sessionId === "string" ? record.sessionId : null;
     state.runId = null;
     state.pendingFirstMessageDisplayName = false;
@@ -46,21 +47,21 @@ export class OpenClawRealtimeSessions {
     state: DeviceChatState,
     baseLabel: string,
     existingLabels: Set<string>
-  ): Promise<{ created: unknown; requestKey: string }> {
+  ): Promise<{ created: unknown; keys: RealtimeHarnessSessionKeys }> {
     let lastDuplicateError: unknown;
     for (let attempt = 0; attempt < 25; attempt += 1) {
       const label = numberedLabel(baseLabel, attempt);
       if (existingLabels.has(label.toLowerCase())) {
         continue;
       }
-      const requestKey = realtimeRequestKey(deviceId, state);
+      const keys = realtimeSessionKeysForHarness(state.harnessId, deviceId, this.options.config);
       try {
         const created = await this.options.client.createSession({
-          key: requestKey,
+          key: keys.requestKey,
           label,
           model: state.model ?? undefined
         });
-        return { created, requestKey };
+        return { created, keys };
       } catch (error) {
         if (!isDuplicateSessionLabelError(error)) {
           throw error;
@@ -70,33 +71,17 @@ export class OpenClawRealtimeSessions {
       }
     }
 
-    const requestKey = realtimeRequestKey(deviceId, state);
+    const keys = realtimeSessionKeysForHarness(state.harnessId, deviceId, this.options.config);
     const suffix = Date.now().toString(36).slice(-4);
     try {
       const created = await this.options.client.createSession({
-        key: requestKey,
+        key: keys.requestKey,
         label: numberedLabel(`${baseLabel} ${suffix}`, 0),
         model: state.model ?? undefined
       });
-      return { created, requestKey };
+      return { created, keys };
     } catch {
       throw lastDuplicateError instanceof Error ? lastDuplicateError : new Error("Could not create a unique realtime chat session label");
     }
   }
-}
-
-function realtimeRequestKey(deviceId: string, state: DeviceChatState): string {
-  const requestKey = `realtime-${deviceId}-${randomUUID()}`;
-  return state.harnessId === "openclaw" ? requestKey : `${state.harnessId}:${requestKey}`;
-}
-
-function fallbackSessionKey(
-  config: Pick<BridgeConfig, "openClawChatAgentId">,
-  state: DeviceChatState,
-  requestKey: string
-): string {
-  if (state.harnessId === "openclaw") {
-    return `agent:${config.openClawChatAgentId}:explicit:${requestKey}`;
-  }
-  return requestKey;
 }
