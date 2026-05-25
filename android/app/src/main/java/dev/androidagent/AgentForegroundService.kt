@@ -50,6 +50,10 @@ import dev.androidagent.overlay.HostConnectionState
 import dev.androidagent.overlay.PanelPresentation
 import dev.androidagent.overlay.ChatPresentationHelpers
 import dev.androidagent.settings.DiagnosticsBackendSnapshot
+import dev.androidagent.voice.LocalRealtimeVoiceDelegate
+import dev.androidagent.voice.RealtimeToolCall
+import dev.androidagent.voice.RealtimeToolExecutionRoute
+import dev.androidagent.voice.RealtimeToolRouting
 import dev.androidagent.voice.VoiceRuntimeController
 import dev.androidagent.voice.VoiceRuntimeState
 import dev.androidagent.voice.transcription.VoiceTranscriptionManager
@@ -77,6 +81,7 @@ class AgentForegroundService : Service() {
     private var chatClientRoute: ChatClientRoute? = null
     private var commandExecutor: AccessibilityCommandExecutor? = null
     private var voiceRuntimeController: VoiceRuntimeController? = null
+    private var localRealtimeVoiceDelegate: LocalRealtimeVoiceDelegate? = null
     private var voiceTranscriptionManager: VoiceTranscriptionManager? = null
     private var lastNotificationText = DEFAULT_NOTIFICATION_TEXT
     private var isAgentTurnActive = false
@@ -166,11 +171,17 @@ class AgentForegroundService : Service() {
         }
         voiceRuntimeController = VoiceRuntimeController(
             context = this,
-            sendStart = { sdp, config -> webSocketClient?.sendRealtimeStart(sdp, config, AgentLocationProvider.currentBestEffortLocation(this)) },
+            sendStart = { sdp, config ->
+                webSocketClient?.sendRealtimeStart(
+                    sdp,
+                    realtimeRequestConfig(config),
+                    AgentLocationProvider.currentBestEffortLocation(this)
+                )
+            },
             sendStop = { reason ->
                 webSocketClient?.sendRealtimeStop(reason)
             },
-            sendToolCall = { call -> webSocketClient?.sendRealtimeToolCall(call, AgentConfigStore.load(this)) },
+            sendToolCall = { call -> handleRealtimeVoiceToolCall(call) },
             onStateChanged = ::handleVoiceRuntimeStateChanged
         )
         registerCloseSystemDialogsReceiver()
@@ -401,11 +412,7 @@ class AgentForegroundService : Service() {
         val config = AgentConfigStore.load(this)
         val model = selectedChatModel(config)
         if (model.isBlank()) {
-            overlayController?.setStatus("Enable a host model harness before starting voice.")
-            return false
-        }
-        if (model == AgentModelOptions.LOCAL_LITERT_MODEL_ID) {
-            overlayController?.setStatus("Realtime voice still requires a host model.")
+            overlayController?.setStatus("Enable a model harness before starting voice.")
             return false
         }
         if (!hasMicPermission()) {
@@ -427,6 +434,8 @@ class AgentForegroundService : Service() {
     override fun onDestroy() {
         voiceRuntimeController?.stopFromUi()
         voiceRuntimeController?.close()
+        localRealtimeVoiceDelegate?.close()
+        localRealtimeVoiceDelegate = null
         voiceTranscriptionManager?.close()
         serviceScope.cancel()
         chatClient?.close()
@@ -515,6 +524,38 @@ class AgentForegroundService : Service() {
             webSocketClient = it
             it.connect()
         }
+    }
+
+    private fun handleRealtimeVoiceToolCall(call: RealtimeToolCall) {
+        val config = AgentConfigStore.load(this)
+        val model = selectedChatModel(config)
+        when (RealtimeToolRouting.routeFor(model, call.name)) {
+            RealtimeToolExecutionRoute.Local -> localRealtimeVoiceDelegate().handleToolCall(call)
+            RealtimeToolExecutionRoute.Bridge -> webSocketClient?.sendRealtimeToolCall(call, realtimeRequestConfig(config))
+        }
+    }
+
+    private fun localRealtimeVoiceDelegate(): LocalRealtimeVoiceDelegate {
+        localRealtimeVoiceDelegate?.let { return it }
+        return LocalRealtimeVoiceDelegate(
+            context = this,
+            scope = serviceScope,
+            commandExecutor = commandExecutor(),
+            configProvider = { AgentConfigStore.load(this) },
+            onStatus = ::handleBridgeStatus,
+            onChatMessage = { handleChatMessage(it) },
+            onRealtimeToolResult = { voiceRuntimeController?.onRealtimeToolResult(it) },
+            onRealtimeTaskStatus = { voiceRuntimeController?.onRealtimeTaskStatus(it) }
+        ).also { localRealtimeVoiceDelegate = it }
+    }
+
+    private fun realtimeRequestConfig(config: AgentConfig = AgentConfigStore.load(this)): AgentConfig {
+        val model = selectedChatModel(config)
+        val route = routeForModel(model, config)
+        return config.copy(
+            model = modelForRoute(model, route, config),
+            reasoningEffort = chatState.reasoningEffort ?: config.reasoningEffort
+        )
     }
 
     private fun selectedChatModel(config: AgentConfig = AgentConfigStore.load(this)): String {
