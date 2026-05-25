@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { HermesApiClient } from "../dispatcher/HermesApiClient.js";
 import { HermesRunDriver, type HermesActiveRun, type HermesRunDriverEvent } from "../dispatcher/HermesRunDriver.js";
-import type { ChatAttachment, ChatHistoryMessage, ChatSessionSummary } from "../protocol/messages.js";
+import type { ChatHistoryMessage, ChatSessionSummary } from "../protocol/messages.js";
 import type { BridgeConfig } from "./config.js";
 import { discoverHermesModels } from "./HermesModelDiscovery.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "./harness/InMemoryHarnessSessionStore.js";
@@ -122,13 +122,9 @@ export class HermesChatClient {
     sessionKey: string;
     sessionId?: string;
     message: string;
-    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
-    if (options.attachments?.length) {
-      throw new Error("Hermes chat attachments are not supported yet.");
-    }
     const session = this.sessions.ensureSession(options.sessionKey, options.sessionId);
     this.sessions.setThinkingLevel(session, options.thinking);
     this.sessions.appendUserMessage(session, options.message, options.idempotencyKey);
@@ -173,13 +169,9 @@ export class HermesChatClient {
     sessionId?: string;
     runId?: string;
     message: string;
-    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
-    if (options.attachments?.length) {
-      throw new Error("Hermes chat attachments are not supported for active-turn steering.");
-    }
     const active = this.activeRunFor(options.sessionKey, options.runId);
     if (!active) {
       throw new Error("No active Hermes run to steer");

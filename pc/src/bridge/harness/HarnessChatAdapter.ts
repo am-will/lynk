@@ -1,5 +1,4 @@
 import type {
-  ChatAttachment,
   ChatCommandOption,
   ChatHistoryMessage,
   ChatModelOption,
@@ -8,7 +7,13 @@ import type {
   ChatToolSummary
 } from "../../protocol/messages.js";
 import type { HarnessId } from "../AgentHarness.js";
-import type { GatewayChatSendResult, GatewayEventHandler } from "../chat/ChatTransportTypes.js";
+import type {
+  GatewayChatSendResult,
+  GatewayEventHandler,
+  HarnessCapabilities,
+  HarnessChatSendOptions,
+  HarnessChatSteerOptions
+} from "../chat/ChatTransportTypes.js";
 import {
   chatMessagesFromHistory,
   normalizeCommands,
@@ -42,25 +47,11 @@ export interface HarnessCreatedSession {
 
 export interface HarnessChatAdapter {
   readonly harnessId: HarnessId;
+  readonly capabilities: HarnessCapabilities;
   addEventListener(handler: GatewayEventHandler): () => void;
   history(sessionKey: string): Promise<HarnessChatHistory>;
-  sendChat(options: {
-    sessionKey: string;
-    sessionId?: string;
-    message: string;
-    attachments?: ChatAttachment[];
-    thinking?: string;
-    idempotencyKey?: string;
-  }): Promise<GatewayChatSendResult>;
-  steerChat?(options: {
-    sessionKey: string;
-    sessionId?: string;
-    runId?: string;
-    message: string;
-    attachments?: ChatAttachment[];
-    thinking?: string;
-    idempotencyKey?: string;
-  }): Promise<GatewayChatSendResult>;
+  sendChat(options: HarnessChatSendOptions): Promise<GatewayChatSendResult>;
+  steerChat?(options: HarnessChatSteerOptions): Promise<GatewayChatSendResult>;
   abort(sessionKey: string, runId?: string): Promise<unknown>;
   listModels(): Promise<ChatModelOption[]>;
   listSessions(limit?: number): Promise<HarnessSessionList>;
@@ -76,23 +67,8 @@ export interface HarnessChatAdapter {
 interface RawHarnessClient {
   addEventListener(handler: GatewayEventHandler): () => void;
   history(sessionKey: string): Promise<unknown>;
-  sendChat(options: {
-    sessionKey: string;
-    sessionId?: string;
-    message: string;
-    attachments?: ChatAttachment[];
-    thinking?: string;
-    idempotencyKey?: string;
-  }): Promise<GatewayChatSendResult>;
-  steerChat?(options: {
-    sessionKey: string;
-    sessionId?: string;
-    runId?: string;
-    message: string;
-    attachments?: ChatAttachment[];
-    thinking?: string;
-    idempotencyKey?: string;
-  }): Promise<GatewayChatSendResult>;
+  sendChat(options: HarnessChatSendOptions): Promise<GatewayChatSendResult>;
+  steerChat?(options: HarnessChatSteerOptions): Promise<GatewayChatSendResult>;
   abort(sessionKey: string, runId?: string): Promise<unknown>;
   listModels(): Promise<unknown>;
   listSessions(limit?: number): Promise<unknown>;
@@ -108,7 +84,8 @@ interface RawHarnessClient {
 export class NormalizedHarnessAdapter implements HarnessChatAdapter {
   constructor(
     readonly harnessId: HarnessId,
-    private readonly client: RawHarnessClient
+    private readonly client: RawHarnessClient,
+    readonly capabilities: HarnessCapabilities = { supportsAttachments: false }
   ) {}
 
   addEventListener(handler: GatewayEventHandler): () => void {
@@ -125,26 +102,11 @@ export class NormalizedHarnessAdapter implements HarnessChatAdapter {
     };
   }
 
-  async sendChat(options: {
-    sessionKey: string;
-    sessionId?: string;
-    message: string;
-    attachments?: ChatAttachment[];
-    thinking?: string;
-    idempotencyKey?: string;
-  }): Promise<GatewayChatSendResult> {
+  async sendChat(options: HarnessChatSendOptions): Promise<GatewayChatSendResult> {
     return await this.client.sendChat(options);
   }
 
-  async steerChat(options: {
-    sessionKey: string;
-    sessionId?: string;
-    runId?: string;
-    message: string;
-    attachments?: ChatAttachment[];
-    thinking?: string;
-    idempotencyKey?: string;
-  }): Promise<GatewayChatSendResult> {
+  async steerChat(options: HarnessChatSteerOptions): Promise<GatewayChatSendResult> {
     if (!this.client.steerChat) {
       throw new Error(`${this.harnessId} harness does not support active-turn steering.`);
     }

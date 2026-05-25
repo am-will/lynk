@@ -1,7 +1,7 @@
-import type { ChatAttachment, ChatModelOption, ChatSendMessage, ChatSessionSummary, ChatTaskKind } from "../protocol/messages.js";
+import type { ChatModelOption, ChatSendMessage, ChatSessionSummary, ChatTaskKind } from "../protocol/messages.js";
 import type { HarnessId } from "./AgentHarness.js";
 import type { BridgeConfig } from "./config.js";
-import type { GatewayChatSendResult, GatewayEventHandler } from "./chat/ChatTransportTypes.js";
+import type { GatewayChatSendResult, GatewayEventHandler, HarnessChatSendOptions, HarnessChatSteerOptions } from "./chat/ChatTransportTypes.js";
 import { requestKeyFromSessionKey } from "./chat/ChatNormalizers.js";
 
 export interface DeviceChatState {
@@ -36,23 +36,8 @@ export interface PendingChatRun {
 export interface GatewayChatClient {
   addEventListener(handler: GatewayEventHandler): () => void;
   history(sessionKey: string): Promise<unknown>;
-  sendChat(options: {
-    sessionKey: string;
-    sessionId?: string;
-    message: string;
-    attachments?: ChatAttachment[];
-    thinking?: string;
-    idempotencyKey?: string;
-  }): Promise<GatewayChatSendResult>;
-  steerChat?(options: {
-    sessionKey: string;
-    sessionId?: string;
-    runId?: string;
-    message: string;
-    attachments?: ChatAttachment[];
-    thinking?: string;
-    idempotencyKey?: string;
-  }): Promise<GatewayChatSendResult>;
+  sendChat(options: HarnessChatSendOptions): Promise<GatewayChatSendResult>;
+  steerChat?(options: HarnessChatSteerOptions): Promise<GatewayChatSendResult>;
   abort(sessionKey: string, runId?: string): Promise<unknown>;
   listModels(): Promise<unknown>;
   listSessions(limit?: number, harnessId?: HarnessId): Promise<unknown>;

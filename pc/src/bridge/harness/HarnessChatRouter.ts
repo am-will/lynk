@@ -12,10 +12,16 @@ import {
 } from "../AgentHarness.js";
 import { CodexChatClient } from "../CodexChatClient.js";
 import type { BridgeConfig } from "../config.js";
-import type { ChatAttachment, ChatCommandOption } from "../../protocol/messages.js";
+import type { ChatCommandOption } from "../../protocol/messages.js";
 import { HermesChatClient } from "../HermesChatClient.js";
 import type { GatewayChatClient } from "../OpenClawChatTypes.js";
-import type { GatewayChatSendResult, GatewayEventHandler } from "../chat/ChatTransportTypes.js";
+import { assertHarnessSupportsAttachments } from "../chat/ChatSendAttachments.js";
+import type {
+  GatewayChatSendResult,
+  GatewayEventHandler,
+  HarnessChatSendOptions,
+  HarnessChatSteerOptions
+} from "../chat/ChatTransportTypes.js";
 import { OpenClawGatewayChatClient } from "../OpenClawGatewayChatClient.js";
 import { NormalizedHarnessAdapter, type HarnessChatAdapter, type HarnessCreatedSession } from "./HarnessChatAdapter.js";
 
@@ -62,11 +68,11 @@ export class HarnessChatRouter implements GatewayChatClient {
       }
       return;
     }
-    this.adapters.set("openclaw", new NormalizedHarnessAdapter("openclaw", new OpenClawGatewayChatClient(config)));
+    this.adapters.set("openclaw", new NormalizedHarnessAdapter("openclaw", new OpenClawGatewayChatClient(config), { supportsAttachments: true }));
     if (config.hermesApiKey) {
-      this.adapters.set("hermes", new NormalizedHarnessAdapter("hermes", new HermesChatClient(config)));
+      this.adapters.set("hermes", new NormalizedHarnessAdapter("hermes", new HermesChatClient(config), { supportsAttachments: false }));
     }
-    this.adapters.set("codex", new NormalizedHarnessAdapter("codex", new CodexChatClient(audit)));
+    this.adapters.set("codex", new NormalizedHarnessAdapter("codex", new CodexChatClient(audit), { supportsAttachments: false }));
   }
 
   addEventListener(handler: GatewayEventHandler): () => void {
@@ -82,27 +88,15 @@ export class HarnessChatRouter implements GatewayChatClient {
     return await this.adapterForSession(sessionKey).history(sessionKey);
   }
 
-  async sendChat(options: {
-    sessionKey: string;
-    sessionId?: string;
-    message: string;
-    attachments?: ChatAttachment[];
-    thinking?: string;
-    idempotencyKey?: string;
-  }): Promise<GatewayChatSendResult> {
-    return await this.adapterForSession(options.sessionKey).sendChat(options);
+  async sendChat(options: HarnessChatSendOptions): Promise<GatewayChatSendResult> {
+    const adapter = this.adapterForSession(options.sessionKey);
+    assertHarnessSupportsAttachments(adapter.harnessId, adapter.capabilities, options.attachments);
+    return await adapter.sendChat(options);
   }
 
-  async steerChat(options: {
-    sessionKey: string;
-    sessionId?: string;
-    runId?: string;
-    message: string;
-    attachments?: ChatAttachment[];
-    thinking?: string;
-    idempotencyKey?: string;
-  }): Promise<GatewayChatSendResult> {
+  async steerChat(options: HarnessChatSteerOptions): Promise<GatewayChatSendResult> {
     const adapter = this.adapterForSession(options.sessionKey);
+    assertHarnessSupportsAttachments(adapter.harnessId, adapter.capabilities, options.attachments);
     if (!adapter.steerChat) {
       throw new Error(`${adapter.harnessId} harness does not support active-turn steering.`);
     }

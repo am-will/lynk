@@ -1,3 +1,6 @@
+import type { ChatAttachment } from "../../protocol/messages.js";
+import type { HarnessId } from "../AgentHarness.js";
+
 export interface GatewayEvent {
   event: string;
   payload: unknown;
@@ -10,3 +13,27 @@ export interface GatewayChatSendResult {
 }
 
 export type GatewayEventHandler = (event: GatewayEvent) => void;
+
+export interface HarnessCapabilities {
+  supportsAttachments: boolean;
+}
+
+export interface HarnessChatSendOptions {
+  sessionKey: string;
+  sessionId?: string;
+  message: string;
+  attachments?: ChatAttachment[];
+  thinking?: string;
+  idempotencyKey?: string;
+}
+
+export interface HarnessChatSteerOptions extends HarnessChatSendOptions {
+  runId?: string;
+}
+
+export class HarnessAttachmentUnsupportedError extends Error {
+  constructor(readonly harnessId: HarnessId) {
+    super(`${harnessId} harness does not support chat attachments.`);
+    this.name = "HarnessAttachmentUnsupportedError";
+  }
+}

@@ -63,6 +63,7 @@ import {
   usageFromSession
 } from "./chat/ChatNormalizers.js";
 import { buildChatErrorMessage } from "./chat/ChatErrors.js";
+import { normalizeChatSendContent } from "./chat/ChatSendAttachments.js";
 import { OpenClawRealtimeSessions } from "./OpenClawRealtimeSessions.js";
 import { OpenClawRunWaiters } from "./OpenClawRunWaiters.js";
 import { PhoneHub } from "./PhoneHub.js";
@@ -183,12 +184,10 @@ export class OpenClawChatBridge {
   }
 
   async send(message: ChatSendMessage): Promise<void> {
-    const text = message.text.trim();
-    const attachments = message.attachments ?? [];
+    const { text, attachments, requestText } = normalizeChatSendContent(message.text, message.attachments);
     if (!text && attachments.length === 0) {
       return;
     }
-    const requestText = text || defaultAttachmentPrompt(attachments);
     const state = this.stateFor(message.deviceId);
     const previousModel = state.model;
     this.states.applyModelSelection(message.deviceId, state, message.model);
@@ -909,9 +908,4 @@ export class OpenClawChatBridge {
     };
     this.sendChat(deviceId, reply);
   }
-}
-
-function defaultAttachmentPrompt(attachments: NonNullable<ChatSendMessage["attachments"]>): string {
-  const hasImage = attachments.some((attachment) => attachment.kind === "image" || attachment.mimeType.startsWith("image/"));
-  return hasImage ? "Please review the attached image." : "Please review the attached file.";
 }

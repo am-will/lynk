@@ -16,3 +16,5 @@ export {
   stringField,
   usageFromSession
 } from "../OpenClawGatewayNormalizers.js";
+
+export { normalizeChatAttachments } from "./ChatAttachmentNormalizers.js";

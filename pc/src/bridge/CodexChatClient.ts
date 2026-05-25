@@ -2,7 +2,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { AuditLog } from "./AuditLog.js";
 import type { AgentRunResult, AgentStatusSink } from "../dispatcher/AgentClient.js";
-import type { ChatAttachment } from "../protocol/messages.js";
 import { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js";
 import { PHONE_AGENT_SYSTEM_PROMPT } from "../dispatcher/promptPolicy.js";
 import { codexAppServerContextWindow, DEFAULT_REASONING_OPTIONS } from "./chat/ModelCatalog.js";
@@ -99,13 +98,9 @@ export class CodexChatClient {
     sessionKey: string;
     sessionId?: string;
     message: string;
-    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
-    if (options.attachments?.length) {
-      throw new Error("Codex chat attachments are not supported until the app-server attachment input schema is verified.");
-    }
     if (this.active) {
       throw new Error("A Codex task is already running");
     }
@@ -147,13 +142,9 @@ export class CodexChatClient {
     sessionId?: string;
     runId?: string;
     message: string;
-    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
-    if (options.attachments?.length) {
-      throw new Error("Codex chat attachments are not supported for active-turn steering.");
-    }
     if (!this.active) {
       throw new Error("No active Codex turn to steer");
     }
