@@ -62,6 +62,7 @@ export class OpenClawGatewayChatClient {
       sessionKey: options.sessionKey,
       ...(options.sessionId ? { sessionId: options.sessionId } : {}),
       message: options.message,
+      ...(options.attachments?.length ? { attachments: options.attachments } : {}),
       ...(options.thinking ? { thinking: options.thinking } : {}),
       idempotencyKey
     });

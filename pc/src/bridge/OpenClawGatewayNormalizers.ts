@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type {
+  ChatAttachment,
   ChatCommandOption,
   ChatHistoryMessage,
   ChatModelOption,
@@ -11,6 +12,7 @@ import type {
   ChatToolSummary,
   ChatUsageSummary
 } from "../protocol/messages.js";
+import { chatAttachmentSchema } from "../protocol/messages.js";
 import { ALLOWED_REASONING_OPTION_IDS, DEFAULT_REASONING_OPTIONS } from "./chat/ModelCatalog.js";
 
 export function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -70,7 +72,8 @@ export function normalizeHistoryMessage(value: unknown): ChatHistoryMessage | un
   const role = stringField(record, "role") ?? "assistant";
   const rawText = extractGatewayHistoryText(record.content ?? record.text ?? record.message, role);
   const text = sanitizeHistoryText(role, rawText);
-  if (!text.trim()) {
+  const attachments = normalizeChatAttachments(record.attachments);
+  if (!text.trim() && attachments.length === 0) {
     return undefined;
   }
   const openClawMeta = asRecord(record.__openclaw);
@@ -78,8 +81,23 @@ export function normalizeHistoryMessage(value: unknown): ChatHistoryMessage | un
     id: stringField(openClawMeta, "id") ?? stringField(record, "id") ?? null,
     role,
     text,
+    ...(attachments.length > 0 ? { attachments } : {}),
     timestamp: numberField(record, "timestamp")
   };
+}
+
+function normalizeChatAttachments(value: unknown): ChatAttachment[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const attachments: ChatAttachment[] = [];
+  for (const item of value) {
+    const parsed = chatAttachmentSchema.safeParse(item);
+    if (parsed.success) {
+      attachments.push(parsed.data);
+    }
+  }
+  return attachments;
 }
 
 function extractGatewayHistoryText(value: unknown, role: string): string {

@@ -40,12 +40,16 @@ export class OpenClawFallbackSender {
           id: `user_${runId}`,
           role: "user",
           text: message.text,
+          attachments: message.attachments,
           timestamp: Date.now()
         }
       ]
     });
     this.options.sendState(message.deviceId, taskKind === "phone" ? "Using Android phone tools" : "Using OpenClaw fallback");
     try {
+      if (message.attachments?.length) {
+        throw new Error("OpenClaw fallback does not support chat attachments.");
+      }
       const legacyRequest: UserRequestMessage = {
         type: "user_request",
         inputType: "text",

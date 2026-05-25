@@ -103,6 +103,9 @@ export class CodexChatClient {
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
+    if (options.attachments?.length) {
+      throw new Error("Codex chat attachments are not supported until the app-server attachment input schema is verified.");
+    }
     if (this.active) {
       throw new Error("A Codex task is already running");
     }
@@ -148,6 +151,9 @@ export class CodexChatClient {
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
+    if (options.attachments?.length) {
+      throw new Error("Codex chat attachments are not supported for active-turn steering.");
+    }
     if (!this.active) {
       throw new Error("No active Codex turn to steer");
     }

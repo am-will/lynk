@@ -19,7 +19,25 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.util.UUID
+
+private const val LOCAL_TEXT_ATTACHMENT_MAX_BYTES = 64 * 1024
+private const val LOCAL_TEXT_ATTACHMENT_MAX_CHARS = 32_000
+private val LOCAL_TEXT_ATTACHMENT_EXTENSIONS = setOf(
+    ".txt",
+    ".md",
+    ".json",
+    ".csv",
+    ".log",
+    ".xml",
+    ".html",
+    ".kt",
+    ".java",
+    ".js",
+    ".ts",
+    ".py"
+)
 
 class LocalAgentChatClient(
     context: Context,
@@ -44,6 +62,11 @@ class LocalAgentChatClient(
         val contextTokens: Long
     )
 
+    private data class PreparedLocalAttachments(
+        val promptText: String,
+        val imagePaths: List<String>
+    )
+
     override fun open(sessionKey: String?): Boolean {
         activeSessionKey = store.session(sessionKey).key
         refresh(activeSessionKey, "Local phone model ready")
@@ -60,21 +83,29 @@ class LocalAgentChatClient(
     ): Boolean {
         val trimmed = text.trim()
         if (trimmed.isBlank() && attachments.isEmpty()) return false
-        if (attachments.isNotEmpty()) {
-            emit(error(activeSessionKey, "Local attachments are not supported yet."))
+        val preparedAttachments = try {
+            prepareLocalAttachments(trimmed, attachments)
+        } catch (error: IllegalArgumentException) {
+            emit(error(activeSessionKey, error.message ?: "Local attachments are not supported."))
             return false
         }
         if (activeRun?.isActive == true) {
             emit(error(activeSessionKey, "A local turn is already running. Stop it before sending another request."))
             return false
         }
-        val session = store.append(sessionKey ?: activeSessionKey, "user", trimmed)
+        val session = store.append(sessionKey ?: activeSessionKey, "user", trimmed, attachments = attachments)
         activeSessionKey = session.key
         val runId = "local_run_${UUID.randomUUID()}"
         activeRun = scope.launch {
             onStatus("Local model is working", "working")
             try {
-                val finalText = controller.run(session.key, runId, trimmed, session.messages.dropLast(1))
+                val finalText = controller.run(
+                    sessionKey = session.key,
+                    runId = runId,
+                    userText = preparedAttachments.promptText,
+                    history = session.messages.dropLast(1),
+                    imagePaths = preparedAttachments.imagePaths
+                )
                 store.append(session.key, "assistant", finalText, "assistant_$runId")
                 activeRun = null
                 refresh(session.key, "Local model finished")
@@ -98,6 +129,53 @@ class LocalAgentChatClient(
             }
         }
         return true
+    }
+
+    private fun prepareLocalAttachments(text: String, attachments: List<ChatAttachment>): PreparedLocalAttachments {
+        if (attachments.isEmpty()) {
+            return PreparedLocalAttachments(promptText = text, imagePaths = emptyList())
+        }
+        val imageAttachments = attachments.filter { it.isImage }
+        if (imageAttachments.size > 1) {
+            throw IllegalArgumentException("Local LiteRT-LM supports one image attachment at a time.")
+        }
+        val fileSections = attachments
+            .filterNot { it.isImage }
+            .map { attachment -> localTextFileSection(attachment) }
+        val prompt = buildString {
+            append(text.ifBlank {
+                if (imageAttachments.isNotEmpty()) "Describe the attached image." else "Review the attached file."
+            })
+            fileSections.forEach { section ->
+                append("\n\n")
+                append(section)
+            }
+        }
+        return PreparedLocalAttachments(
+            promptText = prompt,
+            imagePaths = imageAttachments.map { it.localPath }
+        )
+    }
+
+    private fun localTextFileSection(attachment: ChatAttachment): String {
+        if (!isSupportedLocalTextAttachment(attachment)) {
+            throw IllegalArgumentException("Local mode supports image attachments and small text files only. ${attachment.displayName} is ${attachment.mimeType}.")
+        }
+        val file = File(attachment.localPath)
+        if (!file.isFile) {
+            throw IllegalArgumentException("Could not read ${attachment.displayName}.")
+        }
+        if (file.length() > LOCAL_TEXT_ATTACHMENT_MAX_BYTES) {
+            throw IllegalArgumentException("${attachment.displayName} is too large for local text attachment input.")
+        }
+        val text = file.readText(Charsets.UTF_8).take(LOCAL_TEXT_ATTACHMENT_MAX_CHARS)
+        return "Attached file (${attachment.displayName}, ${attachment.mimeType}):\n```\n$text\n```"
+    }
+
+    private fun isSupportedLocalTextAttachment(attachment: ChatAttachment): Boolean {
+        if (attachment.mimeType.startsWith("text/")) return true
+        val name = attachment.displayName.lowercase()
+        return LOCAL_TEXT_ATTACHMENT_EXTENSIONS.any { name.endsWith(it) }
     }
 
     override fun stop(sessionKey: String?, runId: String?, reason: String) {

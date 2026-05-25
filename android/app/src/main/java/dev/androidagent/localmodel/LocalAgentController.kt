@@ -20,7 +20,8 @@ class LocalAgentController(
         sessionKey: String,
         runId: String,
         userText: String,
-        history: List<LocalChatMessage>
+        history: List<LocalChatMessage>,
+        imagePaths: List<String> = emptyList()
     ): String {
         val transcript = history.takeLast(16).map { "${it.role}: ${it.text}" }.toMutableList()
         transcript.add("user: $userText")
@@ -81,7 +82,7 @@ class LocalAgentController(
                             prompt = prompt,
                             systemPrompt = systemPrompt,
                             config = config,
-                            imagePaths = latestScreenshotPath?.let(::listOf).orEmpty()
+                            imagePaths = latestScreenshotPath?.let(::listOf) ?: imagePaths.take(1)
                         ),
                         onDelta = {},
                         onStatus = { status ->

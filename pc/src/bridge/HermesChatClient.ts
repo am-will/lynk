@@ -126,6 +126,9 @@ export class HermesChatClient {
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
+    if (options.attachments?.length) {
+      throw new Error("Hermes chat attachments are not supported yet.");
+    }
     const session = this.sessions.ensureSession(options.sessionKey, options.sessionId);
     this.sessions.setThinkingLevel(session, options.thinking);
     this.sessions.appendUserMessage(session, options.message, options.idempotencyKey);
@@ -170,9 +173,13 @@ export class HermesChatClient {
     sessionId?: string;
     runId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
+    if (options.attachments?.length) {
+      throw new Error("Hermes chat attachments are not supported for active-turn steering.");
+    }
     const active = this.activeRunFor(options.sessionKey, options.runId);
     if (!active) {
       throw new Error("No active Hermes run to steer");

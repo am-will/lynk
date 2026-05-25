@@ -175,6 +175,7 @@ export class OpenClawChatBridge {
     if (!text && attachments.length === 0) {
       return;
     }
+    const requestText = text || defaultAttachmentPrompt(attachments);
     const state = this.stateFor(message.deviceId);
     const previousModel = state.model;
     this.states.applyModelSelection(message.deviceId, state, message.model);
@@ -186,7 +187,7 @@ export class OpenClawChatBridge {
     if (text && attachments.length === 0 && await this.commandRouter.handleVisibleSlashCommand(message.deviceId, text, state.sessionKey)) {
       return;
     }
-    const taskKind = isExplicitPhoneTask(text) ? "phone" : "general";
+    const taskKind = isExplicitPhoneTask(requestText) ? "phone" : "general";
     const delivery = message.delivery ?? "normal";
     if (delivery === "queue" && state.runId) {
       state.queuedSends.push({
@@ -198,14 +199,14 @@ export class OpenClawChatBridge {
         sessionKey: state.sessionKey,
         runId: state.runId,
         queued: state.queuedSends.length,
-        length: text.length,
+        length: requestText.length,
         attachments: attachments.length
       });
       this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} queued message for next turn`);
       return;
     }
     if (delivery === "steer" && state.runId) {
-      await this.steerChatMessage(message, state, text, idempotencyKey, taskKind);
+      await this.steerChatMessage(message, state, requestText, idempotencyKey, taskKind);
       return;
     }
     try {
@@ -218,7 +219,7 @@ export class OpenClawChatBridge {
       const result = await this.client.sendChat({
         sessionKey: state.sessionKey,
         sessionId: message.sessionId,
-        message: messageForGateway(text, taskKind),
+        message: messageForGateway(requestText, taskKind),
         attachments,
         thinking: state.reasoningEffort ?? undefined,
         idempotencyKey
@@ -232,11 +233,11 @@ export class OpenClawChatBridge {
         message.sessionId ?? state.sessionId ?? null,
         taskKind
       );
-      await this.maybeSetFirstMessageDisplayName(message.deviceId, text);
+      await this.maybeSetFirstMessageDisplayName(message.deviceId, requestText);
       this.audit?.record("openclaw_chat_send", message.deviceId, {
         sessionKey: result.sessionKey,
         runId: result.runId,
-        length: text.length,
+        length: requestText.length,
         attachments: attachments.length
       });
       this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} is working`);
@@ -881,4 +882,9 @@ export class OpenClawChatBridge {
     };
     this.sendChat(deviceId, reply);
   }
+}
+
+function defaultAttachmentPrompt(attachments: NonNullable<ChatSendMessage["attachments"]>): string {
+  const hasImage = attachments.some((attachment) => attachment.kind === "image" || attachment.mimeType.startsWith("image/"));
+  return hasImage ? "Please review the attached image." : "Please review the attached file.";
 }
