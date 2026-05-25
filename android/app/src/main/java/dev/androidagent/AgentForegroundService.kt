@@ -827,9 +827,12 @@ class AgentForegroundService : Service() {
         val config = AgentConfigStore.load(this)
         val models = availableChatModels(config)
         val localLiteRtAvailable = isExperimentalLocalModelAvailable(config)
+        val session = state.sessions.firstOrNull { it.key == sessionKey }
+        val unread = sessionKey?.let { state.unreadReplies[it] }
         return ChatPresentationHelpers.clientBrandPresentation(
             selectedModel = ChatPresentationHelpers.selectedModelId(
-                state.sessions.firstOrNull { it.key == sessionKey }?.model
+                session?.model
+                ?: unread?.model
                 ?: state.selectedModel
                 ?: selectedChatModel(),
                 localLiteRtAvailable,
@@ -837,7 +840,8 @@ class AgentForegroundService : Service() {
             ),
             models = models,
             harnessId = (
-                state.sessions.firstOrNull { it.key == sessionKey }?.harnessId
+                session?.harnessId
+                    ?: unread?.harnessId
                     ?: harnessFromSessionKey(sessionKey)
                     ?: state.harnessId
                 )?.takeIf { config.isModelHarnessEnabled(it) },
@@ -1455,7 +1459,7 @@ class AgentForegroundService : Service() {
         return NotificationCompat.Builder(this, REPLY_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_bubble)
             .setColor(0xFF245BFF.toInt())
-            .setContentTitle(if (count > 1) "$count unread replies in $label" else copy.repliedIn(label))
+            .setContentTitle(if (count > 1) "$count unread ${copy.name} replies in $label" else copy.repliedIn(label))
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(contentIntent)

@@ -1444,11 +1444,18 @@ class OverlayController(
 
         val activeHarnessId = activeHarnessId(merged, localLiteRtAvailable)
         val rows = groups.map { group ->
+            val unreadCount = lastChatState.unreadCountForHarness(group.id)
             AnchoredPicker.Row(
                 id = "harness:${group.id}",
                 label = group.label,
-                sublabel = if (group.id == activeHarnessId) "Active harness" else null,
+                sublabel = when {
+                    group.id == activeHarnessId && unreadCount > 0 -> "Active harness, ${unreadReplySublabel(unreadCount)}"
+                    group.id == activeHarnessId -> "Active harness"
+                    unreadCount > 0 -> unreadReplySublabel(unreadCount)
+                    else -> null
+                },
                 iconRes = R.drawable.ic_model,
+                badgeCount = unreadCount,
                 selected = group.id == activeHarnessId,
                 onSelect = {
                     onSetChatHarness(group.id)
@@ -1487,6 +1494,10 @@ class OverlayController(
             ?: lastChatState.harnessId?.takeIf { it.isNotBlank() }?.lowercase()
             ?: ChatModelCatalog.harnessFromSessionKey(lastChatState.sessionKey)
             ?: AgentConfig.HARNESS_OPENCLAW
+    }
+
+    private fun unreadReplySublabel(count: Int): String {
+        return "$count unread ${if (count == 1) "reply" else "replies"}"
     }
 
     private fun isExperimentalLocalModelAvailable(config: AgentConfig = AgentConfigStore.load(context)): Boolean {
@@ -1587,7 +1598,7 @@ class OverlayController(
             AnchoredPicker.Row(
                 id = "session:${session.key}",
                 label = label.take(40),
-                sublabel = session.model,
+                sublabel = ChatPresentationHelpers.sessionSourceSublabel(session),
                 iconRes = R.drawable.ic_notification_bubble,
                 badgeCount = lastChatState.unreadCountForSession(session.key),
                 selected = session.key == lastChatState.sessionKey,
@@ -1672,12 +1683,19 @@ class OverlayController(
             ))
         }
         if (harnessGroups.size >= 2) {
+            val currentHarnessLabel = harnessGroups.firstOrNull { it.id == currentHarnessId }?.label
+                ?: ChatPresentationHelpers.harnessLabel(currentHarnessId)
+            val harnessUnreadCount = lastChatState.totalUnreadReplies
             sessionRows.add(AnchoredPicker.Row(
                 id = "picker:harness",
                 label = "Harness",
-                sublabel = harnessGroups.firstOrNull { it.id == currentHarnessId }?.label
-                    ?: ChatPresentationHelpers.harnessLabel(currentHarnessId),
+                sublabel = if (harnessUnreadCount > 0) {
+                    "$currentHarnessLabel, ${unreadReplySublabel(harnessUnreadCount)}"
+                } else {
+                    currentHarnessLabel
+                },
                 iconRes = R.drawable.ic_model,
+                badgeCount = harnessUnreadCount,
                 dismissOnSelect = false,
                 onSelect = { showHarnessChoices(anchorOverride = menuAnchor, replace = true) }
             ))

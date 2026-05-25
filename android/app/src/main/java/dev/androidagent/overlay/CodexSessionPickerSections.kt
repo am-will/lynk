@@ -75,9 +75,6 @@ object CodexSessionPickerSections {
     }
 
     private fun sublabel(session: ChatSessionRow): String? {
-        return session.workspacePath?.let(CodexWorkspacePaths::display)
-            ?: session.preview?.lineSequence()?.firstOrNull { it.isNotBlank() }?.take(64)
-            ?: session.source
-            ?: session.model
+        return ChatPresentationHelpers.sessionSourceSublabel(session)
     }
 }

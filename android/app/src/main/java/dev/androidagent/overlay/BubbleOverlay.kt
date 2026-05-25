@@ -244,7 +244,16 @@ class BubbleOverlay(
         }
         badge.text = badgeText(count)
         badge.visibility = View.VISIBLE
-        bubbleView?.contentDescription = "OpenAgent, $count unread replies"
+        val source = state.latestUnreadSessionKey()?.let { sessionKey ->
+            state.unreadReplies[sessionKey]?.let { unread ->
+                ChatPresentationHelpers.unreadReplySourceLabel(sessionKey, unread)
+            }
+        }
+        bubbleView?.contentDescription = if (source.isNullOrBlank()) {
+            "OpenAgent, $count unread replies"
+        } else {
+            "OpenAgent, $count unread ${if (count == 1) "reply" else "replies"} from $source"
+        }
     }
 
     fun applyVoiceIndicator(state: VoiceRuntimeState) {

@@ -4,12 +4,14 @@ import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import dev.androidagent.AgentModelOptions
+import dev.androidagent.CodexWorkspacePaths
 import dev.androidagent.R
 import dev.androidagent.chat.ChatHarnessModelGroup
 import dev.androidagent.chat.ChatModelCatalog
 import dev.androidagent.chat.ChatModelOption
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatSessionRow
+import dev.androidagent.chat.ChatUnreadReply
 import dev.androidagent.ui.ThemeTokens
 
 enum class ClientBrand {
@@ -296,6 +298,40 @@ object ChatPresentationHelpers {
 
     fun sessionLabel(session: ChatSessionRow): String {
         return session.displayName ?: session.label ?: session.sessionId ?: session.key.substringAfterLast(":")
+    }
+
+    fun sessionSourceSublabel(session: ChatSessionRow): String? {
+        val detail = session.workspacePath?.let(CodexWorkspacePaths::display)
+            ?: session.workspaceName?.takeIf { it.isNotBlank() }
+            ?: session.preview?.lineSequence()?.firstOrNull { it.isNotBlank() }?.take(64)
+            ?: session.source?.takeIf { it.isNotBlank() }
+            ?: session.model?.takeIf { it.isNotBlank() }
+        return breadcrumb(sessionHarnessLabel(session), detail)
+    }
+
+    fun unreadReplySourceLabel(sessionKey: String, unread: ChatUnreadReply): String {
+        val harness = unread.harnessLabel?.takeIf { it.isNotBlank() }
+            ?: unread.harnessId?.takeIf { it.isNotBlank() }?.let(ChatModelCatalog::harnessLabel)
+            ?: ChatModelCatalog.harnessFromSessionKey(sessionKey)?.let(ChatModelCatalog::harnessLabel)
+        return breadcrumb(harness, unread.displayNameFor(sessionKey)) ?: unread.displayNameFor(sessionKey)
+    }
+
+    private fun sessionHarnessLabel(session: ChatSessionRow): String? {
+        return session.harnessLabel?.takeIf { it.isNotBlank() }
+            ?: session.harnessId?.takeIf { it.isNotBlank() }?.let(ChatModelCatalog::harnessLabel)
+            ?: session.model?.takeIf { it.isNotBlank() }?.let(ChatModelCatalog::harnessForModel)?.let(ChatModelCatalog::harnessLabel)
+            ?: ChatModelCatalog.harnessFromSessionKey(session.key)?.let(ChatModelCatalog::harnessLabel)
+    }
+
+    private fun breadcrumb(prefix: String?, detail: String?): String? {
+        val cleanPrefix = prefix?.trim()?.takeIf { it.isNotBlank() }
+        val cleanDetail = detail?.trim()?.takeIf { it.isNotBlank() }
+        return when {
+            cleanPrefix == null -> cleanDetail
+            cleanDetail == null -> cleanPrefix
+            cleanPrefix.equals(cleanDetail, ignoreCase = true) -> cleanPrefix
+            else -> "$cleanPrefix / $cleanDetail"
+        }
     }
 
     fun normalizedVerboseLevel(level: String?): String {
