@@ -39,13 +39,13 @@ object SettingsHubScreen {
                 SettingsComponents.dp(activity, metrics.horizontalPaddingDp),
                 SettingsComponents.dp(activity, metrics.verticalPaddingDp)
             )
-            exposeToAccessibility(viewId = R.id.openclaw_root, description = "OpenAgent settings")
+            exposeToAccessibility(viewId = R.id.openclaw_root, description = "AgentRelay settings")
         }
 
         root.addView(SettingsComponents.hubHeader(
             context = activity,
             tokens = tokens,
-            titleText = "OpenAgent",
+            titleText = "AgentRelay",
             subtitleText = "The best interface for your agents.",
             avatarRes = R.drawable.ic_openagent_settings_logo,
             avatarSizeDp = metrics.headerAvatarSizeDp
