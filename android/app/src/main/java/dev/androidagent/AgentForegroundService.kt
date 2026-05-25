@@ -32,6 +32,7 @@ import dev.androidagent.agentchat.HostAgentChatClient
 import dev.androidagent.agentchat.LocalAgentChatClient
 import dev.androidagent.avatar.AvatarLibrary
 import dev.androidagent.chat.ChatAttachmentKind
+import dev.androidagent.chat.ChatAttachmentPolicy
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatModelCatalog
 import dev.androidagent.chat.ChatModelSource
@@ -739,9 +740,6 @@ class AgentForegroundService : Service() {
         delivery: ChatSendDelivery,
         attachments: List<StoredChatAttachment> = emptyList()
     ): Boolean {
-        markChatSessionRead(chatState.sessionKey, force = true)
-        chatState = ChatStateReducer.localUserMessage(chatState, text, attachments)
-        overlayController?.setChatState(chatState)
         val requestConfig = AgentConfigStore.load(this)
         val selectedModel = selectedChatModel(requestConfig)
         if (selectedModel.isBlank()) {
@@ -755,6 +753,19 @@ class AgentForegroundService : Service() {
             return false
         }
         val route = routeForModel(selectedModel, requestConfig)
+        if (route == ChatClientRoute.Host && attachments.isNotEmpty()) {
+            val validationError = runCatching { ChatAttachmentPolicy.validateHostSend(attachments) }.exceptionOrNull()
+            if (validationError != null) {
+                val message = validationError.message ?: "Selected attachment cannot be sent."
+                overlayController?.setStatus(message)
+                lastNotificationText = message
+                updateNotification()
+                return false
+            }
+        }
+        markChatSessionRead(chatState.sessionKey, force = true)
+        chatState = ChatStateReducer.localUserMessage(chatState, text, attachments)
+        overlayController?.setChatState(chatState)
         val client = connectAgentClient(selectedModel)
         val sent = client.send(
             text = text,
