@@ -219,6 +219,36 @@ test("realtime session labels retry with numbered suffixes on duplicates", async
   assert.deepEqual(client.created.map((entry) => entry.label), ["Summarize my project", "Summarize my project 2"]);
 });
 
+test("realtime requests apply selected harness model and reasoning", async () => {
+  const { bridge, client } = createHarness();
+
+  const request = bridge.handleRealtimeRequest({
+    type: "user_request",
+    deviceId: "pixel",
+    inputType: "text",
+    text: "Summarize my project"
+  }, {
+    taskKind: "general",
+    callId: "call_1",
+    model: "hermes:gpt-5.5",
+    reasoningEffort: "high"
+  });
+  await waitFor(() => client.sent.length === 1);
+  client.emit({
+    event: "chat",
+    payload: {
+      sessionKey: client.sent[0]?.sessionKey,
+      runId: "run_1",
+      state: "final",
+      message: "Done"
+    }
+  });
+
+  assert.deepEqual(await request, { finalMessage: "Done" });
+  assert.equal(client.created[0]?.model, "hermes:gpt-5.5");
+  assert.equal(client.sent[0]?.thinking, "high");
+});
+
 test("new chats use uuid labels until first message display name is set", async () => {
   const { bridge, client } = createHarness();
 

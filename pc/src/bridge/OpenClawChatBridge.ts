@@ -22,6 +22,7 @@ import type {
   ChatSetModelMessage,
   ChatSetReasoningMessage,
   ChatStopMessage,
+  RealtimeStartMessage,
   UserRequestMessage
 } from "../protocol/messages.js";
 import type { AuditLog } from "./AuditLog.js";
@@ -76,6 +77,13 @@ export interface HarnessReadinessStatus {
 
 export interface BackendReadinessStatus {
   harnesses: Record<HarnessId, HarnessReadinessStatus>;
+}
+
+interface RealtimeChatOptions {
+  taskKind: AgentTaskKind;
+  callId?: string;
+  model?: string;
+  reasoningEffort?: string;
 }
 
 export class OpenClawChatBridge {
@@ -167,6 +175,11 @@ export class OpenClawChatBridge {
       };
     }
     return { harnesses };
+  }
+
+  syncRealtimeChatContext(message: Pick<RealtimeStartMessage, "deviceId" | "model" | "reasoningEffort">): void {
+    const state = this.stateFor(message.deviceId);
+    this.applyRealtimeChatOptions(message.deviceId, state, message);
   }
 
   async send(message: ChatSendMessage): Promise<void> {
@@ -265,6 +278,18 @@ export class OpenClawChatBridge {
     await this.fallbackSender.send(message, idempotencyKey, taskKind);
   }
 
+  private applyRealtimeChatOptions(
+    deviceId: string,
+    state: DeviceChatState,
+    options: Pick<RealtimeChatOptions, "model" | "reasoningEffort"> | undefined
+  ): void {
+    const model = options?.model?.trim();
+    if (model && model !== "local-litertlm") {
+      this.states.applyModelSelection(deviceId, state, model);
+    }
+    state.reasoningEffort = normalizeThinkingLevel(options?.reasoningEffort, state.reasoningEffort);
+  }
+
   async stop(message: ChatStopMessage): Promise<void> {
     const state = this.stateFor(message.deviceId);
     const sessionKey = message.sessionKey ?? state.sessionKey;
@@ -355,15 +380,16 @@ export class OpenClawChatBridge {
 
   async handleRealtimeRequest(
     request: UserRequestMessage,
-    options: { taskKind: AgentTaskKind; callId?: string } = { taskKind: "general" }
+    options: RealtimeChatOptions = { taskKind: "general" }
   ): Promise<AgentRunResult> {
     const text = request.text.trim();
     if (!text) {
       throw new Error("Realtime request text is required");
     }
 
-    await this.realtimeSessions.ensureFreshRealtimeSession(request.deviceId, text);
     const state = this.stateFor(request.deviceId);
+    this.applyRealtimeChatOptions(request.deviceId, state, options);
+    await this.realtimeSessions.ensureFreshRealtimeSession(request.deviceId, text);
     const idempotencyKey = options.callId ? `realtime_${options.callId}` : `realtime_${randomUUID()}`;
     this.appendUserMessage(request.deviceId, text, `user_${idempotencyKey}`);
 
@@ -393,13 +419,14 @@ export class OpenClawChatBridge {
     }
   }
 
-  async steerRealtimeTurn(deviceId: string, guidance: string, options?: { taskKind: AgentTaskKind; callId: string }): Promise<void> {
+  async steerRealtimeTurn(deviceId: string, guidance: string, options?: RealtimeChatOptions): Promise<void> {
     const text = guidance.trim();
     if (!text) {
       throw new Error("Realtime steering guidance is required");
     }
 
     const state = this.stateFor(deviceId);
+    this.applyRealtimeChatOptions(deviceId, state, options);
     const idempotencyKey = options?.callId ? `realtime_steer_${options.callId}` : `realtime_steer_${randomUUID()}`;
     this.appendUserMessage(deviceId, text, `user_${idempotencyKey}`);
     const result = await this.client.sendChat({

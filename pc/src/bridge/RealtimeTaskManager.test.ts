@@ -38,13 +38,19 @@ class FakeDispatcher {
 }
 
 class FakeTaskDelegate {
-  readonly requests: Array<{ text: string; taskKind?: string; callId?: string }> = [];
+  readonly requests: Array<{ text: string; taskKind?: string; callId?: string; model?: string; reasoningEffort?: string }> = [];
   readonly stopReasons: string[] = [];
-  readonly steers: Array<{ guidance: string; taskKind?: string; callId?: string }> = [];
+  readonly steers: Array<{ guidance: string; taskKind?: string; callId?: string; model?: string; reasoningEffort?: string }> = [];
   results: Array<Promise<AgentRunResult>> = [];
 
-  async handleRealtimeRequest(request: { text: string }, options: { taskKind?: string; callId?: string }): Promise<AgentRunResult> {
-    this.requests.push({ text: request.text, taskKind: options.taskKind, callId: options.callId });
+  async handleRealtimeRequest(request: { text: string }, options: { taskKind?: string; callId?: string; model?: string; reasoningEffort?: string }): Promise<AgentRunResult> {
+    this.requests.push({
+      text: request.text,
+      taskKind: options.taskKind,
+      callId: options.callId,
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {})
+    });
     return await (this.results.shift() ?? Promise.resolve({ finalMessage: `chat done ${request.text}` }));
   }
 
@@ -52,8 +58,14 @@ class FakeTaskDelegate {
     this.stopReasons.push(reason ?? "");
   }
 
-  async steerRealtimeTurn(_deviceId: string, guidance: string, options: { taskKind?: string; callId?: string }): Promise<void> {
-    this.steers.push({ guidance, taskKind: options.taskKind, callId: options.callId });
+  async steerRealtimeTurn(_deviceId: string, guidance: string, options: { taskKind?: string; callId?: string; model?: string; reasoningEffort?: string }): Promise<void> {
+    this.steers.push({
+      guidance,
+      taskKind: options.taskKind,
+      callId: options.callId,
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.reasoningEffort ? { reasoningEffort: options.reasoningEffort } : {})
+    });
   }
 }
 
@@ -114,12 +126,16 @@ function createHarnessWithSearch(output = "search result") {
   return { dispatcher, manager, messages, queries, locations };
 }
 
-function createHarnessWithDelegate(options: { taskTimeoutMs?: number } = {}) {
+function createHarnessWithDelegate(options: { taskTimeoutMs?: number; model?: string; reasoningEffort?: string } = {}) {
   const delegate = new FakeTaskDelegate();
   const messages: RealtimeOutboundMessage[] = [];
   const manager = new RealtimeTaskManager({
     taskDelegate: delegate,
     sendRealtime: (_deviceId, message) => messages.push(message),
+    getRealtimeRoutingContext: () => ({
+      model: options.model,
+      reasoningEffort: options.reasoningEffort
+    }),
     taskTimeoutMs: options.taskTimeoutMs
   });
   return { delegate, manager, messages };
@@ -334,6 +350,32 @@ test("generic agent realtime tools route general harness work", async () => {
   assert.equal(results(messages).find((message) => message.callId === "call_general")?.output, "chat done Summarize my inbox");
   assert.equal(results(messages).find((message) => message.callId === "call_steer")?.status, "completed");
   assert.equal(results(messages).find((message) => message.callId === "call_stop")?.status, "completed");
+});
+
+test("task delegate receives realtime routing context", async () => {
+  const { delegate, manager, messages } = createHarnessWithDelegate({
+    model: "hermes:gpt-5.5",
+    reasoningEffort: "high"
+  });
+
+  await manager.handleToolCall(namedToolCall("call_general", "delegate_agent_task", { instruction: "Summarize my inbox" }));
+  await manager.handleToolCall(namedToolCall("call_steer", "steer_agent_task", { guidance: "Focus on unread messages." }));
+  await waitFor(() => results(messages).length === 2);
+
+  assert.deepEqual(delegate.requests[0], {
+    text: "Summarize my inbox",
+    taskKind: "general",
+    callId: "call_general",
+    model: "hermes:gpt-5.5",
+    reasoningEffort: "high"
+  });
+  assert.deepEqual(delegate.steers[0], {
+    guidance: "Focus on unread messages.",
+    taskKind: "general",
+    callId: "call_steer",
+    model: "hermes:gpt-5.5",
+    reasoningEffort: "high"
+  });
 });
 
 test("task delegate receives visible realtime OpenClaw and phone requests", async () => {

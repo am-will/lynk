@@ -5,9 +5,9 @@ import type { PhoneLocation, RealtimeOutboundMessage, RealtimeToolCallMessage, R
 import type { AuditLog } from "./AuditLog.js";
 
 interface RealtimeTaskDelegate {
-  handleRealtimeRequest(request: UserRequestMessage, options: { taskKind: AgentTaskKind; callId: string }): Promise<AgentRunResult>;
+  handleRealtimeRequest(request: UserRequestMessage, options: RealtimeTaskDelegateOptions): Promise<AgentRunResult>;
   stopRealtimeTurn(deviceId: string, reason?: string): Promise<void>;
-  steerRealtimeTurn(deviceId: string, guidance: string, options: { taskKind: AgentTaskKind; callId: string }): Promise<void>;
+  steerRealtimeTurn(deviceId: string, guidance: string, options: RealtimeTaskDelegateOptions): Promise<void>;
 }
 
 interface RealtimeTaskManagerOptions {
@@ -19,6 +19,7 @@ interface RealtimeTaskManagerOptions {
   };
   getRealtimeApiKey?: (deviceId: string) => string | undefined;
   getRealtimeLocation?: (deviceId: string) => PhoneLocation | undefined;
+  getRealtimeRoutingContext?: (deviceId: string) => RealtimeTaskRoutingContext | undefined;
   audit?: AuditLog;
   maxQueueSize?: number;
   taskTimeoutMs?: number;
@@ -33,6 +34,18 @@ interface QueuedTask {
   instruction: string;
   urgency: "normal" | "interrupt";
   kind: "general" | "phone";
+  model?: string;
+  reasoningEffort?: string;
+}
+
+interface RealtimeTaskRoutingContext {
+  model?: string;
+  reasoningEffort?: string;
+}
+
+interface RealtimeTaskDelegateOptions extends RealtimeTaskRoutingContext {
+  taskKind: AgentTaskKind;
+  callId: string;
 }
 
 interface DeviceTaskState {
@@ -108,12 +121,15 @@ export class RealtimeTaskManager {
       return;
     }
 
+    const routingContext = this.routingContextFor(message.deviceId);
     const task: QueuedTask = {
       deviceId: message.deviceId,
       callId: message.callId,
       instruction: validated.instruction,
       urgency: validated.urgency,
-      kind: validated.kind
+      kind: validated.kind,
+      model: routingContext?.model,
+      reasoningEffort: routingContext?.reasoningEffort
     };
 
     const state = this.stateFor(message.deviceId);
@@ -180,13 +196,16 @@ export class RealtimeTaskManager {
     }
 
     const state = this.stateFor(message.deviceId);
+    const routingContext = this.routingContextFor(message.deviceId);
     if (!state.active) {
       const task: QueuedTask = {
         deviceId: message.deviceId,
         callId: message.callId,
         instruction: guidance,
         urgency: "normal",
-        kind: message.name === REALTIME_TOOL_NAMES.steerOpenClawTask || message.name === REALTIME_TOOL_NAMES.steerAgentTask ? "general" : "phone"
+        kind: message.name === REALTIME_TOOL_NAMES.steerOpenClawTask || message.name === REALTIME_TOOL_NAMES.steerAgentTask ? "general" : "phone",
+        model: routingContext?.model,
+        reasoningEffort: routingContext?.reasoningEffort
       };
       state.queue.unshift(task);
       this.sendStatus(message.deviceId);
@@ -199,7 +218,8 @@ export class RealtimeTaskManager {
         message.deviceId,
         guidance,
         message.name === REALTIME_TOOL_NAMES.steerOpenClawTask || message.name === REALTIME_TOOL_NAMES.steerAgentTask ? "general" : "phone",
-        message.callId
+        message.callId,
+        routingContext
       );
       this.sendResult(message.deviceId, {
         callId: message.callId,
@@ -437,7 +457,9 @@ export class RealtimeTaskManager {
     if (this.options.taskDelegate) {
       return await this.options.taskDelegate.handleRealtimeRequest(request, {
         taskKind: task.kind,
-        callId: task.callId
+        callId: task.callId,
+        model: task.model,
+        reasoningEffort: task.reasoningEffort
       });
     }
     if (!this.options.dispatcher) {
@@ -459,9 +481,20 @@ export class RealtimeTaskManager {
     await this.options.dispatcher.stopActiveTurn(deviceId, reason);
   }
 
-  private async steerActiveTurn(deviceId: string, guidance: string, taskKind: AgentTaskKind, callId: string): Promise<void> {
+  private async steerActiveTurn(
+    deviceId: string,
+    guidance: string,
+    taskKind: AgentTaskKind,
+    callId: string,
+    routingContext?: RealtimeTaskRoutingContext
+  ): Promise<void> {
     if (this.options.taskDelegate) {
-      await this.options.taskDelegate.steerRealtimeTurn(deviceId, guidance, { taskKind, callId });
+      await this.options.taskDelegate.steerRealtimeTurn(deviceId, guidance, {
+        taskKind,
+        callId,
+        model: routingContext?.model,
+        reasoningEffort: routingContext?.reasoningEffort
+      });
       return;
     }
     if (!this.options.dispatcher) {
@@ -543,6 +576,19 @@ export class RealtimeTaskManager {
       completed: state.completed,
       failed: state.failed
     });
+  }
+
+  private routingContextFor(deviceId: string): RealtimeTaskRoutingContext | undefined {
+    const context = this.options.getRealtimeRoutingContext?.(deviceId);
+    const model = context?.model?.trim();
+    const reasoningEffort = context?.reasoningEffort?.trim();
+    if (!model && !reasoningEffort) {
+      return undefined;
+    }
+    return {
+      ...(model ? { model } : {}),
+      ...(reasoningEffort ? { reasoningEffort } : {})
+    };
   }
 
   private stateFor(deviceId: string): DeviceTaskState {
