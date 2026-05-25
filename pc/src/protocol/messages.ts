@@ -81,6 +81,8 @@ export const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "x
 export const CHAT_SEND_DELIVERIES = ["normal", "queue", "steer"] as const;
 export const CHAT_TASK_KINDS = ["general", "phone"] as const;
 export const CHAT_ATTACHMENT_KINDS = ["image", "file"] as const;
+export const CHAT_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+const CHAT_ATTACHMENT_MAX_BASE64_CHARS = Math.ceil(CHAT_ATTACHMENT_MAX_BYTES / 3) * 4;
 export type ChatTaskKind = typeof CHAT_TASK_KINDS[number];
 
 export const registerMessageSchema = z.object({
@@ -177,13 +179,23 @@ export const chatOpenMessageSchema = z.object({
   sessionKey: z.string().min(1).optional()
 });
 
+const chatAttachmentContentBase64Schema = z.string()
+  .min(1)
+  .max(CHAT_ATTACHMENT_MAX_BASE64_CHARS)
+  .refine((value) => /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value), {
+    message: "Attachment content must be valid base64."
+  })
+  .refine((value) => Buffer.from(value, "base64").byteLength <= CHAT_ATTACHMENT_MAX_BYTES, {
+    message: `Attachment content must be ${CHAT_ATTACHMENT_MAX_BYTES} bytes or smaller.`
+  });
+
 export const chatAttachmentSchema = z.object({
   id: z.string().min(1),
   kind: z.enum(CHAT_ATTACHMENT_KINDS),
   displayName: z.string().min(1),
   mimeType: z.string().min(1),
-  sizeBytes: z.number().int().nonnegative(),
-  contentBase64: z.string().min(1).optional()
+  sizeBytes: z.number().int().nonnegative().max(CHAT_ATTACHMENT_MAX_BYTES),
+  contentBase64: chatAttachmentContentBase64Schema.optional()
 });
 
 export const chatSendMessageSchema = z.object({

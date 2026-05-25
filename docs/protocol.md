@@ -187,7 +187,7 @@ Android sends user text, optional model, optional reasoning selection, and optio
 }
 ```
 
-Attachment `kind` is `"image"` or `"file"`. Android sends selected files inline as base64 in `contentBase64`; host harnesses may reject attachments they cannot handle. `delivery` is optional and defaults to `"normal"`. Android uses `"queue"` or `"steer"` when the user sends text while a turn is already active:
+Attachment `kind` is `"image"` or `"file"`. Android sends selected files inline as base64 in `contentBase64`; each attachment is capped at 5 MiB before base64 encoding, and both Android and the PC protocol reject larger payloads. OpenClaw is currently the only host harness that accepts attachment payloads; Hermes and Codex are rejected at the harness router boundary with a clear unsupported-attachments error. `delivery` is optional and defaults to `"normal"`. Android uses `"queue"` or `"steer"` when the user sends text while a turn is already active:
 
 - `"queue"` keeps the message FIFO and starts it as the next turn after the active run settles.
 - `"steer"` sends the message into the active run at the next supported harness boundary. OpenClaw uses its explicit `/steer` path, Hermes uses active session steering, and Codex app-server uses `turn/steer` with the active turn id.
