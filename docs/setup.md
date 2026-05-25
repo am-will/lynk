@@ -63,7 +63,7 @@ npm run phone:tailscale
 
 Then use the printed `ws://<pc-tailnet-name-or-ip>:8788/phone` URL in Android. Do not expose OpenClaw Gateway or app-server transports directly to the internet.
 
-The realtime voice path is separate from the task dispatcher: Android starts the WebRTC call, the PC bridge creates the OpenAI Realtime session, and completed general realtime intents route to the currently selected host harness. Phone-control tool calls remain a separate phone-task path.
+The realtime voice path is separate from the task dispatcher: Android starts the WebRTC call, the PC bridge creates the OpenAI Realtime session, and completed general realtime intents route to the currently selected backend. Host selections use the PC harness router; Local LiteRT-LM selections run delegated work on Android. Phone-control tool calls remain a separate phone-task path.
 
 ## Android
 

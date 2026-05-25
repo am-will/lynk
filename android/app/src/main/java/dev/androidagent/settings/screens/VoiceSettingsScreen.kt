@@ -42,7 +42,7 @@ object VoiceSettingsScreen {
         root.addView(SettingsUi.card(activity, tokens).apply {
             addView(SettingsUi.sectionHeader(activity, "Realtime voice", "Uses OpenAI Realtime via the PC bridge.", tokens))
             addView(SettingsUi.labeledField(activity, "OpenAI API key", openAiKeyInput, tokens, DesignTokens.Spacing.md))
-            addView(SettingsUi.body(activity, "Save a key from Android settings or PC OPENAI_API_KEY. Host bridge models are required for voice.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
+            addView(SettingsUi.body(activity, "Save a key from Android settings or PC OPENAI_API_KEY. Voice uses the selected chat backend for delegated work, including Local LiteRT-LM.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
         }, SettingsUi.stackedParams(activity))
 
         root.addView(

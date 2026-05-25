@@ -436,9 +436,9 @@ Raw non-audio realtime items are forwarded for Android-side normalization or deb
 
 ### Tool Calls
 
-Realtime voice sessions expose high-level OpenAI function tools. Android parses function-call events from the WebRTC data channel and relays the completed call to the PC bridge.
+Realtime voice sessions expose high-level OpenAI function tools. Android parses function-call events from the WebRTC data channel and either handles local-selected tasks on-device or relays bridge-selected tasks to the PC bridge.
 
-Use `delegate_agent_task` for general work that should happen in the currently selected host harness on the remote PC:
+Use `delegate_agent_task` for general work that should happen in the currently selected backend:
 
 ```json
 {
@@ -453,7 +453,7 @@ Use `delegate_agent_task` for general work that should happen in the currently s
 }
 ```
 
-The bridge validates that `name` is `delegate_agent_task`, rejects empty or oversized instructions, and routes the task through the visible chat session as a general task for the selected harness. `delegate_openclaw_task` remains accepted as a compatibility alias. The delegated instruction is also emitted as `chat.message` with `role: "user"` so it appears in the Android viewfinder before the harness stream starts.
+For host models, the bridge validates that `name` is `delegate_agent_task`, rejects empty or oversized instructions, and routes the task through the visible chat session as a general task for the selected harness. For `local-litertlm`, Android runs the delegated instruction through the local LiteRT-LM controller and returns the local result to the realtime session. `delegate_openclaw_task` remains accepted as a compatibility alias. The delegated instruction is also emitted as `chat.message` with `role: "user"` so it appears in the Android viewfinder before the backend stream starts.
 
 Use `run_phone_task` for new actionable phone tasks:
 
