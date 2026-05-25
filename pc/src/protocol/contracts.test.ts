@@ -214,7 +214,7 @@ test("PC outbound phone messages have validating schemas for dev and tests", () 
     { type: "chat.reasoning_clear", deviceId: "pixel", sessionKey: "session", runId: null },
     { type: "chat.final", deviceId: "pixel", sessionKey: "session", runId: "run", text: "done" },
     { type: "chat.error", deviceId: "pixel", sessionKey: "session", runId: "run", message: "failed" },
-    { type: "chat.reply_available", deviceId: "pixel", sessionKey: "session", runId: "run", status: "completed", textPreview: "done" },
+    { type: "chat.reply_available", deviceId: "pixel", sessionKey: "session", runId: "run", status: "completed", textPreview: "done", harnessId: "openclaw", harnessLabel: "OpenClaw", model: "gpt-5.5" },
     { type: "chat.tool_event", deviceId: "pixel", sessionKey: "session", eventId: "tool_1", toolName: "exec", title: "Ran command", status: "completed" },
     { type: "chat.models", deviceId: "pixel", models: [], reasoningOptions: [] },
     { type: "chat.commands", deviceId: "pixel", commands: [] },

@@ -575,6 +575,8 @@ test("completed background session runs emit reply notifications without switchi
   assert.equal(reply.runId, "run_1");
   assert.equal(reply.status, "completed");
   assert.equal(reply.textPreview, "Background answer");
+  assert.equal(reply.harnessId, "openclaw");
+  assert.equal(reply.harnessLabel, "OpenClaw");
 });
 
 test("host initiated terminal events emit reply notifications without switching timeline", async () => {
@@ -611,6 +613,8 @@ test("host initiated terminal events emit reply notifications without switching 
   assert.equal(reply.textPreview, "Cron finished");
   assert.equal(reply.sessionId, "cron-session");
   assert.equal(reply.sessionDisplayName, "Nightly cron");
+  assert.equal(reply.harnessId, "openclaw");
+  assert.equal(reply.harnessLabel, "OpenClaw");
 });
 
 test("reasoning and model changes do not append chat messages", async () => {

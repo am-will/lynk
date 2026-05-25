@@ -6,6 +6,7 @@ import dev.androidagent.chat.ChatModelOption
 import dev.androidagent.chat.ChatModelSource
 import dev.androidagent.chat.ChatSessionRow
 import dev.androidagent.chat.ChatState
+import dev.androidagent.chat.ChatUnreadReply
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -398,17 +399,50 @@ class ChatPresentationHelpersTest {
     }
 
     @Test
+    fun sessionSourceLabelsIncludeHarnessBreadcrumbs() {
+        assertEquals(
+            "Hermes / Nightly cron",
+            ChatPresentationHelpers.sessionSourceSublabel(session(
+                key = "hermes:nightly",
+                harnessId = "hermes",
+                harnessLabel = "Hermes",
+                preview = "Nightly cron"
+            ))
+        )
+        assertEquals(
+            "Codex / ~/Projects/app",
+            ChatPresentationHelpers.sessionSourceSublabel(session(
+                key = "codex:workspace",
+                harnessId = "codex",
+                harnessLabel = "Codex",
+                workspacePath = "/Users/example/Projects/app"
+            ))
+        )
+        assertEquals(
+            "Hermes / Nightly cron",
+            ChatPresentationHelpers.unreadReplySourceLabel(
+                "hermes:nightly",
+                ChatUnreadReply(sessionDisplayName = "Nightly cron", harnessId = "hermes", harnessLabel = "Hermes")
+            )
+        )
+    }
+
+    @Test
     fun codexSessionPickerGroupsWorkspacesAndQuickChats() {
         val sections = CodexSessionPickerSections.build(
             sessions = listOf(
                 session(
                     key = "codex:workspace",
+                    harnessId = "codex",
+                    harnessLabel = "Codex",
                     displayName = "Workspace chat",
                     workspacePath = "/Users/example/Projects/app",
                     model = "gpt-5.3-codex"
                 ),
                 session(
                     key = "codex:quick",
+                    harnessId = "codex",
+                    harnessLabel = "Codex",
                     displayName = "Quick chat",
                     preview = "quick question",
                     model = "gpt-5.3-codex"
@@ -420,9 +454,9 @@ class ChatPresentationHelpersTest {
         )
 
         assertEquals(listOf("~/Projects/app", "QuickChats"), sections.map { it.title })
-        assertEquals("~/Projects/app", sections[0].rows[0].sublabel)
+        assertEquals("Codex / ~/Projects/app", sections[0].rows[0].sublabel)
         assertTrue(sections[0].rows[0].selected)
-        assertEquals("quick question", sections[1].rows[0].sublabel)
+        assertEquals("Codex / quick question", sections[1].rows[0].sublabel)
         assertEquals(2, sections[1].rows[0].badgeCount)
     }
 
@@ -435,15 +469,17 @@ class ChatPresentationHelpersTest {
         workspaceName: String? = null,
         preview: String? = null,
         source: String? = null,
-        model: String? = null
+        model: String? = null,
+        harnessId: String? = "openclaw",
+        harnessLabel: String? = "OpenClaw"
     ): ChatSessionRow {
         return ChatSessionRow(
             key = key,
             sessionId = sessionId,
             label = label,
             displayName = displayName,
-            harnessId = "openclaw",
-            harnessLabel = "OpenClaw",
+            harnessId = harnessId,
+            harnessLabel = harnessLabel,
             workspacePath = workspacePath,
             workspaceName = workspaceName,
             threadPath = null,

@@ -586,6 +586,36 @@ class ChatStateReducerTest {
     }
 
     @Test
+    fun replyAvailableTracksHarnessMetadataAndLatestUnreadSession() {
+        val hermes = ChatStateReducer.reduce(ChatState(), JSONObject()
+            .put("type", "chat.reply_available")
+            .put("sessionKey", "hermes:nightly")
+            .put("runId", "run1")
+            .put("status", "completed")
+            .put("harnessId", "hermes")
+            .put("harnessLabel", "Hermes")
+            .put("model", "hermes:gpt-5.5")
+            .put("receivedAt", 100L))
+        val codex = ChatStateReducer.reduce(hermes, JSONObject()
+            .put("type", "chat.reply_available")
+            .put("sessionKey", "codex:workspace")
+            .put("runId", "run2")
+            .put("status", "completed")
+            .put("harnessId", "codex")
+            .put("harnessLabel", "Codex")
+            .put("model", "codex:gpt-5.3-codex")
+            .put("receivedAt", 200L))
+
+        val unread = codex.unreadReplies["hermes:nightly"]
+        assertEquals("hermes", unread?.harnessId)
+        assertEquals("Hermes", unread?.harnessLabel)
+        assertEquals("hermes:gpt-5.5", unread?.model)
+        assertEquals(1, codex.unreadCountForHarness("hermes"))
+        assertEquals(1, codex.unreadCountForHarness("codex"))
+        assertEquals("codex:workspace", codex.latestUnreadSessionKey())
+    }
+
+    @Test
     fun markSessionReadClearsOnlyThatSession() {
         val withUnread = listOf("first" to "run1", "second" to "run2").fold(ChatState()) { state, (session, run) ->
             ChatStateReducer.reduce(state, JSONObject()
@@ -615,11 +645,17 @@ class ChatStateReducerTest {
             .put("sessions", JSONArray().put(JSONObject()
                 .put("key", "agent:main:first")
                 .put("sessionId", "session-1")
-                .put("displayName", "Project notes"))))
+                .put("displayName", "Project notes")
+                .put("harnessId", "hermes")
+                .put("harnessLabel", "Hermes")
+                .put("model", "hermes:gpt-5.5"))))
 
         val unread = withSessions.unreadReplies["agent:main:first"]
         assertEquals("Project notes", unread?.sessionDisplayName)
         assertEquals("Project notes", unread?.displayNameFor("agent:main:first"))
+        assertEquals("hermes", unread?.harnessId)
+        assertEquals("Hermes", unread?.harnessLabel)
+        assertEquals("hermes:gpt-5.5", unread?.model)
     }
 
     private fun model(id: String, label: String, provider: String, harnessId: String): JSONObject {
