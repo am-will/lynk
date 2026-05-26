@@ -194,6 +194,7 @@ class OverlayController(
     private var reasoningButton: TextView? = null
     private var contextUsageView: ContextUsageView? = null
     private var composerInput: EditText? = null
+    private var composerDraftText = ""
     private var transcriptionMicButton: ImageButton? = null
     private var lastTranscriptionState = VoiceTranscriptionState()
     private var automationSuppressionDepth = 0
@@ -870,6 +871,11 @@ class OverlayController(
         return anchoredPicker?.isShowing == true
     }
 
+    private fun clearComposerDraft(input: EditText? = composerInput) {
+        composerDraftText = ""
+        input?.setText("")
+    }
+
     private fun buildComposerInput(tokens: ThemeTokens): EditText {
         return object : EditText(context) {
             override fun onKeyPreIme(keyCode: Int, event: KeyEvent): Boolean {
@@ -912,6 +918,7 @@ class OverlayController(
             addTextChangedListener(object : TextWatcher {
                 override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
                 override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    composerDraftText = s?.toString().orEmpty()
                     if (!suppressComposerAutocomplete) {
                         maybeShowCommandAutocomplete(this@apply)
                     }
@@ -923,6 +930,10 @@ class OverlayController(
                     }
                 }
             })
+            if (composerDraftText.isNotEmpty()) {
+                setText(composerDraftText)
+                setSelection(text?.length ?: 0)
+            }
             composerInput = this
         }
     }
@@ -1035,7 +1046,7 @@ class OverlayController(
                 setStatus("Transcribing audio...")
             } else if (text.isNotEmpty() || attachments.isNotEmpty()) {
                 if (onSubmit(text, attachments)) {
-                    input.setText("")
+                    clearComposerDraft(input)
                     attachmentTray.clear()
                     setStatus(brandPresentationFor(lastChatState).copy.sentStatus)
                 }
@@ -1602,7 +1613,7 @@ class OverlayController(
 
     private fun startNewChatSession() {
         onNewChatSession()
-        composerInput?.setText("")
+        clearComposerDraft()
         setStatus("Started a new chat session")
     }
 
