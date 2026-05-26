@@ -899,7 +899,7 @@ class AgentForegroundService : Service() {
 
     private fun startNewChatFromUi() {
         val config = AgentConfigStore.load(this)
-        val selectedModel = selectedChatModel(config)
+        val selectedModel = selectedModelForNewChat(config)
         if (selectedModel.isBlank()) {
             val message = "Enable a model harness in Models & Harness first."
             chatState = chatState.copy(status = message, isRunning = false)
@@ -911,7 +911,8 @@ class AgentForegroundService : Service() {
             return
         }
         val route = routeForModel(selectedModel, config)
-        val workspacePath = config.codexWorkspacePath
+        val candidateWorkspacePath = currentCodexWorkspacePath() ?: config.codexWorkspacePath
+        val workspacePath = candidateWorkspacePath
             .takeIf { route == ChatClientRoute.Host && isCodexChatSelection(selectedModel) && CodexWorkspacePaths.hasDefault(it) }
         beginNewChatAttempt(
             request = PendingNewChatRequest(
@@ -923,6 +924,27 @@ class AgentForegroundService : Service() {
             ),
             createWorkspaceIfMissing = false
         )
+    }
+
+    private fun selectedModelForNewChat(config: AgentConfig): String {
+        val activeHarness = chatState.harnessId
+            ?: ChatModelCatalog.harnessFromSessionKey(chatState.sessionKey)
+        val models = availableChatModels(config)
+        val activeHarnessModel = ChatModelCatalog.defaultModelForHarness(
+            harnessId = activeHarness,
+            configuredDefaultModel = chatState.selectedModel ?: config.model,
+            models = models,
+            enabledHarnessIds = config.enabledModelHarnessIds()
+        )
+        return activeHarnessModel ?: selectedChatModel(config)
+    }
+
+    private fun currentCodexWorkspacePath(): String? {
+        val activeSessionKey = chatState.sessionKey?.takeIf { it.isNotBlank() } ?: return null
+        val session = chatState.sessions.firstOrNull { it.key == activeSessionKey } ?: return null
+        val harnessId = session.harnessId ?: harnessFromSessionKey(session.key)
+        if (harnessId != AgentConfig.HARNESS_CODEX) return null
+        return session.workspacePath?.trim()?.takeIf { CodexWorkspacePaths.hasDefault(it) }
     }
 
     private fun beginNewChatAttempt(request: PendingNewChatRequest, createWorkspaceIfMissing: Boolean) {

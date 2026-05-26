@@ -303,6 +303,31 @@ test("new chat workspace options are forwarded only for Codex", async () => {
   assert.equal(client.created[1]?.createWorkspaceIfMissing, undefined);
 });
 
+test("Codex new chats reuse the active session workspace when no workspace is supplied", async () => {
+  const { bridge, client } = createHarness();
+  const workspacePath = "/Users/am.will/Applications/open-claw-agent";
+  client.sessions = [{
+    key: "codex:existing",
+    sessionId: "existing",
+    label: "Existing Codex chat",
+    harnessId: "codex",
+    model: "codex:gpt-5.3-codex",
+    workspacePath
+  }];
+
+  await bridge.selectSession({
+    type: "chat.select_session",
+    deviceId: "pixel",
+    sessionKey: "codex:existing"
+  });
+  await bridge.newSession({
+    type: "chat.new_session",
+    deviceId: "pixel"
+  });
+
+  assert.equal(client.created.at(-1)?.workspacePath, workspacePath);
+});
+
 test("backend readiness reports configured harnesses only when live models exist", async () => {
   const { bridge, client } = createHarness();
   client.models = [

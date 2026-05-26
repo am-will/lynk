@@ -480,8 +480,8 @@ export class OpenClawChatBridge {
     const explicitLabel = typeof message.label === "string" && message.label.trim()
       ? message.label.trim()
       : undefined;
-    const workspacePath = state.harnessId === "codex" && typeof message.workspacePath === "string"
-      ? message.workspacePath.trim()
+    const workspacePath = state.harnessId === "codex"
+      ? codexWorkspacePathForNewSession(state, message.workspacePath)
       : undefined;
     const created = await this.client.createSession({
       key: requestKey,
@@ -911,6 +911,15 @@ export class OpenClawChatBridge {
     };
     this.sendChat(deviceId, reply);
   }
+}
+
+function codexWorkspacePathForNewSession(state: DeviceChatState, requestedWorkspacePath: string | undefined): string | undefined {
+  const requested = requestedWorkspacePath?.trim();
+  if (requested) {
+    return requested;
+  }
+  const currentWorkspace = state.sessionSummaries.get(state.sessionKey)?.workspacePath?.trim();
+  return currentWorkspace || undefined;
 }
 
 function readinessAction(harnessId: HarnessId): string {
