@@ -18,7 +18,8 @@ interface ControlCommandRouterOptions {
     text: string,
     sessionKey: string,
     status: string,
-    successMessage?: string
+    successMessage?: string,
+    options?: { ignoreRunEvents?: boolean }
   ): Promise<void>;
   send(message: ChatSendMessage): Promise<void>;
 }
@@ -95,7 +96,8 @@ export class OpenClawControlCommandRouter {
         `/fast ${enabled === false ? "off" : "on"}`,
         state.sessionKey,
         "Updating fast mode",
-        `Fast mode ${enabled === false ? "disabled" : "enabled"}`
+        `Fast mode ${enabled === false ? "disabled" : "enabled"}`,
+        { ignoreRunEvents: Boolean(state.runId) }
       );
       return;
     }
@@ -106,7 +108,14 @@ export class OpenClawControlCommandRouter {
         : firstArg && ["on", "off", "full"].includes(firstArg)
           ? firstArg
           : "on";
-      await this.options.sendSlashCommand(message.deviceId, `/verbose ${level}`, state.sessionKey, "Updating verbosity", `Verbose mode set to ${level}`);
+      await this.options.sendSlashCommand(
+        message.deviceId,
+        `/verbose ${level}`,
+        state.sessionKey,
+        "Updating verbosity",
+        `Verbose mode set to ${level}`,
+        { ignoreRunEvents: Boolean(state.runId) }
+      );
       return;
     }
 
@@ -122,7 +131,8 @@ export class OpenClawControlCommandRouter {
         `/reasoning ${level}`,
         state.sessionKey,
         `Reasoning Stream: ${state.reasoningStream ? "On" : "Off"}`,
-        `Reasoning Stream ${state.reasoningStream ? "enabled" : "disabled"}`
+        `Reasoning Stream ${state.reasoningStream ? "enabled" : "disabled"}`,
+        { ignoreRunEvents: Boolean(state.runId) }
       );
       return;
     }

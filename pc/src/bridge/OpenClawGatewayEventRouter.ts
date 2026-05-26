@@ -56,6 +56,7 @@ export class OpenClawGatewayEventRouter {
     const messageSessionKey = "sessionKey" in message ? message.sessionKey : undefined;
     const messageRunId = "runId" in message ? message.runId : undefined;
     const pendingRun = typeof messageRunId === "string" ? state.pendingRuns.get(messageRunId) : undefined;
+    const isIgnoredRun = typeof messageRunId === "string" && state.ignoredRunIds.has(messageRunId);
     const isSelectedSession = Boolean(messageSessionKey && messageSessionKey === state.sessionKey);
     const isTrackedPendingRun = Boolean(
       pendingRun && (!messageSessionKey || pendingRun.sessionKey === messageSessionKey)
@@ -65,6 +66,17 @@ export class OpenClawGatewayEventRouter {
 
     if (!isSelectedSession && !isTrackedPendingRun && !isNotificationEligibleTerminal) {
       return false;
+    }
+
+    if (isIgnoredRun) {
+      if (isTerminalMessage && messageRunId) {
+        state.ignoredRunIds.delete(messageRunId);
+        void this.options.refreshMetadata(deviceId);
+        if (isSelectedSession) {
+          void this.options.sendHistory(deviceId);
+        }
+      }
+      return true;
     }
 
     if (isSelectedSession) {
@@ -107,6 +119,9 @@ export class OpenClawGatewayEventRouter {
     const runId = typeof record.runId === "string" ? record.runId : undefined;
     const sessionKey = typeof record.sessionKey === "string" ? record.sessionKey : undefined;
     for (const [deviceId, state] of this.options.states.entries()) {
+      if (runId && state.ignoredRunIds.has(runId)) {
+        continue;
+      }
       if (runId && state.runId && runId !== state.runId) {
         continue;
       }
@@ -125,6 +140,12 @@ export class OpenClawGatewayEventRouter {
     const runId = typeof record.runId === "string" ? record.runId : undefined;
     const sessionKey = typeof record.sessionKey === "string" ? record.sessionKey : undefined;
     for (const [deviceId, state] of this.options.states.entries()) {
+      if (runId && state.ignoredRunIds.has(runId)) {
+        if (record.type === "run.completed") {
+          state.ignoredRunIds.delete(runId);
+        }
+        continue;
+      }
       if (runId && state.runId && runId !== state.runId) {
         continue;
       }

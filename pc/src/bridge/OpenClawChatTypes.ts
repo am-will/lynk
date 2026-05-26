@@ -21,6 +21,7 @@ export interface DeviceChatState {
   modelsByHarness: Map<HarnessId, string | null>;
   modelOptions: Map<string, ChatModelOption>;
   pendingRuns: Map<string, PendingChatRun>;
+  ignoredRunIds: Set<string>;
   queuedSends: ChatSendMessage[];
   drainingQueuedSends?: boolean;
   sessionSummaries: Map<string, ChatSessionSummary>;
@@ -75,6 +76,7 @@ export class DeviceChatStateStore {
       modelsByHarness: new Map(),
       modelOptions: new Map(),
       pendingRuns: new Map(),
+      ignoredRunIds: new Set(),
       queuedSends: [],
       sessionSummaries: new Map()
     };

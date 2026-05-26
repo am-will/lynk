@@ -385,6 +385,52 @@ test("explicit phone chat uses gateway session so session fast mode applies", as
   assert.equal(client.sent[0]?.thinking, "low");
 });
 
+test("fast mode control command does not replace the active user run", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "hi"
+  });
+  await bridge.controlCommand({
+    type: "chat.control_command",
+    deviceId: "pixel",
+    command: "fast",
+    args: { enabled: false }
+  });
+
+  const latestState = chatMessages.filter((message) => message.type === "chat.state").at(-1);
+  assert.equal(latestState?.runId, "run_1");
+  assert.equal(latestState?.isRunning, true);
+
+  client.emit({
+    event: "chat",
+    payload: {
+      sessionKey: defaultSessionKey("pixel"),
+      runId: "run_2",
+      state: "final",
+      message: ""
+    }
+  });
+  assert.equal(chatMessages.some((message) => message.type === "chat.final" && message.runId === "run_2"), false);
+  assert.equal(chatMessages.filter((message) => message.type === "chat.state").at(-1)?.runId, "run_1");
+
+  client.emit({
+    event: "chat",
+    payload: {
+      sessionKey: defaultSessionKey("pixel"),
+      runId: "run_1",
+      state: "final",
+      message: "Done"
+    }
+  });
+
+  const finalState = chatMessages.filter((message) => message.type === "chat.state").at(-1);
+  assert.equal(finalState?.runId, null);
+  assert.equal(finalState?.isRunning, false);
+});
+
 test("chat send forwards attachments to the gateway client", async () => {
   const { bridge, client } = createHarness();
   const attachment: ChatAttachment = {

@@ -114,7 +114,8 @@ export class OpenClawChatBridge {
       sendCommandList: (deviceId) => this.sendCommandList(deviceId),
       sendToolList: (deviceId, mode) => this.sendToolList(deviceId, mode),
       sendTaskList: (deviceId) => this.sendTaskList(deviceId),
-      sendSlashCommand: (deviceId, text, sessionKey, status, successMessage) => this.sendSlashCommand(deviceId, text, sessionKey, status, successMessage),
+      sendSlashCommand: (deviceId, text, sessionKey, status, successMessage, options) =>
+        this.sendSlashCommand(deviceId, text, sessionKey, status, successMessage, options),
       send: (message) => this.send(message)
     });
     this.fallbackSender = new OpenClawFallbackSender({
@@ -760,16 +761,29 @@ export class OpenClawChatBridge {
     }
   }
 
-  private async sendSlashCommand(deviceId: string, text: string, sessionKey: string, status: string, successMessage?: string): Promise<void> {
+  private async sendSlashCommand(
+    deviceId: string,
+    text: string,
+    sessionKey: string,
+    status: string,
+    successMessage?: string,
+    options: { ignoreRunEvents?: boolean } = {}
+  ): Promise<void> {
     try {
+      const state = this.stateFor(deviceId);
+      const activeRunId = state.runId ?? null;
       const result = await this.client.sendChat({
         sessionKey,
         message: text,
         idempotencyKey: randomUUID()
       });
-      const state = this.stateFor(deviceId);
       state.sessionKey = result.sessionKey;
-      state.runId = result.runId;
+      if (options.ignoreRunEvents) {
+        state.ignoredRunIds.add(result.runId);
+        state.runId = activeRunId;
+      } else {
+        state.runId = result.runId;
+      }
       this.sendState(deviceId, status);
       if (successMessage) {
         this.appendSystemMessage(deviceId, successMessage, `system_${result.runId}`);
