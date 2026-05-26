@@ -317,6 +317,7 @@ test("backend readiness reports configured harnesses only when live models exist
         configured: true,
         label: "OpenClaw",
         modelCount: 1,
+        state: "ready",
         message: "OpenClaw backend is ready."
       },
       hermes: {
@@ -324,13 +325,16 @@ test("backend readiness reports configured harnesses only when live models exist
         configured: false,
         label: "Hermes",
         modelCount: 0,
-        message: "Hermes is not configured on the PC bridge."
+        state: "missing_config",
+        message: "Hermes is not configured on the PC bridge.",
+        action: "Set HERMES_API_KEY or configure Hermes in the host bridge config, then run host integration refresh."
       },
       codex: {
         ok: true,
         configured: true,
         label: "Codex",
         modelCount: 1,
+        state: "ready",
         message: "Codex backend is ready."
       }
     }

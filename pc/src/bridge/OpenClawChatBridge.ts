@@ -72,7 +72,9 @@ export interface HarnessReadinessStatus {
   configured: boolean;
   label: string;
   modelCount: number;
+  state: "ready" | "missing_config" | "no_models";
   message: string;
+  action?: string;
 }
 
 export interface BackendReadinessStatus {
@@ -162,16 +164,19 @@ export class OpenClawChatBridge {
     for (const info of harnessInfos(this.config)) {
       const modelCount = modelCounts[info.id] ?? 0;
       const ready = info.enabled && modelCount > 0;
+      const state = ready ? "ready" : info.enabled ? "no_models" : "missing_config";
       harnesses[info.id] = {
         ok: ready,
         configured: info.enabled,
         label: info.label,
         modelCount,
+        state,
         message: ready
           ? `${info.label} backend is ready.`
           : info.enabled
             ? `${info.label} is configured on the PC bridge, but no live models are available yet.`
-          : `${info.label} is not configured on the PC bridge.`
+          : `${info.label} is not configured on the PC bridge.`,
+        ...(state === "missing_config" ? { action: readinessAction(info.id) } : {})
       };
     }
     return { harnesses };
@@ -905,5 +910,20 @@ export class OpenClawChatBridge {
       model: session?.model ?? (sessionKey === state.sessionKey ? state.model : null)
     };
     this.sendChat(deviceId, reply);
+  }
+}
+
+function readinessAction(harnessId: HarnessId): string {
+  switch (harnessId) {
+    case "openclaw":
+      return "Install and start OpenClaw Gateway, then run host integration refresh.";
+    case "hermes":
+      return "Set HERMES_API_KEY or configure Hermes in the host bridge config, then run host integration refresh.";
+    case "codex":
+      return "Install Codex CLI with app-server support, then run host integration refresh.";
+    default: {
+      const exhaustive: never = harnessId;
+      return exhaustive;
+    }
   }
 }
