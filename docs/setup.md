@@ -2,6 +2,8 @@
 
 ## PC
 
+For Play Store style onboarding, prefer the Host Bridge installer flow in `docs/host-installer.md`. The installer creates the token, registers the background service, discovers LAN/Tailscale endpoints, and generates an Android pairing QR/deep link.
+
 Requirements:
 
 - Node.js 24+

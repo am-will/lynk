@@ -20,6 +20,10 @@ Current prototype note: the PC dispatcher still contains a hand-written Codex ap
 
 ## Quick Start
 
+For consumer installs, use the Host Bridge companion flow in `docs/host-installer.md`. It generates the pairing token, discovers LAN/Tailscale endpoints, and prints a QR deep link for Android.
+
+For source checkouts:
+
 ```bash
 cd pc
 npm install

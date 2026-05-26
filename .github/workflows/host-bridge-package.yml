@@ -1,0 +1,64 @@
+name: Host Bridge Package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "host-bridge-v*"
+
+jobs:
+  package:
+    name: Package host bridge
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: android-agent-bridge-macos
+            archive: tar
+          - os: windows-latest
+            artifact: android-agent-bridge-windows
+            archive: zip
+          - os: ubuntu-latest
+            artifact: android-agent-bridge-linux
+            archive: tar
+    defaults:
+      run:
+        working-directory: pc
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: pc/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - name: Stage package
+        shell: bash
+        run: |
+          rm -rf package-root
+          mkdir -p package-root
+          cp -R dist package-root/dist
+          cp package.json package-lock.json package-root/
+          cp -R installers package-root/installers
+          cp ../docs/host-installer.md package-root/README.md
+          npm ci --omit=dev --prefix package-root
+      - name: Archive package
+        shell: bash
+        run: |
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            powershell.exe -NoProfile -Command "Compress-Archive -Path package-root\\* -DestinationPath '${{ matrix.artifact }}.zip' -Force"
+          else
+            tar -czf "${{ matrix.artifact }}.tar.gz" -C package-root .
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            pc/${{ matrix.artifact }}.zip
+            pc/${{ matrix.artifact }}.tar.gz
+          if-no-files-found: ignore
