@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { HermesApiClient } from "../dispatcher/HermesApiClient.js";
 import { HermesRunDriver, type HermesActiveRun, type HermesRunDriverEvent } from "../dispatcher/HermesRunDriver.js";
-import type { ChatHistoryMessage, ChatSessionSummary } from "../protocol/messages.js";
+import type { ChatAttachment, ChatHistoryMessage, ChatSessionSummary } from "../protocol/messages.js";
 import type { BridgeConfig } from "./config.js";
 import { discoverHermesModels } from "./HermesModelDiscovery.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "./harness/InMemoryHarnessSessionStore.js";
@@ -122,18 +122,20 @@ export class HermesChatClient {
     sessionKey: string;
     sessionId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
     const session = this.sessions.ensureSession(options.sessionKey, options.sessionId);
     this.sessions.setThinkingLevel(session, options.thinking);
-    this.sessions.appendUserMessage(session, options.message, options.idempotencyKey);
+    this.sessions.appendUserMessage(session, options.message, options.idempotencyKey, options.attachments);
 
     const active = await this.driver.createRun({
       input: options.message,
       sessionId: session.sessionId,
       model: session.model,
-      idempotencyKey: options.idempotencyKey
+      idempotencyKey: options.idempotencyKey,
+      attachments: options.attachments
     });
     const runId = active.runId;
     this.sessions.setActiveRun(session, runId);
@@ -169,6 +171,7 @@ export class HermesChatClient {
     sessionId?: string;
     runId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
@@ -177,8 +180,8 @@ export class HermesChatClient {
       throw new Error("No active Hermes run to steer");
     }
     const session = this.sessions.ensureSession(active.sessionKey, options.sessionId);
-    this.sessions.appendUserMessage(session, options.message, options.idempotencyKey);
-    await this.driver.steerRun(active.active, options.message);
+    this.sessions.appendUserMessage(session, options.message, options.idempotencyKey, options.attachments);
+    await this.driver.steerRun(active.active, options.message, options.attachments);
     return { runId: active.active.runId, sessionKey: active.sessionKey };
   }
 

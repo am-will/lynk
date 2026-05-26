@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { HermesApiClient } from "../dispatcher/HermesApiClient.js";
+import type { ChatAttachment } from "../protocol/messages.js";
 import type { BridgeConfig } from "./config.js";
 import { HermesChatClient } from "./HermesChatClient.js";
 import type { GatewayEvent } from "./chat/ChatTransportTypes.js";
@@ -31,7 +32,7 @@ const config: BridgeConfig = {
 };
 
 class FakeHermesApiClient {
-  readonly createdRuns: Array<{ input: string; sessionId: string; idempotencyKey?: string }> = [];
+  readonly createdRuns: Array<{ input: string; sessionId: string; idempotencyKey?: string; attachments?: ChatAttachment[] }> = [];
   sessionsPayload: unknown = {
     sessions: [{
       session_id: "20260521_211022_1f4f0b",
@@ -77,7 +78,7 @@ class FakeHermesApiClient {
 
   async stopRun(): Promise<void> {}
 
-  async createRun(options: { input: string; sessionId: string; idempotencyKey?: string }): Promise<{ runId: string; sessionId: string }> {
+  async createRun(options: { input: string; sessionId: string; idempotencyKey?: string; attachments?: ChatAttachment[] }): Promise<{ runId: string; sessionId: string }> {
     this.createdRuns.push(options);
     return { runId: `steer_${this.createdRuns.length}`, sessionId: options.sessionId };
   }
@@ -121,6 +122,28 @@ test("Hermes history loads messages from dashboard API for selected sessions", a
     role: "assistant",
     text: "Hello back"
   }]);
+});
+
+test("Hermes forwards chat attachments to run creation", async () => {
+  const api = new FakeHermesApiClient();
+  const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
+  const attachment: ChatAttachment = {
+    id: "att_1",
+    kind: "image",
+    displayName: "photo.png",
+    mimeType: "image/png",
+    sizeBytes: 5,
+    contentBase64: "aGVsbG8="
+  };
+
+  await client.sendChat({
+    sessionKey: "hermes:chat",
+    message: "Review this",
+    attachments: [attachment],
+    idempotencyKey: "run_1"
+  });
+
+  assert.deepEqual(api.createdRuns[0]?.attachments, [attachment]);
 });
 
 test("Hermes session listing does not emit remote reply notifications", async () => {

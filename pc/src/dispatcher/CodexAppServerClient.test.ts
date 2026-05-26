@@ -86,6 +86,46 @@ test("Codex app-server can bind instructions to new threads", async () => {
   }
 });
 
+test("Codex app-server includes image attachments in turn input", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "codex-app-server-test-"));
+  const logPath = join(dir, "requests.jsonl");
+  const scriptPath = join(dir, "fake-app-server.mjs");
+  await writeFile(scriptPath, fakeAppServerScript());
+  const previousLogPath = process.env.CODEX_FAKE_LOG;
+  process.env.CODEX_FAKE_LOG = logPath;
+  const client = new CodexAppServerClient(undefined, `"${process.execPath}" "${scriptPath}"`, dir);
+  try {
+    await client.submitUserRequest("Review this", sink, {
+      model: "gpt-5.3-codex",
+      useSessionInstructions: true,
+      attachments: [{
+        id: "att_1",
+        kind: "image",
+        displayName: "screenshot.png",
+        mimeType: "image/png",
+        sizeBytes: 5,
+        contentBase64: "aGVsbG8="
+      }]
+    });
+
+    const methods = (await readFile(logPath, "utf8"))
+      .trim()
+      .split(/\n/)
+      .map((line) => JSON.parse(line) as { method: string; params?: Record<string, unknown> });
+    assert.deepEqual(methods[2]?.params?.input, [
+      { type: "text", text: "Review this" },
+      { type: "image", url: "data:image/png;base64,aGVsbG8=" }
+    ]);
+  } finally {
+    await client.close();
+    if (previousLogPath === undefined) {
+      delete process.env.CODEX_FAKE_LOG;
+    } else {
+      process.env.CODEX_FAKE_LOG = previousLogPath;
+    }
+  }
+});
+
 function fakeAppServerScript(): string {
   return `
 import { appendFileSync } from "node:fs";

@@ -6,13 +6,14 @@ import test from "node:test";
 import type { AgentRequestOptions, AgentRunResult, AgentStatusSink } from "../dispatcher/AgentClient.js";
 import { normalizeCodexUsage } from "../dispatcher/CodexAppServerClient.js";
 import type { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js";
+import type { ChatAttachment } from "../protocol/messages.js";
 import { CODEX_WORKSPACE_NOT_FOUND_CODE } from "./chat/ChatErrors.js";
 import { CodexChatClient } from "./CodexChatClient.js";
 
 class FakeCodexAppServerClient {
   readonly createdThreads: Array<{ model?: string; baseInstructions?: string; cwd?: string }> = [];
   readonly submitted: Array<{ text: string; options: AgentRequestOptions }> = [];
-  readonly steered: string[] = [];
+  readonly steered: Array<{ text: string; attachments?: ChatAttachment[] }> = [];
   readonly threadListRequests: Array<{ limit?: number; cursor?: string }> = [];
   modelsPayload: unknown = { models: [] };
   threadsPayload: unknown = { data: [] };
@@ -61,8 +62,8 @@ class FakeCodexAppServerClient {
 
   async interrupt(): Promise<void> {}
 
-  async steer(text: string): Promise<void> {
-    this.steered.push(text);
+  async steer(text: string, attachments?: ChatAttachment[]): Promise<void> {
+    this.steered.push({ text, attachments });
   }
 
   async close(): Promise<void> {}
@@ -413,7 +414,7 @@ test("Codex chat steering calls app-server turn steer for the active run", async
     message: "Focus on failing tests"
   });
 
-  assert.deepEqual(fake.steered, ["Focus on failing tests"]);
+  assert.deepEqual(fake.steered, [{ text: "Focus on failing tests", attachments: undefined }]);
 });
 
 test("Codex model list resolves context windows from capabilities", async () => {

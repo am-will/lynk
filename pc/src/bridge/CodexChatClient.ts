@@ -6,6 +6,7 @@ import { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js";
 import { PHONE_AGENT_SYSTEM_PROMPT } from "../dispatcher/promptPolicy.js";
 import { codexAppServerContextWindow, DEFAULT_REASONING_OPTIONS } from "./chat/ModelCatalog.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "./harness/InMemoryHarnessSessionStore.js";
+import type { ChatAttachment } from "../protocol/messages.js";
 import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "./chat/ChatTransportTypes.js";
 import { prepareCodexWorkspace } from "./codex/CodexWorkspace.js";
 import {
@@ -103,6 +104,7 @@ export class CodexChatClient {
     sessionKey: string;
     sessionId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
@@ -113,7 +115,7 @@ export class CodexChatClient {
     const threadId = codexThreadIdFromSessionKey(session.key) ?? session.sessionId;
     this.sessions.setThinkingLevel(session, options.thinking);
     await this.ensureAppServerThread(session);
-    this.sessions.appendUserMessage(session, options.message, options.idempotencyKey);
+    this.sessions.appendUserMessage(session, options.message, options.idempotencyKey, options.attachments);
     this.audit?.record("codex_chat_prompt_metrics", undefined, {
       path: "bridge.sendChat",
       sessionKey: session.key,
@@ -124,7 +126,7 @@ export class CodexChatClient {
     const runId = options.idempotencyKey ?? `codex_${randomUUID()}`;
     this.sessions.setActiveRun(session, runId);
     this.active = { sessionKey: session.key, runId };
-    void this.processRun(session, runId, options.message, session.model, session.thinkingLevel, threadCwdForSession(session, this.threadsById.get(threadId)));
+    void this.processRun(session, runId, options.message, session.model, session.thinkingLevel, threadCwdForSession(session, this.threadsById.get(threadId)), options.attachments);
     return { runId, sessionKey: session.key };
   }
 
@@ -147,6 +149,7 @@ export class CodexChatClient {
     sessionId?: string;
     runId?: string;
     message: string;
+    attachments?: ChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
@@ -157,8 +160,8 @@ export class CodexChatClient {
       throw new Error("Active Codex turn does not match the requested steer target");
     }
     const session = this.sessions.ensureSession(options.sessionKey, options.sessionId);
-    this.sessions.appendUserMessage(session, options.message, options.idempotencyKey);
-    await this.client.steer(options.message);
+    this.sessions.appendUserMessage(session, options.message, options.idempotencyKey, options.attachments);
+    await this.client.steer(options.message, options.attachments);
     return { runId: this.active.runId, sessionKey: this.active.sessionKey };
   }
 
@@ -284,7 +287,8 @@ export class CodexChatClient {
     text: string,
     model: string | undefined,
     reasoningEffort: string | undefined,
-    cwd: string | undefined
+    cwd: string | undefined,
+    attachments: ChatAttachment[] | undefined
   ): Promise<void> {
     try {
       const threadId = codexThreadIdFromSessionKey(session.key) ?? session.sessionId;
@@ -294,6 +298,7 @@ export class CodexChatClient {
         systemPrompt: PHONE_AGENT_SYSTEM_PROMPT,
         model,
         reasoningEffort,
+        attachments,
         taskKind: "general",
         useSessionInstructions: Boolean(codexThreadIdFromSessionKey(session.key)) || codexBaseInstructionsBound(session)
       });

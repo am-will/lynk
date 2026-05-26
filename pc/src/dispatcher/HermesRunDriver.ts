@@ -1,3 +1,4 @@
+import type { ChatAttachment } from "../protocol/messages.js";
 import { HermesApiClient, type HermesRunStatus, type HermesSseEvent } from "./HermesApiClient.js";
 
 export interface HermesActiveRun {
@@ -28,6 +29,7 @@ export class HermesRunDriver {
     sessionId: string;
     model?: string;
     idempotencyKey?: string;
+    attachments?: ChatAttachment[];
   }): Promise<HermesActiveRun> {
     const created = await this.api.createRun(options);
     return {
@@ -66,11 +68,12 @@ export class HermesRunDriver {
     await this.api.stopRun(active.runId);
   }
 
-  async steerRun(active: HermesActiveRun, text: string): Promise<void> {
+  async steerRun(active: HermesActiveRun, text: string, attachments?: ChatAttachment[]): Promise<void> {
     await this.api.createRun({
       input: `Additional user guidance for the active Hermes task:\n${text.trim()}`,
       sessionId: active.sessionId,
-      idempotencyKey: `hermes-steer-${active.runId}-${Date.now()}`
+      idempotencyKey: `hermes-steer-${active.runId}-${Date.now()}`,
+      attachments
     });
   }
 

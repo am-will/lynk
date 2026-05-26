@@ -70,7 +70,7 @@ export class HarnessChatRouter implements GatewayChatClient {
     }
     this.adapters.set("openclaw", new NormalizedHarnessAdapter("openclaw", new OpenClawGatewayChatClient(config), { supportsAttachments: true }));
     if (config.hermesApiKey) {
-      this.adapters.set("hermes", new NormalizedHarnessAdapter("hermes", new HermesChatClient(config), { supportsAttachments: false }));
+      this.adapters.set("hermes", new NormalizedHarnessAdapter("hermes", new HermesChatClient(config), { supportsAttachments: true }));
     }
     if (config.codexConfigured) {
       this.adapters.set("codex", new NormalizedHarnessAdapter("codex", new CodexChatClient(audit, undefined, undefined, {
@@ -78,7 +78,7 @@ export class HarnessChatRouter implements GatewayChatClient {
         cwd: config.codexAgentCwd,
         approvalPolicy: config.codexAppServerApprovalPolicy,
         sandbox: config.codexAppServerSandbox
-      }), { supportsAttachments: false }));
+      }), { supportsAttachments: true }));
     }
   }
 

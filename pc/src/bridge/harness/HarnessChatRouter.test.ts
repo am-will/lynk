@@ -42,7 +42,7 @@ class FakeAdapter implements HarnessChatAdapter {
   readonly commands: ChatCommandOption[] = [];
 
   constructor(readonly harnessId: HarnessId) {
-    this.capabilities = { supportsAttachments: harnessId === "openclaw" };
+    this.capabilities = { supportsAttachments: true };
   }
 
   addEventListener(_handler: GatewayEventHandler): () => void {
@@ -173,7 +173,7 @@ test("harness router rejects disabled Hermes session keys clearly", async () => 
   );
 });
 
-test("harness router forwards attachments only to capable harnesses", async () => {
+test("harness router forwards attachments to host harnesses", async () => {
   const { router, openclaw, hermes, codex } = createRouter();
   const attachment: ChatAttachment = {
     id: "att_1",
@@ -191,24 +191,18 @@ test("harness router forwards attachments only to capable harnesses", async () =
   });
 
   assert.deepEqual(openclaw.sent[0]?.attachments, [attachment]);
-  await assert.rejects(
-    router.sendChat({
-      sessionKey: "hermes:chat",
-      message: "Review this",
-      attachments: [attachment]
-    }),
-    /hermes harness does not support chat attachments/
-  );
-  await assert.rejects(
-    router.steerChat({
-      sessionKey: "codex:chat",
-      message: "Review this",
-      attachments: [attachment]
-    }),
-    /codex harness does not support chat attachments/
-  );
-  assert.equal(hermes.sent.length, 0);
-  assert.equal(codex.steered.length, 0);
+  await router.sendChat({
+    sessionKey: "hermes:chat",
+    message: "Review this",
+    attachments: [attachment]
+  });
+  await router.steerChat({
+    sessionKey: "codex:chat",
+    message: "Review this",
+    attachments: [attachment]
+  });
+  assert.deepEqual(hermes.sent[0]?.attachments, [attachment]);
+  assert.deepEqual(codex.steered[0]?.attachments, [attachment]);
 });
 
 test("harness router shares OpenClaw skills with Hermes and Codex command lists", async () => {

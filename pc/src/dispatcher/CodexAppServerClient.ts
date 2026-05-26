@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface, type Interface } from "node:readline";
+import type { ChatAttachment } from "../protocol/messages.js";
 import type { AuditLog } from "../bridge/AuditLog.js";
 import type { AgentClient, AgentRequestOptions, AgentRunResult, AgentStatusSink } from "./AgentClient.js";
 import { PHONE_AGENT_SYSTEM_PROMPT, buildPhoneAgentPrompt } from "./safetyPrompt.js";
@@ -26,6 +27,10 @@ interface PendingTurn {
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
 }
+
+type CodexUserInput =
+  | { type: "text"; text: string }
+  | { type: "image"; url: string };
 
 export interface RealtimeTranscriptDelta {
   role: string;
@@ -273,7 +278,7 @@ export class CodexAppServerClient implements AgentClient {
     });
     const result = await this.request("turn/start", {
       threadId,
-      input: [{ type: "text", text: turnInput }],
+      input: codexUserInput(turnInput, options.attachments),
       cwd: options.cwd ?? this.cwd,
       approvalPolicy: this.approvalPolicy,
       model: options.model,
@@ -420,7 +425,7 @@ export class CodexAppServerClient implements AgentClient {
     return threadId;
   }
 
-  async steer(text: string): Promise<void> {
+  async steer(text: string, attachments?: ChatAttachment[]): Promise<void> {
     const pendingTurn = this.pendingTurn;
     if (!pendingTurn) {
       throw new Error("No active Codex turn to steer");
@@ -428,7 +433,7 @@ export class CodexAppServerClient implements AgentClient {
     await this.request("turn/steer", {
       threadId: pendingTurn.threadId,
       expectedTurnId: pendingTurn.turnId,
-      input: [{ type: "text", text }]
+      input: codexUserInput(text, attachments)
     });
     this.audit?.record("codex_turn_steered", undefined, {
       threadId: pendingTurn.threadId,
@@ -807,4 +812,22 @@ export class CodexAppServerClient implements AgentClient {
     }
     setTimeout(resolve, Number.parseInt(process.env.CODEX_TOKEN_USAGE_GRACE_MS ?? "150", 10));
   }
+}
+
+function codexUserInput(text: string, attachments: ChatAttachment[] | undefined): CodexUserInput[] {
+  const input: CodexUserInput[] = [{ type: "text", text }];
+  for (const attachment of attachments ?? []) {
+    if (!isImageAttachment(attachment) || !attachment.contentBase64) {
+      continue;
+    }
+    input.push({
+      type: "image",
+      url: `data:${attachment.mimeType};base64,${attachment.contentBase64}`
+    });
+  }
+  return input;
+}
+
+function isImageAttachment(attachment: ChatAttachment): boolean {
+  return attachment.kind === "image" || attachment.mimeType.startsWith("image/");
 }

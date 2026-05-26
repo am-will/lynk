@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { ChatHistoryMessage, ChatSessionSummary } from "../../protocol/messages.js";
+import { chatAttachmentSchema, type ChatAttachment, type ChatHistoryMessage, type ChatSessionSummary } from "../../protocol/messages.js";
 import type { HarnessId } from "../AgentHarness.js";
 import type { HarnessChatHistory, HarnessCreatedSession } from "./HarnessChatAdapter.js";
 
@@ -9,6 +9,7 @@ export interface HarnessStoredMessage {
   id: string;
   role: "user" | "assistant" | "system";
   text: string;
+  attachments?: ChatAttachment[];
   timestamp: number;
 }
 
@@ -125,11 +126,17 @@ export class InMemoryHarnessSessionStore {
     this.persist();
   }
 
-  appendUserMessage(session: HarnessStoredSession, text: string, idempotencyKey?: string): void {
+  appendUserMessage(
+    session: HarnessStoredSession,
+    text: string,
+    idempotencyKey?: string,
+    attachments?: ChatAttachment[]
+  ): void {
     session.messages.push({
       id: `user_${idempotencyKey ?? randomUUID()}`,
       role: "user",
       text,
+      ...(attachments?.length ? { attachments } : {}),
       timestamp: Date.now()
     });
     session.updatedAt = Date.now();
@@ -214,6 +221,7 @@ export class InMemoryHarnessSessionStore {
       id: message.id,
       role: message.role,
       text: message.text,
+      ...(message.attachments?.length ? { attachments: message.attachments } : {}),
       timestamp: message.timestamp
     }));
   }
@@ -301,12 +309,28 @@ function parseStoredMessage(value: unknown): HarnessStoredMessage | undefined {
   if (!id || !isStoredMessageRole(role) || !text) {
     return undefined;
   }
+  const attachments = parseStoredAttachments(record?.attachments);
   return {
     id,
     role,
     text,
+    ...(attachments.length ? { attachments } : {}),
     timestamp: numberField(record, "timestamp") ?? Date.now()
   };
+}
+
+function parseStoredAttachments(value: unknown): ChatAttachment[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const attachments: ChatAttachment[] = [];
+  for (const item of value) {
+    const parsed = chatAttachmentSchema.safeParse(item);
+    if (parsed.success) {
+      attachments.push(parsed.data);
+    }
+  }
+  return attachments;
 }
 
 function isStoredMessageRole(value: string | undefined): value is HarnessStoredMessage["role"] {

@@ -1,3 +1,5 @@
+import type { ChatAttachment } from "../protocol/messages.js";
+
 export interface HermesApiClientConfig {
   apiBaseUrl: string;
   apiKey: string;
@@ -11,6 +13,7 @@ export interface HermesRunCreateOptions {
   model?: string;
   instructions?: string;
   idempotencyKey?: string;
+  attachments?: ChatAttachment[];
 }
 
 export interface HermesRunCreateResult {
@@ -108,7 +111,8 @@ export class HermesApiClient {
         input: options.input,
         session_id: options.sessionId,
         model: options.model ?? this.config.model,
-        ...(options.instructions ? { instructions: options.instructions } : {})
+        ...(options.instructions ? { instructions: options.instructions } : {}),
+        ...(options.attachments?.length ? { attachments: options.attachments } : {})
       })
     });
     const record = asRecord(payload);

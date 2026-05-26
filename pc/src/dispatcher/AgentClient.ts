@@ -1,3 +1,5 @@
+import type { ChatAttachment } from "../protocol/messages.js";
+
 export interface AgentStatusSink {
   info(text: string): void;
   working(text: string): void;
@@ -25,6 +27,7 @@ export interface AgentRequestOptions {
   threadId?: string;
   cwd?: string;
   useSessionInstructions?: boolean;
+  attachments?: ChatAttachment[];
 }
 
 export interface AgentClient {
@@ -33,7 +36,7 @@ export interface AgentClient {
     sink: AgentStatusSink,
     options?: AgentRequestOptions
   ): Promise<AgentRunResult>;
-  steer?(text: string): Promise<void>;
+  steer?(text: string, attachments?: ChatAttachment[]): Promise<void>;
   interrupt?(reason?: string): Promise<void>;
   close(): Promise<void>;
 }
