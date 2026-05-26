@@ -454,7 +454,7 @@ class AppShellActivity : ComponentActivity() {
             .setAction(AgentForegroundService.ACTION_ATTACH_SHELL_CHAT)
             .putExtra(AgentForegroundService.EXTRA_SHELL_CHAT_ACTIVITY_ID, activityInstanceId)
             .putExtra(AgentForegroundService.EXTRA_SHELL_CHAT_TOKEN, shellChatAttachToken)
-        runCatching { ContextCompat.startForegroundService(this, intent) }
+        runCatching { startService(intent) }
     }
 
     private fun detachShellChat() {
@@ -477,7 +477,7 @@ class AppShellActivity : ComponentActivity() {
         if (!Settings.canDrawOverlays(this)) return
         val intent = Intent(this, AgentForegroundService::class.java)
             .setAction(AgentForegroundService.ACTION_ENSURE_SERVICE)
-        runCatching { ContextCompat.startForegroundService(this, intent) }
+        runCatching { startService(intent) }
     }
 
     private fun toggleAgentServiceInternal() {
@@ -509,7 +509,7 @@ class AppShellActivity : ComponentActivity() {
         val intent = Intent(this, AgentForegroundService::class.java)
             .setAction(AgentForegroundService.ACTION_REFRESH_PET_VISIBILITY)
         if (startIfNeeded) {
-            runCatching { ContextCompat.startForegroundService(this, intent) }
+            runCatching { startService(intent) }
         } else if (AgentForegroundService.isRunning) {
             runCatching { startService(intent) }
         }

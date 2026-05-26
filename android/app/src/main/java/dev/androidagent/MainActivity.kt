@@ -169,8 +169,7 @@ class MainActivity : ComponentActivity() {
         override fun ensureAgentServiceRunning() {
             if (Settings.canDrawOverlays(this@MainActivity)) {
                 runCatching {
-                    ContextCompat.startForegroundService(
-                        this@MainActivity,
+                    startService(
                         Intent(this@MainActivity, AgentForegroundService::class.java)
                             .setAction(AgentForegroundService.ACTION_ENSURE_SERVICE)
                     )
@@ -219,8 +218,7 @@ class MainActivity : ComponentActivity() {
         AgentConfigStore.save(this, config.copy(petEnabled = nextEnabled))
         if (nextEnabled && Settings.canDrawOverlays(this)) {
             runCatching {
-                ContextCompat.startForegroundService(
-                    this,
+                startService(
                     Intent(this, AgentForegroundService::class.java)
                         .setAction(AgentForegroundService.ACTION_REFRESH_PET_VISIBILITY)
                 )

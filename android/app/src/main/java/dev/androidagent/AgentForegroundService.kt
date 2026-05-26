@@ -76,6 +76,7 @@ class AgentForegroundService : Service() {
     private var realtimeVoiceCoordinator: RealtimeVoiceCoordinator? = null
     private var voiceTranscriptionManager: VoiceTranscriptionManager? = null
     private var isAgentTurnActive = false
+    private var foregroundNotificationActive = false
     private var chatState = ChatState()
     private val chatMessageMutex = Mutex()
     private val newChatCoordinator = NewChatSessionCoordinator()
@@ -108,12 +109,6 @@ class AgentForegroundService : Service() {
             AvatarLibrary.scanOnBoot(applicationContext, config.hostUrl, config.token)
             publishBackendAvailability(config)
         }
-        ServiceCompat.startForeground(
-            this,
-            NOTIFICATION_ID,
-            chatNotifications.foregroundNotification(chatState),
-            foregroundServiceType(includeMicrophone = false)
-        )
         voiceTranscriptionManager = VoiceTranscriptionManager(onStateChanged = ::handleTranscriptionState)
         overlayController = OverlayController(
             context = this,
@@ -214,6 +209,11 @@ class AgentForegroundService : Service() {
                 return START_STICKY
             }
             ACTION_START_VOICE -> {
+                if (hasMicPermission()) {
+                    promoteVoiceForegroundIfAllowed()
+                } else {
+                    satisfyForegroundStartWithoutKeepingNotification()
+                }
                 startVoiceFromShell()
                 return START_STICKY
             }
@@ -454,6 +454,7 @@ class AgentForegroundService : Service() {
         realtimeVoiceAttentionClear = null
         unregisterCloseSystemDialogsReceiver()
         cancelAllReplyNotifications()
+        stopForegroundNotification()
         overlayController?.hide()
         isRunning = false
         broadcastRunningState()
@@ -1317,12 +1318,7 @@ class AgentForegroundService : Service() {
             return
         }
         runCatching {
-            ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                chatNotifications.foregroundNotification(chatState),
-                foregroundServiceType(includeMicrophone = true)
-            )
+            startForegroundNotification(includeMicrophone = true)
         }.onFailure { error ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && error is ForegroundServiceStartNotAllowedException) {
                 Log.w(TAG, "Voice foreground-service promotion was not allowed; continuing with existing foreground service.", error)
@@ -1336,12 +1332,7 @@ class AgentForegroundService : Service() {
 
     private fun restoreBaseForeground() {
         runCatching {
-            ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                chatNotifications.foregroundNotification(chatState),
-                foregroundServiceType(includeMicrophone = false)
-            )
+            stopForegroundNotification()
         }.onFailure { error ->
             if (error is SecurityException || error is IllegalArgumentException) {
                 Log.w(TAG, "Foreground-service restore failed; continuing with existing foreground service.", error)
@@ -1349,6 +1340,35 @@ class AgentForegroundService : Service() {
                 throw error
             }
         }
+    }
+
+    private fun satisfyForegroundStartWithoutKeepingNotification() {
+        runCatching {
+            startForegroundNotification(includeMicrophone = false)
+            stopForegroundNotification()
+        }.onFailure { error ->
+            if (error is SecurityException || error is IllegalArgumentException) {
+                Log.w(TAG, "Foreground-service bootstrap failed; continuing as a started service.", error)
+            } else {
+                throw error
+            }
+        }
+    }
+
+    private fun startForegroundNotification(includeMicrophone: Boolean) {
+        ServiceCompat.startForeground(
+            this,
+            NOTIFICATION_ID,
+            chatNotifications.foregroundNotification(chatState),
+            foregroundServiceType(includeMicrophone = includeMicrophone)
+        )
+        foregroundNotificationActive = true
+    }
+
+    private fun stopForegroundNotification() {
+        if (!foregroundNotificationActive) return
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        foregroundNotificationActive = false
     }
 
     private fun openMicPermissionScreen() {
@@ -1364,7 +1384,9 @@ class AgentForegroundService : Service() {
     }
 
     private fun updateNotification() {
-        chatNotifications.updateForeground(chatState)
+        if (foregroundNotificationActive) {
+            chatNotifications.updateForeground(chatState)
+        }
     }
 
     private fun syncReplyNotifications() {

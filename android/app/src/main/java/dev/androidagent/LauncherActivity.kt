@@ -4,7 +4,6 @@ import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
-import androidx.core.content.ContextCompat
 
 class LauncherActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -13,8 +12,7 @@ class LauncherActivity : ComponentActivity() {
 
         if (Settings.canDrawOverlays(this)) {
             runCatching {
-                ContextCompat.startForegroundService(
-                    this,
+                startService(
                     Intent(this, AgentForegroundService::class.java)
                         .setAction(AgentForegroundService.ACTION_ENSURE_SERVICE)
                 )

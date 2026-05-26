@@ -131,13 +131,13 @@ class SettingsHost(
                 override fun notifyAvatarChanged() {
                     val intent = Intent(activity, dev.androidagent.AgentForegroundService::class.java)
                         .setAction(dev.androidagent.AgentForegroundService.ACTION_REFRESH_AVATAR)
-                    runCatching { androidx.core.content.ContextCompat.startForegroundService(activity, intent) }
+                    runCatching { activity.startService(intent) }
                 }
                 override fun notifyBubbleResize(sizeDp: Int) {
                     val intent = Intent(activity, dev.androidagent.AgentForegroundService::class.java)
                         .setAction(dev.androidagent.AgentForegroundService.ACTION_RESIZE_BUBBLE)
                         .putExtra(dev.androidagent.AgentForegroundService.EXTRA_BUBBLE_SIZE_DP, sizeDp)
-                    runCatching { androidx.core.content.ContextCompat.startForegroundService(activity, intent) }
+                    runCatching { activity.startService(intent) }
                 }
                 override fun toggleAgentService() = callbacks.toggleAgentService()
                 override fun isAgentServiceRunning() = callbacks.isAgentServiceRunning()
