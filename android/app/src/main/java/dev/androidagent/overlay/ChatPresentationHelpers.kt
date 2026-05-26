@@ -310,8 +310,8 @@ object ChatPresentationHelpers {
     }
 
     fun unreadReplySourceLabel(sessionKey: String, unread: ChatUnreadReply): String {
-        val harness = unread.harnessLabel?.takeIf { it.isNotBlank() }
-            ?: unread.harnessId?.takeIf { it.isNotBlank() }?.let(ChatModelCatalog::harnessLabel)
+        val harness = unread.source.harnessLabel?.takeIf { it.isNotBlank() }
+            ?: unread.source.harnessId?.takeIf { it.isNotBlank() }?.let(ChatModelCatalog::harnessLabel)
             ?: ChatModelCatalog.harnessFromSessionKey(sessionKey)?.let(ChatModelCatalog::harnessLabel)
         return breadcrumb(harness, unread.displayNameFor(sessionKey)) ?: unread.displayNameFor(sessionKey)
     }

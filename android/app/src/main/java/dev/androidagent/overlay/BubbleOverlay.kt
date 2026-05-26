@@ -31,6 +31,7 @@ import dev.androidagent.avatar.AvatarSelection
 import dev.androidagent.avatar.PetAnimation
 import dev.androidagent.avatar.PetAvatarView
 import dev.androidagent.chat.ChatState
+import dev.androidagent.chat.latestUnreadSessionKey
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
 import dev.androidagent.ui.ThemeTokens

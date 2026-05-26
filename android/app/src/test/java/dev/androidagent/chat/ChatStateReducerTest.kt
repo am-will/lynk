@@ -607,9 +607,9 @@ class ChatStateReducerTest {
             .put("receivedAt", 200L))
 
         val unread = codex.unreadReplies["hermes:nightly"]
-        assertEquals("hermes", unread?.harnessId)
-        assertEquals("Hermes", unread?.harnessLabel)
-        assertEquals("hermes:gpt-5.5", unread?.model)
+        assertEquals("hermes", unread?.source?.harnessId)
+        assertEquals("Hermes", unread?.source?.harnessLabel)
+        assertEquals("hermes:gpt-5.5", unread?.source?.model)
         assertEquals(1, codex.unreadCountForHarness("hermes"))
         assertEquals(1, codex.unreadCountForHarness("codex"))
         assertEquals("codex:workspace", codex.latestUnreadSessionKey())
@@ -651,11 +651,11 @@ class ChatStateReducerTest {
                 .put("model", "hermes:gpt-5.5"))))
 
         val unread = withSessions.unreadReplies["agent:main:first"]
-        assertEquals("Project notes", unread?.sessionDisplayName)
+        assertEquals("Project notes", unread?.source?.sessionDisplayName)
         assertEquals("Project notes", unread?.displayNameFor("agent:main:first"))
-        assertEquals("hermes", unread?.harnessId)
-        assertEquals("Hermes", unread?.harnessLabel)
-        assertEquals("hermes:gpt-5.5", unread?.model)
+        assertEquals("hermes", unread?.source?.harnessId)
+        assertEquals("Hermes", unread?.source?.harnessLabel)
+        assertEquals("hermes:gpt-5.5", unread?.source?.model)
     }
 
     private fun model(id: String, label: String, provider: String, harnessId: String): JSONObject {

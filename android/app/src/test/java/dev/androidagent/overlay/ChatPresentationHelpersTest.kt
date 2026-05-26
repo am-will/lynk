@@ -4,6 +4,7 @@ import dev.androidagent.AgentModelOptions
 import dev.androidagent.R
 import dev.androidagent.chat.ChatModelOption
 import dev.androidagent.chat.ChatModelSource
+import dev.androidagent.chat.ChatReplySource
 import dev.androidagent.chat.ChatSessionRow
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatUnreadReply
@@ -422,7 +423,11 @@ class ChatPresentationHelpersTest {
             "Hermes / Nightly cron",
             ChatPresentationHelpers.unreadReplySourceLabel(
                 "hermes:nightly",
-                ChatUnreadReply(sessionDisplayName = "Nightly cron", harnessId = "hermes", harnessLabel = "Hermes")
+                ChatUnreadReply(source = ChatReplySource(
+                    sessionDisplayName = "Nightly cron",
+                    harnessId = "hermes",
+                    harnessLabel = "Hermes"
+                ))
             )
         )
     }

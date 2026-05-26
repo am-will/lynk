@@ -109,25 +109,6 @@ data class ChatUsageSummary(
         }
 }
 
-data class ChatUnreadReply(
-    val count: Int = 0,
-    val runIds: Set<String> = emptySet(),
-    val latestRunId: String? = null,
-    val latestPreview: String? = null,
-    val latestStatus: String? = null,
-    val sessionId: String? = null,
-    val sessionLabel: String? = null,
-    val sessionDisplayName: String? = null,
-    val harnessId: String? = null,
-    val harnessLabel: String? = null,
-    val model: String? = null,
-    val receivedAt: Long = 0L
-) {
-    fun displayNameFor(sessionKey: String): String {
-        return sessionDisplayName ?: sessionLabel ?: sessionId ?: sessionKey.substringAfterLast(":")
-    }
-}
-
 data class ChatState(
     val sessionKey: String? = null,
     val sessionId: String? = null,
@@ -163,22 +144,6 @@ data class ChatState(
     fun unreadCountForSession(sessionKey: String?): Int {
         if (sessionKey.isNullOrBlank()) return 0
         return unreadReplies[sessionKey]?.count ?: 0
-    }
-
-    fun unreadCountForHarness(harnessId: String?): Int {
-        val normalized = ChatModelCatalog.normalizeHarnessId(harnessId) ?: return 0
-        return unreadReplies.entries.sumOf { (sessionKey, unread) ->
-            val sourceHarnessId = ChatModelCatalog.normalizeHarnessId(unread.harnessId)
-                ?: ChatModelCatalog.harnessFromSessionKey(sessionKey)
-            if (sourceHarnessId == normalized) unread.count else 0
-        }
-    }
-
-    fun latestUnreadSessionKey(): String? {
-        return unreadReplies.maxWithOrNull(
-            compareBy<Map.Entry<String, ChatUnreadReply>> { it.value.receivedAt }
-                .thenBy { it.value.latestRunId.orEmpty() }
-        )?.key
     }
 
     companion object {
@@ -500,21 +465,24 @@ object ChatStateReducer {
         }
         val harnessId = normalizeHarnessId(message.optNullableString("harnessId"))
             ?: harnessFromSessionKey(sessionKey)
-            ?: existing?.harnessId
+            ?: existing?.source?.harnessId
+        val source = ChatReplySource(
+            sessionId = message.optNullableString("sessionId") ?: existing?.source?.sessionId,
+            sessionLabel = message.optNullableString("sessionLabel") ?: existing?.source?.sessionLabel,
+            sessionDisplayName = message.optNullableString("sessionDisplayName") ?: existing?.source?.sessionDisplayName,
+            harnessId = harnessId,
+            harnessLabel = message.optNullableString("harnessLabel")
+                ?: existing?.source?.harnessLabel
+                ?: harnessId?.let(ChatModelCatalog::harnessLabel),
+            model = message.optNullableString("model") ?: existing?.source?.model
+        )
         val updated = ChatUnreadReply(
             count = (existing?.count ?: 0) + 1,
             runIds = (existing?.runIds ?: emptySet()) + runId,
             latestRunId = runId,
             latestPreview = message.optNullableString("textPreview") ?: existing?.latestPreview,
             latestStatus = message.optNullableString("status") ?: existing?.latestStatus,
-            sessionId = message.optNullableString("sessionId") ?: existing?.sessionId,
-            sessionLabel = message.optNullableString("sessionLabel") ?: existing?.sessionLabel,
-            sessionDisplayName = message.optNullableString("sessionDisplayName") ?: existing?.sessionDisplayName,
-            harnessId = harnessId,
-            harnessLabel = message.optNullableString("harnessLabel")
-                ?: existing?.harnessLabel
-                ?: harnessId?.let(ChatModelCatalog::harnessLabel),
-            model = message.optNullableString("model") ?: existing?.model,
+            source = source,
             receivedAt = message.optNullableLong("receivedAt") ?: System.currentTimeMillis()
         )
         return state.copy(
@@ -664,16 +632,18 @@ object ChatStateReducer {
             val session = sessionsByKey[sessionKey] ?: return@mapValues unread
             val harnessId = normalizeHarnessId(session.harnessId)
                 ?: session.model?.takeIf { it.isNotBlank() }?.let(::harnessForModel)
-                ?: unread.harnessId
+                ?: unread.source.harnessId
             unread.copy(
-                sessionId = session.sessionId ?: unread.sessionId,
-                sessionLabel = session.label ?: unread.sessionLabel,
-                sessionDisplayName = session.displayName ?: unread.sessionDisplayName,
-                harnessId = harnessId,
-                harnessLabel = session.harnessLabel
-                    ?: unread.harnessLabel
-                    ?: harnessId?.let(ChatModelCatalog::harnessLabel),
-                model = session.model ?: unread.model
+                source = unread.source.copy(
+                    sessionId = session.sessionId ?: unread.source.sessionId,
+                    sessionLabel = session.label ?: unread.source.sessionLabel,
+                    sessionDisplayName = session.displayName ?: unread.source.sessionDisplayName,
+                    harnessId = harnessId,
+                    harnessLabel = session.harnessLabel
+                        ?: unread.source.harnessLabel
+                        ?: harnessId?.let(ChatModelCatalog::harnessLabel),
+                    model = session.model ?: unread.source.model
+                )
             )
         }
     }

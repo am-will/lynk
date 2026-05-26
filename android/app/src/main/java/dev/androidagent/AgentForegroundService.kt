@@ -832,7 +832,7 @@ class AgentForegroundService : Service() {
         return ChatPresentationHelpers.clientBrandPresentation(
             selectedModel = ChatPresentationHelpers.selectedModelId(
                 session?.model
-                ?: unread?.model
+                ?: unread?.source?.model
                 ?: state.selectedModel
                 ?: selectedChatModel(),
                 localLiteRtAvailable,
@@ -841,7 +841,7 @@ class AgentForegroundService : Service() {
             models = models,
             harnessId = (
                 session?.harnessId
-                    ?: unread?.harnessId
+                    ?: unread?.source?.harnessId
                     ?: harnessFromSessionKey(sessionKey)
                     ?: state.harnessId
                 )?.takeIf { config.isModelHarnessEnabled(it) },
