@@ -210,6 +210,7 @@ class OverlayController(
     private var keyboardFallbackSuppressed = false
     private var stableKeyboardFrameObserved = false
     private var activePanelPresentation = PanelPresentation.Popup
+    private var pendingPickerShowRunnable: Runnable? = null
 
     private var panelHost: FrameLayout? = null
     private var panelContent: LinearLayout? = null
@@ -1147,34 +1148,40 @@ class OverlayController(
         onDismiss: (() -> Unit)? = null
     ) {
         val host = panelHost ?: return
-        val picker = ensurePicker()
         val shouldPreferAbove = preferAbove || anchor === composerInput
-        if (anchor !== composerInput) {
-            hideComposerKeyboard()
-        }
-        if (replaceShowing && picker.isShowingFor(anchor)) {
-            picker.update(
+        fun showNow() {
+            if (panelHost !== host || !host.isAttachedToWindow || !anchor.isAttachedToWindow) return
+            val picker = ensurePicker()
+            if (replaceShowing && picker.isShowingFor(anchor)) {
+                picker.update(
+                    title = title,
+                    sections = sections,
+                    heightFraction = heightFraction,
+                    preferAbove = shouldPreferAbove,
+                    revealRowId = revealRowId
+                )
+                return
+            }
+            if (toggleSameAnchor && picker.isShowingFor(anchor)) {
+                picker.dismiss()
+                return
+            }
+            picker.show(
+                host = host,
+                anchor = anchor,
                 title = title,
                 sections = sections,
                 heightFraction = heightFraction,
                 preferAbove = shouldPreferAbove,
-                revealRowId = revealRowId
+                onDismiss = onDismiss
             )
+        }
+
+        if (deferPickerUntilKeyboardDismissed(host, anchor) { showNow() }) {
             return
         }
-        if (toggleSameAnchor && picker.isShowingFor(anchor)) {
-            picker.dismiss()
-            return
-        }
-        picker.show(
-            host = host,
-            anchor = anchor,
-            title = title,
-            sections = sections,
-            heightFraction = heightFraction,
-            preferAbove = shouldPreferAbove,
-            onDismiss = onDismiss
-        )
+        if (anchor !== composerInput) hideComposerKeyboard()
+        showNow()
     }
 
     private fun hideComposerKeyboard() {
@@ -1184,6 +1191,96 @@ class OverlayController(
         panelView?.requestFocus()
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
         imm?.hideSoftInputFromWindow(input.windowToken, 0)
+    }
+
+    private fun deferPickerUntilKeyboardDismissed(
+        host: FrameLayout,
+        anchor: View,
+        onReady: () -> Unit
+    ): Boolean {
+        if (anchor === composerInput) return false
+        val panel = panelView ?: return false
+        if (!shouldDelayPickerForKeyboard(panel)) return false
+
+        hideComposerKeyboard()
+        pendingPickerShowRunnable?.let { mainHandler.removeCallbacks(it) }
+
+        val startedAt = System.currentTimeMillis()
+        val task = object : Runnable {
+            override fun run() {
+                if (panelHost !== host || !host.isAttachedToWindow || !anchor.isAttachedToWindow) {
+                    clearPendingPickerShow(this)
+                    return
+                }
+
+                val timedOut = System.currentTimeMillis() - startedAt >= PICKER_KEYBOARD_DISMISS_TIMEOUT_MS
+                if (!timedOut && isKeyboardVisibleForPicker(panel)) {
+                    mainHandler.postDelayed(this, PICKER_KEYBOARD_DISMISS_POLL_MS)
+                    return
+                }
+
+                restorePanelForPicker()
+                host.post {
+                    if (panelHost === host && host.isAttachedToWindow && anchor.isAttachedToWindow) {
+                        onReady()
+                    }
+                }
+                clearPendingPickerShow(this)
+            }
+        }
+
+        pendingPickerShowRunnable = task
+        mainHandler.postDelayed(task, PICKER_KEYBOARD_DISMISS_INITIAL_DELAY_MS)
+        return true
+    }
+
+    private fun clearPendingPickerShow(task: Runnable) {
+        if (pendingPickerShowRunnable === task) {
+            pendingPickerShowRunnable = null
+        }
+    }
+
+    private fun shouldDelayPickerForKeyboard(panel: View): Boolean {
+        return composerInput?.hasFocus() == true ||
+            isKeyboardVisibleForPicker(panel) ||
+            isPanelAdjustedForKeyboard(panel)
+    }
+
+    private fun isKeyboardVisibleForPicker(panel: View): Boolean {
+        val displayHeight = context.resources.displayMetrics.heightPixels
+        val defaultBounds = panelDefaultBounds(displayHeight)
+        val imeHeight = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            panel.rootWindowInsets?.getInsets(WindowInsets.Type.ime())?.bottom ?: 0
+        } else {
+            0
+        }
+        return imeHeight >= dp(120) || keyboardTopFromVisibleFrame(defaultBounds.y + defaultBounds.height) != null
+    }
+
+    private fun isPanelAdjustedForKeyboard(panel: View): Boolean {
+        val spacerHeight = keyboardSpacerView
+            ?.takeIf { it.visibility == View.VISIBLE }
+            ?.layoutParams
+            ?.height
+            ?: 0
+        if (spacerHeight > 0) return true
+
+        val params = panelParams ?: return false
+        val displayHeight = context.resources.displayMetrics.heightPixels
+        val defaultBounds = panelDefaultBounds(displayHeight)
+        return params.height != defaultBounds.height || params.y != defaultBounds.y || panel.translationY != 0f
+    }
+
+    private fun restorePanelForPicker() {
+        val panel = panelView ?: return
+        val params = panelParams
+        if (params != null) {
+            restorePanelDefaultSize(panel, params)
+        } else {
+            panel.translationY = 0f
+            setKeyboardSpacerHeight(0)
+            anchoredPicker?.reposition()
+        }
     }
 
     private fun renderHostConnectionState(state: HostConnectionState) {
@@ -2823,6 +2920,9 @@ class OverlayController(
         private const val KEYBOARD_HEIGHT_ESTIMATE_FRACTION = 0.485f
         private const val KEYBOARD_COMPOSER_GAP_DP = 4
         private const val FULLSCREEN_KEYBOARD_BOTTOM_CLEARANCE_DP = 28
+        private const val PICKER_KEYBOARD_DISMISS_INITIAL_DELAY_MS = 80L
+        private const val PICKER_KEYBOARD_DISMISS_POLL_MS = 40L
+        private const val PICKER_KEYBOARD_DISMISS_TIMEOUT_MS = 420L
         private const val PLUS_ROW_FAST_MODE = "plus_fast_mode"
         private const val PLUS_ROW_TOOL_CALLS = "plus_tool_calls"
         private const val PLUS_ROW_ACTIVE_SEND_MODE = "plus_active_send_mode"
