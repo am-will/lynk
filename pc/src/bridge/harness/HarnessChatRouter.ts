@@ -72,7 +72,14 @@ export class HarnessChatRouter implements GatewayChatClient {
     if (config.hermesApiKey) {
       this.adapters.set("hermes", new NormalizedHarnessAdapter("hermes", new HermesChatClient(config), { supportsAttachments: false }));
     }
-    this.adapters.set("codex", new NormalizedHarnessAdapter("codex", new CodexChatClient(audit), { supportsAttachments: false }));
+    if (config.codexConfigured) {
+      this.adapters.set("codex", new NormalizedHarnessAdapter("codex", new CodexChatClient(audit, undefined, undefined, {
+        command: config.codexAppServerCommand,
+        cwd: config.codexAgentCwd,
+        approvalPolicy: config.codexAppServerApprovalPolicy,
+        sandbox: config.codexAppServerSandbox
+      }), { supportsAttachments: false }));
+    }
   }
 
   addEventListener(handler: GatewayEventHandler): () => void {

@@ -64,8 +64,13 @@ export class CodexChatClient {
   private readonly threadsById = new Map<string, CodexThreadRecord>();
   private active?: ActiveRun;
 
-  constructor(private readonly audit?: AuditLog, client?: CodexAppServerClient, sessionStoragePath: string | null = join(process.cwd(), "state", "codex-sessions.json")) {
-    this.client = client ?? new CodexAppServerClient(audit);
+  constructor(
+    private readonly audit?: AuditLog,
+    client?: CodexAppServerClient,
+    sessionStoragePath: string | null = join(process.cwd(), "state", "codex-sessions.json"),
+    options: { command?: string; cwd?: string; approvalPolicy?: string; sandbox?: string } = {}
+  ) {
+    this.client = client ?? new CodexAppServerClient(audit, options.command, options.cwd, options.approvalPolicy, options.sandbox);
     this.sessions = new InMemoryHarnessSessionStore("codex", {
       defaultModel: "gpt-5.3-codex",
       modelProvider: "codex",
@@ -256,7 +261,17 @@ export class CodexChatClient {
   }
 
   async health(): Promise<unknown> {
-    return { ok: true, harness: "codex", active: Boolean(this.active) };
+    try {
+      await this.client.listModels();
+      return { ok: true, harness: "codex", active: Boolean(this.active) };
+    } catch (error) {
+      return {
+        ok: false,
+        harness: "codex",
+        active: Boolean(this.active),
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
   }
 
   close(): void {

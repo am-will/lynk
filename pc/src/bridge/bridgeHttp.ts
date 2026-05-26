@@ -14,9 +14,11 @@ import type { OpenClawChatBridge } from "./OpenClawChatBridge.js";
 import type { PhoneHub } from "./PhoneHub.js";
 import { isAuthorizedHttpRequest } from "./httpAuth.js";
 import { BodyTooLargeError, json, readJson } from "./httpUtils.js";
+import { createHostPairingPayload } from "../host/PairingPayload.js";
+import { buildDiagnosticsBundle } from "../host/Diagnostics.js";
 
 export interface BridgeHttpDependencies {
-  config: Pick<BridgeConfig, "defaultDeviceId" | "token">;
+  config: Pick<BridgeConfig, "defaultDeviceId" | "token" | "port">;
   hub: Pick<PhoneHub, "listPhones" | "sendCommand">;
   audit: Pick<AuditLog, "recent" | "active">;
   dispatcher: Pick<Dispatcher, "handleUserRequest">;
@@ -61,6 +63,16 @@ async function routeHttp(req: IncomingMessage, res: ServerResponse, deps: Bridge
 
   if (req.method === "GET" && url.pathname === "/api/phones") {
     json(res, 200, { phones: deps.hub.listPhones(), defaultDeviceId: deps.config.defaultDeviceId });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/pairing") {
+    json(res, 200, await createHostPairingPayload(deps.config));
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/diagnostics") {
+    json(res, 200, await buildDiagnosticsBundle());
     return;
   }
 

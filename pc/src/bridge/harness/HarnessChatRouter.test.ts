@@ -23,7 +23,13 @@ const config: BridgeConfig = {
   hermesRunTimeoutMs: 600_000,
   openAiRealtimeModel: "gpt-realtime-2",
   openAiRealtimeVoice: "marin",
-  openAiWebSearchModel: "gpt-5.5"
+  openAiWebSearchModel: "gpt-5.5",
+  configPath: "/tmp/android-agent-bridge/config.json",
+  codexAppServerCommand: "codex app-server --listen stdio://",
+  codexAgentCwd: "/tmp",
+  codexAppServerApprovalPolicy: "never",
+  codexAppServerSandbox: "workspace-write",
+  codexConfigured: true
 };
 
 class FakeAdapter implements HarnessChatAdapter {

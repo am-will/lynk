@@ -56,6 +56,7 @@ class PhoneWebSocketClient(
     private var registered = false
     private var reconnectRunnable: Runnable? = null
     private var registerTimeoutRunnable: Runnable? = null
+    private var endpointIndex = 0
 
     fun connect() {
         if (manuallyClosed) return
@@ -65,9 +66,10 @@ class PhoneWebSocketClient(
         manuallyClosed = false
         connected = false
         registered = false
-        val request = Request.Builder().url(config.hostUrl).build()
+        val hostUrl = activeHostUrl()
+        val request = Request.Builder().url(hostUrl).build()
         socket = client.newWebSocket(request, this)
-        val statusText = "Connecting to ${config.hostUrl}"
+        val statusText = "Connecting to $hostUrl"
         onStatus(statusText, "info")
         onConnectionState(BridgeConnectionState(BridgeConnectionPhase.CONNECTING, statusText))
     }
@@ -272,7 +274,7 @@ class PhoneWebSocketClient(
             )
         val accepted = webSocket.send(register.toString())
         Log.i(TAG, "register sent=$accepted deviceId=${config.deviceId}")
-        val statusText = "Authenticating with ${config.hostUrl}"
+        val statusText = "Authenticating with ${activeHostUrl()}"
         onStatus(statusText, "info")
         onConnectionState(BridgeConnectionState(BridgeConnectionPhase.CONNECTING, statusText))
         scheduleRegisterTimeout(webSocket)
@@ -299,6 +301,7 @@ class PhoneWebSocketClient(
             if (statusText.startsWith("Registered ")) {
                 registered = true
                 connected = true
+                endpointIndex = endpointUrls().indexOf(activeHostUrl()).coerceAtLeast(0)
                 cancelRegisterTimeout()
                 sendChatOpen()
                 val connectedText = "Connected and registered as ${config.deviceId}"
@@ -350,6 +353,7 @@ class PhoneWebSocketClient(
         onStatus(statusText, "error")
         onConnectionState(BridgeConnectionState(BridgeConnectionPhase.ERROR, statusText))
         reportBridgeChatError("Bridge connection failed: ${t.message ?: "unknown error"}")
+        advanceEndpointCandidate()
         scheduleReconnect()
     }
 
@@ -378,6 +382,9 @@ class PhoneWebSocketClient(
         onStatus(statusText, "error")
         onConnectionState(BridgeConnectionState(BridgeConnectionPhase.ERROR, statusText))
         reportBridgeChatError(statusText)
+        if (!longBackoff) {
+            advanceEndpointCandidate()
+        }
         scheduleReconnect(longBackoff)
     }
 
@@ -386,7 +393,7 @@ class PhoneWebSocketClient(
         val sent = connected && registered && socket?.send(message.toString()) == true
         Log.i(TAG, "send $type sent=$sent connected=$connected registered=$registered")
         if (!sent) {
-            val error = "Bridge is not registered. Check the PC bridge at ${config.hostUrl}; reconnecting..."
+            val error = "Bridge is not registered. Check the PC bridge at ${activeHostUrl()}; reconnecting..."
             runOnMain {
                 onStatus(error, "error")
                 onConnectionState(BridgeConnectionState(BridgeConnectionPhase.ERROR, error))
@@ -454,7 +461,32 @@ class PhoneWebSocketClient(
         onStatus(statusText, "error")
         onConnectionState(BridgeConnectionState(BridgeConnectionPhase.ERROR, statusText))
         reportBridgeChatError(statusText)
+        advanceEndpointCandidate()
         scheduleReconnect()
+    }
+
+    private fun endpointUrls(): List<String> {
+        return (listOf(config.hostUrl) + config.hostUrlCandidates)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .ifEmpty { listOf(config.hostUrl) }
+    }
+
+    private fun activeHostUrl(): String {
+        val endpoints = endpointUrls()
+        return endpoints[endpointIndex.coerceIn(0, endpoints.lastIndex)]
+    }
+
+    private fun advanceEndpointCandidate() {
+        val endpoints = endpointUrls()
+        if (endpoints.size <= 1) {
+            return
+        }
+        endpointIndex = (endpointIndex + 1) % endpoints.size
+        val statusText = "Trying alternate bridge endpoint ${activeHostUrl()}"
+        onStatus(statusText, "info")
+        onConnectionState(BridgeConnectionState(BridgeConnectionPhase.CONNECTING, statusText))
     }
 
     private fun cancelRegisterTimeout() {

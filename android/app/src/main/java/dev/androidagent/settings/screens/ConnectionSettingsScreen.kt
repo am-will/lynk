@@ -51,6 +51,7 @@ object ConnectionSettingsScreen {
             SettingsUi.actionButton(activity, "Save", dev.androidagent.settings.SettingsButtonTone.Primary, tokens) {
                 val saved = config.copy(
                     hostUrl = hostInput.text.toString().trim(),
+                    hostUrlCandidates = emptyList(),
                     deviceId = deviceInput.text.toString().trim(),
                     token = tokenInput.text.toString().trim()
                 )

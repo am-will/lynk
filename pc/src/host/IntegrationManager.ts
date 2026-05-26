@@ -1,0 +1,146 @@
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolveCommand, resolveExecutable } from "./CommandDiscovery.js";
+import { discoverEndpoints } from "./EndpointDiscovery.js";
+import { loadOrCreateHostBridgeConfig, writeHostBridgeConfig } from "./HostConfigStore.js";
+
+export interface IntegrationStatus {
+  id: "openclaw" | "hermes" | "codex" | "tailscale" | "adb";
+  label: string;
+  installed: boolean;
+  configured: boolean;
+  ready: boolean;
+  path?: string;
+  message: string;
+}
+
+export interface RefreshResult {
+  configPath: string;
+  changed: boolean;
+  restartRecommended: boolean;
+  integrations: IntegrationStatus[];
+  mcp: Array<{ integration: string; ok: boolean; message: string }>;
+}
+
+const scriptDir = dirname(fileURLToPath(import.meta.url));
+const pcRoot = resolve(scriptDir, "../..");
+
+export async function refreshHostIntegrations(options: { configureMcp?: boolean } = {}): Promise<RefreshResult> {
+  const loaded = loadOrCreateHostBridgeConfig();
+  const config = { ...loaded.config };
+  const before = JSON.stringify(config);
+  const integrations = await detectIntegrations();
+  config.discoveredPaths = {
+    ...config.discoveredPaths,
+    ...Object.fromEntries(integrations.flatMap((integration) => integration.path ? [[integration.id, integration.path]] : []))
+  };
+  writeHostBridgeConfig(loaded.path, config);
+  const changed = before !== JSON.stringify(config);
+  const mcp = options.configureMcp === false
+    ? []
+    : await configureAvailableMcp(integrations);
+
+  return {
+    configPath: loaded.path,
+    changed,
+    restartRecommended: changed,
+    integrations,
+    mcp
+  };
+}
+
+export async function detectIntegrations(): Promise<IntegrationStatus[]> {
+  const hostConfig = loadOrCreateHostBridgeConfig().config;
+  const openclaw = resolveExecutable(process.env.OPENCLAW_AGENT_COMMAND?.trim() || "openclaw");
+  const codex = resolveCommand(process.env.CODEX_APP_SERVER_COMMAND ?? hostConfig.codexAppServerCommand ?? "codex app-server --listen stdio://");
+  const tailscale = await discoverEndpoints({ port: hostConfig.phoneAgentPort ?? 8788, includeUsb: false });
+  const adb = resolveExecutable(process.env.ADB?.trim() || "adb");
+  const hermesApiKey = process.env.HERMES_API_KEY?.trim() || hostConfig.hermesApiKey?.trim();
+  const hermesHome = process.env.HERMES_HOME?.trim() || resolve(process.env.HOME ?? "", ".hermes");
+  const hermesConfigExists = existsSync(resolve(hermesHome, "config.yaml"));
+
+  return [
+    {
+      id: "openclaw",
+      label: "OpenClaw",
+      installed: Boolean(openclaw),
+      configured: Boolean(openclaw),
+      ready: Boolean(openclaw),
+      path: openclaw,
+      message: openclaw ? "OpenClaw CLI was found." : "OpenClaw CLI was not found on PATH."
+    },
+    {
+      id: "hermes",
+      label: "Hermes",
+      installed: hermesConfigExists || Boolean(hermesApiKey),
+      configured: Boolean(hermesApiKey),
+      ready: Boolean(hermesApiKey),
+      path: hermesConfigExists ? resolve(hermesHome, "config.yaml") : undefined,
+      message: hermesApiKey ? "Hermes API key is configured." : "Hermes API key is missing."
+    },
+    {
+      id: "codex",
+      label: "Codex",
+      installed: codex.available,
+      configured: codex.available,
+      ready: codex.available,
+      path: codex.resolvedPath,
+      message: codex.available ? "Codex app-server command is available." : `Codex command '${codex.executable || "codex"}' was not found.`
+    },
+    {
+      id: "tailscale",
+      label: "Tailscale",
+      installed: tailscale.tailscale.installed,
+      configured: tailscale.tailscale.running,
+      ready: tailscale.tailscale.running && tailscale.endpoints.some((endpoint) => endpoint.kind === "tailscale"),
+      path: resolveExecutable(process.env.TAILSCALE_CLI?.trim() || "tailscale"),
+      message: tailscale.tailscale.error ?? (tailscale.tailscale.running ? "Tailscale endpoint is available." : "Tailscale is not running.")
+    },
+    {
+      id: "adb",
+      label: "ADB",
+      installed: Boolean(adb),
+      configured: Boolean(adb),
+      ready: Boolean(adb),
+      path: adb,
+      message: adb ? "ADB was found for USB reverse pairing." : "ADB was not found on PATH."
+    }
+  ];
+}
+
+async function configureAvailableMcp(integrations: IntegrationStatus[]): Promise<Array<{ integration: string; ok: boolean; message: string }>> {
+  const results = [];
+  if (integrations.find((integration) => integration.id === "openclaw")?.ready) {
+    results.push(await runNpmScript("openclaw", "openclaw:mcp"));
+  }
+  if (integrations.find((integration) => integration.id === "hermes")?.ready) {
+    results.push(await runNpmScript("hermes", "hermes:mcp"));
+  }
+  return results;
+}
+
+async function runNpmScript(integration: string, script: string): Promise<{ integration: string; ok: boolean; message: string }> {
+  const loaded = loadOrCreateHostBridgeConfig();
+  return await new Promise((resolvePromise) => {
+    const child = spawn(process.platform === "win32" ? "npm.cmd" : "npm", ["run", script], {
+      cwd: pcRoot,
+      env: {
+        ...process.env,
+        PHONE_AGENT_TOKEN: process.env.PHONE_AGENT_TOKEN ?? loaded.config.phoneAgentToken,
+        PHONE_AGENT_BRIDGE_URL: process.env.PHONE_AGENT_BRIDGE_URL ?? loaded.config.phoneAgentBridgeUrl ?? "http://127.0.0.1:8788"
+      },
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+    let output = "";
+    child.stdout.on("data", (chunk) => { output += chunk.toString(); });
+    child.stderr.on("data", (chunk) => { output += chunk.toString(); });
+    child.on("error", (error) => resolvePromise({ integration, ok: false, message: error.message }));
+    child.on("close", (code) => resolvePromise({
+      integration,
+      ok: code === 0,
+      message: code === 0 ? "MCP configuration updated." : output.trim() || `${script} exited with code ${code ?? "null"}.`
+    }));
+  });
+}

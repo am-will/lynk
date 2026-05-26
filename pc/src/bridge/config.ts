@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { resolveCommand } from "../host/CommandDiscovery.js";
+import { loadOrCreateHostBridgeConfig } from "../host/HostConfigStore.js";
 
 export interface BridgeConfig {
   host: string;
@@ -22,6 +24,12 @@ export interface BridgeConfig {
   openAiRealtimeModel: string;
   openAiRealtimeVoice: string;
   openAiWebSearchModel: string;
+  configPath: string;
+  codexAppServerCommand: string;
+  codexAgentCwd: string;
+  codexAppServerApprovalPolicy: string;
+  codexAppServerSandbox: string;
+  codexConfigured: boolean;
 }
 
 function readOpenClawConfig(): unknown {
@@ -46,10 +54,10 @@ function nestedString(value: unknown, path: string[]): string | undefined {
 
 const weakPhoneAgentTokens = new Set(["12345678"]);
 
-function readPhoneAgentToken(): string {
-  const token = process.env.PHONE_AGENT_TOKEN?.trim();
+function readPhoneAgentToken(configToken: string): string {
+  const token = process.env.PHONE_AGENT_TOKEN?.trim() || configToken;
   if (!token) {
-    throw new Error("PHONE_AGENT_TOKEN is required. Copy pc/.env.example to pc/.env.local and set a strong shared token.");
+    throw new Error("PHONE_AGENT_TOKEN is required. Generate a strong shared token or let the host bridge config create one.");
   }
   if (weakPhoneAgentTokens.has(token)) {
     throw new Error("PHONE_AGENT_TOKEN uses a known weak default. Generate a strong token and save it on both PC and Android.");
@@ -70,27 +78,37 @@ function readPositiveInt(name: string, fallback: number): number {
 }
 
 export function getBridgeConfig(): BridgeConfig {
-  const port = Number.parseInt(process.env.PHONE_AGENT_PORT ?? "8788", 10);
+  const hostConfig = loadOrCreateHostBridgeConfig();
+  const host = hostConfig.config;
+  const port = Number.parseInt(process.env.PHONE_AGENT_PORT ?? String(host.phoneAgentPort ?? 8788), 10);
   const openClawConfig = readOpenClawConfig();
+  const codexAppServerCommand = process.env.CODEX_APP_SERVER_COMMAND ?? host.codexAppServerCommand ?? "codex app-server --listen stdio://";
+  const codexResolution = resolveCommand(codexAppServerCommand);
   return {
-    host: process.env.PHONE_AGENT_HOST ?? "0.0.0.0",
+    host: process.env.PHONE_AGENT_HOST ?? host.phoneAgentHost ?? "0.0.0.0",
     port,
-    token: readPhoneAgentToken(),
-    defaultDeviceId: process.env.PHONE_AGENT_DEFAULT_DEVICE ?? "openclaw-agent",
-    bridgeUrl: process.env.PHONE_AGENT_BRIDGE_URL ?? `http://127.0.0.1:${port}`,
-    openClawGatewayUrl: process.env.OPENCLAW_GATEWAY_URL ?? "ws://127.0.0.1:18789",
-    openClawGatewayToken: process.env.OPENCLAW_GATEWAY_TOKEN ?? nestedString(openClawConfig, ["gateway", "auth", "token"]) ?? nestedString(openClawConfig, ["gateway", "remote", "token"]),
-    openClawGatewayPassword: process.env.OPENCLAW_GATEWAY_PASSWORD ?? nestedString(openClawConfig, ["gateway", "auth", "password"]) ?? nestedString(openClawConfig, ["gateway", "remote", "password"]),
-    openClawChatAgentId: process.env.OPENCLAW_CHAT_AGENT_ID ?? "main",
-    openClawChatSessionKey: process.env.OPENCLAW_CHAT_SESSION_KEY ?? "agent:main:explicit:open-claw-agent",
-    hermesApiBaseUrl: (process.env.HERMES_API_BASE_URL ?? "http://127.0.0.1:8642/v1").replace(/\/+$/, ""),
-    hermesApiKey: process.env.HERMES_API_KEY?.trim() || undefined,
-    hermesModel: process.env.HERMES_MODEL?.trim() || "hermes-agent",
-    hermesDefaultSessionId: process.env.HERMES_DEFAULT_SESSION_ID?.trim() || "hermes-agent",
-    hermesRunTimeoutMs: readPositiveInt("HERMES_RUN_TIMEOUT_SECONDS", 600) * 1000,
-    openAiApiKey: process.env.OPENAI_API_KEY,
-    openAiRealtimeModel: process.env.OPENAI_REALTIME_MODEL ?? "gpt-realtime-2",
-    openAiRealtimeVoice: process.env.OPENAI_REALTIME_VOICE ?? "marin",
-    openAiWebSearchModel: process.env.OPENAI_WEB_SEARCH_MODEL ?? "gpt-5.5"
+    token: readPhoneAgentToken(host.phoneAgentToken),
+    defaultDeviceId: process.env.PHONE_AGENT_DEFAULT_DEVICE ?? host.phoneAgentDefaultDevice ?? "openclaw-agent",
+    bridgeUrl: process.env.PHONE_AGENT_BRIDGE_URL ?? host.phoneAgentBridgeUrl ?? `http://127.0.0.1:${port}`,
+    openClawGatewayUrl: process.env.OPENCLAW_GATEWAY_URL ?? host.openClawGatewayUrl ?? "ws://127.0.0.1:18789",
+    openClawGatewayToken: process.env.OPENCLAW_GATEWAY_TOKEN ?? host.openClawGatewayToken ?? nestedString(openClawConfig, ["gateway", "auth", "token"]) ?? nestedString(openClawConfig, ["gateway", "remote", "token"]),
+    openClawGatewayPassword: process.env.OPENCLAW_GATEWAY_PASSWORD ?? host.openClawGatewayPassword ?? nestedString(openClawConfig, ["gateway", "auth", "password"]) ?? nestedString(openClawConfig, ["gateway", "remote", "password"]),
+    openClawChatAgentId: process.env.OPENCLAW_CHAT_AGENT_ID ?? host.openClawChatAgentId ?? "main",
+    openClawChatSessionKey: process.env.OPENCLAW_CHAT_SESSION_KEY ?? host.openClawChatSessionKey ?? "agent:main:explicit:open-claw-agent",
+    hermesApiBaseUrl: (process.env.HERMES_API_BASE_URL ?? host.hermesApiBaseUrl ?? "http://127.0.0.1:8642/v1").replace(/\/+$/, ""),
+    hermesApiKey: process.env.HERMES_API_KEY?.trim() || host.hermesApiKey?.trim() || undefined,
+    hermesModel: process.env.HERMES_MODEL?.trim() || host.hermesModel?.trim() || "hermes-agent",
+    hermesDefaultSessionId: process.env.HERMES_DEFAULT_SESSION_ID?.trim() || host.hermesDefaultSessionId?.trim() || "hermes-agent",
+    hermesRunTimeoutMs: readPositiveInt("HERMES_RUN_TIMEOUT_SECONDS", host.hermesRunTimeoutSeconds ?? 600) * 1000,
+    openAiApiKey: process.env.OPENAI_API_KEY ?? host.openAiApiKey,
+    openAiRealtimeModel: process.env.OPENAI_REALTIME_MODEL ?? host.openAiRealtimeModel ?? "gpt-realtime-2",
+    openAiRealtimeVoice: process.env.OPENAI_REALTIME_VOICE ?? host.openAiRealtimeVoice ?? "marin",
+    openAiWebSearchModel: process.env.OPENAI_WEB_SEARCH_MODEL ?? host.openAiWebSearchModel ?? "gpt-5.5",
+    configPath: hostConfig.path,
+    codexAppServerCommand,
+    codexAgentCwd: process.env.CODEX_AGENT_CWD ?? host.codexAgentCwd ?? process.cwd(),
+    codexAppServerApprovalPolicy: process.env.CODEX_APP_SERVER_APPROVAL_POLICY?.trim() || host.codexAppServerApprovalPolicy || "never",
+    codexAppServerSandbox: process.env.CODEX_APP_SERVER_SANDBOX?.trim() || host.codexAppServerSandbox || "workspace-write",
+    codexConfigured: codexResolution.available
   };
 }

@@ -32,11 +32,11 @@ export function harnessLabel(harnessId: HarnessId): string {
   return HARNESS_LABELS[harnessId];
 }
 
-export function harnessInfos(config: Pick<BridgeConfig, "hermesApiKey">): HarnessInfo[] {
+export function harnessInfos(config: Pick<BridgeConfig, "hermesApiKey" | "codexConfigured">): HarnessInfo[] {
   return [
     { id: "openclaw", label: harnessLabel("openclaw"), enabled: true },
     { id: "hermes", label: harnessLabel("hermes"), enabled: Boolean(config.hermesApiKey) },
-    { id: "codex", label: harnessLabel("codex"), enabled: true }
+    { id: "codex", label: harnessLabel("codex"), enabled: config.codexConfigured }
   ];
 }
 

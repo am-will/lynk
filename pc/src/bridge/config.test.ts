@@ -1,24 +1,45 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { getBridgeConfig } from "./config.js";
 
 const originalToken = process.env.PHONE_AGENT_TOKEN;
+const originalConfigPath = process.env.PHONE_AGENT_CONFIG_PATH;
+const originalPath = process.env.PATH;
+let tempRoot: string | undefined;
 
-test.afterEach(() => {
+test.beforeEach(async () => {
+  tempRoot = await mkdtemp(join(tmpdir(), "android-agent-config-test-"));
+  process.env.PHONE_AGENT_CONFIG_PATH = join(tempRoot, "config.json");
+  process.env.PATH = "";
+});
+
+test.afterEach(async () => {
   if (originalToken === undefined) {
     delete process.env.PHONE_AGENT_TOKEN;
   } else {
     process.env.PHONE_AGENT_TOKEN = originalToken;
   }
+  if (originalConfigPath === undefined) {
+    delete process.env.PHONE_AGENT_CONFIG_PATH;
+  } else {
+    process.env.PHONE_AGENT_CONFIG_PATH = originalConfigPath;
+  }
+  process.env.PATH = originalPath;
+  if (tempRoot) {
+    await rm(tempRoot, { recursive: true, force: true });
+    tempRoot = undefined;
+  }
 });
 
-test("getBridgeConfig requires an explicit phone agent token", () => {
+test("getBridgeConfig creates a persistent host token when env is missing", () => {
   delete process.env.PHONE_AGENT_TOKEN;
-  assert.throws(
-    () => getBridgeConfig(),
-    /PHONE_AGENT_TOKEN is required/
-  );
+  const config = getBridgeConfig();
+  assert.equal(config.token.length, 64);
+  assert.equal(getBridgeConfig().token, config.token);
 });
 
 test("getBridgeConfig rejects the known weak default token", () => {

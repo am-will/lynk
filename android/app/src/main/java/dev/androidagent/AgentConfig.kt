@@ -35,6 +35,7 @@ enum class ChatActiveSendMode(val key: String, val label: String) {
 
 data class AgentConfig(
     val hostUrl: String,
+    val hostUrlCandidates: List<String> = emptyList(),
     val deviceId: String,
     val token: String,
     val openAiApiKey: String,
@@ -97,6 +98,7 @@ object AgentConfigStore {
     private const val KNOWN_WEAK_DEFAULT_TOKEN = "12345678"
     private const val PREFS = "open_claw_agent_config"
     private const val HOST_URL = "host_url"
+    private const val HOST_URL_CANDIDATES = "host_url_candidates"
     private const val DEVICE_ID = "device_id"
     private const val TOKEN = "token"
     private const val OPENAI_API_KEY = "openai_api_key"
@@ -125,6 +127,11 @@ object AgentConfigStore {
         val experimentalLocalModelsEnabled = prefs.getBoolean(EXPERIMENTAL_LOCAL_MODELS_ENABLED, false)
         return AgentConfig(
             hostUrl = prefs.getString(HOST_URL, "ws://127.0.0.1:8788/phone") ?: "ws://127.0.0.1:8788/phone",
+            hostUrlCandidates = prefs.getString(HOST_URL_CANDIDATES, "")
+                ?.split('\n')
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                .orEmpty(),
             deviceId = prefs.getString(DEVICE_ID, "openclaw-agent") ?: "openclaw-agent",
             token = sanitizedToken(prefs.getString(TOKEN, "")),
             openAiApiKey = prefs.getString(OPENAI_API_KEY, "") ?: "",
@@ -157,6 +164,7 @@ object AgentConfigStore {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .putString(HOST_URL, config.hostUrl)
+            .putString(HOST_URL_CANDIDATES, config.hostUrlCandidates.map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n"))
             .putString(DEVICE_ID, config.deviceId)
             .putString(TOKEN, config.token)
             .putString(OPENAI_API_KEY, config.openAiApiKey)

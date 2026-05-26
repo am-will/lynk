@@ -73,7 +73,7 @@ async function withHttpServer<T>(
   const dispatcher = new FakeDispatcher();
   const chatBridge = new FakeChatBridge();
   const handler = createBridgeHttpHandler({
-    config: { token, defaultDeviceId: "phone" },
+    config: { token, defaultDeviceId: "phone", port: 8788 },
     hub: hub as never,
     audit: audit as never,
     dispatcher: dispatcher as never,
@@ -167,6 +167,22 @@ test("bridge HTTP serves authenticated harness readiness", async () => {
         codex: { ok: true, configured: true, label: "Codex", modelCount: 5 }
       }
     });
+  });
+});
+
+test("bridge HTTP serves authenticated pairing payload", async () => {
+  await withHttpServer({}, async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/pairing`, {
+      headers: authHeaders()
+    });
+
+    assert.equal(response.status, 200);
+    const payload = await response.json() as Record<string, unknown>;
+    assert.equal(payload.product, "android-agent-bridge");
+    assert.equal(payload.deviceId, "phone");
+    assert.equal(payload.token, token);
+    assert.match(String(payload.deepLink), /^android-agent:\/\/pair\?/);
+    assert.ok(Array.isArray(payload.endpoints));
   });
 });
 
