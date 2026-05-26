@@ -46,6 +46,14 @@ class MainActivity : ComponentActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingLocalModelPathField: EditText? = null
     private var bridgeConnected = false
+    private var settingsStatusPollScheduled = false
+    private val settingsStatusPoll = object : Runnable {
+        override fun run() {
+            settingsStatusPollScheduled = false
+            refreshSetupState()
+            scheduleSettingsStatusPoll()
+        }
+    }
 
     private val localModelPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@registerForActivityResult
@@ -98,9 +106,11 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         registerServiceStateReceiver()
         refreshSetupState()
+        scheduleSettingsStatusPoll()
     }
 
     override fun onStop() {
+        stopSettingsStatusPoll()
         unregisterServiceStateReceiver()
         super.onStop()
     }
@@ -114,6 +124,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshSetupState()
+        scheduleSettingsStatusPoll()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
@@ -204,12 +215,28 @@ class MainActivity : ComponentActivity() {
 
     private fun refreshSetupState() {
         if (!::setupBanner.isInitialized) return
-        bridgeConnected = AgentForegroundService.isRunning
+        val wasBridgeConnected = bridgeConnected
+        bridgeConnected = AgentForegroundService.isBridgeConnected()
         if (!Settings.canDrawOverlays(this)) {
             setupBanner.text = "Grant overlay permission to enable the floating bubble and open the full app shell."
         } else {
             setupBanner.text = "Overlay granted. Re-open the app to enter the full shell."
         }
+        if (wasBridgeConnected != bridgeConnected && ::settingsHost.isInitialized) {
+            settingsHost.refreshHubIfVisible()
+        }
+    }
+
+    private fun scheduleSettingsStatusPoll() {
+        if (settingsStatusPollScheduled) return
+        settingsStatusPollScheduled = true
+        mainHandler.postDelayed(settingsStatusPoll, SETTINGS_STATUS_POLL_MS)
+    }
+
+    private fun stopSettingsStatusPoll() {
+        if (!settingsStatusPollScheduled) return
+        mainHandler.removeCallbacks(settingsStatusPoll)
+        settingsStatusPollScheduled = false
     }
 
     private fun togglePetEnabledInternal() {
@@ -293,5 +320,6 @@ class MainActivity : ComponentActivity() {
         private const val REQUEST_MIC_PERMISSION = 20
         private const val REQUEST_LOCATION_PERMISSION = 21
         private const val REQUEST_NOTIFICATIONS = 10
+        private const val SETTINGS_STATUS_POLL_MS = 1_000L
     }
 }

@@ -63,6 +63,16 @@ class AppShellActivity : ComponentActivity() {
     private var chatHost: FrameLayout? = null
     private val activityInstanceId = System.identityHashCode(this)
     private var shellChatAttachToken = 0
+    private var settingsStatusPollScheduled = false
+    private val settingsStatusPoll = object : Runnable {
+        override fun run() {
+            settingsStatusPollScheduled = false
+            refreshShellState()
+            if (selectedTab == ShellTab.Settings) {
+                scheduleSettingsStatusPoll()
+            }
+        }
+    }
 
     private val backPressedCallback = object : OnBackPressedCallback(false) {
         override fun handleOnBackPressed() {
@@ -151,9 +161,13 @@ class AppShellActivity : ComponentActivity() {
         registerServiceStateReceiver()
         registerMinimizeAppReceiver()
         refreshShellState()
+        if (selectedTab == ShellTab.Settings) {
+            scheduleSettingsStatusPoll()
+        }
     }
 
     override fun onStop() {
+        stopSettingsStatusPoll()
         if (selectedTab == ShellTab.Chat) {
             detachShellChat()
         }
@@ -165,6 +179,9 @@ class AppShellActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshShellState()
+        if (selectedTab == ShellTab.Settings) {
+            scheduleSettingsStatusPoll()
+        }
         if (selectedTab == ShellTab.Chat) {
             chatHost?.takeIf { it.childCount == 0 }?.let { attachShellChat() }
         }
@@ -309,7 +326,11 @@ class AppShellActivity : ComponentActivity() {
             ShellTab.Settings -> {
                 contentHost.addView(settingsContainer)
                 settingsHost.showHub()
+                scheduleSettingsStatusPoll()
             }
+        }
+        if (tab != ShellTab.Settings) {
+            stopSettingsStatusPoll()
         }
         updateBackHandling()
     }
@@ -537,7 +558,27 @@ class AppShellActivity : ComponentActivity() {
     }
 
     private fun refreshShellState() {
-        bridgeConnected = AgentForegroundService.isRunning
+        val wasBridgeConnected = bridgeConnected
+        bridgeConnected = AgentForegroundService.isBridgeConnected()
+        if (
+            wasBridgeConnected != bridgeConnected &&
+            selectedTab == ShellTab.Settings &&
+            ::settingsHost.isInitialized
+        ) {
+            settingsHost.refreshHubIfVisible()
+        }
+    }
+
+    private fun scheduleSettingsStatusPoll() {
+        if (settingsStatusPollScheduled) return
+        settingsStatusPollScheduled = true
+        mainHandler.postDelayed(settingsStatusPoll, SETTINGS_STATUS_POLL_MS)
+    }
+
+    private fun stopSettingsStatusPoll() {
+        if (!settingsStatusPollScheduled) return
+        mainHandler.removeCallbacks(settingsStatusPoll)
+        settingsStatusPollScheduled = false
     }
 
     private fun registerServiceStateReceiver() {
@@ -604,6 +645,7 @@ class AppShellActivity : ComponentActivity() {
         private const val REQUEST_MIC_PERMISSION = 20
         private const val REQUEST_LOCATION_PERMISSION = 21
         private const val REQUEST_NOTIFICATIONS = 10
+        private const val SETTINGS_STATUS_POLL_MS = 1_000L
 
         fun openSettingsIntent(context: Context): Intent {
             return Intent(context, AppShellActivity::class.java)

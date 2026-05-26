@@ -65,6 +65,12 @@ class SettingsHost(
         onNavigationChanged()
     }
 
+    fun refreshHubIfVisible() {
+        if (showingHub) {
+            showHub()
+        }
+    }
+
     fun navigateTo(destination: SettingsDestination) {
         showScreen(destination)
     }

@@ -103,6 +103,8 @@ class AgentForegroundService : Service() {
         super.onCreate()
         activeService = this
         isRunning = true
+        bridgeConnectionPhase = BridgeConnectionPhase.CONNECTING
+        bridgeConnectionMessage = "Agent service starting"
         broadcastRunningState()
         createChannel()
         AgentConfigStore.load(this).also { config ->
@@ -461,6 +463,8 @@ class AgentForegroundService : Service() {
             activeService = null
         }
         isRunning = false
+        bridgeConnectionPhase = BridgeConnectionPhase.ERROR
+        bridgeConnectionMessage = "Agent service stopped"
         broadcastRunningState()
         super.onDestroy()
     }
@@ -1260,6 +1264,9 @@ class AgentForegroundService : Service() {
     }
 
     private fun handleBridgeConnectionState(state: BridgeConnectionState) {
+        bridgeConnectionPhase = state.phase
+        bridgeConnectionMessage = state.message
+        broadcastRunningState()
         serviceScope.launch {
             overlayController?.setHostConnectionState(
                 HostConnectionState(
@@ -1410,6 +1417,8 @@ class AgentForegroundService : Service() {
             Intent(ACTION_STATE_CHANGED)
                 .setPackage(packageName)
                 .putExtra(EXTRA_IS_RUNNING, isRunning)
+                .putExtra(EXTRA_BRIDGE_CONNECTED, isBridgeConnected())
+                .putExtra(EXTRA_BRIDGE_CONNECTION_MESSAGE, bridgeConnectionMessage)
         )
     }
 
@@ -1444,9 +1453,15 @@ class AgentForegroundService : Service() {
         private const val REALTIME_VOICE_COMPLETION_VISIBLE_MS = 10_000L
         const val ACTION_STATE_CHANGED = "dev.openclawagent.action.AGENT_SERVICE_STATE_CHANGED"
         const val EXTRA_IS_RUNNING = "isRunning"
+        const val EXTRA_BRIDGE_CONNECTED = "bridgeConnected"
+        const val EXTRA_BRIDGE_CONNECTION_MESSAGE = "bridgeConnectionMessage"
         const val CHANNEL_ID = ChatNotificationController.CHANNEL_ID
         var isRunning: Boolean = false
             private set
+        @Volatile
+        private var bridgeConnectionPhase: BridgeConnectionPhase = BridgeConnectionPhase.ERROR
+        @Volatile
+        private var bridgeConnectionMessage: String = "Agent service stopped"
         @Volatile
         var shellChatContainer: FrameLayout? = null
         var shellChatContainerActivityId: Int = 0
@@ -1458,6 +1473,10 @@ class AgentForegroundService : Service() {
 
         fun consumeShellChatBackPress(): Boolean {
             return activeService?.overlayController?.consumeShellBackPress() == true
+        }
+
+        fun isBridgeConnected(): Boolean {
+            return isRunning && bridgeConnectionPhase == BridgeConnectionPhase.CONNECTED
         }
     }
 }
