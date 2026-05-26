@@ -16,6 +16,7 @@ import { isAuthorizedHttpRequest } from "./httpAuth.js";
 import { BodyTooLargeError, json, readJson } from "./httpUtils.js";
 import { createHostPairingPayload } from "../host/PairingPayload.js";
 import { buildDiagnosticsBundle } from "../host/Diagnostics.js";
+import { detectIntegrations, refreshHostIntegrations } from "../host/IntegrationManager.js";
 
 export interface BridgeHttpDependencies {
   config: Pick<BridgeConfig, "defaultDeviceId" | "token" | "port">;
@@ -73,6 +74,16 @@ async function routeHttp(req: IncomingMessage, res: ServerResponse, deps: Bridge
 
   if (req.method === "GET" && url.pathname === "/api/diagnostics") {
     json(res, 200, await buildDiagnosticsBundle());
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/integrations") {
+    json(res, 200, { integrations: await detectIntegrations() });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/integrations/refresh") {
+    json(res, 200, await refreshHostIntegrations({ configureMcp: url.searchParams.get("configureMcp") === "1" }));
     return;
   }
 
