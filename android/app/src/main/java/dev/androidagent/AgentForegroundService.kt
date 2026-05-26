@@ -1,9 +1,5 @@
 package dev.androidagent
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.app.Service
 import android.Manifest
 import android.app.ForegroundServiceStartNotAllowedException
@@ -21,7 +17,6 @@ import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
 import android.widget.FrameLayout
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.app.ServiceCompat
 import dev.androidagent.accessibility.AccessibilityCommandExecutor
@@ -39,7 +34,6 @@ import dev.androidagent.chat.ChatModelSource
 import dev.androidagent.chat.ChatStateReducer
 import dev.androidagent.chat.ChatTimelineItem
 import dev.androidagent.chat.ChatTimelineKind
-import dev.androidagent.chat.ChatUnreadReply
 import dev.androidagent.chat.ChatUsageSummary
 import dev.androidagent.chat.StoredChatAttachment
 import dev.androidagent.localmodel.LocalModelStore
@@ -86,7 +80,7 @@ class AgentForegroundService : Service() {
     private var chatState = ChatState()
     private val chatMessageMutex = Mutex()
     private val newChatCoordinator = NewChatSessionCoordinator()
-    private var notifiedReplySessions = emptySet<String>()
+    private val chatNotifications by lazy { ChatNotificationController(this, ::brandPresentationFor) }
     private var recentsSuppressionStartedAtMs = 0L
     private var recentsRestoreCheck: Runnable? = null
     private var phoneControlAttentionClear: Runnable? = null
@@ -115,7 +109,12 @@ class AgentForegroundService : Service() {
             AvatarLibrary.scanOnBoot(applicationContext, config.hostUrl, config.token)
             publishBackendAvailability(config)
         }
-        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), foregroundServiceType(includeMicrophone = false))
+        ServiceCompat.startForeground(
+            this,
+            NOTIFICATION_ID,
+            chatNotifications.foregroundNotification(chatState, lastNotificationText, isAgentTurnActive),
+            foregroundServiceType(includeMicrophone = false)
+        )
         voiceTranscriptionManager = VoiceTranscriptionManager(onStateChanged = ::handleTranscriptionState)
         overlayController = OverlayController(
             context = this,
@@ -1320,7 +1319,12 @@ class AgentForegroundService : Service() {
             return
         }
         runCatching {
-            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), foregroundServiceType(includeMicrophone = true))
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                chatNotifications.foregroundNotification(chatState, lastNotificationText, isAgentTurnActive),
+                foregroundServiceType(includeMicrophone = true)
+            )
         }.onFailure { error ->
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && error is ForegroundServiceStartNotAllowedException) {
                 Log.w(TAG, "Voice foreground-service promotion was not allowed; continuing with existing foreground service.", error)
@@ -1334,7 +1338,12 @@ class AgentForegroundService : Service() {
 
     private fun restoreBaseForeground() {
         runCatching {
-            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), foregroundServiceType(includeMicrophone = false))
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                chatNotifications.foregroundNotification(chatState, lastNotificationText, isAgentTurnActive),
+                foregroundServiceType(includeMicrophone = false)
+            )
         }.onFailure { error ->
             if (error is SecurityException || error is IllegalArgumentException) {
                 Log.w(TAG, "Foreground-service restore failed; continuing with existing foreground service.", error)
@@ -1353,126 +1362,23 @@ class AgentForegroundService : Service() {
     }
 
     private fun createChannel() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(NotificationChannel(CHANNEL_ID, "Agent chat", NotificationManager.IMPORTANCE_LOW))
-            manager.createNotificationChannel(NotificationChannel(REPLY_CHANNEL_ID, "Chat replies", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = "Per-session reply notifications from the selected chat client"
-            })
-        }
+        chatNotifications.createChannels()
     }
 
     private fun updateNotification() {
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification())
+        chatNotifications.updateForeground(chatState, lastNotificationText, isAgentTurnActive)
     }
 
     private fun syncReplyNotifications() {
-        val manager = getSystemService(NotificationManager::class.java)
-        val nextSessions = chatState.unreadReplies.keys
-        for (sessionKey in notifiedReplySessions - nextSessions) {
-            manager.cancel(replyNotificationId(sessionKey))
-        }
-        for ((sessionKey, unread) in chatState.unreadReplies) {
-            runCatching {
-                manager.notify(replyNotificationId(sessionKey), replyNotification(sessionKey, unread))
-            }.onFailure { error ->
-                Log.w(TAG, "Failed to post reply notification for $sessionKey", error)
-            }
-        }
-        notifiedReplySessions = nextSessions
+        chatNotifications.syncReplies(chatState)
     }
 
     private fun cancelReplyNotification(sessionKey: String) {
-        getSystemService(NotificationManager::class.java).cancel(replyNotificationId(sessionKey))
-        notifiedReplySessions = notifiedReplySessions - sessionKey
+        chatNotifications.cancelReply(sessionKey)
     }
 
     private fun cancelAllReplyNotifications() {
-        val manager = getSystemService(NotificationManager::class.java)
-        (notifiedReplySessions + chatState.unreadReplies.keys).forEach { sessionKey ->
-            manager.cancel(replyNotificationId(sessionKey))
-        }
-        notifiedReplySessions = emptySet()
-    }
-
-    private fun notification(): Notification {
-        val stopIntent = Intent(this, AgentForegroundService::class.java).setAction(ACTION_STOP_TURN)
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        val stopPendingIntent = PendingIntent.getService(this, 0, stopIntent, flags)
-        val latestUnreadSessionKey = chatState.latestUnreadSessionKey()
-        val openIntent = Intent(this, AgentForegroundService::class.java)
-            .setAction(if (latestUnreadSessionKey != null) ACTION_OPEN_CHAT_SESSION else ACTION_OPEN_CHAT)
-            .putExtra(EXTRA_PANEL_PRESENTATION, PANEL_PRESENTATION_AUTO)
-        latestUnreadSessionKey?.let { openIntent.putExtra(EXTRA_SESSION_KEY, it) }
-        val openPendingIntent = PendingIntent.getService(
-            this,
-            REQUEST_OPEN_CHAT,
-            openIntent,
-            flags
-        )
-        val unreadCount = chatState.totalUnreadReplies
-        val copy = brandPresentationFor(chatState).copy
-        val notificationText = if (unreadCount > 0) {
-            copy.unreadReplies(unreadCount)
-        } else {
-            lastNotificationText
-        }
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification_bubble)
-            .setColor(0xFF245BFF.toInt())
-            .setContentTitle(when {
-                isAgentTurnActive -> "${copy.name} working"
-                unreadCount > 0 -> "${copy.name} replied"
-                else -> "${copy.name} active"
-            })
-            .setContentText(notificationText)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(notificationText))
-            .setContentIntent(openPendingIntent)
-            .setNumber(unreadCount)
-            .setOnlyAlertOnce(true)
-            .setOngoing(true)
-            .addAction(R.drawable.ic_close, "Stop Turn", stopPendingIntent)
-            .build()
-    }
-
-    private fun replyNotification(sessionKey: String, unread: ChatUnreadReply): Notification {
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        val openIntent = Intent(this, AgentForegroundService::class.java)
-            .setAction(ACTION_OPEN_CHAT_SESSION)
-            .putExtra(EXTRA_SESSION_KEY, sessionKey)
-            .putExtra(EXTRA_PANEL_PRESENTATION, PANEL_PRESENTATION_AUTO)
-        val contentIntent = PendingIntent.getService(this, replyNotificationId(sessionKey), openIntent, flags)
-        val deleteIntent = Intent(this, AgentForegroundService::class.java)
-            .setAction(ACTION_DISMISS_CHAT_SESSION_NOTIFICATION)
-            .putExtra(EXTRA_SESSION_KEY, sessionKey)
-        val deletePendingIntent = PendingIntent.getService(
-            this,
-            replyNotificationId(sessionKey) + REQUEST_DISMISS_REPLY_OFFSET,
-            deleteIntent,
-            flags
-        )
-        val label = unread.displayNameFor(sessionKey)
-        val count = unread.count
-        val copy = brandPresentationFor(chatState, sessionKey).copy
-        val text = unread.latestPreview
-            ?: if (unread.latestStatus == "failed") copy.failedReplyFallback() else "Tap to view the reply."
-        return NotificationCompat.Builder(this, REPLY_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification_bubble)
-            .setColor(0xFF245BFF.toInt())
-            .setContentTitle(if (count > 1) "$count unread ${copy.name} replies in $label" else copy.repliedIn(label))
-            .setContentText(text)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-            .setContentIntent(contentIntent)
-            .setDeleteIntent(deletePendingIntent)
-            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setNumber(count)
-            .setAutoCancel(true)
-            .build()
-    }
-
-    private fun replyNotificationId(sessionKey: String): Int {
-        return REPLY_NOTIFICATION_ID_BASE + (sessionKey.hashCode() and 0x0FFFFFFF)
+        chatNotifications.cancelAllReplies(chatState)
     }
 
     private fun broadcastRunningState() {
@@ -1485,12 +1391,12 @@ class AgentForegroundService : Service() {
 
     companion object {
         private const val TAG = "AgentService"
-        private const val ACTION_STOP_TURN = "dev.openclawagent.action.STOP_TURN"
-        const val ACTION_OPEN_CHAT = "dev.openclawagent.action.OPEN_CHAT"
+        private const val ACTION_STOP_TURN = ChatNotificationController.ACTION_STOP_TURN
+        const val ACTION_OPEN_CHAT = ChatNotificationController.ACTION_OPEN_CHAT
         const val ACTION_ENSURE_SERVICE = "dev.openclawagent.action.ENSURE_SERVICE"
         const val ACTION_START_VOICE = "dev.openclawagent.action.START_VOICE"
-        private const val ACTION_OPEN_CHAT_SESSION = "dev.openclawagent.action.OPEN_CHAT_SESSION"
-        private const val ACTION_DISMISS_CHAT_SESSION_NOTIFICATION = "dev.openclawagent.action.DISMISS_CHAT_SESSION_NOTIFICATION"
+        private const val ACTION_OPEN_CHAT_SESSION = ChatNotificationController.ACTION_OPEN_CHAT_SESSION
+        private const val ACTION_DISMISS_CHAT_SESSION_NOTIFICATION = ChatNotificationController.ACTION_DISMISS_CHAT_SESSION_NOTIFICATION
         const val ACTION_REFRESH_AVATAR = "dev.openclawagent.action.REFRESH_AVATAR"
         const val ACTION_RESIZE_BUBBLE = "dev.openclawagent.action.RESIZE_BUBBLE"
         const val ACTION_REFRESH_PET_VISIBILITY = "dev.openclawagent.action.REFRESH_PET_VISIBILITY"
@@ -1501,15 +1407,12 @@ class AgentForegroundService : Service() {
         const val EXTRA_SHELL_CHAT_TOKEN = "shellChatToken"
         const val EXTRA_CHAT_ATTACHMENT_JSON = "chatAttachmentJson"
         const val EXTRA_BUBBLE_SIZE_DP = "dev.openclawagent.extra.BUBBLE_SIZE_DP"
-        const val EXTRA_PANEL_PRESENTATION = "panelPresentation"
+        const val EXTRA_PANEL_PRESENTATION = ChatNotificationController.EXTRA_PANEL_PRESENTATION
         const val PANEL_PRESENTATION_POPUP = "popup"
         const val PANEL_PRESENTATION_FULLSCREEN = "fullscreen"
-        private const val PANEL_PRESENTATION_AUTO = "auto"
-        private const val EXTRA_SESSION_KEY = "sessionKey"
-        private const val NOTIFICATION_ID = 1
-        private const val REPLY_NOTIFICATION_ID_BASE = 10_000
-        private const val REQUEST_OPEN_CHAT = 2
-        private const val REQUEST_DISMISS_REPLY_OFFSET = 500_000
+        private const val PANEL_PRESENTATION_AUTO = ChatNotificationController.PANEL_PRESENTATION_AUTO
+        private const val EXTRA_SESSION_KEY = ChatNotificationController.EXTRA_SESSION_KEY
+        private const val NOTIFICATION_ID = ChatNotificationController.NOTIFICATION_ID
         private const val DEFAULT_NOTIFICATION_TEXT = "Floating chat bubble is running"
         private const val SYSTEM_DIALOG_REASON = "reason"
         private const val RECENTS_RESTORE_CHECK_MS = 350L
@@ -1518,8 +1421,7 @@ class AgentForegroundService : Service() {
         private const val REALTIME_VOICE_COMPLETION_VISIBLE_MS = 10_000L
         const val ACTION_STATE_CHANGED = "dev.openclawagent.action.AGENT_SERVICE_STATE_CHANGED"
         const val EXTRA_IS_RUNNING = "isRunning"
-        const val CHANNEL_ID = "open-claw-agent"
-        private const val REPLY_CHANNEL_ID = "open-claw-agent-replies"
+        const val CHANNEL_ID = ChatNotificationController.CHANNEL_ID
         var isRunning: Boolean = false
             private set
         @Volatile
