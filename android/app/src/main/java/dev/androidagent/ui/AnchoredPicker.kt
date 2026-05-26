@@ -82,17 +82,27 @@ class AnchoredPicker(
         preferAbove?.let { currentPreferAbove = it }
         bindSheetContent(sheet, title, sections)
         applyHeight(sheet, heightFraction)
-        sheet.post {
+        sheet.requestLayout()
+        preDrawListener?.let {
+            sheet.viewTreeObserver.removeOnPreDrawListener(it)
+        }
+        val observer = sheet.viewTreeObserver
+        val preDraw = ViewTreeObserver.OnPreDrawListener {
             val host = hostRef
             val anchor = currentAnchor
             if (host != null && anchor != null && sheet.parent === host && anchor.isAttachedToWindow) {
                 positionSheet(host, sheet, anchor)
             }
+            sheet.viewTreeObserver.removeOnPreDrawListener(preDrawListener)
+            preDrawListener = null
             findBodyScroller(sheet)?.scrollTo(0, scrollY)
             revealRowId?.let { rowId ->
                 sheet.post { revealRowFullyIfNeeded(rowId) }
             }
+            true
         }
+        preDrawListener = preDraw
+        observer.addOnPreDrawListener(preDraw)
     }
 
     fun updateRow(row: Row): Boolean {

@@ -1541,7 +1541,8 @@ class OverlayController(
             title = "Upload File",
             sections = listOf(AnchoredPicker.Section(null, rows)),
             toggleSameAnchor = !replace,
-            replaceShowing = replace
+            replaceShowing = replace,
+            preferAbove = true
         )
     }
 
