@@ -75,7 +75,6 @@ class AgentForegroundService : Service() {
     private var voiceRuntimeController: VoiceRuntimeController? = null
     private var realtimeVoiceCoordinator: RealtimeVoiceCoordinator? = null
     private var voiceTranscriptionManager: VoiceTranscriptionManager? = null
-    private var lastNotificationText = DEFAULT_NOTIFICATION_TEXT
     private var isAgentTurnActive = false
     private var chatState = ChatState()
     private val chatMessageMutex = Mutex()
@@ -112,7 +111,7 @@ class AgentForegroundService : Service() {
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
-            chatNotifications.foregroundNotification(chatState, lastNotificationText, isAgentTurnActive),
+            chatNotifications.foregroundNotification(chatState),
             foregroundServiceType(includeMicrophone = false)
         )
         voiceTranscriptionManager = VoiceTranscriptionManager(onStateChanged = ::handleTranscriptionState)
@@ -724,7 +723,6 @@ class AgentForegroundService : Service() {
             chatState = chatState.copy(status = message, isRunning = false)
             overlayController?.setChatState(chatState)
             overlayController?.setStatus(message)
-            lastNotificationText = message
             isAgentTurnActive = false
             updateNotification()
             return false
@@ -735,7 +733,6 @@ class AgentForegroundService : Service() {
             if (validationError != null) {
                 val message = validationError.message ?: "Selected attachment cannot be sent."
                 overlayController?.setStatus(message)
-                lastNotificationText = message
                 updateNotification()
                 return false
             }
@@ -753,10 +750,8 @@ class AgentForegroundService : Service() {
             attachments = attachments
         )
         if (sent) {
-            lastNotificationText = brandPresentationFor(chatState).copy.sentStatus
             isAgentTurnActive = true
         } else {
-            lastNotificationText = if (route == ChatClientRoute.Local) "Local model is not ready" else "Bridge is not connected"
             isAgentTurnActive = false
         }
         updateNotification()
@@ -794,7 +789,6 @@ class AgentForegroundService : Service() {
         publishBackendAvailability(config)
         overlayController?.setChatState(chatState)
         connectAgentClient(model).setModel(sessionKeyForRoute(route), modelForRoute(model, route, config))
-        lastNotificationText = chatStatusText(chatState.status, chatState)
         updateNotification()
     }
 
@@ -848,14 +842,6 @@ class AgentForegroundService : Service() {
         )
     }
 
-    private fun chatStatusText(rawStatus: String?, state: ChatState): String {
-        return ChatPresentationHelpers.chatStatusText(
-            rawStatus = rawStatus,
-            isRunning = state.isRunning,
-            presentation = brandPresentationFor(state)
-        )
-    }
-
     private fun harnessFromSessionKey(sessionKey: String?): String? {
         val prefix = sessionKey?.substringBefore(":", missingDelimiterValue = "")?.lowercase()
         return when (prefix) {
@@ -880,7 +866,6 @@ class AgentForegroundService : Service() {
         )
         overlayController?.setChatState(chatState)
         connectAgentClient(routeOverride = activeChatRoute()).controlCommand(slashText, JSONObject())
-        lastNotificationText = "Running $slashText"
         isAgentTurnActive = command != "status"
         updateNotification()
         return true
@@ -891,7 +876,6 @@ class AgentForegroundService : Service() {
         if (!notice.isNullOrBlank()) {
             chatState = ChatStateReducer.localControlCommand(chatState, command, args)
             overlayController?.setChatState(chatState)
-            lastNotificationText = notice
             updateNotification()
         }
         connectAgentClient(routeOverride = activeChatRoute()).controlCommand(command, args)
@@ -905,7 +889,6 @@ class AgentForegroundService : Service() {
             chatState = chatState.copy(status = message, isRunning = false)
             overlayController?.setChatState(chatState)
             overlayController?.setStatus(message)
-            lastNotificationText = message
             isAgentTurnActive = false
             updateNotification()
             return
@@ -973,7 +956,6 @@ class AgentForegroundService : Service() {
             workspacePath = request.workspacePath,
             createWorkspaceIfMissing = createWorkspaceIfMissing && request.route == ChatClientRoute.Host && isCodexChatSelection(request.selectedModel)
         )
-        lastNotificationText = "Started a new chat"
         isAgentTurnActive = false
         updateNotification()
     }
@@ -989,7 +971,6 @@ class AgentForegroundService : Service() {
                         error = null
                     )
                     overlayController?.setChatState(chatState)
-                    lastNotificationText = "Folder not found"
                     isAgentTurnActive = false
                     updateNotification()
                     promptCreateCodexWorkspace(retryRequest)
@@ -1049,7 +1030,6 @@ class AgentForegroundService : Service() {
                     newChatCoordinator.clear()
                 }
                 overlayController?.setChatState(chatState)
-                chatState.status?.takeIf { it.isNotBlank() }?.let { lastNotificationText = chatStatusText(it, chatState) }
                 isAgentTurnActive = chatState.isRunning
                 syncReplyNotifications()
                 updateNotification()
@@ -1081,7 +1061,6 @@ class AgentForegroundService : Service() {
             } else {
                 chatState = chatState.copy(status = "Folder not found")
                 overlayController?.setChatState(chatState)
-                lastNotificationText = "Folder not found"
                 isAgentTurnActive = false
                 updateNotification()
             }
@@ -1293,8 +1272,6 @@ class AgentForegroundService : Service() {
     private fun handleBridgeStatus(text: String, status: String) {
         serviceScope.launch {
             overlayController?.setStatus(text)
-            lastNotificationText = text.takeIf { it.isNotBlank() }?.let { chatStatusText(it, chatState) }
-                ?: brandPresentationFor(chatState).copy.defaultNotificationText
             isAgentTurnActive = when (status) {
                 "working", "tool" -> true
                 "done", "error" -> false
@@ -1308,7 +1285,6 @@ class AgentForegroundService : Service() {
         val route = activeChatRoute()
         val client = connectAgentClient(routeOverride = route)
         overlayController?.setStatus("Stop requested")
-        lastNotificationText = "Stopping active turn..."
         isAgentTurnActive = true
         updateNotification()
         client.stop(sessionKeyForRoute(route), chatState.activeRunId, reason)
@@ -1344,7 +1320,7 @@ class AgentForegroundService : Service() {
             ServiceCompat.startForeground(
                 this,
                 NOTIFICATION_ID,
-                chatNotifications.foregroundNotification(chatState, lastNotificationText, isAgentTurnActive),
+                chatNotifications.foregroundNotification(chatState),
                 foregroundServiceType(includeMicrophone = true)
             )
         }.onFailure { error ->
@@ -1363,7 +1339,7 @@ class AgentForegroundService : Service() {
             ServiceCompat.startForeground(
                 this,
                 NOTIFICATION_ID,
-                chatNotifications.foregroundNotification(chatState, lastNotificationText, isAgentTurnActive),
+                chatNotifications.foregroundNotification(chatState),
                 foregroundServiceType(includeMicrophone = false)
             )
         }.onFailure { error ->
@@ -1388,7 +1364,7 @@ class AgentForegroundService : Service() {
     }
 
     private fun updateNotification() {
-        chatNotifications.updateForeground(chatState, lastNotificationText, isAgentTurnActive)
+        chatNotifications.updateForeground(chatState)
     }
 
     private fun syncReplyNotifications() {
@@ -1435,7 +1411,6 @@ class AgentForegroundService : Service() {
         private const val PANEL_PRESENTATION_AUTO = ChatNotificationController.PANEL_PRESENTATION_AUTO
         private const val EXTRA_SESSION_KEY = ChatNotificationController.EXTRA_SESSION_KEY
         private const val NOTIFICATION_ID = ChatNotificationController.NOTIFICATION_ID
-        private const val DEFAULT_NOTIFICATION_TEXT = "Floating chat bubble is running"
         private const val SYSTEM_DIALOG_REASON = "reason"
         private const val RECENTS_RESTORE_CHECK_MS = 350L
         private const val RECENTS_MIN_SUPPRESSION_MS = 700L

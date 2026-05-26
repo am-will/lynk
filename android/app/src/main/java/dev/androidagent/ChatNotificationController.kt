@@ -36,26 +36,14 @@ internal class ChatNotificationController(
         }
     }
 
-    fun updateForeground(
-        state: ChatState,
-        lastNotificationText: String,
-        isAgentTurnActive: Boolean
-    ) {
+    fun updateForeground(state: ChatState) {
         notificationManager.notify(
             NOTIFICATION_ID,
-            foregroundNotification(
-                state = state,
-                lastNotificationText = lastNotificationText,
-                isAgentTurnActive = isAgentTurnActive
-            )
+            foregroundNotification(state)
         )
     }
 
-    fun foregroundNotification(
-        state: ChatState,
-        lastNotificationText: String,
-        isAgentTurnActive: Boolean
-    ): Notification {
+    fun foregroundNotification(state: ChatState): Notification {
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val stopPendingIntent = PendingIntent.getService(
             context,
@@ -69,27 +57,19 @@ internal class ChatNotificationController(
             .putExtra(EXTRA_PANEL_PRESENTATION, PANEL_PRESENTATION_AUTO)
         latestUnreadSessionKey?.let { openIntent.putExtra(EXTRA_SESSION_KEY, it) }
         val openPendingIntent = PendingIntent.getService(context, REQUEST_OPEN_CHAT, openIntent, flags)
-        val unreadCount = state.totalUnreadReplies
-        val copy = brandPresentationFor(state, null).copy
-        val notificationText = if (unreadCount > 0) {
-            copy.unreadReplies(unreadCount)
-        } else {
-            lastNotificationText
-        }
         return NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_bubble)
             .setColor(0xFF245BFF.toInt())
-            .setContentTitle(when {
-                isAgentTurnActive -> "${copy.name} working"
-                unreadCount > 0 -> "${copy.name} replied"
-                else -> "${copy.name} active"
-            })
-            .setContentText(notificationText)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(notificationText))
+            .setContentTitle(FOREGROUND_TITLE)
+            .setContentText(FOREGROUND_TEXT)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(FOREGROUND_TEXT))
             .setContentIntent(openPendingIntent)
-            .setNumber(unreadCount)
             .setOnlyAlertOnce(true)
             .setOngoing(true)
+            .setSilent(true)
+            .setShowWhen(false)
+            .setLocalOnly(true)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .addAction(R.drawable.ic_close, "Stop Turn", stopPendingIntent)
             .build()
     }
@@ -173,6 +153,8 @@ internal class ChatNotificationController(
         const val NOTIFICATION_ID = 1
         const val CHANNEL_ID = "open-claw-agent"
         private const val REPLY_CHANNEL_ID = "open-claw-agent-replies"
+        private const val FOREGROUND_TITLE = "Android Agent active"
+        private const val FOREGROUND_TEXT = "Floating chat bubble is running"
         private const val REQUEST_STOP_TURN = 0
         private const val REQUEST_OPEN_CHAT = 2
         private const val REQUEST_DISMISS_REPLY_OFFSET = 500_000
