@@ -1,4 +1,4 @@
-import type { ChatModelOption, ChatSendMessage, ChatSessionSummary, ChatTaskKind } from "../protocol/messages.js";
+import type { ChatHistoryMessage, ChatModelOption, ChatSendMessage, ChatSessionSummary, ChatTaskKind } from "../protocol/messages.js";
 import type { HarnessId } from "./AgentHarness.js";
 import type { BridgeConfig } from "./config.js";
 import type { GatewayChatSendResult, GatewayEventHandler, HarnessChatSendOptions, HarnessChatSteerOptions } from "./chat/ChatTransportTypes.js";
@@ -32,6 +32,7 @@ export interface PendingChatRun {
   sessionId?: string | null;
   taskKind?: ChatTaskKind;
   startedAt: number;
+  userMessage?: ChatHistoryMessage;
 }
 
 export interface GatewayChatClient {
@@ -93,13 +94,15 @@ export class DeviceChatStateStore {
     runId: string,
     sessionKey: string,
     sessionId?: string | null,
-    taskKind: ChatTaskKind = "general"
+    taskKind: ChatTaskKind = "general",
+    userMessage?: ChatHistoryMessage
   ): void {
     state.pendingRuns.set(runId, {
       sessionKey,
       sessionId: sessionId ?? null,
       taskKind,
-      startedAt: Date.now()
+      startedAt: Date.now(),
+      ...(userMessage ? { userMessage } : {})
     });
     state.activeTaskKind = taskKind;
   }

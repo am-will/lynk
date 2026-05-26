@@ -6,7 +6,7 @@ import {
   type HarnessModelSelection
 } from "../AgentHarness.js";
 import type { BridgeConfig } from "../config.js";
-import { DeviceChatStateStore, type DeviceChatState } from "../OpenClawChatTypes.js";
+import { DeviceChatStateStore, type DeviceChatState, type PendingChatRun } from "../OpenClawChatTypes.js";
 
 export class HarnessDeviceStateStore extends DeviceChatStateStore {
   constructor(
@@ -26,8 +26,9 @@ export class HarnessDeviceStateStore extends DeviceChatStateStore {
       ?? defaultSessionKeyForHarness(harnessId, this.harnessConfig, deviceId);
     this.rememberActiveSession(state);
     state.sessionId = null;
-    state.runId = null;
-    state.pendingRuns.clear();
+    const activeRun = this.pendingRunForSession(state, state.sessionKey);
+    state.runId = activeRun?.[0] ?? null;
+    state.activeTaskKind = activeRun?.[1].taskKind ?? null;
     state.queuedSends = [];
     state.drainingQueuedSends = false;
     state.pendingFirstMessageDisplayName = false;
@@ -75,5 +76,10 @@ export class HarnessDeviceStateStore extends DeviceChatStateStore {
 
   rememberSelectedModel(state: DeviceChatState): void {
     state.modelsByHarness.set(state.harnessId, state.model ?? null);
+  }
+
+  private pendingRunForSession(state: DeviceChatState, sessionKey: string): [string, PendingChatRun] | undefined {
+    return [...state.pendingRuns.entries()]
+      .find(([, pending]) => pending.sessionKey === sessionKey);
   }
 }

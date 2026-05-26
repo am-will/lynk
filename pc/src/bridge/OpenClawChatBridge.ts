@@ -88,6 +88,13 @@ interface RealtimeChatOptions {
   reasoningEffort?: string;
 }
 
+function sameChatUserMessage(a: ChatHistoryMessage, b: ChatHistoryMessage): boolean {
+  return a.role === "user" &&
+    b.role === "user" &&
+    a.text === b.text &&
+    JSON.stringify(a.attachments ?? []) === JSON.stringify(b.attachments ?? []);
+}
+
 export class OpenClawChatBridge {
   private readonly client: GatewayChatClient;
   private readonly states: HarnessDeviceStateStore;
@@ -238,12 +245,20 @@ export class OpenClawChatBridge {
       });
       state.sessionKey = result.sessionKey;
       state.runId = result.runId;
+      const userMessage: ChatHistoryMessage = {
+        id: `user_${result.runId}`,
+        role: "user",
+        text: requestText,
+        ...(attachments.length ? { attachments } : {}),
+        timestamp: Date.now()
+      };
       this.states.trackPendingRun(
         state,
         result.runId,
         result.sessionKey,
         message.sessionId ?? state.sessionId ?? null,
-        taskKind
+        taskKind,
+        userMessage
       );
       await this.maybeSetFirstMessageDisplayName(message.deviceId, requestText);
       this.audit?.record("openclaw_chat_send", message.deviceId, {
@@ -252,6 +267,7 @@ export class OpenClawChatBridge {
         length: requestText.length,
         attachments: attachments.length
       });
+      this.sendPendingUserHistory(message.deviceId, state, result.sessionKey);
       this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} is working`);
     } catch (error) {
       await this.handleSendFailure(message, state, idempotencyKey, taskKind, error);
@@ -460,8 +476,11 @@ export class OpenClawChatBridge {
 
   async selectSession(message: ChatSelectSessionMessage): Promise<void> {
     const state = this.stateFor(message.deviceId);
+    const pendingRunForTarget = [...state.pendingRuns.entries()]
+      .find(([, pending]) => pending.sessionKey === message.sessionKey);
     this.states.activateSession(state, message.sessionKey);
-    state.runId = null;
+    state.runId = pendingRunForTarget?.[0] ?? null;
+    state.activeTaskKind = pendingRunForTarget?.[1].taskKind ?? null;
     state.model = this.states.selectedModelForActiveHarness(state);
     state.pendingFirstMessageDisplayName = false;
     state.lastRealtimeRequestAt = null;
@@ -512,7 +531,14 @@ export class OpenClawChatBridge {
     const rawModel = this.states.rawModelForSelection(message.model) ?? message.model;
     this.states.setSelectedModel(state, this.states.selectionIdForModel(message.model) ?? message.model);
     if (state.harnessId === "openclaw") {
-      await this.sendSlashCommand(message.deviceId, `/model ${rawModel}`, sessionKey, `Model: ${rawModel}`);
+      await this.sendSlashCommand(
+        message.deviceId,
+        `/model ${rawModel}`,
+        sessionKey,
+        `Model: ${rawModel}`,
+        undefined,
+        { ignoreRunEvents: Boolean(state.runId) }
+      );
     } else {
       await this.patchSession(message.deviceId, sessionKey, { model: rawModel });
       await this.refreshDevice(message.deviceId);
@@ -528,7 +554,9 @@ export class OpenClawChatBridge {
         message.deviceId,
         `/think ${state.reasoningEffort}`,
         sessionKey,
-        `Reasoning: ${state.reasoningEffort}`
+        `Reasoning: ${state.reasoningEffort}`,
+        undefined,
+        { ignoreRunEvents: Boolean(state.runId) }
       );
     } else {
       await this.patchSession(message.deviceId, sessionKey, { thinking: state.reasoningEffort });
@@ -638,14 +666,42 @@ export class OpenClawChatBridge {
     state.reasoningStream = typeof record.reasoningLevel === "string" ? reasoningStreamEnabled(record.reasoningLevel) : state.reasoningStream ?? null;
     state.fastMode = typeof record.fastMode === "boolean" ? record.fastMode : state.fastMode ?? null;
     state.verboseLevel = typeof record.verboseLevel === "string" ? record.verboseLevel : state.verboseLevel ?? null;
+    const historyMessages = this.withPendingUserMessages(state, state.sessionKey, chatMessagesFromHistory(payload));
     this.sendChat(deviceId, {
       type: "chat.history",
       deviceId,
       sessionKey: state.sessionKey,
       sessionId: state.sessionId,
-      messages: chatMessagesFromHistory(payload)
+      messages: historyMessages
     });
     this.sendState(deviceId);
+  }
+
+  private sendPendingUserHistory(deviceId: string, state: DeviceChatState, sessionKey: string): void {
+    const messages = this.withPendingUserMessages(state, sessionKey, []);
+    if (messages.length === 0) {
+      return;
+    }
+    this.sendChat(deviceId, {
+      type: "chat.history",
+      deviceId,
+      sessionKey,
+      sessionId: state.sessionId,
+      messages
+    });
+  }
+
+  private withPendingUserMessages(
+    state: DeviceChatState,
+    sessionKey: string,
+    historyMessages: ChatHistoryMessage[]
+  ): ChatHistoryMessage[] {
+    const pendingMessages = [...state.pendingRuns.values()]
+      .filter((pending) => pending.sessionKey === sessionKey)
+      .map((pending) => pending.userMessage)
+      .filter((message): message is ChatHistoryMessage => Boolean(message))
+      .filter((message) => !historyMessages.some((existing) => sameChatUserMessage(existing, message)));
+    return pendingMessages.length ? [...historyMessages, ...pendingMessages] : historyMessages;
   }
 
   private async sendCommands(deviceId: string): Promise<void> {
