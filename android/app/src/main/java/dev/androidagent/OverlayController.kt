@@ -540,6 +540,13 @@ class OverlayController(
         }
     }
 
+    fun consumeShellBackPress(): Boolean {
+        if (activePanelPresentation != PanelPresentation.Shell) {
+            return false
+        }
+        return dismissActiveDropdown()
+    }
+
     private fun togglePanel(presentation: PanelPresentation = PanelPresentation.Popup) {
         if (panelView != null) {
             dismissPanel()
@@ -859,18 +866,27 @@ class OverlayController(
         }
     }
 
-    private fun handlePanelBackPressed() {
+    private fun handlePanelBackPressed(): Boolean {
+        if (dismissActiveDropdown()) {
+            return true
+        }
         if (activePanelPresentation == PanelPresentation.Shell) {
-            if (isAnchoredPickerShowing()) {
-                anchoredPicker?.dismiss()
-            }
-            return
+            return false
+        }
+        dismissPanel()
+        return true
+    }
+
+    private fun dismissActiveDropdown(): Boolean {
+        if (connectionPopupView != null) {
+            dismissHostConnectionPopup()
+            return true
         }
         if (isAnchoredPickerShowing()) {
             anchoredPicker?.dismiss()
-        } else {
-            dismissPanel()
+            return true
         }
+        return false
     }
 
     private fun isAnchoredPickerShowing(): Boolean {

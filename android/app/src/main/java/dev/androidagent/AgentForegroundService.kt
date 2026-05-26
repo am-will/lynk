@@ -101,6 +101,7 @@ class AgentForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        activeService = this
         isRunning = true
         broadcastRunningState()
         createChannel()
@@ -456,6 +457,9 @@ class AgentForegroundService : Service() {
         cancelAllReplyNotifications()
         stopForegroundNotification()
         overlayController?.hide()
+        if (activeService === this) {
+            activeService = null
+        }
         isRunning = false
         broadcastRunningState()
         super.onDestroy()
@@ -1449,5 +1453,11 @@ class AgentForegroundService : Service() {
         var shellChatContainerToken: Int = 0
         private var activeShellChatActivityId: Int = 0
         private var activeShellChatContainerToken: Int = 0
+        @Volatile
+        private var activeService: AgentForegroundService? = null
+
+        fun consumeShellChatBackPress(): Boolean {
+            return activeService?.overlayController?.consumeShellBackPress() == true
+        }
     }
 }

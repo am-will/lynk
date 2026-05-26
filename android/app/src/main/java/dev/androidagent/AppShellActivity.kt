@@ -70,9 +70,13 @@ class AppShellActivity : ComponentActivity() {
                 updateBackHandling()
                 return
             }
+            if (selectedTab == ShellTab.Chat && AgentForegroundService.consumeShellChatBackPress()) {
+                updateBackHandling()
+                return
+            }
             isEnabled = false
             onBackPressedDispatcher.onBackPressed()
-            isEnabled = selectedTab == ShellTab.Settings && settingsHost.canGoBack()
+            updateBackHandling()
         }
     }
 
@@ -311,7 +315,8 @@ class AppShellActivity : ComponentActivity() {
     }
 
     private fun updateBackHandling() {
-        backPressedCallback.isEnabled = selectedTab == ShellTab.Settings && settingsHost.canGoBack()
+        backPressedCallback.isEnabled = selectedTab == ShellTab.Chat ||
+            (selectedTab == ShellTab.Settings && settingsHost.canGoBack())
     }
 
     private fun buildChatTab(): View {
