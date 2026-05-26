@@ -119,6 +119,28 @@ class ChatStateReducerTest {
     }
 
     @Test
+    fun historyKeepsPendingLocalUserMessagesUntilServerHistoryCatchesUp() {
+        val withLocal = ChatStateReducer.localUserMessage(
+            ChatState(sessionKey = "agent:main:main"),
+            "hi"
+        )
+        val staleHistory = ChatStateReducer.reduce(withLocal, JSONObject()
+            .put("type", "chat.history")
+            .put("sessionKey", "agent:main:main")
+            .put("messages", JSONArray()))
+        val caughtUpHistory = ChatStateReducer.reduce(staleHistory, JSONObject()
+            .put("type", "chat.history")
+            .put("sessionKey", "agent:main:main")
+            .put("messages", JSONArray()
+                .put(JSONObject().put("id", "u1").put("role", "user").put("text", "hi"))
+                .put(JSONObject().put("id", "a1").put("role", "assistant").put("text", "Hello"))))
+
+        assertEquals(listOf("hi"), staleHistory.timeline.map { it.text })
+        assertEquals(listOf("u1", "a1"), caughtUpHistory.timeline.map { it.id })
+        assertEquals(listOf("hi", "Hello"), caughtUpHistory.timeline.map { it.text })
+    }
+
+    @Test
     fun stateSessionChangeClearsStaleTimeline() {
         val stale = ChatState(
             sessionKey = "agent:main:first",

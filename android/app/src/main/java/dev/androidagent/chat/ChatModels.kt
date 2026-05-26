@@ -320,17 +320,14 @@ object ChatStateReducer {
 
     private fun reduceHistory(state: ChatState, message: JSONObject): ChatState {
         val incomingSessionKey = message.optNullableString("sessionKey") ?: state.sessionKey
-        val localStatusMessages = if (incomingSessionKey != null && incomingSessionKey == state.sessionKey) {
+        val history = parseHistory(message.optJSONArray("messages"))
+        val localOverlayMessages = if (incomingSessionKey != null && incomingSessionKey == state.sessionKey) {
             state.timeline.filter { item ->
-                item.kind == ChatTimelineKind.MESSAGE && (
-                    item.id.startsWith("system_") ||
-                        (item.id.startsWith("local_") && item.role == "user" && item.text.trimStart().startsWith("/"))
-                    )
+                shouldKeepLocalMessageAcrossHistory(item, history)
             }
         } else {
             emptyList()
         }
-        val history = parseHistory(message.optJSONArray("messages"))
         val historyIds = history.map { it.id }.toSet()
         return state.copy(
             sessionKey = incomingSessionKey,
@@ -338,7 +335,7 @@ object ChatStateReducer {
             timeline = mergeHistoryWithLocalStatus(
                 current = state.timeline,
                 history = history,
-                localStatus = localStatusMessages.filterNot { it.id in historyIds }
+                localStatus = localOverlayMessages.filterNot { it.id in historyIds }
             ),
             error = null
         )
@@ -701,6 +698,26 @@ object ChatStateReducer {
                     .thenBy { it.fallbackIndex }
             )
             .map { it.item }
+    }
+
+    private fun shouldKeepLocalMessageAcrossHistory(
+        item: ChatTimelineItem,
+        history: List<ChatTimelineItem>
+    ): Boolean {
+        if (item.kind != ChatTimelineKind.MESSAGE) return false
+        if (item.id.startsWith("system_")) return true
+        if (!item.id.startsWith("local_") || item.role != "user") return false
+        if (item.text.trimStart().startsWith("/")) return true
+        return history.none { historyItem -> sameUserMessage(historyItem, item) }
+    }
+
+    private fun sameUserMessage(a: ChatTimelineItem, b: ChatTimelineItem): Boolean {
+        return a.kind == ChatTimelineKind.MESSAGE &&
+            b.kind == ChatTimelineKind.MESSAGE &&
+            a.role == "user" &&
+            b.role == "user" &&
+            a.text == b.text &&
+            a.attachments == b.attachments
     }
 
     private fun markReasoningClearing(timeline: List<ChatTimelineItem>, runId: String?): List<ChatTimelineItem> {
