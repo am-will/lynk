@@ -81,7 +81,7 @@ export const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "x
 export const CHAT_SEND_DELIVERIES = ["normal", "queue", "steer"] as const;
 export const CHAT_TASK_KINDS = ["general", "phone"] as const;
 export const CHAT_ATTACHMENT_KINDS = ["image", "file"] as const;
-export const CHAT_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024;
+export const CHAT_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
 const CHAT_ATTACHMENT_MAX_BASE64_CHARS = Math.ceil(CHAT_ATTACHMENT_MAX_BYTES / 3) * 4;
 export type ChatTaskKind = typeof CHAT_TASK_KINDS[number];
 

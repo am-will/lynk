@@ -3,7 +3,7 @@ package dev.androidagent.chat
 import java.io.File
 
 object ChatAttachmentPolicy {
-    const val MAX_ATTACHMENT_BYTES: Long = 5L * 1024L * 1024L
+    const val MAX_ATTACHMENT_BYTES: Long = 50L * 1024L * 1024L
     const val LOCAL_TEXT_ATTACHMENT_MAX_BYTES: Long = 64L * 1024L
     const val LOCAL_TEXT_ATTACHMENT_MAX_CHARS: Int = 32_000
 
