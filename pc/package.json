@@ -16,6 +16,7 @@
     "phone:tailscale": "tsx --env-file-if-exists=.env.local src/scripts/printTailscalePairing.ts",
     "phone:health": "curl -sS http://127.0.0.1:8788/health",
     "host:pairing": "tsx --env-file-if-exists=.env.local src/host/cli.ts pairing",
+    "host:pairing:qr": "tsx --env-file-if-exists=.env.local src/host/cli.ts pairing --qr",
     "host:refresh": "tsx --env-file-if-exists=.env.local src/host/cli.ts refresh",
     "host:service-plan": "tsx --env-file-if-exists=.env.local src/host/cli.ts service-plan",
     "host:diagnostics": "tsx --env-file-if-exists=.env.local src/host/cli.ts diagnostics",
@@ -25,12 +26,14 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.22.0",
+    "qrcode-terminal": "^0.12.0",
     "tsx": "^4.20.6",
     "ws": "^8.18.3",
     "zod": "^4.1.12"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
+    "@types/qrcode-terminal": "^0.12.2",
     "@types/ws": "^8.18.1",
     "typescript": "^5.9.3"
   }
