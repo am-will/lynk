@@ -185,6 +185,7 @@ class OverlayController(
     // don't silently mark replies as read while the user is on the home screen.
     private var panelHasWindowFocus = false
     private var lastChatState = ChatState()
+    private var chatRenderSequence = 0L
     private var showToolCalls = false
     private var suppressComposerAutocomplete = false
     private var composerContainer: LinearLayout? = null
@@ -380,7 +381,11 @@ class OverlayController(
 
     fun setChatState(state: ChatState) {
         lastChatState = state
+        val sequence = ++chatRenderSequence
         mainHandler.post {
+            if (sequence < chatRenderSequence) {
+                return@post
+            }
             renderChatState(state)
             state.status?.let { setStatus(it) }
             state.error?.let { setStatus(it) }
