@@ -716,6 +716,9 @@ test("reasoning and model changes do not append chat messages", async () => {
     deviceId: "pixel",
     model: "gpt-5.4"
   });
+  const messagesAfterSettings = chatMessages.filter((message) => message.type === "chat.message");
+  assert.equal(messagesAfterSettings.length, 0);
+
   await bridge.send({
     type: "chat.send",
     deviceId: "pixel",
@@ -724,7 +727,10 @@ test("reasoning and model changes do not append chat messages", async () => {
 
   assert.deepEqual(client.sent.map((entry) => entry.message), ["/think high", "/think high", "/model gpt-5.4", "Use the selected model"]);
   assert.deepEqual(client.patched.map((entry) => entry.patch), []);
-  assert.equal(chatMessages.filter((message) => message.type === "chat.message").length, 0);
+  assert.deepEqual(
+    chatMessages.filter((message) => message.type === "chat.message").map((message) => message.message.text),
+    ["Use the selected model"]
+  );
 });
 
 test("model metadata refresh does not clobber selected model override", async () => {
