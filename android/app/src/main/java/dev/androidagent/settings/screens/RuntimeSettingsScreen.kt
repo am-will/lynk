@@ -25,7 +25,7 @@ import dev.androidagent.ui.exposeToAccessibility
 object RuntimeSettingsScreen {
 
     interface Callbacks {
-        fun onSaved()
+        fun onSettingsChanged()
         fun onImportRequested(pathField: EditText)
         fun onBack()
     }
@@ -124,9 +124,10 @@ object RuntimeSettingsScreen {
             addView(SettingsUi.body(activity, "Local phone tools remain governed by System permissions and phone-control settings.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
         }, SettingsUi.stackedParams(activity))
 
-        root.addView(
-            SettingsUi.actionButton(activity, "Save", SettingsButtonTone.Primary, tokens) {
-                val saved = config.copy(
+        fun saveCurrent() {
+            AgentConfigStore.save(
+                activity,
+                AgentConfigStore.load(activity).copy(
                     openClawHarnessEnabled = openClaw.isChecked,
                     hermesHarnessEnabled = hermes.isChecked,
                     codexHarnessEnabled = codex.isChecked,
@@ -150,12 +151,20 @@ object RuntimeSettingsScreen {
                     localDeveloperToolsEnabled = localDeveloperTools.isChecked,
                     codexWorkspacePath = CodexWorkspacePaths.normalizeInput(codexWorkspaceInput.text?.toString())
                 )
-                AgentConfigStore.save(activity, saved)
-                callbacks.onSaved()
-                callbacks.onBack()
-            },
-            SettingsUi.stackedParams(activity, DesignTokens.Spacing.xl)
-        )
+            )
+            callbacks.onSettingsChanged()
+        }
+
+        listOf(openClaw, hermes, codex, local, localDeveloperTools).forEach { checkBox ->
+            checkBox.setOnCheckedChangeListener { _, _ -> saveCurrent() }
+        }
+        defaultModelControls.forEach { control ->
+            control.spinner?.let { SettingsUi.onSpinnerSelectionChanged(it) { saveCurrent() } }
+        }
+        SettingsUi.onTextChanged(codexWorkspaceInput) { saveCurrent() }
+        SettingsUi.onTextChanged(localModelPathInput) { saveCurrent() }
+        SettingsUi.onSpinnerSelectionChanged(localBackendSpinner) { saveCurrent() }
+        SettingsUi.onTextChanged(localContextInput) { saveCurrent() }
 
         return root
     }

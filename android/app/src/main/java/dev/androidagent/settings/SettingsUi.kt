@@ -3,10 +3,13 @@ package dev.androidagent.settings
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
+import android.text.Editable
 import android.text.InputType
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.CheckBox
 import android.widget.EditText
@@ -140,6 +143,29 @@ object SettingsUi {
                 dp(context, DesignTokens.Spacing.sm + 2)
             )
             minHeight = dp(context, DesignTokens.Sizes.action)
+        }
+    }
+
+    fun onTextChanged(field: EditText, onChanged: (String) -> Unit) {
+        field.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) {
+                onChanged(s?.toString().orEmpty())
+            }
+        })
+    }
+
+    fun onSpinnerSelectionChanged(spinner: Spinner, onChanged: (Int) -> Unit) {
+        var selectedPosition = spinner.selectedItemPosition
+        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (position == selectedPosition) return
+                selectedPosition = position
+                onChanged(position)
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
         }
     }
 

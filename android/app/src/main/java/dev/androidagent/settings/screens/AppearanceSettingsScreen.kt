@@ -33,7 +33,7 @@ import java.util.concurrent.Executors
 object AppearanceSettingsScreen {
 
     interface Callbacks {
-        fun onSaved()
+        fun onSettingsChanged()
         fun notifyAvatarChanged()
         fun notifyBubbleResize(sizeDp: Int)
         fun toggleAgentService()
@@ -98,6 +98,17 @@ object AppearanceSettingsScreen {
         }
         var currentSizeDp = current.bubbleSizeDp
         var lastAppliedSizeDp = current.bubbleSizeDp
+        fun saveCurrent() {
+            AppearancePrefsStore.save(
+                activity,
+                AppearancePrefs(
+                    panelAnimation = animationOptions.getOrElse(animationSpinner.selectedItemPosition) { animationOptions.first() }.first,
+                    bubbleSizeDp = currentSizeDp
+                )
+            )
+            callbacks.onSettingsChanged()
+        }
+        SettingsUi.onSpinnerSelectionChanged(animationSpinner) { saveCurrent() }
         val sizeSeekBar = SeekBar(activity).apply {
             exposeToAccessibility(R.id.openclaw_bubble_size_seekbar, "Bubble size slider")
             max = 100
@@ -108,6 +119,9 @@ object AppearanceSettingsScreen {
                     currentSizeDp = dpValue
                     sizeValue.text = "$dpValue dp"
                     sizeValue.updateAccessibilityState(description = "Bubble size", stateDescription = "$dpValue dp")
+                    if (fromUser) {
+                        saveCurrent()
+                    }
                     if (fromUser && dpValue != lastAppliedSizeDp && AgentForegroundService.isRunning) {
                         callbacks.notifyBubbleResize(dpValue)
                         lastAppliedSizeDp = dpValue
@@ -133,21 +147,6 @@ object AppearanceSettingsScreen {
             addView(sizeValue, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
             addView(sizeSeekBar, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
         }, SettingsUi.stackedParams(activity))
-
-        root.addView(
-            SettingsUi.actionButton(activity, "Save", dev.androidagent.settings.SettingsButtonTone.Primary, tokens) {
-                AppearancePrefsStore.save(
-                    activity,
-                    AppearancePrefs(
-                        panelAnimation = animationOptions.getOrElse(animationSpinner.selectedItemPosition) { animationOptions.first() }.first,
-                        bubbleSizeDp = currentSizeDp
-                    )
-                )
-                callbacks.onSaved()
-                callbacks.onBack()
-            },
-            SettingsUi.stackedParams(activity, DesignTokens.Spacing.xl)
-        )
 
         return root
     }

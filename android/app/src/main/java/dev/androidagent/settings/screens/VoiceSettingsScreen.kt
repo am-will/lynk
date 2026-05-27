@@ -17,7 +17,7 @@ import dev.androidagent.ui.exposeToAccessibility
 object VoiceSettingsScreen {
 
     interface Callbacks {
-        fun onSaved()
+        fun onSettingsChanged()
         fun requestMicPermission()
         fun startVoice()
         fun onBack()
@@ -38,11 +38,18 @@ object VoiceSettingsScreen {
         ).apply {
             exposeToAccessibility(R.id.openclaw_openai_api_key_field, "OpenAI API key for realtime voice")
         }
+        SettingsUi.onTextChanged(openAiKeyInput) {
+            AgentConfigStore.save(
+                activity,
+                AgentConfigStore.load(activity).copy(openAiApiKey = openAiKeyInput.text.toString().trim())
+            )
+            callbacks.onSettingsChanged()
+        }
 
         root.addView(SettingsUi.card(activity, tokens).apply {
             addView(SettingsUi.sectionHeader(activity, "Realtime voice", "Uses OpenAI Realtime via the PC bridge.", tokens))
             addView(SettingsUi.labeledField(activity, "OpenAI API key", openAiKeyInput, tokens, DesignTokens.Spacing.md))
-            addView(SettingsUi.body(activity, "Save a key from Android settings or PC OPENAI_API_KEY. Voice uses the selected chat backend for delegated work, including Local LiteRT-LM.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
+            addView(SettingsUi.body(activity, "Set a key from Android settings or PC OPENAI_API_KEY. Voice uses the selected chat backend for delegated work, including Local LiteRT-LM.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
         }, SettingsUi.stackedParams(activity))
 
         root.addView(
@@ -57,15 +64,6 @@ object VoiceSettingsScreen {
                 runCatching { ContextCompat.startForegroundService(activity, intent) }
             },
             SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm + 2)
-        )
-
-        root.addView(
-            SettingsUi.actionButton(activity, "Save", dev.androidagent.settings.SettingsButtonTone.Secondary, tokens) {
-                AgentConfigStore.save(activity, config.copy(openAiApiKey = openAiKeyInput.text.toString().trim()))
-                callbacks.onSaved()
-                callbacks.onBack()
-            },
-            SettingsUi.stackedParams(activity, DesignTokens.Spacing.xl)
         )
 
         return root

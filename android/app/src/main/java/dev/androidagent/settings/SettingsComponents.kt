@@ -722,7 +722,8 @@ object SettingsComponents {
         private val tokens: ThemeTokens,
         private val context: Context,
         private val labels: List<String>,
-        initial: Int
+        initial: Int,
+        private val onChange: ((Int) -> Unit)? = null
     ) {
         private var index: Int = initial.coerceIn(0, labels.lastIndex.coerceAtLeast(0))
 
@@ -754,8 +755,10 @@ object SettingsComponents {
                     isClickable = true
                     isFocusable = true
                     setOnClickListener {
+                        if (index == i) return@setOnClickListener
                         index = i
                         render()
+                        onChange?.invoke(i)
                     }
                 }
                 view.addView(tv, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
@@ -763,7 +766,13 @@ object SettingsComponents {
         }
     }
 
-    fun segmented(context: Context, tokens: ThemeTokens, labels: List<String>, selected: Int): Segmented {
+    fun segmented(
+        context: Context,
+        tokens: ThemeTokens,
+        labels: List<String>,
+        selected: Int,
+        onChange: ((Int) -> Unit)? = null
+    ): Segmented {
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             background = Drawables.rounded(
@@ -775,7 +784,7 @@ object SettingsComponents {
             val pad = dp(context, 4)
             setPadding(pad, pad, pad, pad)
         }
-        val s = Segmented(container, tokens, context, labels, selected)
+        val s = Segmented(container, tokens, context, labels, selected, onChange)
         s.render()
         return s
     }
@@ -790,21 +799,33 @@ object SettingsComponents {
         private val min: Int,
         private val max: Int,
         private val step: Int,
-        initial: Int
+        initial: Int,
+        private val onChange: ((Int) -> Unit)? = null
     ) {
         var value: Int = initial.coerceIn(min, max)
             private set
 
         fun set(newValue: Int) {
-            value = newValue.coerceIn(min, max)
+            val coerced = newValue.coerceIn(min, max)
+            if (coerced == value) return
+            value = coerced
             valueText.text = value.toString()
+            onChange?.invoke(value)
         }
 
         fun increment() = set(value + step)
         fun decrement() = set(value - step)
     }
 
-    fun stepper(context: Context, tokens: ThemeTokens, min: Int, max: Int, step: Int, initial: Int): Stepper {
+    fun stepper(
+        context: Context,
+        tokens: ThemeTokens,
+        min: Int,
+        max: Int,
+        step: Int,
+        initial: Int,
+        onChange: ((Int) -> Unit)? = null
+    ): Stepper {
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -834,7 +855,7 @@ object SettingsComponents {
         container.addView(valueText, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         container.addView(plus)
 
-        stepperRef = Stepper(container, valueText, context, tokens, min, max, step, initial)
+        stepperRef = Stepper(container, valueText, context, tokens, min, max, step, initial, onChange)
         return stepperRef
     }
 

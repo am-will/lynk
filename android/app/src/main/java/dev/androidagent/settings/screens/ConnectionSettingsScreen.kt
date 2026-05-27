@@ -14,7 +14,7 @@ import dev.androidagent.ui.exposeToAccessibility
 object ConnectionSettingsScreen {
 
     interface Callbacks {
-        fun onSaved()
+        fun onSettingsChanged()
         fun onBack()
     }
 
@@ -40,27 +40,28 @@ object ConnectionSettingsScreen {
             exposeToAccessibility(R.id.openclaw_bridge_token_field, "Bridge auth token")
         }
 
+        fun saveCurrent() {
+            AgentConfigStore.save(
+                activity,
+                AgentConfigStore.load(activity).copy(
+                    hostUrl = hostInput.text.toString().trim(),
+                    hostUrlCandidates = emptyList(),
+                    deviceId = deviceInput.text.toString().trim(),
+                    token = tokenInput.text.toString().trim()
+                )
+            )
+            callbacks.onSettingsChanged()
+        }
+        SettingsUi.onTextChanged(hostInput) { saveCurrent() }
+        SettingsUi.onTextChanged(deviceInput) { saveCurrent() }
+        SettingsUi.onTextChanged(tokenInput) { saveCurrent() }
+
         root.addView(SettingsUi.card(activity, tokens).apply {
             addView(SettingsUi.sectionHeader(activity, "Pairing", "Connect to the PC bridge over WebSocket.", tokens))
             addView(SettingsUi.labeledField(activity, "URL", hostInput, tokens, DesignTokens.Spacing.md))
             addView(SettingsUi.labeledField(activity, "Pairing ID", deviceInput, tokens))
             addView(SettingsUi.labeledField(activity, "Token", tokenInput, tokens))
         }, SettingsUi.stackedParams(activity))
-
-        root.addView(
-            SettingsUi.actionButton(activity, "Save", dev.androidagent.settings.SettingsButtonTone.Primary, tokens) {
-                val saved = config.copy(
-                    hostUrl = hostInput.text.toString().trim(),
-                    hostUrlCandidates = emptyList(),
-                    deviceId = deviceInput.text.toString().trim(),
-                    token = tokenInput.text.toString().trim()
-                )
-                AgentConfigStore.save(activity, saved)
-                callbacks.onSaved()
-                callbacks.onBack()
-            },
-            SettingsUi.stackedParams(activity, DesignTokens.Spacing.xl)
-        )
 
         return root
     }

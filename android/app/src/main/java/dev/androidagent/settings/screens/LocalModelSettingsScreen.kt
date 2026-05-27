@@ -14,6 +14,7 @@ import dev.androidagent.settings.SettingsComponents
 import dev.androidagent.settings.SettingsComponents.BadgeTone
 import dev.androidagent.settings.SettingsComponents.ButtonTone
 import dev.androidagent.settings.SettingsForms
+import dev.androidagent.settings.SettingsUi
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
 import dev.androidagent.ui.ThemeTokens
@@ -22,7 +23,7 @@ import dev.androidagent.ui.exposeToAccessibility
 object LocalModelSettingsScreen {
 
     interface Callbacks {
-        fun onSaved()
+        fun onSettingsChanged()
         fun onBack()
         fun onImportRequested(pathField: EditText)
     }
@@ -79,11 +80,15 @@ object LocalModelSettingsScreen {
 
         // Backend card
         val backends = LocalModelBackend.values().toList()
+        lateinit var saveCurrent: () -> Unit
+        saveCurrent = {}
         val backendSegmented = SettingsComponents.segmented(
             activity, tokens,
             backends.map { it.label },
             backends.indexOf(config.localModelBackend).coerceAtLeast(0)
-        )
+        ) {
+            saveCurrent()
+        }
         root.addView(buildBackendCard(activity, tokens, backendSegmented), SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.md))
 
         // Context window card
@@ -91,7 +96,7 @@ object LocalModelSettingsScreen {
             activity, tokens,
             min = 512, max = 131_072, step = 512,
             initial = config.localContextTokens
-        )
+        ) { saveCurrent() }
         contextStepper.view.exposeToAccessibility(R.id.openclaw_local_context_field, "Local context window")
         val chipPresets = listOf("2K" to 2048, "4K" to 4096, "8K" to 8192, "16K" to 16_384, "32K" to 32_768)
         val chipRow = SettingsComponents.chipRow(
@@ -106,7 +111,26 @@ object LocalModelSettingsScreen {
 
         // Dev tools toggle card
         var devToolsEnabled = config.localDeveloperToolsEnabled
-        root.addView(buildDevToolsCard(activity, tokens, devToolsEnabled) { devToolsEnabled = it }, SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.md))
+        saveCurrent = {
+            AgentConfigStore.save(
+                activity,
+                AgentConfigStore.load(activity).copy(
+                    experimentalLocalModelsEnabled = true,
+                    localModelPath = pathInput.text.toString().trim().ifBlank { config.localModelPath },
+                    localModelBackend = backends.getOrElse(backendSegmented.selectedIndex()) { LocalModelBackend.Cpu },
+                    localContextTokens = contextStepper.value,
+                    localDeveloperToolsEnabled = devToolsEnabled
+                )
+            )
+            callbacks.onSettingsChanged()
+        }
+        SettingsUi.onTextChanged(pathInput) {
+            saveCurrent()
+        }
+        root.addView(buildDevToolsCard(activity, tokens, devToolsEnabled) {
+            devToolsEnabled = it
+            saveCurrent()
+        }, SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.md))
 
         // Local workspace path card (read-only label)
         root.addView(buildWorkspaceCard(activity, tokens), SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.md))
@@ -123,23 +147,6 @@ object LocalModelSettingsScreen {
                 "Local models run entirely on this device.",
                 "No data leaves your phone."
             ),
-            SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg)
-        )
-
-        // Save (auto-save on back, but provide explicit Save too)
-        root.addView(
-            SettingsComponents.primaryButton(activity, tokens, "Save", tone = ButtonTone.Primary) {
-                val saved = config.copy(
-                    experimentalLocalModelsEnabled = true,
-                    localModelPath = pathInput.text.toString().trim().ifBlank { config.localModelPath },
-                    localModelBackend = backends.getOrElse(backendSegmented.selectedIndex()) { LocalModelBackend.Cpu },
-                    localContextTokens = contextStepper.value,
-                    localDeveloperToolsEnabled = devToolsEnabled
-                )
-                AgentConfigStore.save(activity, saved)
-                callbacks.onSaved()
-                callbacks.onBack()
-            },
             SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg)
         )
 

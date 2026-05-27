@@ -97,9 +97,8 @@ class SettingsHost(
             SettingsDestination.Runtime -> {
                 val importFieldHolder = arrayOf<android.widget.EditText?>(null)
                 RuntimeSettingsScreen.build(activity, tokens, object : RuntimeSettingsScreen.Callbacks {
-                    override fun onSaved() {
+                    override fun onSettingsChanged() {
                         callbacks.refreshStatus()
-                        DiagnosticsEventLog.append(DiagnosticsEventLevel.Success, "Harness settings saved")
                     }
                     override fun onImportRequested(pathField: android.widget.EditText) {
                         importFieldHolder[0] = pathField
@@ -110,16 +109,14 @@ class SettingsHost(
                 })
             }
             SettingsDestination.Connection -> ConnectionSettingsScreen.build(activity, tokens, object : ConnectionSettingsScreen.Callbacks {
-                override fun onSaved() {
+                override fun onSettingsChanged() {
                     callbacks.refreshStatus()
-                    DiagnosticsEventLog.append(DiagnosticsEventLevel.Success, "Connection settings saved")
                 }
                 override fun onBack() = back()
             })
             SettingsDestination.Voice -> VoiceSettingsScreen.build(activity, tokens, object : VoiceSettingsScreen.Callbacks {
-                override fun onSaved() {
+                override fun onSettingsChanged() {
                     callbacks.refreshStatus()
-                    DiagnosticsEventLog.append(DiagnosticsEventLevel.Success, "Voice settings saved")
                 }
                 override fun requestMicPermission() = callbacks.requestMicPermission()
                 override fun startVoice() = callbacks.ensureAgentServiceRunning()
@@ -133,7 +130,7 @@ class SettingsHost(
                 override fun onBack() = back()
             })
             SettingsDestination.Appearance -> AppearanceSettingsScreen.build(activity, tokens, object : AppearanceSettingsScreen.Callbacks {
-                override fun onSaved() = callbacks.refreshStatus()
+                override fun onSettingsChanged() = callbacks.refreshStatus()
                 override fun notifyAvatarChanged() {
                     val intent = Intent(activity, dev.androidagent.AgentForegroundService::class.java)
                         .setAction(dev.androidagent.AgentForegroundService.ACTION_REFRESH_AVATAR)
@@ -152,9 +149,8 @@ class SettingsHost(
             SettingsDestination.LocalModel -> {
                 val importFieldHolder = arrayOf<android.widget.EditText?>(null)
                 LocalModelSettingsScreen.build(activity, tokens, object : LocalModelSettingsScreen.Callbacks {
-                    override fun onSaved() {
+                    override fun onSettingsChanged() {
                         callbacks.refreshStatus()
-                        DiagnosticsEventLog.append(DiagnosticsEventLevel.Success, "Local model settings saved")
                     }
                     override fun onBack() = back()
                     override fun onImportRequested(pathField: android.widget.EditText) {
