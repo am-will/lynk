@@ -135,7 +135,7 @@ object AgentConfigStore {
             deviceId = prefs.getString(DEVICE_ID, "openclaw-agent") ?: "openclaw-agent",
             token = sanitizedToken(prefs.getString(TOKEN, "")),
             openAiApiKey = prefs.getString(OPENAI_API_KEY, "") ?: "",
-            systemPrompt = prefs.getString(SYSTEM_PROMPT, DefaultSystemPrompt.text) ?: DefaultSystemPrompt.text,
+            systemPrompt = prefs.getString(SYSTEM_PROMPT, "") ?: "",
             model = prefs.getString(MODEL, "gpt-5.5") ?: "gpt-5.5",
             reasoningEffort = prefs.getString(REASONING_EFFORT, "medium") ?: "medium",
             agentMode = if (experimentalLocalModelsEnabled) {
