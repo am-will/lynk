@@ -18,6 +18,8 @@ The Host Bridge installer packages the PC bridge as a background companion for A
 
 Manual URL/token entry remains available in Android settings as a fallback.
 
+The installer does not register MCP servers with OpenClaw, Hermes, or Codex automatically. Host chat is available after pairing; phone-control tools inside those host agents are an optional integration the user can install later.
+
 ## Installed Config
 
 The bridge creates a strong token on first run and stores consumer config outside the app bundle:
@@ -48,12 +50,18 @@ cd pc
 npm run host:refresh
 ```
 
-The installed companion should expose the same action as **Refresh Integrations**. Refresh rescans known tools, stores discovered absolute paths, and reports whether a bridge restart is recommended. Use `--configure-mcp` when support wants refresh to update available OpenClaw/Hermes MCP registrations too:
+The installed companion should expose the same action as **Refresh Integrations**. Refresh rescans known tools, stores discovered absolute paths, and reports whether a bridge restart is recommended.
+
+## Optional MCP Registration
+
+If the user wants OpenClaw, Hermes, or Codex to control the Android phone through MCP tools, run:
 
 ```bash
 cd pc
-npm run host:refresh -- --configure-mcp
+npm run host:mcp
 ```
+
+This command updates the available host-agent MCP registrations with the current bridge URL and token. It is safe to rerun after moving the app, changing the bridge port, regenerating the pairing token, or installing a host agent later. `npm run host:refresh -- --configure-mcp` performs the same MCP update while also refreshing integration discovery.
 
 ## Diagnostics
 
@@ -74,4 +82,4 @@ The diagnostics bundle redacts secrets and includes OS details, config shape, en
 - Code sign and notarize macOS artifacts.
 - Sign Windows installer artifacts.
 - Smoke test clean macOS, Windows, and Ubuntu VMs.
-- Verify LAN pairing, Tailscale pairing, wrong-token recovery, refresh after installing Codex/Hermes, and uninstall/upgrade token preservation.
+- Verify LAN pairing, Tailscale pairing, wrong-token recovery, refresh after installing Codex/Hermes, optional `host:mcp` registration, and uninstall/upgrade token preservation.

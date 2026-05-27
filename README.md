@@ -30,9 +30,10 @@ npm install
 export PHONE_AGENT_TOKEN="$(openssl rand -hex 32)"
 echo "Android token: $PHONE_AGENT_TOKEN"
 export PHONE_AGENT_DISPATCHER=openclaw
-npm run openclaw:mcp
 npm run bridge
 ```
+
+Phone-control MCP registration is optional. Run `npm run host:mcp` later if you want OpenClaw, Hermes, or Codex to call Android phone tools through the bridge.
 
 Then build and install the Android app from `android/` with Android Studio or Gradle. On the phone, set:
 

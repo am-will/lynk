@@ -118,6 +118,9 @@ async function configureAvailableMcp(integrations: IntegrationStatus[]): Promise
   if (integrations.find((integration) => integration.id === "hermes")?.ready) {
     results.push(await runNpmScript("hermes", "hermes:mcp"));
   }
+  if (integrations.find((integration) => integration.id === "codex")?.ready) {
+    results.push(await runNpmScript("codex", "codex:mcp"));
+  }
   return results;
 }
 

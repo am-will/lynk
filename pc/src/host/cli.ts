@@ -22,6 +22,9 @@ switch (command) {
   case "refresh":
     console.log(JSON.stringify(await refreshHostIntegrations({ configureMcp: process.argv.includes("--configure-mcp") }), null, 2));
     break;
+  case "mcp":
+    console.log(JSON.stringify(await refreshHostIntegrations({ configureMcp: true }), null, 2));
+    break;
   case "service-plan":
     console.log(JSON.stringify(serviceInstallPlan(), null, 2));
     break;
@@ -36,6 +39,7 @@ switch (command) {
       "Commands:",
       "  pairing        Print Android pairing payload and deep link",
       "  refresh        Rescan OpenClaw, Hermes, Codex, Tailscale, and ADB",
+      "  mcp            Install or update optional phone-control MCP registrations",
       "  service-plan   Print OS-specific service installation commands",
       "  diagnostics    Print a redacted diagnostics bundle",
       "",

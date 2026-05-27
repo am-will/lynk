@@ -11,6 +11,15 @@ echo "Android token: $PHONE_AGENT_TOKEN"
 npm run bridge
 ```
 
+Preferred setup:
+
+```bash
+cd pc
+npm run codex:mcp
+```
+
+This rewrites the `android-phone` MCP entry in Codex's user config with the current checkout path, bridge URL, and token. It is safe to rerun after moving the checkout or rotating `PHONE_AGENT_TOKEN`.
+
 For project-scoped Codex config, create `.codex/config.toml` with paths for your checkout:
 
 ```toml

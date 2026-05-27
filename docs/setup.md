@@ -13,7 +13,7 @@ Requirements:
 - Same network reachability from phone to PC, either local Wi-Fi or Tailscale for off-LAN use
 - Gradle or Android Studio for Android builds
 
-Install, register the optional phone-control MCP server with OpenClaw, and start the bridge:
+Install and start the bridge:
 
 ```bash
 cd pc
@@ -24,7 +24,6 @@ export PHONE_AGENT_DEFAULT_DEVICE=openclaw-agent
 export PHONE_AGENT_DISPATCHER=openclaw
 export OPENCLAW_GATEWAY_URL=ws://127.0.0.1:18789
 export OPENCLAW_CHAT_SESSION_KEY=agent:main:explicit:open-claw-agent
-npm run openclaw:mcp
 npm run bridge
 ```
 
@@ -39,6 +38,15 @@ Set `OPENCLAW_GATEWAY_TOKEN` or `OPENCLAW_GATEWAY_PASSWORD` if your Gateway requ
 
 `PHONE_AGENT_TOKEN` is the Android-to-bridge pairing secret. Generate it yourself with `openssl rand -hex 32`; it is not a Tailscale, OpenAI, or OpenClaw token. To enter it on Android, open **OpenAgent**, tap **Open Connection & Config**, find the **Bridge** section, paste the printed value into **Auth token**, then tap **Save**.
 
+Phone-control MCP registration is optional. If you want installed host agents to call `phone_observe`, `phone_open_app`, and the other Android phone tools, run this after the bridge config exists:
+
+```bash
+cd pc
+npm run host:mcp
+```
+
+The command updates available OpenClaw, Hermes, and Codex MCP config with the current bridge URL and token. You can rerun it after changing the token, moving the checkout, or installing one of those host agents later.
+
 The bridge exposes:
 
 - `ws://0.0.0.0:8788/phone` for Android
@@ -50,7 +58,7 @@ The bridge server is split into focused HTTP, WebSocket, and realtime modules. L
 The Android model picker can select multiple harnesses through this same bridge:
 
 - **OpenClaw** is enabled by default and remains the default. Its Gateway sessions are the source of truth for normal OpenClaw chat history.
-- **Hermes** appears when `HERMES_API_KEY` is set. Configure `HERMES_API_BASE_URL`, `HERMES_MODEL`, `HERMES_DEFAULT_SESSION_ID`, and `HERMES_RUN_TIMEOUT_SECONDS` in `pc/.env.local`. Run `npm run hermes:mcp` if Hermes should be able to call the Android phone MCP server.
+- **Hermes** appears when `HERMES_API_KEY` is set. Configure `HERMES_API_BASE_URL`, `HERMES_MODEL`, `HERMES_DEFAULT_SESSION_ID`, and `HERMES_RUN_TIMEOUT_SECONDS` in `pc/.env.local`.
 - **Codex** appears through the bundled Codex app-server adapter. Configure `CODEX_APP_SERVER_COMMAND` and `CODEX_AGENT_CWD` if the defaults do not match your machine.
 - **Local LiteRT-LLM** appears only when enabled in Android and a `.litertlm` model is installed.
 
