@@ -1929,6 +1929,10 @@ class OverlayController(
         dialog.setOnShowListener {
             dialog.window?.setBackgroundDrawable(Drawables.glassSurface(context, tokens, DesignTokens.Radius.lg))
             dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+            val titleId = context.resources.getIdentifier("alertTitle", "id", "android")
+            if (titleId != 0) {
+                dialog.findViewById<TextView>(titleId)?.setTextColor(Color.WHITE)
+            }
             dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(tokens.accent)
             dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(tokens.secondaryText)
             dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(tokens.secondaryText)
