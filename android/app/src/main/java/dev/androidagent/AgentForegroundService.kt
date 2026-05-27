@@ -1042,7 +1042,7 @@ class AgentForegroundService : Service() {
                 isAgentTurnActive = chatState.isRunning
                 syncReplyNotifications()
                 updateNotification()
-                if (chatClientRoute == ChatClientRoute.Local && isTerminalChatMessage(message)) {
+                if (shouldAutoOpenLocalTerminalMessage(message)) {
                     overlayController?.show()
                     overlayController?.openChatPanel(presentation = PanelPresentation.Popup)
                 }
@@ -1119,6 +1119,13 @@ class AgentForegroundService : Service() {
             "chat.final", "chat.error", "chat.reply_available" -> true
             else -> false
         }
+    }
+
+    private fun shouldAutoOpenLocalTerminalMessage(message: JSONObject): Boolean {
+        if (chatClientRoute != ChatClientRoute.Local) return false
+        if (!isTerminalChatMessage(message)) return false
+        val runId = message.optString("runId")
+        return runId.startsWith(LOCAL_REALTIME_RUN_PREFIX)
     }
 
     private fun markChatSessionRead(sessionKey: String?, force: Boolean = false) {
@@ -1451,6 +1458,7 @@ class AgentForegroundService : Service() {
         private const val RECENTS_MIN_SUPPRESSION_MS = 700L
         private const val RECENTS_RESTORE_WITHOUT_ACCESSIBILITY_MS = 2_500L
         private const val REALTIME_VOICE_COMPLETION_VISIBLE_MS = 10_000L
+        private const val LOCAL_REALTIME_RUN_PREFIX = "local_realtime_"
         const val ACTION_STATE_CHANGED = "app.lynk.action.AGENT_SERVICE_STATE_CHANGED"
         const val EXTRA_IS_RUNNING = "isRunning"
         const val EXTRA_BRIDGE_CONNECTED = "bridgeConnected"
