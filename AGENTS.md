@@ -18,7 +18,7 @@
 - `pc/src/dispatcher/`: adapter boundary for legacy `user_request` and realtime delegated tasks. `OpenClawSessionClient`, `HermesSessionClient`, and `CodexAppServerClient` all exist behind this boundary.
 - `pc/src/mcp/`: `android-phone` MCP server and phone tool schemas. Keep these aligned with Android command execution.
 - `pc/src/protocol/messages.ts`: canonical TypeScript source for WebSocket message validation, phone commands, MCP tool-name mapping, realtime tool names, model IDs, and reasoning options.
-- `android/`: Kotlin Android app. Package/application id is `dev.openclawagent`; source namespace is `dev.androidagent`.
+- `android/`: Kotlin Android app. Package/application id is `app.lynk`; source namespace is `dev.androidagent`.
 - `android/app/src/main/java/dev/androidagent/net/`: bridge WebSocket client and inbound JSON parsing.
 - `android/app/src/main/java/dev/androidagent/accessibility/`: Android command executor and screen observation.
 - `android/app/src/main/java/dev/androidagent/overlay/`, `chat/`, `agentchat/`, `ui/`: bubble, panel, timeline, model/session controls, markdown/status rendering.
@@ -56,7 +56,7 @@
 - Codex appears as a host harness through the bundled app-server adapter. Relevant env: `CODEX_APP_SERVER_COMMAND`, `CODEX_AGENT_CWD`; generated schemas remain optional inspection output only.
 - Local models are Android-side settings, not PC env. Import a `.litertlm` file, choose CPU/GPU/NPU, and switch **Run on** to **Local phone**. The local model id is `local-litertlm`.
 - Realtime voice needs an OpenAI key from either PC `OPENAI_API_KEY` or Android settings. Bridge-side knobs: `OPENAI_REALTIME_MODEL`, `OPENAI_REALTIME_VOICE`, `OPENAI_WEB_SEARCH_MODEL`.
-- Android stores config in `dev.openclawagent` shared prefs named `open_claw_agent_config`; the saved token must match `PHONE_AGENT_TOKEN` exactly.
+- Android stores config in `app.lynk` shared prefs named `open_claw_agent_config`; the saved token must match `PHONE_AGENT_TOKEN` exactly.
 
 ## Protocol And Contract Rules
 

@@ -143,16 +143,16 @@ internal class ChatNotificationController(
 
     companion object {
         private const val TAG = "ChatNotifications"
-        const val ACTION_STOP_TURN = "dev.openclawagent.action.STOP_TURN"
-        const val ACTION_OPEN_CHAT = "dev.openclawagent.action.OPEN_CHAT"
-        const val ACTION_OPEN_CHAT_SESSION = "dev.openclawagent.action.OPEN_CHAT_SESSION"
-        const val ACTION_DISMISS_CHAT_SESSION_NOTIFICATION = "dev.openclawagent.action.DISMISS_CHAT_SESSION_NOTIFICATION"
+        const val ACTION_STOP_TURN = "app.lynk.action.STOP_TURN"
+        const val ACTION_OPEN_CHAT = "app.lynk.action.OPEN_CHAT"
+        const val ACTION_OPEN_CHAT_SESSION = "app.lynk.action.OPEN_CHAT_SESSION"
+        const val ACTION_DISMISS_CHAT_SESSION_NOTIFICATION = "app.lynk.action.DISMISS_CHAT_SESSION_NOTIFICATION"
         const val EXTRA_PANEL_PRESENTATION = "panelPresentation"
         const val EXTRA_SESSION_KEY = "sessionKey"
         const val PANEL_PRESENTATION_AUTO = "auto"
         const val NOTIFICATION_ID = 1
-        const val CHANNEL_ID = "open-claw-agent"
-        private const val REPLY_CHANNEL_ID = "open-claw-agent-replies"
+        const val CHANNEL_ID = "lynk"
+        private const val REPLY_CHANNEL_ID = "lynk-replies"
         private const val FOREGROUND_TITLE = "Android Agent active"
         private const val FOREGROUND_TEXT = "Floating chat bubble is running"
         private const val REQUEST_STOP_TURN = 0

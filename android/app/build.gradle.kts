@@ -8,7 +8,7 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "dev.openclawagent"
+        applicationId = "app.lynk"
         minSdk = 26
         targetSdk = 36
         versionCode = 1

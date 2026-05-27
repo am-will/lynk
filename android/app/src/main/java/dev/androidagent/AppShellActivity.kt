@@ -641,7 +641,7 @@ class AppShellActivity : ComponentActivity() {
         const val EXTRA_OPEN_CHAT = "openChat"
         const val EXTRA_REQUEST_MIC_PERMISSION = "requestMicPermission"
         const val EXTRA_REQUEST_CHAT_ATTACHMENT_KIND = "requestChatAttachmentKind"
-        const val ACTION_MINIMIZE_APP = "dev.openclawagent.action.MINIMIZE_APP"
+        const val ACTION_MINIMIZE_APP = "app.lynk.action.MINIMIZE_APP"
         private const val REQUEST_MIC_PERMISSION = 20
         private const val REQUEST_LOCATION_PERMISSION = 21
         private const val REQUEST_NOTIFICATIONS = 10

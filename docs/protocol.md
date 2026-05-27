@@ -54,8 +54,8 @@ Coordinate taps use full-screen pixels, including the status and navigation bars
     "nodes": [
       {
         "id": "n17",
-        "viewIdResourceName": "dev.openclawagent:id/openclaw_send_stop_button",
-        "packageName": "dev.openclawagent",
+        "viewIdResourceName": "app.lynk:id/openclaw_send_stop_button",
+        "packageName": "app.lynk",
         "text": "",
         "contentDescription": "Send message",
         "stateDescription": "",
@@ -81,7 +81,7 @@ Coordinate taps use full-screen pixels, including the status and navigation bars
 }
 ```
 
-Observation node IDs such as `n17` are ephemeral and only valid until the next observation. Prefer `viewIdResourceName`, visible `text`, or `contentDescription` as stable selectors when available. Android exports OpenAgent resource IDs for meaningful controls under `dev.openclawagent:id/...`; decorative artwork is intentionally hidden from accessibility so the tree stays focused on actionable UI.
+Observation node IDs such as `n17` are ephemeral and only valid until the next observation. Prefer `viewIdResourceName`, visible `text`, or `contentDescription` as stable selectors when available. Android exports OpenAgent resource IDs for meaningful controls under `app.lynk:id/...`; decorative artwork is intentionally hidden from accessibility so the tree stays focused on actionable UI.
 
 `take_screenshot` results include `screenshotBase64` plus `screenshot.widthPx` and `screenshot.heightPx`. Those dimensions are the source of truth for mapping visual screenshot positions back to phone coordinates.
 
@@ -89,24 +89,24 @@ Observation node IDs such as `n17` are ephemeral and only valid until the next o
 
 OpenAgent's own Android UI is exposed as a normal accessibility tree. Canonical selectors include:
 
-- Bubble: `dev.openclawagent:id/openclaw_bubble` or content description `OpenAgent`
-- Chat composer: `dev.openclawagent:id/openclaw_composer_input`
-- Send or stop: `dev.openclawagent:id/openclaw_send_stop_button`
-- Model selector: `dev.openclawagent:id/openclaw_model_selector`
-- Reasoning selector: `dev.openclawagent:id/openclaw_reasoning_selector`
-- Settings action: `dev.openclawagent:id/openclaw_header_settings_button`
-- Confirmation allow/cancel: `dev.openclawagent:id/openclaw_confirmation_allow_button` and `dev.openclawagent:id/openclaw_confirmation_cancel_button`
-- Main settings controls: `dev.openclawagent:id/openclaw_connection_config_button`, `dev.openclawagent:id/openclaw_system_prompt_menu_button`, `dev.openclawagent:id/openclaw_models_harness_button`, `dev.openclawagent:id/openclaw_agent_toggle_button`, and the individual config field IDs documented in Android resources
+- Bubble: `app.lynk:id/openclaw_bubble` or content description `OpenAgent`
+- Chat composer: `app.lynk:id/openclaw_composer_input`
+- Send or stop: `app.lynk:id/openclaw_send_stop_button`
+- Model selector: `app.lynk:id/openclaw_model_selector`
+- Reasoning selector: `app.lynk:id/openclaw_reasoning_selector`
+- Settings action: `app.lynk:id/openclaw_header_settings_button`
+- Confirmation allow/cancel: `app.lynk:id/openclaw_confirmation_allow_button` and `app.lynk:id/openclaw_confirmation_cancel_button`
+- Main settings controls: `app.lynk:id/openclaw_connection_config_button`, `app.lynk:id/openclaw_system_prompt_menu_button`, `app.lynk:id/openclaw_models_harness_button`, `app.lynk:id/openclaw_agent_toggle_button`, and the individual config field IDs documented in Android resources
 
 For manual verification:
 
 ```sh
 adb shell uiautomator dump /sdcard/window.xml
 adb shell uiautomator dump --compressed /sdcard/window.xml
-adb shell cmd package resolve-activity dev.openclawagent
+adb shell cmd package resolve-activity app.lynk
 ```
 
-When the active window package is `dev.openclawagent`, Android keeps OpenAgent chrome attached during phone-control commands so `observe_screen`, `tap_node`, text entry, and screenshots can target the OpenAgent UI itself. When another app owns the active window, OpenAgent chrome is still suppressed during automation to avoid blocking taps and screenshots.
+When the active window package is `app.lynk`, Android keeps OpenAgent chrome attached during phone-control commands so `observe_screen`, `tap_node`, text entry, and screenshots can target the OpenAgent UI itself. When another app owns the active window, OpenAgent chrome is still suppressed during automation to avoid blocking taps and screenshots.
 
 ## User Request
 

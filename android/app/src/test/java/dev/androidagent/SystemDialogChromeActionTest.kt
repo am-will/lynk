@@ -24,7 +24,7 @@ class SystemDialogChromeActionTest {
     fun recentsSurfaceDetectionMatchesCommonOverviewClasses() {
         assertEquals(true, isSystemRecentsSurface("com.android.systemui", "com.android.systemui.recents.RecentsActivity"))
         assertEquals(true, isSystemRecentsSurface("com.google.android.apps.nexuslauncher", "com.android.quickstep.RecentsActivity"))
-        assertEquals(false, isSystemRecentsSurface("dev.openclawagent", "dev.androidagent.MainActivity"))
+        assertEquals(false, isSystemRecentsSurface("app.lynk", "dev.androidagent.MainActivity"))
         assertEquals(false, isSystemRecentsSurface("com.google.android.apps.nexuslauncher", "com.google.android.apps.nexuslauncher.NexusLauncherActivity"))
     }
 }

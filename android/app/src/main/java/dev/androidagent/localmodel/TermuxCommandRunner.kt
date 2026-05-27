@@ -111,7 +111,7 @@ class TermuxCommandRunner(private val context: Context) {
         private const val EXTRA_COMMAND_LABEL = "com.termux.RUN_COMMAND_COMMAND_LABEL"
         private const val EXTRA_COMMAND_DESCRIPTION = "com.termux.RUN_COMMAND_COMMAND_DESCRIPTION"
 
-        private const val EXTRA_EXECUTION_ID = "dev.openclawagent.termux.EXECUTION_ID"
+        private const val EXTRA_EXECUTION_ID = "app.lynk.termux.EXECUTION_ID"
         private const val EXTRA_RESULT_BUNDLE = "result"
         private const val RUNNER_APP_SHELL = "app-shell"
         private const val RESULT_STDOUT = "stdout"
