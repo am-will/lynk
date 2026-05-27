@@ -9,7 +9,6 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import dev.androidagent.AgentConfigStore
-import dev.androidagent.DefaultSystemPrompt
 import dev.androidagent.R
 import dev.androidagent.settings.SettingsComponents
 import dev.androidagent.settings.SettingsUi
@@ -114,6 +113,7 @@ object SafetySettingsScreen {
                 addView(editor)
             })
             .setNegativeButton("Cancel", null)
+            .setNeutralButton("Clear") { _, _ -> onSave("") }
             .setPositiveButton("Save") { _, _ ->
                 onSave(savedSystemPrompt(editor.text.toString()))
             }
@@ -122,10 +122,11 @@ object SafetySettingsScreen {
             dialog.window?.setBackgroundDrawable(Drawables.glassSurface(activity, tokens, SettingsComponents.CONTAINER_RADIUS))
             dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.setTextColor(tokens.accent)
             dialog.getButton(AlertDialog.BUTTON_NEGATIVE)?.setTextColor(tokens.secondaryText)
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)?.setTextColor(tokens.secondaryText)
         }
         dialog.show()
     }
 
     internal fun savedSystemPrompt(text: String): String =
-        text.trim().ifBlank { DefaultSystemPrompt.text }
+        text.trim()
 }
