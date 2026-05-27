@@ -3103,11 +3103,11 @@ class OverlayController(
         }
 
         setKeyboardSpacerHeight(keyboardBottomClearance())
-        val minPanelHeight = dp(300)
+        val minKeyboardOverlap = dp(120)
         val adjustedBounds = PanelKeyboardLayout.adjustedBoundsAboveKeyboard(
             defaultBounds = defaultBounds,
             keyboardTop = keyboardTop,
-            minPanelHeight = minPanelHeight,
+            minKeyboardOverlap = minKeyboardOverlap,
             minY = dp(8),
             composerGap = keyboardComposerGap(),
             minHeight = dp(240)

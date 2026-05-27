@@ -22,17 +22,28 @@ object PanelKeyboardLayout {
     fun adjustedBoundsAboveKeyboard(
         defaultBounds: PanelBounds,
         keyboardTop: Int,
-        minPanelHeight: Int,
+        minKeyboardOverlap: Int,
         minY: Int,
         composerGap: Int,
         minHeight: Int
     ): PanelBounds? {
         val defaultBottom = defaultBounds.y + defaultBounds.height
-        if (defaultBottom - keyboardTop < minPanelHeight) {
+        if (defaultBottom - keyboardTop < minKeyboardOverlap) {
             return null
         }
-        val desiredY = defaultBounds.y.coerceAtMost((keyboardTop - minPanelHeight).coerceAtLeast(minY))
-        val desiredHeight = (keyboardTop - desiredY - composerGap).coerceAtLeast(minHeight)
+        val anchoredHeight = keyboardTop - defaultBounds.y - composerGap
+        if (anchoredHeight >= minHeight) {
+            return PanelBounds(
+                height = anchoredHeight.coerceAtMost(defaultBounds.height),
+                y = defaultBounds.y
+            )
+        }
+
+        val desiredY = (keyboardTop - minHeight - composerGap).coerceAtLeast(minY)
+        val desiredHeight = keyboardTop - desiredY - composerGap
+        if (desiredHeight < minHeight) {
+            return null
+        }
         return PanelBounds(height = desiredHeight, y = desiredY)
     }
 

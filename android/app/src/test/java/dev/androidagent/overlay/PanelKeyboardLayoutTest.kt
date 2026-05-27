@@ -32,7 +32,7 @@ class PanelKeyboardLayoutTest {
         val adjusted = PanelKeyboardLayout.adjustedBoundsAboveKeyboard(
             defaultBounds = PanelBounds(height = 820, y = 180),
             keyboardTop = 700,
-            minPanelHeight = 300,
+            minKeyboardOverlap = 120,
             minY = 8,
             composerGap = 4,
             minHeight = 240
@@ -42,12 +42,40 @@ class PanelKeyboardLayoutTest {
     }
 
     @Test
+    fun adjustedBoundsKeepsPopupTopAnchoredWhenKeyboardLeavesUsableHeight() {
+        val adjusted = PanelKeyboardLayout.adjustedBoundsAboveKeyboard(
+            defaultBounds = PanelBounds(height = 820, y = 180),
+            keyboardTop = 430,
+            minKeyboardOverlap = 120,
+            minY = 8,
+            composerGap = 4,
+            minHeight = 240
+        )
+
+        assertEquals(PanelBounds(height = 246, y = 180), adjusted)
+    }
+
+    @Test
+    fun adjustedBoundsMovesTopOnlyWhenAnchoredPanelWouldBeTooShort() {
+        val adjusted = PanelKeyboardLayout.adjustedBoundsAboveKeyboard(
+            defaultBounds = PanelBounds(height = 820, y = 180),
+            keyboardTop = 400,
+            minKeyboardOverlap = 120,
+            minY = 8,
+            composerGap = 4,
+            minHeight = 240
+        )
+
+        assertEquals(PanelBounds(height = 240, y = 156), adjusted)
+    }
+
+    @Test
     fun adjustedBoundsReturnsNullWhenKeyboardOverlapIsTooSmall() {
         assertNull(
             PanelKeyboardLayout.adjustedBoundsAboveKeyboard(
                 defaultBounds = PanelBounds(height = 820, y = 180),
                 keyboardTop = 930,
-                minPanelHeight = 300,
+                minKeyboardOverlap = 120,
                 minY = 8,
                 composerGap = 4,
                 minHeight = 240
