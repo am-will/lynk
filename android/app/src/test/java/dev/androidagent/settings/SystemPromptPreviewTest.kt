@@ -1,15 +1,19 @@
 package dev.androidagent.settings
 
-import dev.androidagent.DefaultSystemPrompt
 import dev.androidagent.settings.screens.SafetySettingsScreen
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class SystemPromptPreviewTest {
     @Test
-    fun blankPromptSavesDefaultPrompt() {
-        assertEquals(DefaultSystemPrompt.text, SafetySettingsScreen.savedSystemPrompt(""))
-        assertEquals(DefaultSystemPrompt.text, SafetySettingsScreen.savedSystemPrompt("   \n\t  "))
+    fun blankPromptSavesBlankPrompt() {
+        assertEquals("", SafetySettingsScreen.savedSystemPrompt(""))
+        assertEquals("", SafetySettingsScreen.savedSystemPrompt("   \n\t  "))
+    }
+
+    @Test
+    fun promptSaveTrimsWhitespace() {
+        assertEquals("Use short answers.", SafetySettingsScreen.savedSystemPrompt("  Use short answers.  "))
     }
 
     @Test
