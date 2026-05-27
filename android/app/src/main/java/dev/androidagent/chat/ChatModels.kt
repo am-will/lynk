@@ -343,10 +343,15 @@ object ChatStateReducer {
 
     private fun reduceMessage(state: ChatState, message: JSONObject): ChatState {
         val item = parseHistoryMessage(message.optJSONObject("message"), "message") ?: return state
+        val timeline = if (item.role == "user") {
+            replaceMatchingLocalUserMessage(state.timeline, item)
+        } else {
+            mergeTimelineItem(state.timeline, item)
+        }
         return state.copy(
             sessionKey = message.optNullableString("sessionKey") ?: state.sessionKey,
             sessionId = message.optNullableString("sessionId") ?: state.sessionId,
-            timeline = mergeTimelineItem(state.timeline, item),
+            timeline = timeline,
             error = null
         )
     }
@@ -709,6 +714,19 @@ object ChatStateReducer {
         if (!item.id.startsWith("local_") || item.role != "user") return false
         if (item.text.trimStart().startsWith("/")) return true
         return history.none { historyItem -> sameUserMessage(historyItem, item) }
+    }
+
+    private fun replaceMatchingLocalUserMessage(
+        timeline: List<ChatTimelineItem>,
+        item: ChatTimelineItem
+    ): List<ChatTimelineItem> {
+        val localIndex = timeline.indexOfFirst { existing ->
+            existing.id.startsWith("local_") && sameUserMessage(existing, item)
+        }
+        if (localIndex == -1) {
+            return mergeTimelineItem(timeline, item)
+        }
+        return timeline.toMutableList().also { it[localIndex] = item }
     }
 
     private fun sameUserMessage(a: ChatTimelineItem, b: ChatTimelineItem): Boolean {

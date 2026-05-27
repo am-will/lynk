@@ -682,13 +682,15 @@ export class OpenClawChatBridge {
     if (messages.length === 0) {
       return;
     }
-    this.sendChat(deviceId, {
-      type: "chat.history",
-      deviceId,
-      sessionKey,
-      sessionId: state.sessionId,
-      messages
-    });
+    for (const message of messages) {
+      this.sendChat(deviceId, {
+        type: "chat.message",
+        deviceId,
+        sessionKey,
+        sessionId: state.sessionId,
+        message
+      });
+    }
   }
 
   private withPendingUserMessages(
