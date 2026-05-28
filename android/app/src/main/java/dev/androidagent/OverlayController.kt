@@ -48,6 +48,7 @@ import dev.androidagent.chat.ChatModelSource
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatModelOption
 import dev.androidagent.chat.ChatSessionRow
+import dev.androidagent.debug.DebugRuntimeLog
 import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.overlay.BubbleOverlay
 import dev.androidagent.overlay.ChatPickerRows
@@ -3073,7 +3074,54 @@ class OverlayController(
         } else {
             displayHeight
         }
+        val panelLocation = IntArray(2)
+        panel.getLocationOnScreen(panelLocation)
+        val currentSpacerHeight = keyboardSpacerView
+            ?.takeIf { it.visibility == View.VISIBLE }
+            ?.layoutParams
+            ?.height
+            ?: 0
+        // #region agent log
+        DebugRuntimeLog.write(
+            hypothesisId = "H2,H4,H5",
+            location = "OverlayController.kt:positionPanelAboveKeyboard:geometry",
+            message = "Panel keyboard geometry resolved",
+            data = mapOf(
+                "presentation" to activePanelPresentation.name,
+                "displayHeight" to displayHeight,
+                "panelHeight" to panel.height,
+                "panelScreenY" to panelLocation[1],
+                "paramsY" to (params?.y ?: -1),
+                "paramsHeight" to (params?.height ?: -1),
+                "defaultY" to defaultBounds.y,
+                "defaultHeight" to defaultBounds.height,
+                "defaultBottom" to defaultBottom,
+                "imeHeight" to imeHeight,
+                "visibleFrameKeyboardTop" to (visibleFrameKeyboardTop ?: -1),
+                "keyboardTop" to keyboardTop,
+                "keyboardOverlap" to (defaultBottom - keyboardTop),
+                "composerFocused" to (composerInput?.hasFocus() == true),
+                "stableKeyboardFrameObserved" to stableKeyboardFrameObserved,
+                "spacerHeightBefore" to currentSpacerHeight
+            )
+        )
+        // #endregion
         if (defaultBottom - keyboardTop < dp(120)) {
+            // #region agent log
+            DebugRuntimeLog.write(
+                hypothesisId = "H2",
+                location = "OverlayController.kt:positionPanelAboveKeyboard:noKeyboardBranch",
+                message = "Keyboard overlap below threshold; restoring panel",
+                data = mapOf(
+                    "presentation" to activePanelPresentation.name,
+                    "defaultBottom" to defaultBottom,
+                    "keyboardTop" to keyboardTop,
+                    "keyboardOverlap" to (defaultBottom - keyboardTop),
+                    "imeHeight" to imeHeight,
+                    "visibleFrameKeyboardTop" to (visibleFrameKeyboardTop ?: -1)
+                )
+            )
+            // #endregion
             if (params != null) {
                 restorePanelDefaultSize(panel, params)
             } else {
@@ -3084,13 +3132,30 @@ class OverlayController(
 
         panel.translationY = 0f
         if (activePanelPresentation == PanelPresentation.Fullscreen || activePanelPresentation == PanelPresentation.Shell) {
-            setKeyboardSpacerHeight(
-                PanelKeyboardLayout.fullscreenKeyboardSpacerHeight(
-                    defaultBounds = defaultBounds,
-                    keyboardTop = keyboardTop,
-                    bottomClearance = keyboardBottomClearance()
+            val nextSpacerHeight = PanelKeyboardLayout.fullscreenKeyboardSpacerHeight(
+                defaultBounds = defaultBounds,
+                keyboardTop = keyboardTop,
+                bottomClearance = keyboardBottomClearance()
+            )
+            // #region agent log
+            DebugRuntimeLog.write(
+                hypothesisId = "H3,H5",
+                location = "OverlayController.kt:positionPanelAboveKeyboard:fullscreenSpacer",
+                message = "Fullscreen or shell keyboard spacer calculated",
+                data = mapOf(
+                    "presentation" to activePanelPresentation.name,
+                    "defaultY" to defaultBounds.y,
+                    "defaultHeight" to defaultBounds.height,
+                    "keyboardTop" to keyboardTop,
+                    "keyboardOverlap" to (defaultBottom - keyboardTop),
+                    "bottomClearance" to keyboardBottomClearance(),
+                    "nextSpacerHeight" to nextSpacerHeight,
+                    "panelHeight" to panel.height,
+                    "panelScreenY" to panelLocation[1]
                 )
             )
+            // #endregion
+            setKeyboardSpacerHeight(nextSpacerHeight)
             if (params != null && activePanelPresentation == PanelPresentation.Fullscreen) {
                 if (params.height != defaultBounds.height || params.y != defaultBounds.y) {
                     params.height = defaultBounds.height
@@ -3117,6 +3182,23 @@ class OverlayController(
             }
             return
         }
+        // #region agent log
+        DebugRuntimeLog.write(
+            hypothesisId = "H4,H5",
+            location = "OverlayController.kt:positionPanelAboveKeyboard:popupAdjustedBounds",
+            message = "Popup keyboard adjusted bounds calculated",
+            data = mapOf(
+                "paramsYBefore" to (params?.y ?: -1),
+                "paramsHeightBefore" to (params?.height ?: -1),
+                "adjustedY" to adjustedBounds.y,
+                "adjustedHeight" to adjustedBounds.height,
+                "defaultY" to defaultBounds.y,
+                "defaultHeight" to defaultBounds.height,
+                "keyboardTop" to keyboardTop,
+                "composerGap" to keyboardComposerGap()
+            )
+        )
+        // #endregion
         if (params != null && (params.height != adjustedBounds.height || params.y != adjustedBounds.y)) {
             params.height = adjustedBounds.height
             params.y = adjustedBounds.y
@@ -3167,6 +3249,21 @@ class OverlayController(
     private fun setKeyboardSpacerHeight(height: Int) {
         val spacer = keyboardSpacerView ?: return
         val nextHeight = height.coerceAtLeast(0)
+        // #region agent log
+        DebugRuntimeLog.write(
+            hypothesisId = "H3,H5",
+            location = "OverlayController.kt:setKeyboardSpacerHeight",
+            message = "Keyboard spacer height mutation",
+            data = mapOf(
+                "presentation" to activePanelPresentation.name,
+                "oldHeight" to spacer.layoutParams.height,
+                "newHeight" to nextHeight,
+                "oldVisible" to (spacer.visibility == View.VISIBLE),
+                "panelHeight" to (panelView?.height ?: 0),
+                "contentHeight" to (panelContent?.height ?: 0)
+            )
+        )
+        // #endregion
         if (nextHeight == 0) {
             if (spacer.visibility != View.GONE) {
                 spacer.visibility = View.GONE
