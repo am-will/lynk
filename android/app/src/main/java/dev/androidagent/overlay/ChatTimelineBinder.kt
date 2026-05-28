@@ -30,6 +30,23 @@ import dev.androidagent.ui.Typography
 import dev.androidagent.ui.exposeToAccessibility
 import dev.androidagent.ui.hideFromAccessibility
 
+internal enum class AssistantMessageRenderMode {
+    WAITING,
+    STREAMING_TEXT,
+    FINAL
+}
+
+internal fun assistantMessageRenderMode(item: ChatTimelineItem): AssistantMessageRenderMode {
+    if (item.role != "assistant" || !item.isStreaming) {
+        return AssistantMessageRenderMode.FINAL
+    }
+    return if (item.text.isBlank()) {
+        AssistantMessageRenderMode.WAITING
+    } else {
+        AssistantMessageRenderMode.STREAMING_TEXT
+    }
+}
+
 class ChatTimelineBinder(
     private val context: Context,
     private val onToggleChatTool: (String) -> Unit
@@ -170,10 +187,12 @@ class ChatTimelineBinder(
 
         val isUser = role == "user"
         val isAssistant = role == "assistant"
-        val isStreaming = !isUser && item.isStreaming && item.text.isBlank()
+        val assistantRenderMode = assistantMessageRenderMode(item)
+        val isWaitingForStream = assistantRenderMode == AssistantMessageRenderMode.WAITING
+        val isStreamingText = assistantRenderMode == AssistantMessageRenderMode.STREAMING_TEXT
 
         val maxWidth = (context.resources.displayMetrics.widthPixels * 0.78f).toInt()
-        val bubble = if (isAssistant && !isStreaming) {
+        val bubble = if (isAssistant && assistantRenderMode == AssistantMessageRenderMode.FINAL) {
             val messageText = LocalResponseTextNormalizer.normalize(item.text)
             val chunks = MarkdownFencedCodeParser.parse(messageText)
             if (chunks.any { it is MarkdownFencedCodeChunk.CodeBlock }) {
@@ -197,8 +216,9 @@ class ChatTimelineBinder(
                 messageText = item.text,
                 tokens = tokens,
                 isUser = isUser,
-                isStreaming = isStreaming,
-                maxWidth = maxWidth
+                isStreaming = isWaitingForStream,
+                maxWidth = maxWidth,
+                renderMarkdown = !isStreamingText
             )
         }
 
@@ -294,7 +314,8 @@ class ChatTimelineBinder(
         tokens: ThemeTokens,
         isUser: Boolean,
         isStreaming: Boolean,
-        maxWidth: Int
+        maxWidth: Int,
+        renderMarkdown: Boolean = true
     ): TextView {
         return TextView(context).apply {
             Typography.applyCallout(this, tokens)
@@ -317,7 +338,7 @@ class ChatTimelineBinder(
             if (isStreaming) {
                 text = "•  •  •"
                 animateStreamingDots(this)
-            } else if (isUser) {
+            } else if (isUser || !renderMarkdown) {
                 text = messageText
             } else {
                 MarkdownRenderer.render(this, messageText, tokens)

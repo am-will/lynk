@@ -338,6 +338,30 @@ class ChatStateReducerTest {
     }
 
     @Test
+    fun replaceDeltaOverwritesStreamingAssistantText() {
+        val withDelta = ChatStateReducer.reduce(ChatState(), JSONObject()
+            .put("type", "chat.delta")
+            .put("sessionKey", "agent:main:main")
+            .put("runId", "run1")
+            .put("delta", "Old"))
+        val replaced = ChatStateReducer.reduce(withDelta, JSONObject()
+            .put("type", "chat.delta")
+            .put("sessionKey", "agent:main:main")
+            .put("runId", "run1")
+            .put("delta", "New")
+            .put("replace", true))
+        val appended = ChatStateReducer.reduce(replaced, JSONObject()
+            .put("type", "chat.delta")
+            .put("sessionKey", "agent:main:main")
+            .put("runId", "run1")
+            .put("delta", " text"))
+
+        assertEquals("New", replaced.timeline.single().text)
+        assertTrue(replaced.timeline.single().isStreaming)
+        assertEquals("New text", appended.timeline.single().text)
+    }
+
+    @Test
     fun toolEventsUpsertAndKeepExpansionState() {
         val first = ChatStateReducer.reduce(ChatState(), JSONObject()
             .put("type", "chat.tool_event")
