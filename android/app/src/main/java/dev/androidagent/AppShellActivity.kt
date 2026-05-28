@@ -32,7 +32,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import dev.androidagent.chat.ChatAttachmentKind
 import dev.androidagent.chat.ChatAttachmentStore
-import dev.androidagent.debug.DebugRuntimeLog
 import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.settings.DiagnosticsEventLog
 import dev.androidagent.settings.DiagnosticsEventLevel
@@ -227,26 +226,6 @@ class AppShellActivity : ComponentActivity() {
 
         ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
-            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            // #region agent log
-            DebugRuntimeLog.write(
-                hypothesisId = "H1,H5",
-                location = "AppShellActivity.kt:rootInsets",
-                message = "App shell insets applied",
-                data = mapOf(
-                    "selectedTab" to selectedTab.name,
-                    "rootHeight" to view.height,
-                    "contentHostHeight" to contentHost.height,
-                    "bottomNavHeight" to (bottomNavView?.height ?: 0),
-                    "systemBarsTop" to bars.top,
-                    "systemBarsBottom" to bars.bottom,
-                    "imeBottom" to ime.bottom,
-                    "imeVisible" to insets.isVisible(WindowInsetsCompat.Type.ime()),
-                    "paddingTopBefore" to view.paddingTop,
-                    "paddingBottomBefore" to view.paddingBottom
-                )
-            )
-            // #endregion
             view.setPadding(0, bars.top, 0, bars.bottom)
             insets
         }
