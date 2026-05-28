@@ -1760,14 +1760,7 @@ class OverlayController(
             onSelect = { startNewChatSession() }
         ))
         if (isCodexHarness()) {
-            sessionRows.add(AnchoredPicker.Row(
-                id = "chat:codex-workspace",
-                label = "Current Workspace",
-                sublabel = CodexWorkspacePaths.defaultWorkspaceLabel(onGetCodexWorkspacePath()),
-                iconRes = R.drawable.ic_file,
-                dismissOnSelect = false,
-                onSelect = { showCodexWorkspaceDialog() }
-            ))
+            sessionRows.add(codexWorkspaceMenuRow())
         }
         if (sessions.isNotEmpty()) {
             val sessionCount = sessions.size.coerceAtMost(30)
@@ -1878,6 +1871,21 @@ class OverlayController(
         )
     }
 
+    private fun codexWorkspaceMenuRow(path: String = onGetCodexWorkspacePath()): AnchoredPicker.Row {
+        return AnchoredPicker.Row(
+            id = PLUS_ROW_CODEX_WORKSPACE,
+            label = "Current Workspace",
+            sublabel = CodexWorkspacePaths.defaultWorkspaceLabel(path),
+            iconRes = R.drawable.ic_file,
+            dismissOnSelect = false,
+            onSelect = { showCodexWorkspaceDialog() }
+        )
+    }
+
+    private fun updateCodexWorkspaceMenuRow(path: String) {
+        anchoredPicker?.updateRow(codexWorkspaceMenuRow(path))
+    }
+
     private fun showCodexWorkspaceDialog() {
         val tokens = DesignTokens.resolve(context)
         val editor = EditText(context).apply {
@@ -1911,10 +1919,12 @@ class OverlayController(
             .setPositiveButton("Save") { _, _ ->
                 val path = CodexWorkspacePaths.normalizeInput(editor.text?.toString())
                 onSetCodexWorkspacePath(path)
+                updateCodexWorkspaceMenuRow(path)
                 setStatus("Codex workspace: ${CodexWorkspacePaths.defaultWorkspaceLabel(path)}")
             }
             .setNeutralButton("Clear") { _, _ ->
                 onSetCodexWorkspacePath("")
+                updateCodexWorkspaceMenuRow("")
                 setStatus("Codex workspace: ${CodexWorkspacePaths.defaultWorkspaceLabel("")}")
             }
             .setNegativeButton("Cancel", null)
@@ -2949,6 +2959,7 @@ class OverlayController(
         private const val PICKER_KEYBOARD_DISMISS_INITIAL_DELAY_MS = 80L
         private const val PICKER_KEYBOARD_DISMISS_POLL_MS = 40L
         private const val PICKER_KEYBOARD_DISMISS_TIMEOUT_MS = 420L
+        private const val PLUS_ROW_CODEX_WORKSPACE = "chat:codex-workspace"
         private const val PLUS_ROW_FAST_MODE = "plus_fast_mode"
         private const val PLUS_ROW_TOOL_CALLS = "plus_tool_calls"
         private const val PLUS_ROW_ACTIVE_SEND_MODE = "plus_active_send_mode"
