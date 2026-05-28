@@ -1886,8 +1886,21 @@ class OverlayController(
         anchoredPicker?.updateRow(codexWorkspaceMenuRow(path))
     }
 
+    private fun refreshCodexWorkspaceMenuAfterDialog(path: String) {
+        updateCodexWorkspaceMenuRow(path)
+        val anchor = headerSessionAnchor ?: return
+        if (anchoredPicker?.isShowingFor(anchor) == true) {
+            showPlusMenu(
+                anchorOverride = anchor,
+                replace = true,
+                onDismiss = { animateHeaderSessionChevron(expanded = false) }
+            )
+        }
+    }
+
     private fun showCodexWorkspaceDialog() {
         val tokens = DesignTokens.resolve(context)
+        var pathToRefreshAfterDismiss: String? = null
         val editor = EditText(context).apply {
             setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
@@ -1919,16 +1932,21 @@ class OverlayController(
             .setPositiveButton("Save") { _, _ ->
                 val path = CodexWorkspacePaths.normalizeInput(editor.text?.toString())
                 onSetCodexWorkspacePath(path)
-                updateCodexWorkspaceMenuRow(path)
+                pathToRefreshAfterDismiss = path
                 setStatus("Codex workspace: ${CodexWorkspacePaths.defaultWorkspaceLabel(path)}")
             }
             .setNeutralButton("Clear") { _, _ ->
                 onSetCodexWorkspacePath("")
-                updateCodexWorkspaceMenuRow("")
+                pathToRefreshAfterDismiss = ""
                 setStatus("Codex workspace: ${CodexWorkspacePaths.defaultWorkspaceLabel("")}")
             }
             .setNegativeButton("Cancel", null)
             .create()
+        dialog.setOnDismissListener {
+            pathToRefreshAfterDismiss?.let { path ->
+                refreshCodexWorkspaceMenuAfterDialog(path)
+            }
+        }
         dialog.window?.setType(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
