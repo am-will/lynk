@@ -140,16 +140,17 @@ export class OpenClawGatewayEventRouter {
     const runId = typeof record.runId === "string" ? record.runId : undefined;
     const sessionKey = typeof record.sessionKey === "string" ? record.sessionKey : undefined;
     for (const [deviceId, state] of this.options.states.entries()) {
+      const pendingRun = runId ? state.pendingRuns.get(runId) : undefined;
       if (runId && state.ignoredRunIds.has(runId)) {
         if (record.type === "run.completed") {
           state.ignoredRunIds.delete(runId);
         }
         continue;
       }
-      if (runId && state.runId && runId !== state.runId) {
+      if (runId && state.runId && runId !== state.runId && !pendingRun) {
         continue;
       }
-      if (sessionKey && sessionKey !== state.sessionKey) {
+      if (sessionKey && sessionKey !== state.sessionKey && pendingRun?.sessionKey !== sessionKey) {
         continue;
       }
       const reasoningEvent = normalizeGatewayReasoningEvent(deviceId, state.sessionKey, payload, eventName);
