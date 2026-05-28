@@ -63,6 +63,7 @@ class AnchoredPicker(
     private var onDismissCallback: (() -> Unit)? = null
     private var currentAnchor: View? = null
     private var currentPreferAbove = false
+    private var currentHeightFraction: Float? = null
     private val rowViewsById = mutableMapOf<String, View>()
 
     val isShowing: Boolean
@@ -79,6 +80,7 @@ class AnchoredPicker(
     ) {
         val sheet = sheetView as? LinearLayout ?: return
         val scrollY = findBodyScroller(sheet)?.scrollY ?: 0
+        currentHeightFraction = heightFraction
         preferAbove?.let { currentPreferAbove = it }
         bindSheetContent(sheet, title, sections)
         applyHeight(sheet, heightFraction)
@@ -122,11 +124,22 @@ class AnchoredPicker(
         val host = hostRef ?: return
         val sheet = sheetView ?: return
         val anchor = currentAnchor ?: return
-        sheet.post {
+        applyHeight(sheet, currentHeightFraction)
+        sheet.requestLayout()
+        preDrawListener?.let {
+            sheet.viewTreeObserver.removeOnPreDrawListener(it)
+        }
+        val observer = sheet.viewTreeObserver
+        val preDraw = ViewTreeObserver.OnPreDrawListener {
             if (sheet.parent === host && anchor.isAttachedToWindow) {
                 positionSheet(host, sheet, anchor)
             }
+            sheet.viewTreeObserver.removeOnPreDrawListener(preDrawListener)
+            preDrawListener = null
+            true
         }
+        preDrawListener = preDraw
+        observer.addOnPreDrawListener(preDraw)
     }
 
     fun show(
@@ -142,6 +155,7 @@ class AnchoredPicker(
         hostRef = host
         currentAnchor = anchor
         currentPreferAbove = preferAbove
+        currentHeightFraction = heightFraction
         onDismissCallback = onDismiss
 
         val scrim = View(context).apply {
@@ -204,6 +218,7 @@ class AnchoredPicker(
         scrimView = null
         currentAnchor = null
         currentPreferAbove = false
+        currentHeightFraction = null
         onDismissCallback = null
         preDrawListener?.let {
             sheet?.viewTreeObserver?.removeOnPreDrawListener(it)
