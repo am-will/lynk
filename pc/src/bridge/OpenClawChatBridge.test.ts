@@ -385,6 +385,61 @@ test("explicit phone chat uses gateway session so session fast mode applies", as
   assert.equal(client.sent[0]?.thinking, "low");
 });
 
+test("gateway chat deltas are forwarded before the final message", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Write a streaming response"
+  });
+
+  const sessionKey = defaultSessionKey("pixel");
+  client.emit({
+    event: "chat",
+    payload: {
+      sessionKey,
+      runId: "run_1",
+      state: "delta",
+      delta: "Hel"
+    }
+  });
+  client.emit({
+    event: "chat",
+    payload: {
+      sessionKey,
+      runId: "run_1",
+      type: "message.delta",
+      data: { textDelta: "lo" }
+    }
+  });
+  client.emit({
+    event: "chat",
+    payload: {
+      sessionKey,
+      runId: "run_1",
+      state: "final",
+      message: "Hello"
+    }
+  });
+
+  assert.deepEqual(
+    chatMessages
+      .filter((message) => message.type === "chat.delta" || message.type === "chat.final")
+      .map((message) => {
+        if (message.type === "chat.delta") {
+          return { type: message.type, runId: message.runId, text: message.delta };
+        }
+        return { type: message.type, runId: message.runId, text: message.text };
+      }),
+    [
+      { type: "chat.delta", runId: "run_1", text: "Hel" },
+      { type: "chat.delta", runId: "run_1", text: "lo" },
+      { type: "chat.final", runId: "run_1", text: "Hello" }
+    ]
+  );
+});
+
 test("fast mode control command does not replace the active user run", async () => {
   const { bridge, chatMessages, client } = createHarness();
 

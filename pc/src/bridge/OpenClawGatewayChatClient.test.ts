@@ -188,6 +188,59 @@ test("mapGatewayChatEvent maps SDK assistant stream events", () => {
   );
 });
 
+test("mapGatewayChatEvent maps alternate assistant delta shapes", () => {
+  assert.deepEqual(
+    mapGatewayChatEvent("phone", {
+      type: "message.delta",
+      runId: "run1",
+      sessionKey: "agent:main:main",
+      data: { textDelta: "Hel" }
+    }),
+    {
+      type: "chat.delta",
+      deviceId: "phone",
+      sessionKey: "agent:main:main",
+      runId: "run1",
+      delta: "Hel",
+      replace: false
+    }
+  );
+
+  assert.deepEqual(
+    mapGatewayChatEvent("phone", {
+      type: "assistant.text_delta",
+      runId: "run1",
+      sessionKey: "agent:main:main",
+      payload: { contentDelta: [{ type: "text", text: "lo" }] }
+    }),
+    {
+      type: "chat.delta",
+      deviceId: "phone",
+      sessionKey: "agent:main:main",
+      runId: "run1",
+      delta: "lo",
+      replace: false
+    }
+  );
+
+  assert.deepEqual(
+    mapGatewayChatEvent("phone", {
+      type: "content.delta",
+      runId: "run1",
+      sessionKey: "agent:main:main",
+      data: { accumulated: "Hello" }
+    }),
+    {
+      type: "chat.delta",
+      deviceId: "phone",
+      sessionKey: "agent:main:main",
+      runId: "run1",
+      delta: "Hello",
+      replace: true
+    }
+  );
+});
+
 test("normalizers map Gateway model and session metadata", () => {
   assert.deepEqual(normalizeModels({
     models: [{

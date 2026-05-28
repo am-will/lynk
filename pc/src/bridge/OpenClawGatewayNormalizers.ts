@@ -54,13 +54,94 @@ export function extractGatewayText(value: unknown): string {
     return "";
   }
 
-  for (const key of ["text", "delta", "deltaText", "message", "content", "output", "result"]) {
+  for (const key of [
+    "text",
+    "delta",
+    "deltaText",
+    "textDelta",
+    "contentDelta",
+    "messageDelta",
+    "outputText",
+    "outputTextDelta",
+    "message",
+    "content",
+    "output",
+    "result",
+    "snapshot",
+    "accumulated",
+    "fullText"
+  ]) {
     const text = extractGatewayText(record[key]);
     if (text) {
       return text;
     }
   }
   return "";
+}
+
+function eventName(record: Record<string, unknown>, data: Record<string, unknown> | undefined): string {
+  return [
+    stringField(record, "type"),
+    stringField(record, "event"),
+    stringField(data, "type"),
+    stringField(data, "event")
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function isAssistantDeltaEvent(name: string): boolean {
+  if (!name || name.includes("tool") || name.includes("thinking") || name.includes("reasoning")) {
+    return false;
+  }
+  return [
+    "assistant.delta",
+    "assistant.text_delta",
+    "assistant.text.delta",
+    "message.delta",
+    "content.delta",
+    "text.delta",
+    "response.output_text.delta"
+  ].some((candidate) => name.includes(candidate));
+}
+
+function firstTextField(records: Array<Record<string, unknown> | undefined>, fields: string[]): string {
+  for (const record of records) {
+    for (const field of fields) {
+      const text = extractGatewayText(record?.[field]);
+      if (text) {
+        return text;
+      }
+    }
+  }
+  return "";
+}
+
+function assistantDeltaFromEvent(
+  record: Record<string, unknown>,
+  data: Record<string, unknown> | undefined,
+  name: string
+): { delta: string; replace: boolean } | undefined {
+  const replacement = firstTextField([data, record], ["snapshot", "accumulated", "fullText"]);
+  if (replacement) {
+    return { delta: replacement, replace: true };
+  }
+  const delta = firstTextField([data, record], [
+    "delta",
+    "textDelta",
+    "deltaText",
+    "contentDelta",
+    "messageDelta",
+    "outputTextDelta",
+    "text",
+    "message",
+    "content"
+  ]);
+  if (!delta) {
+    return undefined;
+  }
+  return {
+    delta,
+    replace: Boolean(record.replace ?? data?.replace) || name.includes("snapshot")
+  };
 }
 
 export function normalizeHistoryMessage(value: unknown): ChatHistoryMessage | undefined {
@@ -703,20 +784,24 @@ export function mapGatewayChatEvent(
   if (!record || !sessionKey || !runId) {
     return undefined;
   }
-  const eventType = stringField(record, "type");
-  if (eventType === "assistant.delta") {
-    const data = asRecord(record.data);
+  const data = asRecord(record.data) ?? asRecord(record.payload);
+  const normalizedEventName = eventName(record, data);
+  if (isAssistantDeltaEvent(normalizedEventName)) {
+    const delta = assistantDeltaFromEvent(record, data, normalizedEventName);
+    if (!delta) {
+      return undefined;
+    }
     return {
       type: "chat.delta",
       deviceId,
       sessionKey,
       runId,
-      delta: extractGatewayText(data?.delta ?? data?.text ?? record.data),
-      replace: false
+      delta: delta.delta,
+      replace: delta.replace
     };
   }
+  const eventType = stringField(record, "type");
   if (eventType === "assistant.message") {
-    const data = asRecord(record.data);
     const text = extractGatewayText(data?.message ?? data?.content ?? data?.text ?? record.data);
     if (!text.trim()) {
       return undefined;
