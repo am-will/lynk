@@ -88,6 +88,12 @@ interface RealtimeChatOptions {
   reasoningEffort?: string;
 }
 
+function sendAgentDebugLog(runId: string, hypothesisId: string, location: string, message: string, data: Record<string, unknown>): void {
+  // #region agent log
+  fetch('http://127.0.0.1:7837/ingest/4052aa84-fb93-478a-bce2-a86b2ed750c1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5e993b'},body:JSON.stringify({sessionId:'5e993b',runId,hypothesisId,location,message,data,timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+}
+
 function sameChatUserMessage(a: ChatHistoryMessage, b: ChatHistoryMessage): boolean {
   return a.role === "user" &&
     b.role === "user" &&
@@ -123,6 +129,9 @@ export class OpenClawChatBridge {
       sendTaskList: (deviceId) => this.sendTaskList(deviceId),
       sendSlashCommand: (deviceId, text, sessionKey, status, successMessage, options) =>
         this.sendSlashCommand(deviceId, text, sessionKey, status, successMessage, options),
+      patchSession: (deviceId, sessionKey, patch, status) =>
+        this.patchSession(deviceId, sessionKey, patch, status),
+      sendState: (deviceId, status) => this.sendState(deviceId, status),
       send: (message) => this.send(message)
     });
     this.fallbackSender = new OpenClawFallbackSender({
@@ -268,6 +277,17 @@ export class OpenClawChatBridge {
         attachments: attachments.length
       });
       this.sendPendingUserHistory(message.deviceId, state, result.sessionKey);
+      sendAgentDebugLog(result.runId, "H1,H3", "OpenClawChatBridge.ts:287", "Bridge tracked sent chat run", {
+        deviceId: message.deviceId,
+        requestedSessionKey: message.sessionKey ?? null,
+        stateSessionKey: state.sessionKey,
+        resultSessionKey: result.sessionKey,
+        sessionId: message.sessionId ?? state.sessionId ?? null,
+        pendingRunCount: state.pendingRuns.size,
+        pendingRunIds: [...state.pendingRuns.keys()],
+        userMessageLength: requestText.length,
+        delivery
+      });
       this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} is working`);
     } catch (error) {
       await this.handleSendFailure(message, state, idempotencyKey, taskKind, error);
@@ -309,6 +329,17 @@ export class OpenClawChatBridge {
     const state = this.stateFor(message.deviceId);
     const sessionKey = message.sessionKey ?? state.sessionKey;
     const runId = message.runId ?? state.runId ?? undefined;
+    const pendingBeforeStop = runId ? state.pendingRuns.get(runId) : undefined;
+    sendAgentDebugLog(runId ?? "stop-no-run", "H3,H4", "OpenClawChatBridge.ts:334", "Bridge stop requested", {
+      deviceId: message.deviceId,
+      requestedSessionKey: message.sessionKey ?? null,
+      stateSessionKey: state.sessionKey,
+      resolvedSessionKey: sessionKey,
+      stateRunId: state.runId ?? null,
+      resolvedRunId: runId ?? null,
+      pendingRunCount: state.pendingRuns.size,
+      pendingUserMessagePresent: Boolean(pendingBeforeStop?.userMessage)
+    });
     try {
       await this.client.abort(sessionKey, runId);
     } catch (error) {
@@ -325,6 +356,13 @@ export class OpenClawChatBridge {
       if (runId) {
         state.pendingRuns.delete(runId);
       }
+      sendAgentDebugLog(runId ?? "stop-no-run", "H3,H4", "OpenClawChatBridge.ts:354", "Bridge stop cleanup completed", {
+        deviceId: message.deviceId,
+        sessionKey,
+        runId: runId ?? null,
+        deletedPendingRun: Boolean(pendingBeforeStop),
+        pendingRunCountAfter: state.pendingRuns.size
+      });
       this.sendState(message.deviceId, "Stop requested");
       this.drainQueuedSends(message.deviceId);
     }
@@ -667,6 +705,15 @@ export class OpenClawChatBridge {
     state.fastMode = typeof record.fastMode === "boolean" ? record.fastMode : state.fastMode ?? null;
     state.verboseLevel = typeof record.verboseLevel === "string" ? record.verboseLevel : state.verboseLevel ?? null;
     const historyMessages = this.withPendingUserMessages(state, state.sessionKey, chatMessagesFromHistory(payload));
+    sendAgentDebugLog(state.runId ?? "history", "H2,H3,H5", "OpenClawChatBridge.ts:691", "Bridge sending history to device", {
+      deviceId,
+      sessionKey: state.sessionKey,
+      sessionId: state.sessionId ?? null,
+      historyMessageCount: historyMessages.length,
+      historyRoles: historyMessages.map((message) => message.role),
+      pendingRunCount: state.pendingRuns.size,
+      pendingRunIds: [...state.pendingRuns.keys()]
+    });
     this.sendChat(deviceId, {
       type: "chat.history",
       deviceId,
@@ -792,10 +839,10 @@ export class OpenClawChatBridge {
     });
   }
 
-  private async patchSession(deviceId: string, sessionKey: string, patch: Record<string, unknown>): Promise<void> {
+  private async patchSession(deviceId: string, sessionKey: string, patch: Record<string, unknown>, status = "Updated session"): Promise<void> {
     try {
       await this.client.patchSession(sessionKey, patch);
-      this.sendState(deviceId, "Updated session");
+      this.sendState(deviceId, status);
     } catch (error) {
       this.sendChatError(deviceId, sessionKey, error);
     }

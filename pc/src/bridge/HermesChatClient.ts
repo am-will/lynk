@@ -17,6 +17,12 @@ interface RemoteSessionObservation {
   latestRunId?: string;
 }
 
+function sendAgentDebugLog(runId: string, hypothesisId: string, location: string, message: string, data: Record<string, unknown>): void {
+  // #region agent log
+  fetch('http://127.0.0.1:7837/ingest/4052aa84-fb93-478a-bce2-a86b2ed750c1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'5e993b'},body:JSON.stringify({sessionId:'5e993b',runId,hypothesisId,location,message,data,timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
 }
@@ -74,6 +80,7 @@ export class HermesChatClient {
   private readonly handlers = new Set<GatewayEventHandler>();
   private readonly activeRuns = new Map<string, ActiveChatRun>();
   private readonly remoteSessionObservations = new Map<string, RemoteSessionObservation>();
+  private readonly debugDeltaRunIds = new Set<string>();
   private remoteSessionsInitialized = false;
 
   constructor(
@@ -108,13 +115,22 @@ export class HermesChatClient {
     const session = this.sessions.ensureSession(sessionKey);
     const payload = await this.api.listSessionMessages(session.sessionId).catch(() => undefined);
     const remoteMessages = normalizeHermesMessages(payload);
+    sendAgentDebugLog("history", "H1,H2", "HermesChatClient.ts:111", "Hermes history resolved", {
+      sessionKey,
+      sessionId: session.sessionId,
+      localMessageCount: local.messages.length,
+      remoteMessageCount: remoteMessages.length,
+      returnedSource: remoteMessages.length === 0 ? "local" : "remote",
+      localRoles: local.messages.map((message) => message.role),
+      remoteRoles: remoteMessages.map((message) => message.role)
+    });
     if (remoteMessages.length === 0) {
       return local;
     }
     return {
       ...local,
       sessionId: session.sessionId,
-      messages: remoteMessages
+      messages: mergeHermesHistory(local.messages, remoteMessages)
     };
   }
 
@@ -129,16 +145,39 @@ export class HermesChatClient {
     const session = this.sessions.ensureSession(options.sessionKey, options.sessionId);
     this.sessions.setThinkingLevel(session, options.thinking);
     this.sessions.appendUserMessage(session, options.message, options.idempotencyKey, options.attachments);
+    const instructions = hermesConversationInstructions(this.sessions.historyMessages(session).slice(0, -1));
 
     const active = await this.driver.createRun({
       input: options.message,
       sessionId: session.sessionId,
       model: session.model,
+      instructions,
       idempotencyKey: options.idempotencyKey,
-      attachments: options.attachments
+      attachments: options.attachments,
+      serviceTier: session.fastMode === true ? "priority" : null
     });
     const runId = active.runId;
     this.sessions.setActiveRun(session, runId);
+    sendAgentDebugLog(runId, "H1,H4", "HermesChatClient.ts:145", "Hermes run created for chat send", {
+      requestedSessionKey: options.sessionKey,
+      resolvedSessionKey: session.key,
+      requestedSessionId: options.sessionId ?? null,
+      resolvedSessionId: session.sessionId,
+      activeSessionId: active.sessionId,
+      localMessageCount: session.messages.length,
+      model: session.model ?? null,
+      inputLength: options.message.length,
+      hasAttachments: Boolean(options.attachments?.length),
+      serviceTier: session.fastMode === true ? "priority" : null
+    });
+    if (instructions) {
+      sendAgentDebugLog(runId, "H6", "HermesChatClient.ts:160", "Hermes contextual instructions prepared", {
+        sessionKey: session.key,
+        sessionId: session.sessionId,
+        contextMessageCount: this.sessions.historyMessages(session).slice(0, -1).length,
+        instructionLength: instructions.length
+      });
+    }
     this.activeRuns.set(runId, {
       sessionKey: session.key,
       active
@@ -153,8 +192,20 @@ export class HermesChatClient {
     }
     const active = this.activeRuns.get(runId);
     if (active) {
+      const session = this.sessions.ensureSession(active.sessionKey);
+      const partialAssistant = session.messages.find((message) => message.id === `assistant_${runId}`);
+      sendAgentDebugLog(runId, "H3,H4", "HermesChatClient.ts:174", "Hermes abort requested for active run", {
+        requestedSessionKey: _sessionKey,
+        activeSessionKey: active.sessionKey,
+        activeSessionId: active.active.sessionId,
+        localMessageCount: session.messages.length,
+        partialAssistantLength: partialAssistant?.text.length ?? 0
+      });
       await this.driver.stopRun(active.active);
     } else {
+      sendAgentDebugLog(runId, "H1,H3", "HermesChatClient.ts:184", "Hermes abort requested for untracked run", {
+        requestedSessionKey: _sessionKey
+      });
       await this.api.stopRun(runId);
     }
     this.emit("agent", {
@@ -181,7 +232,12 @@ export class HermesChatClient {
     }
     const session = this.sessions.ensureSession(active.sessionKey, options.sessionId);
     this.sessions.appendUserMessage(session, options.message, options.idempotencyKey, options.attachments);
-    await this.driver.steerRun(active.active, options.message, options.attachments);
+    await this.driver.steerRun(
+      active.active,
+      options.message,
+      options.attachments,
+      session.fastMode === true ? "priority" : null
+    );
     return { runId: active.active.runId, sessionKey: active.sessionKey };
   }
 
@@ -365,7 +421,22 @@ export class HermesChatClient {
         state: "final",
         message: finalText
       });
+      sendAgentDebugLog(runId, "H1,H4", "HermesChatClient.ts:395", "Hermes run finalized", {
+        sessionKey,
+        sessionId: session.sessionId,
+        finalLength: finalText.length,
+        localMessageCount: session.messages.length
+      });
     } catch (error) {
+      const partialAssistant = session.messages.find((message) => message.id === `assistant_${runId}`);
+      sendAgentDebugLog(runId, "H3,H4", "HermesChatClient.ts:403", "Hermes run processing ended with error or abort", {
+        sessionKey,
+        sessionId: session.sessionId,
+        aborted: active.controller.signal.aborted,
+        partialAssistantLength: partialAssistant?.text.length ?? 0,
+        localMessageCount: session.messages.length,
+        errorName: error instanceof Error ? error.name : typeof error
+      });
       if (!active.controller.signal.aborted) {
         this.emit("chat", {
           sessionKey,
@@ -396,6 +467,15 @@ export class HermesChatClient {
       return;
     }
     this.sessions.upsertAssistantMessage(session, runId, event.accumulated, { persist: false });
+    if (!this.debugDeltaRunIds.has(runId)) {
+      this.debugDeltaRunIds.add(runId);
+      sendAgentDebugLog(runId, "H4", "HermesChatClient.ts:431", "Hermes first assistant delta stored in memory", {
+        sessionKey: session.key,
+        sessionId: session.sessionId,
+        accumulatedLength: event.accumulated.length,
+        localMessageCount: session.messages.length
+      });
+    }
     this.emit("chat", {
       sessionKey: session.key,
       runId,
@@ -478,6 +558,68 @@ function normalizeHermesMessage(value: unknown): ChatHistoryMessage | undefined 
     text,
     timestamp: timestampMs(record.timestamp ?? record.created_at ?? record.updated_at)
   };
+}
+
+function mergeHermesHistory(localMessages: ChatHistoryMessage[], remoteMessages: ChatHistoryMessage[]): ChatHistoryMessage[] {
+  const merged = [...remoteMessages];
+  for (const message of localMessages) {
+    if (merged.some((existing) => sameHermesHistoryMessage(existing, message))) {
+      continue;
+    }
+    merged.push(message);
+  }
+  return merged.sort((left, right) => {
+    const leftTimestamp = left.timestamp ?? Number.MAX_SAFE_INTEGER;
+    const rightTimestamp = right.timestamp ?? Number.MAX_SAFE_INTEGER;
+    if (leftTimestamp !== rightTimestamp) {
+      return leftTimestamp - rightTimestamp;
+    }
+    return 0;
+  });
+}
+
+function sameHermesHistoryMessage(left: ChatHistoryMessage, right: ChatHistoryMessage): boolean {
+  if (left.id && right.id && left.id === right.id) {
+    return true;
+  }
+  return left.role === right.role &&
+    left.text === right.text &&
+    JSON.stringify(left.attachments ?? []) === JSON.stringify(right.attachments ?? []);
+}
+
+function hermesConversationInstructions(messages: ChatHistoryMessage[]): string | undefined {
+  const context = messages
+    .filter((message) => ["system", "user", "assistant"].includes(message.role.toLowerCase()) && message.text.trim())
+    .slice(-12)
+    .map((message) => `${hermesRoleLabel(message.role)}: ${message.text.trim()}`)
+    .join("\n\n")
+    .slice(-16_000)
+    .trim();
+  if (!context) {
+    return undefined;
+  }
+  return [
+    "Use this recent conversation context when answering the latest user request.",
+    "Do not repeat the context verbatim unless the user asks for it.",
+    "",
+    "<conversation_context>",
+    context,
+    "</conversation_context>"
+  ].join("\n");
+}
+
+function hermesRoleLabel(role: string): string {
+  const normalized = role.toLowerCase();
+  if (normalized === "user") {
+    return "User";
+  }
+  if (normalized === "assistant") {
+    return "Assistant";
+  }
+  if (normalized === "system") {
+    return "System";
+  }
+  return "Message";
 }
 
 function remoteSessionAdvanced(previous: RemoteSessionObservation | undefined, session: ChatSessionSummary): boolean {

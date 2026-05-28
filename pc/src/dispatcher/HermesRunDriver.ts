@@ -28,8 +28,10 @@ export class HermesRunDriver {
     input: string;
     sessionId: string;
     model?: string;
+    instructions?: string;
     idempotencyKey?: string;
     attachments?: ChatAttachment[];
+    serviceTier?: "priority" | null;
   }): Promise<HermesActiveRun> {
     const created = await this.api.createRun(options);
     return {
@@ -68,12 +70,13 @@ export class HermesRunDriver {
     await this.api.stopRun(active.runId);
   }
 
-  async steerRun(active: HermesActiveRun, text: string, attachments?: ChatAttachment[]): Promise<void> {
+  async steerRun(active: HermesActiveRun, text: string, attachments?: ChatAttachment[], serviceTier?: "priority" | null): Promise<void> {
     await this.api.createRun({
       input: `Additional user guidance for the active Hermes task:\n${text.trim()}`,
       sessionId: active.sessionId,
       idempotencyKey: `hermes-steer-${active.runId}-${Date.now()}`,
-      attachments
+      attachments,
+      serviceTier
     });
   }
 

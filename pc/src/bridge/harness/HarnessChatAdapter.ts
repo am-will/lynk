@@ -26,6 +26,7 @@ import {
 export interface HarnessChatHistory {
   sessionId?: string | null;
   thinkingLevel?: string | null;
+  fastMode?: boolean | null;
   messages: ChatHistoryMessage[];
 }
 
@@ -98,6 +99,7 @@ export class NormalizedHarnessAdapter implements HarnessChatAdapter {
     return {
       sessionId: stringField(record, "sessionId") ?? null,
       thinkingLevel: stringField(record, "thinkingLevel") ?? null,
+      fastMode: booleanField(record, "fastMode"),
       messages: chatMessagesFromHistory(payload)
     };
   }
@@ -174,4 +176,9 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 function stringField(record: Record<string, unknown> | undefined, key: string): string | undefined {
   const value = record?.[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function booleanField(record: Record<string, unknown> | undefined, key: string): boolean | null {
+  const value = record?.[key];
+  return typeof value === "boolean" ? value : null;
 }

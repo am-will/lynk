@@ -32,7 +32,7 @@ const config: BridgeConfig = {
 };
 
 class FakeHermesApiClient {
-  readonly createdRuns: Array<{ input: string; sessionId: string; idempotencyKey?: string; attachments?: ChatAttachment[] }> = [];
+  readonly createdRuns: Array<{ input: string; sessionId: string; instructions?: string; idempotencyKey?: string; attachments?: ChatAttachment[]; serviceTier?: "priority" | null }> = [];
   sessionsPayload: unknown = {
     sessions: [{
       session_id: "20260521_211022_1f4f0b",
@@ -78,7 +78,7 @@ class FakeHermesApiClient {
 
   async stopRun(): Promise<void> {}
 
-  async createRun(options: { input: string; sessionId: string; idempotencyKey?: string; attachments?: ChatAttachment[] }): Promise<{ runId: string; sessionId: string }> {
+  async createRun(options: { input: string; sessionId: string; instructions?: string; idempotencyKey?: string; attachments?: ChatAttachment[]; serviceTier?: "priority" | null }): Promise<{ runId: string; sessionId: string }> {
     this.createdRuns.push(options);
     return { runId: `steer_${this.createdRuns.length}`, sessionId: options.sessionId };
   }
@@ -124,6 +124,20 @@ test("Hermes history loads messages from dashboard API for selected sessions", a
   }]);
 });
 
+test("Hermes history keeps local messages missing from remote history", async () => {
+  const api = new FakeHermesApiClient();
+  const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
+
+  await client.sendChat({
+    sessionKey: "hermes:20260521_211022_1f4f0b",
+    message: "Unsynced prompt",
+    idempotencyKey: "run_1"
+  });
+  const payload = await client.history("hermes:20260521_211022_1f4f0b") as { messages: Array<Record<string, unknown>> };
+
+  assert.equal(payload.messages.at(-1)?.text, "Unsynced prompt");
+});
+
 test("Hermes forwards chat attachments to run creation", async () => {
   const api = new FakeHermesApiClient();
   const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
@@ -144,6 +158,41 @@ test("Hermes forwards chat attachments to run creation", async () => {
   });
 
   assert.deepEqual(api.createdRuns[0]?.attachments, [attachment]);
+});
+
+test("Hermes includes recent local context in follow-up run instructions", async () => {
+  const api = new FakeHermesApiClient();
+  const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
+
+  await client.sendChat({
+    sessionKey: "hermes:chat",
+    message: "Remember the word otter",
+    idempotencyKey: "run_1"
+  });
+  await client.sendChat({
+    sessionKey: "hermes:chat",
+    message: "What word did I ask you to remember?",
+    idempotencyKey: "run_2"
+  });
+
+  assert.equal(api.createdRuns[1]?.input, "What word did I ask you to remember?");
+  assert.match(api.createdRuns[1]?.instructions ?? "", /Remember the word otter/);
+});
+
+test("Hermes fast mode is stored on the session and forwarded to run creation", async () => {
+  const api = new FakeHermesApiClient();
+  const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
+
+  await client.patchSession("hermes:chat", { fastMode: true });
+  const sessions = await client.listSessions() as { sessions: Array<Record<string, unknown>> };
+  await client.sendChat({
+    sessionKey: "hermes:chat",
+    message: "Use fast mode",
+    idempotencyKey: "run_1"
+  });
+
+  assert.equal(sessions.sessions.find((session) => session.key === "hermes:chat")?.fastMode, true);
+  assert.equal(api.createdRuns[0]?.serviceTier, "priority");
 });
 
 test("Hermes session listing does not emit remote reply notifications", async () => {

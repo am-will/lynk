@@ -431,6 +431,45 @@ test("fast mode control command does not replace the active user run", async () 
   assert.equal(finalState?.isRunning, false);
 });
 
+test("Hermes fast mode control command patches session instead of sending slash prompt", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+  await bridge.selectSession({
+    type: "chat.select_session",
+    deviceId: "pixel",
+    sessionKey: "hermes:chat"
+  });
+  client.patched.length = 0;
+
+  await bridge.controlCommand({
+    type: "chat.control_command",
+    deviceId: "pixel",
+    command: "fast",
+    args: { enabled: true }
+  });
+
+  assert.equal(client.sent.length, 0);
+  assert.deepEqual(client.patched, [{
+    sessionKey: "hermes:chat",
+    patch: { fastMode: true }
+  }]);
+  const latestState = chatMessages.filter((message) => message.type === "chat.state").at(-1);
+  assert.equal(latestState?.sessionKey, "hermes:chat");
+  assert.equal(latestState?.fastMode, true);
+  assert.equal(latestState?.status, "Fast mode enabled");
+
+  client.patched.length = 0;
+  await bridge.controlCommand({
+    type: "chat.control_command",
+    deviceId: "pixel",
+    command: "/fast status",
+    args: {}
+  });
+
+  assert.equal(client.sent.length, 0);
+  assert.equal(client.patched.length, 0);
+  assert.equal(chatMessages.filter((message) => message.type === "chat.state").at(-1)?.status, "Fast mode enabled");
+});
+
 test("chat send forwards attachments to the gateway client", async () => {
   const { bridge, client } = createHarness();
   const attachment: ChatAttachment = {

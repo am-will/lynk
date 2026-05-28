@@ -20,6 +20,7 @@ export interface HarnessStoredSession {
   displayName?: string;
   model?: string;
   thinkingLevel?: string;
+  fastMode?: boolean | null;
   messages: HarnessStoredMessage[];
   updatedAt: number;
   activeRunId?: string | null;
@@ -70,6 +71,7 @@ export class InMemoryHarnessSessionStore {
     return {
       sessionId: session.sessionId,
       thinkingLevel: session.thinkingLevel,
+      fastMode: session.fastMode ?? null,
       messages: this.historyMessages(session)
     };
   }
@@ -88,6 +90,7 @@ export class InMemoryHarnessSessionStore {
         updatedAt: session.updatedAt,
         hasActiveRun: Boolean(session.activeRunId),
         thinkingLevel: session.thinkingLevel ?? null,
+        fastMode: session.fastMode ?? null,
         inputTokens: numberFromUsage(session.usage, "input_tokens", "inputTokens"),
         outputTokens: numberFromUsage(session.usage, "output_tokens", "outputTokens"),
         totalTokens: numberFromUsage(session.usage, "total_tokens", "totalTokens"),
@@ -118,6 +121,9 @@ export class InMemoryHarnessSessionStore {
     }
     if (typeof patch.thinking === "string" && patch.thinking.trim()) {
       session.thinkingLevel = patch.thinking.trim();
+    }
+    if (typeof patch.fastMode === "boolean") {
+      session.fastMode = patch.fastMode;
     }
     if (typeof patch.displayName === "string" && patch.displayName.trim()) {
       session.displayName = patch.displayName.trim();
@@ -283,6 +289,7 @@ function parseStoredSession(value: unknown, defaultModel: string): HarnessStored
     displayName: stringField(record, "displayName"),
     model: stringField(record, "model") ?? defaultModel,
     thinkingLevel: stringField(record, "thinkingLevel"),
+    fastMode: booleanField(record, "fastMode"),
     messages: parseStoredMessages(record?.messages),
     updatedAt: numberField(record, "updatedAt") ?? Date.now(),
     activeRunId: null,

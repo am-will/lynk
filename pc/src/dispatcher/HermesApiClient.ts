@@ -14,6 +14,7 @@ export interface HermesRunCreateOptions {
   instructions?: string;
   idempotencyKey?: string;
   attachments?: ChatAttachment[];
+  serviceTier?: "priority" | null;
 }
 
 export interface HermesRunCreateResult {
@@ -112,7 +113,8 @@ export class HermesApiClient {
         session_id: options.sessionId,
         model: options.model ?? this.config.model,
         ...(options.instructions ? { instructions: options.instructions } : {}),
-        ...(options.attachments?.length ? { attachments: options.attachments } : {})
+        ...(options.attachments?.length ? { attachments: options.attachments } : {}),
+        ...(options.serviceTier ? { service_tier: options.serviceTier } : {})
       })
     });
     const record = asRecord(payload);

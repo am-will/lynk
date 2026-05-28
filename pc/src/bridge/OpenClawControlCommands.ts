@@ -21,6 +21,8 @@ interface ControlCommandRouterOptions {
     successMessage?: string,
     options?: { ignoreRunEvents?: boolean }
   ): Promise<void>;
+  patchSession(deviceId: string, sessionKey: string, patch: Record<string, unknown>, status?: string): Promise<void>;
+  sendState(deviceId: string, status?: string): void;
   send(message: ChatSendMessage): Promise<void>;
 }
 
@@ -36,7 +38,7 @@ export class OpenClawControlCommandRouter {
     const normalized = command.startsWith("/") ? command.slice(1).trim() : command;
     const [rawName = "", ...parts] = normalized.split(/\s+/);
     const name = rawName.toLowerCase();
-    const firstArg = parts[0];
+    const firstArg = parts[0]?.toLowerCase();
 
     if (name === "new") {
       await this.options.newSession({
@@ -86,17 +88,32 @@ export class OpenClawControlCommandRouter {
     if (name === "fast") {
       const enabled = typeof message.args.enabled === "boolean"
         ? message.args.enabled
-        : firstArg === "off"
+        : firstArg === "off" || firstArg === "normal"
           ? false
-          : firstArg === "on"
+          : firstArg === "on" || firstArg === "fast"
             ? true
             : undefined;
+      if (firstArg === "status") {
+        this.options.sendState(message.deviceId, `Fast mode ${state.fastMode === true ? "enabled" : "disabled"}`);
+        return;
+      }
+      const nextEnabled = enabled ?? (state.fastMode !== true);
+      if (state.harnessId !== "openclaw") {
+        state.fastMode = nextEnabled;
+        await this.options.patchSession(
+          message.deviceId,
+          state.sessionKey,
+          { fastMode: nextEnabled },
+          `Fast mode ${nextEnabled ? "enabled" : "disabled"}`
+        );
+        return;
+      }
       await this.options.sendSlashCommand(
         message.deviceId,
-        `/fast ${enabled === false ? "off" : "on"}`,
+        `/fast ${nextEnabled ? "on" : "off"}`,
         state.sessionKey,
         "Updating fast mode",
-        `Fast mode ${enabled === false ? "disabled" : "enabled"}`,
+        `Fast mode ${nextEnabled ? "enabled" : "disabled"}`,
         { ignoreRunEvents: Boolean(state.runId) }
       );
       return;
