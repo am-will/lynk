@@ -29,13 +29,20 @@
 ## Commands
 
 - PC install: `cd pc && npm install`
+- PC host integration refresh: `cd pc && npm run host:refresh`
+- PC host pairing payload: `cd pc && npm run host:pairing`
+- PC host pairing QR: `cd pc && npm run host:pairing:qr`
+- PC host service plan: `cd pc && npm run host:service-plan`
+- PC host diagnostics: `cd pc && npm run host:diagnostics`
 - PC type check: `cd pc && npm run check`
 - PC build: `cd pc && npm run build`
 - PC tests: `cd pc && npm test`
 - PC bridge: `cd pc && npm run bridge` loads `pc/.env.local` via `tsx --env-file-if-exists`; shell env vars override it.
 - PC MCP server: `cd pc && npm run mcp`
+- Register available phone MCP integrations: `cd pc && npm run host:mcp`
 - Register phone MCP with OpenClaw: `cd pc && npm run openclaw:mcp`
 - Register phone MCP with Hermes: `cd pc && npm run hermes:mcp`
+- Register phone MCP with Codex: `cd pc && npm run codex:mcp`
 - Bridge health: `cd pc && npm run phone:health`
 - USB test setup: `cd pc && npm run phone:usb`
 - Tailscale pairing URL: `cd pc && npm run phone:tailscale`
@@ -47,8 +54,9 @@
 
 ## Runtime Configuration
 
-- `pc/.env.local` is gitignored and is the normal persistent PC config. `pc/.env.example` documents the shape.
-- Required bridge secret: `PHONE_AGENT_TOKEN`. Generate a strong value, save the exact same value in Android settings, and never commit real tokens.
+- The host bridge auto-creates a persistent config with a strong token on first run. Config paths are macOS `~/Library/Application Support/Android Agent Bridge/config.json`, Windows `%ProgramData%\\AndroidAgentBridge\\config.json`, and Linux `~/.config/android-agent-bridge/config.json`.
+- `pc/.env.local` is gitignored and is the normal development override file. `pc/.env.example` documents the shape. Shell env vars override both the persistent host config and `.env.local`.
+- Required bridge secret: `PHONE_AGENT_TOKEN` or the generated host config `phoneAgentToken`. Save the exact same value in Android settings or use `npm run host:pairing:qr`, and never commit real tokens.
 - Bridge defaults: `PHONE_AGENT_HOST=0.0.0.0`, `PHONE_AGENT_PORT=8788`, `PHONE_AGENT_DEFAULT_DEVICE=openclaw-agent`, `PHONE_AGENT_BRIDGE_URL=http://127.0.0.1:8788`.
 - OpenClaw Gateway chat defaults: `OPENCLAW_GATEWAY_URL=ws://127.0.0.1:18789`, `OPENCLAW_CHAT_AGENT_ID=main`, `OPENCLAW_CHAT_SESSION_KEY=agent:main:explicit:open-claw-agent`. Start Gateway with `openclaw gateway start`.
 - Gateway auth can come from `OPENCLAW_GATEWAY_TOKEN`, `OPENCLAW_GATEWAY_PASSWORD`, `OPENCLAW_CONFIG_PATH`, or `~/.openclaw/openclaw.json`.
@@ -74,7 +82,8 @@
 - Android registration is two-step. TCP/WS open is not connected. `PhoneWebSocketClient` marks `connected=true` only after an `agent_status` text that starts with `"Registered "`. The 5 s watchdog cancels and reconnects if that ack does not arrive. Preserve this behavior or update both ends together.
 - Token failure closes with `4001 invalid token`; Android backs off and tells the user to re-pair.
 - The bridge exposes `/health` without auth and protected `/api/*` routes with `Authorization: Bearer $PHONE_AGENT_TOKEN` or `X-Phone-Agent-Token: $PHONE_AGENT_TOKEN`.
-- Current protected routes include phones, audit recent/active, default phone command dispatch, legacy user request, pets, pet spritesheets, and agent stop. Keep tests updated when adding routes.
+- Current protected routes include phones, pairing, diagnostics, integrations, harness health/readiness, audit recent/active, default phone command dispatch, legacy user request, pets, pet spritesheets, and agent stop. Keep tests updated when adding routes.
+- Host bridge installer/source flows should use `npm run host:refresh` for integration discovery, `npm run host:pairing` or `npm run host:pairing:qr` for Android setup, `npm run host:service-plan` for source-checkout background startup instructions, and `npm run host:mcp` only for optional phone-control MCP registration.
 - For off-LAN use, expose only the phone-facing bridge through Tailscale. Keep OpenClaw Gateway, Hermes API, Codex app-server, and similar host-agent transports on localhost or trusted private networks; do not suggest public tunnels as the default.
 
 ## Code Quality Bar
@@ -104,4 +113,3 @@
 - Do not commit real secrets, LAN URLs, device IDs, saved Android API keys, or machine-specific config.
 - Do not regress Host mode while working on Local phone mode, do not regress one host harness while editing another, and do not force general agent tasks into phone-control prompts.
 - Update `docs/protocol.md` for message or command-shape changes, `docs/setup.md`/`docs/pairing.md` for setup changes, `docs/safety.md` for policy-path changes, and `docs/open-claw-migration-plan.md` for OpenClaw architecture changes until final architecture docs replace it.
-
