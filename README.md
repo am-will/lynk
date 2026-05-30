@@ -53,6 +53,7 @@ Context:
 - Lynk Bridge is the PC host bridge for the Lynk Android app.
 - It pairs Android to the PC over WebSocket, routes chat to host agents, can start at login, can print a QR pairing code, and can optionally register Android phone-control MCP tools for OpenClaw, Hermes, or Codex.
 - Prefer the npm package install path: npm package name is lynk-bridge.
+- Android app package id is app.lynk. Play Console currently shows it as a Draft app on Internal testing with Production inactive. The public package URL will be https://play.google.com/store/apps/details?id=app.lynk once the listing is published.
 - If npm install is unavailable, use the source checkout fallback from the Lynk repository:
   https://github.com/am-will/lynk
   In a local checkout, the bridge package lives in the pc/ directory.
@@ -61,6 +62,7 @@ First ask the user:
 1. Do you want Android phone control enabled for host agents? If yes, configure MCP after the bridge is installed.
 2. Will you pair over Tailscale/off-LAN, or local Wi-Fi/USB?
 3. Do you want the QR code displayed now? If yes, run the QR command and show the QR output to the user.
+4. Do you want a fully assisted USB setup? If yes, help them prepare ADB/USB debugging and then complete setup end to end.
 
 Install using npm by default:
 1. Confirm Node.js 24+ and npm are installed.
@@ -95,11 +97,29 @@ If the user is using Tailscale:
 
 Help the user get connected:
 1. Make sure the bridge service is running.
-2. Make sure Android has the Lynk app installed.
+2. Make sure Android has the Lynk app installed. If the public Play Store listing is not live, use the source-built APK or the Play Console internal testing path. The public package URL will be https://play.google.com/store/apps/details?id=app.lynk once published.
 3. Have the user scan the QR code, or manually enter the WebSocket URL, device ID, and token from the pairing payload.
 4. Ask the user to start the Lynk bubble on Android.
 5. Verify the phone registered by checking bridge health or diagnostics.
 6. If the phone does not connect, check firewall/local-network permissions, Tailscale ACLs if applicable, and whether the bridge is listening on TCP port 8788.
+
+If the user wants fully assisted USB setup:
+1. Install Android platform tools / adb if missing.
+2. Ask the user to enable Developer options on Android:
+   - Settings > About phone > tap Build number 7 times.
+3. Ask the user to enable USB debugging:
+   - Settings > System > Developer options > USB debugging.
+4. Ask the user to plug the phone into the computer over USB, unlock it, and accept the "Allow USB debugging?" RSA prompt.
+5. Verify the device is connected with: adb devices
+6. If the device shows unauthorized, ask the user to accept the prompt on the phone, then rerun adb devices.
+7. Install Lynk from the public Play Store only if the listing is live. Otherwise use the Play Console internal testing path or, if working from a source checkout and a debug APK is available, install it with:
+   adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+8. Set up USB reverse port forwarding:
+   adb reverse tcp:8788 tcp:8788
+   In a source checkout, npm run phone:usb also does this and launches the app.
+9. Pair using the loopback endpoint ws://127.0.0.1:8788/phone plus the device ID and token from the pairing payload, or show the QR if requested.
+10. Tell the user if Android requires manual approval for overlay permission, Accessibility permission, restricted settings, notification permission, or battery optimization. Do not claim these can always be granted silently.
+11. Verify connection by checking bridge health or diagnostics. The phone should appear in the registered devices list.
 
 Expected result:
 - Lynk Bridge is installed.
@@ -108,6 +128,7 @@ Expected result:
 - Android can connect to the bridge.
 - Optional phone-control MCP tools are installed only if the user requested them.
 - Tailscale pairing is configured if the user chose Tailscale.
+- Fully assisted USB setup works when the user has enabled USB debugging, trusted the computer, and completed any Android-only permission prompts.
 ```
 
 ### npm package
@@ -288,6 +309,14 @@ The listener should show `*:8788` or `0.0.0.0:8788`.
 
 ## Install The Android App
 
+Play Store package-id URL, once the listing is published:
+
+```text
+https://play.google.com/store/apps/details?id=app.lynk
+```
+
+Current Play Console status checked on May 30, 2026: `app.lynk` is a Draft app on Internal testing, Production inactive. Until it is published or available to your tester account, install from the source-built APK or the Play Console internal testing flow.
+
 Build and install from `android/` with Android Studio or Gradle:
 
 ```bash
@@ -310,6 +339,30 @@ On Android, either scan the pairing QR or set these fields manually:
 - Token: the pairing `token` value.
 
 Grant overlay permission, start the bubble, and grant Accessibility only when you want Lynk or a host agent to observe/control the phone.
+
+### Fully Assisted USB Setup
+
+If you want an agent to set up the bridge end to end with minimal manual steps, prepare the phone for ADB first:
+
+1. Install Android platform tools / ADB on the computer.
+2. On Android, enable Developer options: **Settings > About phone**, then tap **Build number** 7 times.
+3. Enable **USB debugging** in **Settings > System > Developer options**.
+4. Plug the phone into the computer over USB.
+5. Unlock the phone and accept the **Allow USB debugging?** RSA prompt.
+6. Ask your coding agent to install and configure Lynk Bridge end to end.
+
+The agent can then:
+
+- Verify the device with `adb devices`.
+- Install the APK if working from a source checkout and a debug build exists.
+- Run `adb reverse tcp:8788 tcp:8788` or `cd pc && npm run phone:usb`.
+- Start or verify the bridge service.
+- Print or display the pairing QR.
+- Help pair Android using `ws://127.0.0.1:8788/phone`.
+- Configure optional MCP phone-control tools if you opted in.
+- Verify the phone registered with bridge health or diagnostics.
+
+Android may still require user approval for overlay permission, Accessibility, restricted settings, notifications, battery optimization, and the USB debugging trust prompt. Those prompts are OS-controlled and should be completed on the phone.
 
 ## Backend Notes
 
