@@ -326,14 +326,6 @@ Internal testing opt-in URL:
 https://play.google.com/apps/internaltest/4701424159971104219
 ```
 
-Play Store package-id URL, once the production listing is published:
-
-```text
-https://play.google.com/store/apps/details?id=app.lynk
-```
-
-Current Play Console status checked on May 30, 2026: `app.lynk` has internal testing release `2 (0.1.1)` available to internal testers, with Production inactive. Testers must join the `lynk-android-testers` Google Group before the opt-in link will work for their Google account.
-
 Build and install from `android/` with Android Studio or Gradle:
 
 ```bash
