@@ -1,8 +1,6 @@
 # Lynk
 
-<video src="docs/assets/lynk.mp4" controls width="100%"></video>
-
-[Watch the promo video](docs/assets/lynk.mp4)
+![Lynk promo video](docs/assets/lynk-demo.gif)
 
 Lynk turns an Android phone into a persistent chat and voice endpoint for AI agents running on your computer. The Android app is the bubble, notification, voice, and optional phone-control surface. The PC bridge is the local companion that pairs the phone, routes chat to host agents, starts realtime voice sessions, and exposes Android tools when a selected agent needs to touch the phone.
 
