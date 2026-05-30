@@ -1,5 +1,9 @@
 # Lynk
 
+<video src="docs/assets/lynk.mp4" controls width="100%"></video>
+
+[Watch the promo video](docs/assets/lynk.mp4)
+
 Lynk turns an Android phone into a persistent chat and voice endpoint for AI agents running on your computer. The Android app is the bubble, notification, voice, and optional phone-control surface. The PC bridge is the local companion that pairs the phone, routes chat to host agents, starts realtime voice sessions, and exposes Android tools when a selected agent needs to touch the phone.
 
 This is not just an OpenClaw remote. Host mode can route to **OpenClaw**, **Hermes**, or **Codex** from the same Android model picker. Local phone mode can run an imported **LiteRT-LM** model on-device and use Android/local app-private tools without a PC agent for every request.
@@ -53,7 +57,8 @@ Context:
 - Lynk Bridge is the PC host bridge for the Lynk Android app.
 - It pairs Android to the PC over WebSocket, routes chat to host agents, can start at login, can print a QR pairing code, and can optionally register Android phone-control MCP tools for OpenClaw, Hermes, or Codex.
 - Prefer the npm package install path: npm package name is lynk-bridge.
-- Android app package id is app.lynk. Current internal testing opt-in URL: https://play.google.com/apps/internaltest/4701424159971104219
+- Android app package id is app.lynk. Testers must join the Google Group first: https://groups.google.com/g/lynk-android-testers
+- After joining the group, testers can opt in with: https://play.google.com/apps/internaltest/4701424159971104219
 - If npm install is unavailable, use the source checkout fallback from the Lynk repository:
   https://github.com/am-will/lynk
   In a local checkout, the bridge package lives in the pc/ directory.
@@ -97,7 +102,7 @@ If the user is using Tailscale:
 
 Help the user get connected:
 1. Make sure the bridge service is running.
-2. Make sure Android has the Lynk app installed. For testers, use the internal testing opt-in URL: https://play.google.com/apps/internaltest/4701424159971104219
+2. Make sure Android has the Lynk app installed. For testers, first join https://groups.google.com/g/lynk-android-testers, then opt in with https://play.google.com/apps/internaltest/4701424159971104219
 3. Have the user scan the QR code, or manually enter the WebSocket URL, device ID, and token from the pairing payload.
 4. Ask the user to start the Lynk bubble on Android.
 5. Verify the phone registered by checking bridge health or diagnostics.
@@ -112,7 +117,7 @@ If the user wants fully assisted USB setup:
 4. Ask the user to plug the phone into the computer over USB, unlock it, and accept the "Allow USB debugging?" RSA prompt.
 5. Verify the device is connected with: adb devices
 6. If the device shows unauthorized, ask the user to accept the prompt on the phone, then rerun adb devices.
-7. Install Lynk from the internal testing opt-in URL, or if working from a source checkout and a debug APK is available, install it with:
+7. Install Lynk from the internal testing opt-in URL after joining the tester group, or if working from a source checkout and a debug APK is available, install it with:
    adb install -r android/app/build/outputs/apk/debug/app-debug.apk
 8. Set up USB reverse port forwarding:
    adb reverse tcp:8788 tcp:8788
@@ -309,6 +314,12 @@ The listener should show `*:8788` or `0.0.0.0:8788`.
 
 ## Install The Android App
 
+Tester Google Group:
+
+```text
+https://groups.google.com/g/lynk-android-testers
+```
+
 Internal testing opt-in URL:
 
 ```text
@@ -321,7 +332,7 @@ Play Store package-id URL, once the production listing is published:
 https://play.google.com/store/apps/details?id=app.lynk
 ```
 
-Current Play Console status checked on May 30, 2026: `app.lynk` has internal testing release `2 (0.1.1)` available to internal testers, with Production inactive. Testers must be added to the selected internal testing email list before the opt-in link will work for their Google account.
+Current Play Console status checked on May 30, 2026: `app.lynk` has internal testing release `2 (0.1.1)` available to internal testers, with Production inactive. Testers must join the `lynk-android-testers` Google Group before the opt-in link will work for their Google account.
 
 Build and install from `android/` with Android Studio or Gradle:
 
