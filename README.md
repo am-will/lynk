@@ -162,6 +162,8 @@ Optional phone-control MCP registration:
 lynk-bridge-host mcp
 ```
 
+For best phone-control results, also install the Android control skill in the coding agent you use with Lynk. The MCP registration gives the agent tool access; the Android control skill gives the agent the operating instructions for using those tools well.
+
 Manual service controls:
 
 ```bash
@@ -345,7 +347,7 @@ On Android, either scan the pairing QR or set these fields manually:
 - Device ID: `openclaw-agent` unless you changed `PHONE_AGENT_DEFAULT_DEVICE`.
 - Token: the pairing `token` value.
 
-Grant overlay permission, start the bubble, and grant Accessibility only when you want Lynk or a host agent to observe/control the phone.
+Grant overlay permission, start the bubble, and grant Accessibility only when you want Lynk or a host agent to observe/control the phone. For best results with phone control, also install the Android control skill in your coding agent after registering the MCP tools.
 
 ### Fully Assisted USB Setup
 
