@@ -38,11 +38,15 @@
     "host:refresh": "tsx --env-file-if-exists=.env.local src/host/cli.ts refresh",
     "host:mcp": "tsx --env-file-if-exists=.env.local src/host/cli.ts mcp",
     "host:service-plan": "tsx --env-file-if-exists=.env.local src/host/cli.ts service-plan",
+    "host:install-service": "tsx --env-file-if-exists=.env.local src/host/cli.ts install-service",
+    "host:uninstall-service": "tsx --env-file-if-exists=.env.local src/host/cli.ts uninstall-service",
+    "host:service-status": "tsx --env-file-if-exists=.env.local src/host/cli.ts service-status",
     "host:diagnostics": "tsx --env-file-if-exists=.env.local src/host/cli.ts diagnostics",
     "demo:open-settings": "tsx --env-file-if-exists=.env.local src/scripts/sendCommand.ts open_app '{\"appName\":\"Settings\"}'",
     "demo:agent": "tsx --env-file-if-exists=.env.local src/scripts/sendUserRequest.ts",
     "codex:schemas": "codex app-server generate-ts --out src/generated/codex-app-server",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "postinstall": "node -e \"const fs=require('node:fs'); const global=process.env.npm_config_global==='true'||process.env.npm_config_location==='global'||process.env.LYNK_BRIDGE_INSTALL_SERVICE==='1'; if(global && process.env.LYNK_BRIDGE_SKIP_SERVICE_INSTALL!=='1' && fs.existsSync('./dist/host/npmPostinstall.js')) import('./dist/host/npmPostinstall.js');\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.22.0",

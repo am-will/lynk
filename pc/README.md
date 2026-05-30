@@ -6,21 +6,29 @@
 
 ```bash
 npm install -g lynk-bridge
-lynk-bridge-host refresh
-lynk-bridge
 ```
 
-In another terminal:
+Global install creates or preserves the host config, refreshes local integrations, and registers the bridge to start at login. Check it with:
 
 ```bash
+lynk-bridge-host service-status
+lynk-bridge-host diagnostics
+```
+
+Pair Android with:
+
+```bash
+lynk-bridge-host pairing
 lynk-bridge-host pairing --qr
 ```
 
 Optional commands:
 
 ```bash
+lynk-bridge-host refresh
 lynk-bridge-host mcp
-lynk-bridge-host diagnostics
+lynk-bridge-host install-service
+lynk-bridge-host uninstall-service
 lynk-bridge-mcp
 ```
 

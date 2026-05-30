@@ -48,11 +48,16 @@ The bridge package is intended to install as `lynk-bridge`:
 
 ```bash
 npm install -g lynk-bridge
-lynk-bridge-host refresh
-lynk-bridge
 ```
 
-In another terminal, print a pairing payload or QR:
+Global npm install provisions the bridge for normal use: it creates or preserves the host config, refreshes local integration discovery, and registers the bridge to start at login. Check startup and diagnostics with:
+
+```bash
+lynk-bridge-host service-status
+lynk-bridge-host diagnostics
+```
+
+Print a pairing payload or QR:
 
 ```bash
 lynk-bridge-host pairing
@@ -65,10 +70,11 @@ Optional phone-control MCP registration:
 lynk-bridge-host mcp
 ```
 
-Diagnostics:
+Manual service controls:
 
 ```bash
-lynk-bridge-host diagnostics
+lynk-bridge-host install-service
+lynk-bridge-host uninstall-service
 ```
 
 ### Source checkout
@@ -95,10 +101,11 @@ For background startup from a source checkout:
 ```bash
 cd pc
 npm run build
-npm run host:service-plan
+npm run host:install-service
+npm run host:service-status
 ```
 
-Packaged installer scaffolding lives in `pc/installers/`. A finished installer should copy the built bridge bundle, run host refresh once, register the bridge at login, preserve the generated config, and show the pairing QR.
+Use `npm run host:service-plan` if you need to inspect the exact OS-specific commands instead of applying them. Packaged installer scaffolding lives in `pc/installers/`; installers copy the built bridge bundle, run host refresh, register the bridge at login, preserve the generated config, and print the pairing QR. Set `LYNK_BRIDGE_CONFIGURE_MCP=1` during install to also configure available phone-control MCP integrations.
 
 ## Bridge Config
 

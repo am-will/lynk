@@ -31,12 +31,15 @@
 - PC install: `cd pc && npm install`
 - Global bridge install after npm publish: `npm install -g lynk-bridge`
 - Global bridge command: `lynk-bridge`
-- Global host CLI: `lynk-bridge-host pairing --qr`, `lynk-bridge-host refresh`, `lynk-bridge-host mcp`, `lynk-bridge-host diagnostics`
+- Global host CLI: `lynk-bridge-host pairing --qr`, `lynk-bridge-host refresh`, `lynk-bridge-host mcp`, `lynk-bridge-host install-service`, `lynk-bridge-host uninstall-service`, `lynk-bridge-host service-status`, `lynk-bridge-host diagnostics`
 - Global MCP server command: `lynk-bridge-mcp`
 - PC host integration refresh: `cd pc && npm run host:refresh`
 - PC host pairing payload: `cd pc && npm run host:pairing`
 - PC host pairing QR: `cd pc && npm run host:pairing:qr`
 - PC host service plan: `cd pc && npm run host:service-plan`
+- PC host install/startup service: `cd pc && npm run host:install-service`
+- PC host uninstall startup service: `cd pc && npm run host:uninstall-service`
+- PC host service status: `cd pc && npm run host:service-status`
 - PC host diagnostics: `cd pc && npm run host:diagnostics`
 - PC type check: `cd pc && npm run check`
 - PC build: `cd pc && npm run build`
@@ -55,7 +58,7 @@
 - Legacy Codex schemas: `cd pc && npm run codex:schemas`
 - Android build/test from repo root when Gradle is available: `cd android && ./gradlew :app:assembleDebug :app:testDebugUnitTest`
 - Android Studio remains acceptable for build/install/debug because local Gradle availability can vary.
-- npm package metadata for the host bridge lives in `pc/package.json`; keep it publishable as `lynk-bridge` with Node 24+ engines, built `dist/` files, installer scaffolding, and bin entries for bridge, host CLI, and MCP server.
+- npm package metadata for the host bridge lives in `pc/package.json`; keep it publishable as `lynk-bridge` with Node 24+ engines, built `dist/` files, installer scaffolding, bin entries for bridge/host CLI/MCP server, and a guarded global-install `postinstall` that registers the bridge to start at login.
 
 ## Runtime Configuration
 
@@ -88,7 +91,7 @@
 - Token failure closes with `4001 invalid token`; Android backs off and tells the user to re-pair.
 - The bridge exposes `/health` without auth and protected `/api/*` routes with `Authorization: Bearer $PHONE_AGENT_TOKEN` or `X-Phone-Agent-Token: $PHONE_AGENT_TOKEN`.
 - Current protected routes include phones, pairing, diagnostics, integrations, harness health/readiness, audit recent/active, default phone command dispatch, legacy user request, pets, pet spritesheets, and agent stop. Keep tests updated when adding routes.
-- Host bridge installer/source flows should use `npm run host:refresh` for integration discovery, `npm run host:pairing` or `npm run host:pairing:qr` for Android setup, `npm run host:service-plan` for source-checkout background startup instructions, and `npm run host:mcp` only for optional phone-control MCP registration.
+- Host bridge installer/source flows should use `npm run host:refresh` for integration discovery, `npm run host:install-service` to register/start the bridge at login, `npm run host:service-status` to verify startup, `npm run host:pairing` or `npm run host:pairing:qr` for Android setup, `npm run host:service-plan` only when showing commands instead of applying them, and `npm run host:mcp` only for optional phone-control MCP registration.
 - For off-LAN use, expose only the phone-facing bridge through Tailscale. Keep OpenClaw Gateway, Hermes API, Codex app-server, and similar host-agent transports on localhost or trusted private networks; do not suggest public tunnels as the default.
 
 ## Code Quality Bar

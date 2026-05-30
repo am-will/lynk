@@ -3,7 +3,7 @@ import { getBridgeConfig } from "../bridge/config.js";
 import { buildDiagnosticsBundle } from "./Diagnostics.js";
 import { createHostPairingPayload } from "./PairingPayload.js";
 import { refreshHostIntegrations } from "./IntegrationManager.js";
-import { serviceInstallPlan } from "./ServiceManager.js";
+import { hostServiceStatus, installHostService, serviceInstallPlan, uninstallHostService } from "./ServiceManager.js";
 
 const command = process.argv[2]?.trim() || "help";
 
@@ -28,6 +28,15 @@ switch (command) {
   case "service-plan":
     console.log(JSON.stringify(serviceInstallPlan(), null, 2));
     break;
+  case "install-service":
+    console.log(JSON.stringify(await installHostService(), null, 2));
+    break;
+  case "uninstall-service":
+    console.log(JSON.stringify(await uninstallHostService(), null, 2));
+    break;
+  case "service-status":
+    console.log(JSON.stringify(await hostServiceStatus(), null, 2));
+    break;
   case "diagnostics":
     console.log(JSON.stringify(await buildDiagnosticsBundle(), null, 2));
     break;
@@ -41,6 +50,9 @@ switch (command) {
       "  refresh        Rescan OpenClaw, Hermes, Codex, Tailscale, and ADB",
       "  mcp            Install or update optional phone-control MCP registrations",
       "  service-plan   Print OS-specific service installation commands",
+      "  install-service Register and start the bridge at login",
+      "  uninstall-service Remove the bridge login service",
+      "  service-status Show whether the bridge login service is registered/running",
       "  diagnostics    Print a redacted diagnostics bundle",
       "",
       "Options:",
