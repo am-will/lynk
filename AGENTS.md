@@ -2,7 +2,7 @@
 
 ## Product Shape
 
-- This repo is currently **Android Agent**: an Android bubble/chat/voice endpoint that can route work to host-side agents or an on-device local model. Do not describe the product as OpenClaw-only even though many classes and docs still carry OpenClaw migration names.
+- This repo is currently **Lynk**: an Android bubble/chat/voice endpoint that can route work to host-side agents or an on-device local model. Do not describe the product as OpenAgent or OpenClaw-only even though many classes and docs still carry older migration names.
 - The supported backends are **OpenClaw**, **Hermes**, **Codex**, and **Local LiteRT-LM**. Android phone control is an optional tool target across these paths, not the default purpose of every request.
 - The app has two user modes:
   - **Host bridge**: Android connects to the PC bridge over `/phone`; the bridge exposes a harness router for OpenClaw, Hermes, and Codex chat sessions.
@@ -29,6 +29,10 @@
 ## Commands
 
 - PC install: `cd pc && npm install`
+- Global bridge install after npm publish: `npm install -g lynk-bridge`
+- Global bridge command: `lynk-bridge`
+- Global host CLI: `lynk-bridge-host pairing --qr`, `lynk-bridge-host refresh`, `lynk-bridge-host mcp`, `lynk-bridge-host diagnostics`
+- Global MCP server command: `lynk-bridge-mcp`
 - PC host integration refresh: `cd pc && npm run host:refresh`
 - PC host pairing payload: `cd pc && npm run host:pairing`
 - PC host pairing QR: `cd pc && npm run host:pairing:qr`
@@ -51,6 +55,7 @@
 - Legacy Codex schemas: `cd pc && npm run codex:schemas`
 - Android build/test from repo root when Gradle is available: `cd android && ./gradlew :app:assembleDebug :app:testDebugUnitTest`
 - Android Studio remains acceptable for build/install/debug because local Gradle availability can vary.
+- npm package metadata for the host bridge lives in `pc/package.json`; keep it publishable as `lynk-bridge` with Node 24+ engines, built `dist/` files, installer scaffolding, and bin entries for bridge, host CLI, and MCP server.
 
 ## Runtime Configuration
 

@@ -1,28 +1,79 @@
-# OpenAgent
+# Lynk
 
-OpenAgent is an Android bubble/chat/voice endpoint for delegating work to host-side agents or an on-device LiteRT-LM model. The phone app is the always-available surface; Host mode routes through the PC bridge to OpenClaw, Hermes, or Codex, while Local phone mode can chat and call Android/local tools directly on the device.
+Lynk turns an Android phone into a persistent chat and voice endpoint for AI agents running on your computer. The Android app is the bubble, notification, voice, and optional phone-control surface. The PC bridge is the local companion that pairs the phone, routes chat to host agents, starts realtime voice sessions, and exposes Android tools when a selected agent needs to touch the phone.
 
-Target control loop:
+This is not just an OpenClaw remote. Host mode can route to **OpenClaw**, **Hermes**, or **Codex** from the same Android model picker. Local phone mode can run an imported **LiteRT-LM** model on-device and use Android/local app-private tools without a PC agent for every request.
 
-1. Android overlay bubble sends a text request to the PC bridge over WebSocket.
-2. The bridge routes the request to the selected host harness as a general delegated task.
-3. OpenClaw, Hermes, or Codex handles the work on the remote PC and streams status/results back to the bubble.
-4. If the task needs Android interaction, the host agent can call the phone-control tools exposed by the bridge.
-5. Android executes those optional phone commands with `AccessibilityService` and returns observations.
+## How It Works
 
-Current prototype note: OpenClaw is the default host harness and has the most Gateway-specific code, but Hermes and Codex are supported host harnesses. Generated Codex schemas are local/gitignored inspection output only.
+1. The Android app connects to the PC bridge over `/phone`.
+2. The bridge registers the phone, sends available host/local model metadata, and receives `chat.*` and `realtime.*` events.
+3. The selected backend handles the request:
+   - OpenClaw through the Gateway-backed host harness.
+   - Hermes through its API harness when configured.
+   - Codex through the bundled app-server harness when configured.
+   - Local LiteRT-LM directly on Android when a `.litertlm` model is imported.
+4. Replies, tool activity, status, usage, session history, and errors stream back to the Android timeline.
+5. Phone-control tools are optional. When enabled, host agents can call the bridge MCP server and Lynk executes Android accessibility commands on the paired device.
 
-## Host and Local Modes
+## Dependencies
 
-- **Host bridge** is the default mode. Android connects to the PC bridge over LAN, USB reverse, or Tailscale and uses the selected OpenClaw, Hermes, or Codex harness on the host.
-- **Local phone** runs a `.litertlm` model through LiteRT-LM on Android. Import the model from **Connection & Config**, choose CPU/GPU/NPU, then switch **Run on** to **Local phone**.
-- Local mode reuses the Android accessibility tools and adds app-private workspace tools. Full shell/git/build execution requires a future Termux helper, so keep Host mode for mature desktop/coding workflows.
+Required for the host bridge:
 
-## Install The Host Bridge
+- Node.js 24+ and npm.
+- Network reachability from Android to the bridge: same LAN, USB reverse via ADB, or Tailscale.
+- At least one host backend for Host mode:
+  - OpenClaw CLI/Gateway for the default OpenClaw harness.
+  - Hermes API access plus `HERMES_API_KEY` for Hermes.
+  - Codex CLI with `codex app-server` for Codex.
 
-The bridge can be run directly from this checkout today. Packaged installer scaffolding lives in `pc/installers/` and is documented in `docs/host-installer.md`; a finished platform installer should copy the built bridge bundle, run the host refresh command once, register the bridge at login, preserve the generated config, then show the pairing QR.
+Required for the Android app:
 
-From a source checkout:
+- Android Studio or the Gradle wrapper in `android/`.
+- Android SDK platform tools if using ADB install, USB reverse, or debug workflows.
+- A physical Android device with overlay permission. Accessibility permission is required only for screen observation and phone-control tools.
+
+Optional:
+
+- Tailscale for off-LAN pairing without exposing the bridge publicly.
+- OpenAI API key for realtime voice and bridge-side web search.
+- A `.litertlm` model file for Local phone mode.
+- MCP registration if you want OpenClaw, Hermes, or Codex to call Android phone tools.
+
+## Install The Bridge
+
+### npm package
+
+The bridge package is intended to install as `lynk-bridge`:
+
+```bash
+npm install -g lynk-bridge
+lynk-bridge-host refresh
+lynk-bridge
+```
+
+In another terminal, print a pairing payload or QR:
+
+```bash
+lynk-bridge-host pairing
+lynk-bridge-host pairing --qr
+```
+
+Optional phone-control MCP registration:
+
+```bash
+lynk-bridge-host mcp
+```
+
+Diagnostics:
+
+```bash
+lynk-bridge-host diagnostics
+```
+
+### Source checkout
+
+Until the npm package is published, run the same bridge from this repo:
 
 ```bash
 cd pc
@@ -31,15 +82,7 @@ npm run host:refresh
 npm run bridge
 ```
 
-On first run, the bridge creates a persistent config file with a strong token:
-
-- macOS: `~/Library/Application Support/Android Agent Bridge/config.json`
-- Windows: `%ProgramData%\AndroidAgentBridge\config.json`
-- Linux: `~/.config/android-agent-bridge/config.json`
-
-Environment variables and `pc/.env.local` still override that config for development. Copy `pc/.env.example` to `pc/.env.local` only when you need explicit local overrides such as a non-default port, OpenClaw Gateway auth, Hermes API settings, Codex app-server settings, or an OpenAI key for realtime voice.
-
-With the bridge running, print a pairing payload or QR in another terminal:
+In another terminal:
 
 ```bash
 cd pc
@@ -47,9 +90,7 @@ npm run host:pairing
 npm run host:pairing:qr
 ```
 
-The QR/deep link includes the generated token, device ID, and ordered endpoint candidates for USB reverse, Tailscale, LAN, and loopback. Manual pairing remains available in Android settings if the QR flow is not available.
-
-For source-checkout background startup, build first and inspect the OS-specific service plan:
+For background startup from a source checkout:
 
 ```bash
 cd pc
@@ -57,39 +98,51 @@ npm run build
 npm run host:service-plan
 ```
 
-The scripts under `pc/installers/` perform the same service registration for packaged installs after the bundle has been copied into its platform app directory.
+Packaged installer scaffolding lives in `pc/installers/`. A finished installer should copy the built bridge bundle, run host refresh once, register the bridge at login, preserve the generated config, and show the pairing QR.
 
-Phone-control MCP registration is optional. Run this later if you want installed OpenClaw, Hermes, or Codex agents to call Android phone tools through the bridge:
+## Bridge Config
+
+The bridge creates a persistent config with a strong token on first run:
+
+- macOS: `~/Library/Application Support/Android Agent Bridge/config.json`
+- Windows: `%ProgramData%\AndroidAgentBridge\config.json`
+- Linux: `~/.config/android-agent-bridge/config.json`
+
+Environment variables and `pc/.env.local` override that config for development. Copy `pc/.env.example` to `pc/.env.local` only when you need explicit overrides such as a non-default port, OpenClaw Gateway auth, Hermes API settings, Codex app-server settings, or an OpenAI key.
+
+The phone must use the same token as the bridge. The easiest path is the QR/deep link from `lynk-bridge-host pairing --qr` or `npm run host:pairing:qr`; it includes the token, device ID, and endpoint candidates for USB reverse, Tailscale, LAN, and loopback.
+
+## Install The Android App
+
+Build and install from `android/` with Android Studio or Gradle:
+
+```bash
+cd android
+./gradlew :app:assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+For USB testing, forward the bridge port and launch the app:
 
 ```bash
 cd pc
-npm run host:mcp
+npm run phone:usb
 ```
 
-After installing or changing OpenClaw, Hermes, Codex, Tailscale, or ADB, refresh discovery:
+On Android, either scan the pairing QR or set these fields manually:
 
-```bash
-cd pc
-npm run host:refresh
-```
+- WebSocket URL: one of the pairing `endpoints[].url` values, usually `ws://<your-computer-lan-ip>:8788/phone`.
+- Device ID: `openclaw-agent` unless you changed `PHONE_AGENT_DEFAULT_DEVICE`.
+- Token: the pairing `token` value.
 
-For support diagnostics:
+Grant overlay permission, start the bubble, and grant Accessibility only when you want Lynk or a host agent to observe/control the phone.
 
-```bash
-cd pc
-npm run host:diagnostics
-```
+## Backend Notes
 
-Then build and install the Android app from `android/` with Android Studio or Gradle. On the phone, set:
+- OpenClaw is the default host harness and uses Gateway sessions for normal chat history.
+- Hermes appears in the Android model picker when `HERMES_API_KEY` is configured.
+- Codex appears when the `codex app-server` command is available.
+- Local LiteRT-LM appears when local mode is enabled in Android and a `.litertlm` model is installed.
+- Keep OpenClaw Gateway, Hermes, Codex app-server, and similar host-agent transports on localhost or trusted private networks. Expose only the phone-facing bridge through Tailscale for off-LAN use.
 
-- WebSocket URL: one of the `endpoints[].url` values from `npm run host:pairing`, usually `ws://<your-computer-lan-ip>:8788/phone`
-- Device ID: `openclaw-agent`
-- Token: the `token` value from `npm run host:pairing`
-
-Grant overlay and accessibility permissions, start the agent bubble, then send:
-
-```text
-Open Settings.
-```
-
-See `docs/setup.md`, `docs/pairing.md`, and `docs/demo.md` for details.
+See `docs/setup.md`, `docs/pairing.md`, `docs/protocol.md`, and `docs/host-installer.md` for deeper setup and protocol details.

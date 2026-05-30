@@ -1,0 +1,11 @@
+dist/**/*.test.js
+dist/generated/
+src/
+audit/
+state/
+captures/
+node_modules/
+.env
+.env.local
+*.log
+*.jsonl

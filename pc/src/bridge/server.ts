@@ -79,7 +79,7 @@ server.on("upgrade", (req, socket, head) => {
 });
 
 server.listen(config.port, config.host, () => {
-  console.log(`open-claw-agent bridge listening on ws://${config.host}:${config.port}/phone`);
+  console.log(`lynk bridge listening on ws://${config.host}:${config.port}/phone`);
   console.log(`HTTP API listening on ${config.bridgeUrl}`);
 });
 

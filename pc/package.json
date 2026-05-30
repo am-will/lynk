@@ -1,11 +1,27 @@
 {
-  "name": "open-claw-agent-pc",
+  "name": "lynk-bridge",
   "version": "0.1.0",
+  "description": "Host bridge companion for the Lynk Android agent endpoint.",
   "license": "MIT",
-  "private": true,
+  "private": false,
   "type": "module",
+  "bin": {
+    "lynk-bridge": "dist/bin/lynk-bridge.js",
+    "lynk-bridge-host": "dist/bin/lynk-bridge-host.js",
+    "lynk-bridge-mcp": "dist/bin/lynk-bridge-mcp.js"
+  },
+  "files": [
+    "dist/",
+    "installers/",
+    ".env.example",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
     "bridge": "tsx --env-file-if-exists=.env.local src/bridge/server.ts",
@@ -25,7 +41,8 @@
     "host:diagnostics": "tsx --env-file-if-exists=.env.local src/host/cli.ts diagnostics",
     "demo:open-settings": "tsx --env-file-if-exists=.env.local src/scripts/sendCommand.ts open_app '{\"appName\":\"Settings\"}'",
     "demo:agent": "tsx --env-file-if-exists=.env.local src/scripts/sendUserRequest.ts",
-    "codex:schemas": "codex app-server generate-ts --out src/generated/codex-app-server"
+    "codex:schemas": "codex app-server generate-ts --out src/generated/codex-app-server",
+    "prepack": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.22.0",

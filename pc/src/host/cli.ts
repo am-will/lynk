@@ -34,7 +34,7 @@ switch (command) {
   case "help":
   default:
     console.log([
-      "android-agent-bridge host commands",
+      "lynk-bridge host commands",
       "",
       "Commands:",
       "  pairing        Print Android pairing payload and deep link",
