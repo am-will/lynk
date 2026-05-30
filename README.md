@@ -42,6 +42,8 @@ Optional:
 
 ## Install The Bridge
 
+You can run the bridge either as an installed npm package or directly from this source checkout. The installed package commands are shorter and are intended for normal use; the `npm run ...` commands remain supported for development and local checkouts.
+
 ### npm package
 
 The bridge package is intended to install as `lynk-bridge`:
@@ -79,7 +81,7 @@ lynk-bridge-host uninstall-service
 
 ### Source checkout
 
-Until the npm package is published, run the same bridge from this repo:
+Run the same bridge from this repo with the old `npm run` workflow:
 
 ```bash
 cd pc
@@ -107,6 +109,26 @@ npm run host:service-status
 
 Use `npm run host:service-plan` if you need to inspect the exact OS-specific commands instead of applying them. Packaged installer scaffolding lives in `pc/installers/`; installers copy the built bridge bundle, run host refresh, register the bridge at login, preserve the generated config, and print the pairing QR. Set `LYNK_BRIDGE_CONFIGURE_MCP=1` during install to also configure available phone-control MCP integrations.
 
+### Command Reference
+
+Each bridge operation has an installed-package command and a source-checkout command:
+
+| Task | Installed package | Source checkout |
+| --- | --- | --- |
+| Start bridge in foreground | `lynk-bridge` | `cd pc && npm run bridge` |
+| Refresh integrations | `lynk-bridge-host refresh` | `cd pc && npm run host:refresh` |
+| Refresh and configure MCP | `lynk-bridge-host refresh --configure-mcp` | `cd pc && npm run host:refresh -- --configure-mcp` |
+| Pairing payload | `lynk-bridge-host pairing` | `cd pc && npm run host:pairing` |
+| Pairing QR | `lynk-bridge-host pairing --qr` | `cd pc && npm run host:pairing:qr` |
+| Install startup service | `lynk-bridge-host install-service` | `cd pc && npm run host:install-service` |
+| Remove startup service | `lynk-bridge-host uninstall-service` | `cd pc && npm run host:uninstall-service` |
+| Service status | `lynk-bridge-host service-status` | `cd pc && npm run host:service-status` |
+| Diagnostics | `lynk-bridge-host diagnostics` | `cd pc && npm run host:diagnostics` |
+| Optional phone-control MCP | `lynk-bridge-host mcp` | `cd pc && npm run host:mcp` |
+| MCP server process | `lynk-bridge-mcp` | `cd pc && npm run mcp` |
+| USB reverse pairing | use source checkout or `adb reverse tcp:8788 tcp:8788` | `cd pc && npm run phone:usb` |
+| Tailscale URL helper | use `lynk-bridge-host pairing` endpoint list | `cd pc && npm run phone:tailscale` |
+
 ## Bridge Config
 
 The bridge creates a persistent config with a strong token on first run:
@@ -118,6 +140,85 @@ The bridge creates a persistent config with a strong token on first run:
 Environment variables and `pc/.env.local` override that config for development. Copy `pc/.env.example` to `pc/.env.local` only when you need explicit overrides such as a non-default port, OpenClaw Gateway auth, Hermes API settings, Codex app-server settings, or an OpenAI key.
 
 The phone must use the same token as the bridge. The easiest path is the QR/deep link from `lynk-bridge-host pairing --qr` or `npm run host:pairing:qr`; it includes the token, device ID, and endpoint candidates for USB reverse, Tailscale, LAN, and loopback.
+
+## Tailscale Pairing
+
+Use Tailscale when the Android phone and PC are not on the same LAN. This keeps the phone-facing bridge private to your tailnet. Keep OpenClaw Gateway, Hermes, Codex app-server, and other host-agent transports on localhost or trusted private networks.
+
+1. Install and sign in to Tailscale on the PC and Android phone with the same tailnet.
+
+2. Confirm the PC is online:
+
+```bash
+tailscale status
+```
+
+3. Start or verify the bridge. Installed package:
+
+```bash
+lynk-bridge-host service-status
+lynk-bridge-host install-service
+```
+
+Source checkout:
+
+```bash
+cd pc
+npm run host:service-status
+npm run host:install-service
+```
+
+For foreground development instead, run `lynk-bridge` or `cd pc && npm run bridge`.
+
+4. Print pairing data. Installed package:
+
+```bash
+lynk-bridge-host pairing
+lynk-bridge-host pairing --qr
+```
+
+Source checkout:
+
+```bash
+cd pc
+npm run host:pairing
+npm run host:pairing:qr
+```
+
+The pairing payload includes ordered endpoint candidates. Use the `tailscale` endpoint when present, usually one of:
+
+```text
+ws://<pc-magicdns-name>:8788/phone
+ws://100.x.y.z:8788/phone
+```
+
+For a source checkout, you can also print just the Tailscale bridge URL:
+
+```bash
+cd pc
+npm run phone:tailscale
+```
+
+5. On Android, scan the QR or manually set:
+
+- WebSocket URL: the Tailscale endpoint from the pairing payload.
+- Device ID: the pairing `deviceId`, usually `openclaw-agent`.
+- Token: the pairing `token`.
+
+6. If pairing fails:
+
+- Confirm both devices are online in Tailscale.
+- Confirm tailnet ACLs allow the phone to reach the PC on TCP port `8788`.
+- Confirm the bridge is listening on all interfaces, not only loopback:
+
+```bash
+lsof -nP -iTCP:8788 -sTCP:LISTEN
+```
+
+The listener should show `*:8788` or `0.0.0.0:8788`.
+
+- If MagicDNS fails on Android, use the `100.x.y.z` Tailscale IP instead.
+- If macOS prompts for firewall or local-network access, allow the Node.js process running the bridge.
 
 ## Install The Android App
 
