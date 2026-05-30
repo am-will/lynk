@@ -44,6 +44,72 @@ Optional:
 
 You can run the bridge either as an installed npm package or directly from this source checkout. The installed package commands are shorter and are intended for normal use; the `npm run ...` commands remain supported for development and local checkouts.
 
+Give this prompt to your coding agent:
+
+```text
+Install and configure Lynk Bridge for the user.
+
+Context:
+- Lynk Bridge is the PC host bridge for the Lynk Android app.
+- It pairs Android to the PC over WebSocket, routes chat to host agents, can start at login, can print a QR pairing code, and can optionally register Android phone-control MCP tools for OpenClaw, Hermes, or Codex.
+- Prefer the npm package install path: npm package name is lynk-bridge.
+- If npm install is unavailable, use the source checkout fallback from the Lynk repository:
+  https://github.com/am-will/lynk
+  In a local checkout, the bridge package lives in the pc/ directory.
+
+First ask the user:
+1. Do you want Android phone control enabled for host agents? If yes, configure MCP after the bridge is installed.
+2. Will you pair over Tailscale/off-LAN, or local Wi-Fi/USB?
+3. Do you want the QR code displayed now? If yes, run the QR command and show the QR output to the user.
+
+Install using npm by default:
+1. Confirm Node.js 24+ and npm are installed.
+2. Install globally: npm install -g lynk-bridge
+3. Verify startup service: lynk-bridge-host service-status
+4. If the service is not registered or running: lynk-bridge-host install-service
+5. Refresh host integrations: lynk-bridge-host refresh
+6. Print pairing payload: lynk-bridge-host pairing
+7. If the user requested QR display, run: lynk-bridge-host pairing --qr
+8. If the user wants Android phone control enabled, run: lynk-bridge-host mcp
+9. If anything fails, run: lynk-bridge-host diagnostics
+
+If npm package install is unavailable, use the source checkout fallback:
+1. Clone or open the repo: https://github.com/am-will/lynk
+2. cd pc
+3. npm install
+4. npm run host:refresh
+5. npm run build
+6. npm run host:install-service
+7. npm run host:service-status
+8. Print pairing payload: npm run host:pairing
+9. If the user requested QR display, run: npm run host:pairing:qr
+10. If the user wants Android phone control enabled, run: npm run host:mcp
+11. If anything fails, run: npm run host:diagnostics
+
+If the user is using Tailscale:
+1. Confirm Tailscale is installed and signed in on both PC and Android.
+2. On the PC, run: tailscale status
+3. Use the Tailscale endpoint from the pairing payload. It should look like ws://<pc-magicdns-name>:8788/phone or ws://100.x.y.z:8788/phone.
+4. In a source checkout, you may also print the Tailscale URL with: npm run phone:tailscale
+5. Keep only the Lynk phone-facing bridge reachable over Tailscale. Do not expose OpenClaw Gateway, Hermes, Codex app-server, or other host-agent transports publicly.
+
+Help the user get connected:
+1. Make sure the bridge service is running.
+2. Make sure Android has the Lynk app installed.
+3. Have the user scan the QR code, or manually enter the WebSocket URL, device ID, and token from the pairing payload.
+4. Ask the user to start the Lynk bubble on Android.
+5. Verify the phone registered by checking bridge health or diagnostics.
+6. If the phone does not connect, check firewall/local-network permissions, Tailscale ACLs if applicable, and whether the bridge is listening on TCP port 8788.
+
+Expected result:
+- Lynk Bridge is installed.
+- The bridge starts automatically at login.
+- The user has a pairing payload and QR code if requested.
+- Android can connect to the bridge.
+- Optional phone-control MCP tools are installed only if the user requested them.
+- Tailscale pairing is configured if the user chose Tailscale.
+```
+
 ### npm package
 
 The bridge package is intended to install as `lynk-bridge`:
