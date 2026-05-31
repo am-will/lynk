@@ -1,13 +1,13 @@
 # VPS / Headless Linux Setup
 
-This guide covers running the Lynk bridge on a headless Linux server (VPS, home server, cloud VM) with Hermes as the AI backend. Unlike a desktop install, there is no GUI, no OpenClaw, and the bridge runs as a background service.
+This guide covers running the Lynk bridge on a headless Linux server with Hermes as the AI backend. The bridge runs as a background service and the Android app connects to it over a private network such as Tailscale.
 
 ## Prerequisites
 
 - Node.js 24+ (`node --version`)
 - npm
-- [Tailscale](https://tailscale.com/download/linux) installed and authenticated on the server
-- A Hermes API server accessible from the VPS (can be `localhost`)
+- Tailscale installed and authenticated on the server
+- A Hermes API server reachable from the server, often on `localhost`
 
 ## Install
 
@@ -15,17 +15,17 @@ This guide covers running the Lynk bridge on a headless Linux server (VPS, home 
 npm install -g lynk-bridge
 ```
 
-## Generate a token
+## Generate A Token
 
 ```bash
 openssl rand -hex 32
 ```
 
-Save this value — you will paste it into the Android app during pairing.
+Save this value. You will paste the same token into the Android app during pairing.
 
 ## Configure
 
-Create `/etc/lynk-bridge.env` (or any path you prefer) with your settings:
+Create `/etc/lynk-bridge.env` or another environment file with your settings:
 
 ```bash
 PHONE_AGENT_TOKEN=<token from above>
@@ -37,9 +37,9 @@ HERMES_DEFAULT_SESSION_ID=my-agent
 HERMES_RUN_TIMEOUT_SECONDS=600
 ```
 
-> **No OpenClaw needed.** The bridge will show only the Hermes harness in the Android model picker when `HERMES_API_KEY` is set and `OPENCLAW_GATEWAY_URL` is not.
+When `HERMES_API_KEY` is set, Hermes is available in the Android model picker and new device state defaults to the Hermes harness. OpenClaw is not disabled by omitting `OPENCLAW_GATEWAY_URL`; if no OpenClaw Gateway is running, OpenClaw model listing may simply be empty or unhealthy.
 
-## Run as a systemd service
+## Run As A Systemd Service
 
 Create `~/.config/systemd/user/lynk-bridge.service`:
 
@@ -59,7 +59,7 @@ RestartSec=5
 WantedBy=default.target
 ```
 
-Enable and start:
+Enable and start it:
 
 ```bash
 systemctl --user daemon-reload
@@ -67,24 +67,31 @@ systemctl --user enable --now lynk-bridge.service
 systemctl --user status lynk-bridge.service
 ```
 
-Check it is healthy:
+Check local health:
 
 ```bash
 curl http://127.0.0.1:8788/health
 # {"ok":true,"phones":[]}
 ```
 
-## Register the phone-control MCP (optional)
+## Register Phone-Control MCP (Optional)
 
-If you want Hermes to be able to observe and control your phone:
+If you want Hermes to observe and control your phone through Lynk tools, register the phone MCP server from the global install:
 
 ```bash
-lynk-bridge host:mcp
+lynk-bridge-host mcp
 ```
 
-This writes the bridge URL and token into your local Hermes MCP config so phone tools (`phone_observe`, `phone_tap_node`, etc.) are available to the agent.
+When working from a source checkout instead, use:
 
-## Pair your Android device
+```bash
+cd pc
+npm run host:mcp
+```
+
+This writes the bridge URL and token into your local Hermes MCP config so phone tools such as `phone_observe` and `phone_tap_node` are available to the agent.
+
+## Pair Your Android Device
 
 The bridge listens on the Tailscale network interface. On the server, find your Tailscale IP:
 
@@ -93,29 +100,34 @@ tailscale ip -4
 # 100.x.x.x
 ```
 
-> **Use the raw IP, not the MagicDNS hostname.** Android does not resolve Tailscale MagicDNS hostnames by default. The raw `100.x.x.x` address always works.
-
-On Android, open the Lynk app and go to **Settings → Connection**:
+Use the raw IP if MagicDNS hostnames do not resolve on Android. On Android, open the Lynk app and go to Settings, then Connection:
 
 | Field | Value |
 |---|---|
 | URL | `ws://100.x.x.x:8788/phone` |
-| Token | *(the token you generated above)* |
+| Token | the token generated above |
 
-Tap **Save** (or equivalent), then navigate to the **Chat** tab to trigger the connection. The bridge health endpoint will show your device in `phones` once connected.
+Tap Save, then open Chat. The bridge health endpoint will show your device in `phones` once connected.
 
-## Hermes `/v1/runs` API contract
+## Hermes `/v1/runs` API Contract
 
-The bridge drives Hermes through a `/v1/runs` REST API. If your Hermes server does not expose this path natively, you will need a small shim. The minimum contract is:
+The bridge drives Hermes through a `/v1/runs` REST API. If your Hermes server does not expose this path natively, use a small shim. The minimum contract is:
 
-**`POST /v1/runs`** — create a run
+**`POST /v1/runs`** - create a run
+
 ```json
 { "input": "user message", "session_id": "...", "model": "..." }
-→ { "run_id": "...", "session_id": "...", "status": "queued" }
 ```
 
-**`GET /v1/runs/{id}/events`** — SSE stream
+Response:
+
+```json
+{ "run_id": "...", "session_id": "...", "status": "queued" }
 ```
+
+**`GET /v1/runs/{id}/events`** - SSE stream
+
+```text
 event: delta
 data: {"delta": "partial text"}
 
@@ -123,7 +135,8 @@ event: completed
 data: {"status": "completed", "output": "full response"}
 ```
 
-**`GET /v1/runs/{id}`** — final status (polled after SSE ends)
+**`GET /v1/runs/{id}`** - final status, polled after SSE ends
+
 ```json
 {
   "run_id": "...",
@@ -138,40 +151,50 @@ data: {"status": "completed", "output": "full response"}
 }
 ```
 
-> **`usage` must be a top-level field.** The bridge reads `response.usage` directly. A nested structure like `{ "raw": { "usage": {...} } }` will not populate the usage panel.
+The `usage` object must be a top-level field on the run response. A nested structure such as `{ "raw": { "usage": {...} } }` will not populate the usage panel. `context_tokens` is optional, but the Context gauge needs it to show the maximum context window.
 
-> **`context_tokens`** is optional but required for the Context gauge in the usage panel. Set it to the model's maximum context window size.
+**`GET /v1/health`** - health check
 
-**`GET /v1/health`** — health check
 ```json
 { "ok": true }
 ```
 
-> The `ok` field must be boolean `true`. The Android app checks `ok === true` to display "Gateway: ok" status.
+The `ok` field must be boolean `true` for the Android app to show the backend as healthy.
 
 ## Troubleshooting
 
-**Bridge shows `phones: []` after reconnect**
-The WebSocket drops when the bridge restarts. Open the Lynk app, go to **Settings → Connection**, and navigate back to Chat to trigger a reconnect. There is no auto-reconnect on bridge restart.
+**Bridge shows `phones: []`**
 
-**Model picker shows no models / wrong harness**
-Verify `HERMES_API_KEY` is set in the environment. The Hermes harness is hidden when the key is missing.
+Android reconnects automatically after most non-manual disconnects, but the app must be running and Tailscale must be connected. If the phone stays absent after the service restarts, reopen the Lynk app or revisit Settings, then Chat, to prompt a fresh connection attempt.
+
+**Model picker shows no Hermes models or the wrong harness**
+
+Verify `HERMES_API_KEY` is set in the bridge environment and restart the service. Hermes is hidden when the key is missing.
 
 **Usage panel shows `--`**
-The `GET /v1/runs/{id}` response is missing a top-level `usage` object. See the API contract above.
 
-**MagicDNS hostname doesn't resolve on Android**
-Use the raw Tailscale IP (`100.x.x.x`) instead of the MagicDNS hostname. Android does not use the Tailscale DNS resolver by default.
+The `GET /v1/runs/{id}` response is missing top-level usage fields. Include `usage.input_tokens`, `usage.output_tokens`, and `usage.total_tokens` in the run response. For session lists, the bridge also accepts flat `input_tokens`, `output_tokens`, and `total_tokens` fields on session objects.
 
-**`lynk-bridge host:mcp` fails on a global npm install**
-The `host:mcp` command requires the compiled source to be present. On a global install this may fail if `dist/` is incomplete. As a workaround, manually add the MCP entry to your Hermes profile config pointing to the `lynk-bridge-mcp.js` binary:
+**MagicDNS hostname does not resolve on Android**
+
+Use the raw Tailscale IP, such as `100.x.x.x`, instead of the MagicDNS hostname.
+
+**`lynk-bridge-host mcp` fails on a global npm install**
+
+Confirm the package installed its compiled files:
+
+```bash
+npm root -g
+which lynk-bridge-mcp
+```
+
+As a workaround, manually add the MCP entry to your Hermes profile config using the global `lynk-bridge-mcp` binary:
 
 ```yaml
 mcp_servers:
   android_phone:
-    command: node
-    args:
-      - /path/to/node_modules/lynk-bridge/dist/bin/lynk-bridge-mcp.js
+    command: lynk-bridge-mcp
+    args: []
     env:
       PHONE_AGENT_BRIDGE_URL: http://127.0.0.1:8788
       PHONE_AGENT_TOKEN: <your token>
