@@ -10,20 +10,9 @@ import { DeviceChatStateStore, type DeviceChatState, type PendingChatRun } from 
 
 export class HarnessDeviceStateStore extends DeviceChatStateStore {
   constructor(
-    private readonly harnessConfig: Pick<BridgeConfig, "openClawChatAgentId" | "openClawChatSessionKey" | "hermesDefaultSessionId" | "hermesApiKey">
+    private readonly harnessConfig: Pick<BridgeConfig, "openClawChatAgentId" | "openClawChatSessionKey" | "hermesDefaultSessionId">
   ) {
     super(harnessConfig);
-  }
-
-  protected override createState(deviceId: string): DeviceChatState {
-    const state = super.createState(deviceId);
-    if (!this.harnessConfig.hermesApiKey) {
-      return state;
-    }
-    state.harnessId = "hermes";
-    state.sessionKey = defaultSessionKeyForHarness("hermes", this.harnessConfig, deviceId);
-    state.sessionKeysByHarness.set("hermes", state.sessionKey);
-    return state;
   }
 
   switchHarness(deviceId: string, state: DeviceChatState, harnessId: HarnessId): void {
