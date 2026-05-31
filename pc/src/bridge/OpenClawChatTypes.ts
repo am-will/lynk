@@ -62,9 +62,16 @@ export class DeviceChatStateStore {
     if (existing) {
       return existing;
     }
-    const created: DeviceChatState = {
+    const created = this.createState(deviceId);
+    this.devices.set(deviceId, created);
+    return created;
+  }
+
+  protected createState(deviceId: string): DeviceChatState {
+    const sessionKey = defaultSessionKeyForDevice(this.config, deviceId);
+    return {
       harnessId: "openclaw",
-      sessionKey: defaultSessionKeyForDevice(this.config, deviceId),
+      sessionKey,
       runId: null,
       model: null,
       reasoningEffort: "medium",
@@ -73,7 +80,7 @@ export class DeviceChatStateStore {
       verboseLevel: null,
       pendingFirstMessageDisplayName: false,
       lastRealtimeRequestAt: null,
-      sessionKeysByHarness: new Map([["openclaw", defaultSessionKeyForDevice(this.config, deviceId)]]),
+      sessionKeysByHarness: new Map([["openclaw", sessionKey]]),
       modelsByHarness: new Map(),
       modelOptions: new Map(),
       pendingRuns: new Map(),
@@ -81,8 +88,6 @@ export class DeviceChatStateStore {
       queuedSends: [],
       sessionSummaries: new Map()
     };
-    this.devices.set(deviceId, created);
-    return created;
   }
 
   entries(): IterableIterator<[string, DeviceChatState]> {
