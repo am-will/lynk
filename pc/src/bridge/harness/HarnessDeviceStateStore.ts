@@ -15,15 +15,14 @@ export class HarnessDeviceStateStore extends DeviceChatStateStore {
     super(harnessConfig);
   }
 
-  override stateFor(deviceId: string): DeviceChatState {
-    const state = super.stateFor(deviceId);
-    // When a device connects for the first time and Hermes is configured, default to
-    // the hermes harness so users don't land on OpenClaw (which may not be running).
-    if (state.harnessId === "openclaw" && this.harnessConfig.hermesApiKey) {
-      state.harnessId = "hermes";
-      state.sessionKey = defaultSessionKeyForHarness("hermes", this.harnessConfig, deviceId);
-      state.sessionKeysByHarness.set("hermes", state.sessionKey);
+  protected override createState(deviceId: string): DeviceChatState {
+    const state = super.createState(deviceId);
+    if (!this.harnessConfig.hermesApiKey) {
+      return state;
     }
+    state.harnessId = "hermes";
+    state.sessionKey = defaultSessionKeyForHarness("hermes", this.harnessConfig, deviceId);
+    state.sessionKeysByHarness.set("hermes", state.sessionKey);
     return state;
   }
 
