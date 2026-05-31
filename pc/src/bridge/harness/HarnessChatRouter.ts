@@ -69,7 +69,7 @@ export class HarnessChatRouter implements GatewayChatClient {
       return;
     }
     this.adapters.set("openclaw", new NormalizedHarnessAdapter("openclaw", new OpenClawGatewayChatClient(config), { supportsAttachments: true }));
-    if (config.hermesApiKey) {
+    if (config.hermesConfigured ?? config.hermesApiKey) {
       this.adapters.set("hermes", new NormalizedHarnessAdapter("hermes", new HermesChatClient(config), { supportsAttachments: true }));
     }
     if (config.codexConfigured) {

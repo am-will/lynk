@@ -58,7 +58,7 @@ The bridge server is split into focused HTTP, WebSocket, and realtime modules. L
 The Android model picker can select multiple harnesses through this same bridge:
 
 - **OpenClaw** is enabled by default and remains the default. Its Gateway sessions are the source of truth for normal OpenClaw chat history.
-- **Hermes** appears when `HERMES_API_KEY` is set. Configure `HERMES_API_BASE_URL`, `HERMES_MODEL`, `HERMES_DEFAULT_SESSION_ID`, and `HERMES_RUN_TIMEOUT_SECONDS` in `pc/.env.local` or the persistent host config. The Hermes harness expects Lynk's runs/SSE API, not only an OpenAI-compatible chat-completions proxy; see `docs/hermes-runs-api.md`.
+- **Hermes** appears when the `hermes` CLI is installed or when `HERMES_API_KEY` is set. A standard Hermes install works through the CLI fallback. For richer session history, steering, and SSE streaming, configure a Lynk-compatible Hermes runs API with `HERMES_API_BASE_URL`, `HERMES_API_KEY`, `HERMES_MODEL`, `HERMES_DEFAULT_SESSION_ID`, and `HERMES_RUN_TIMEOUT_SECONDS` in `pc/.env.local` or the persistent host config; see `docs/hermes-runs-api.md`.
 - **Codex** appears through the bundled Codex app-server adapter. Configure `CODEX_APP_SERVER_COMMAND` and `CODEX_AGENT_CWD` if the defaults do not match your machine.
 - **Local LiteRT-LLM** appears only when enabled in Android and a `.litertlm` model is installed.
 

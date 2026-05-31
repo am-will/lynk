@@ -1,7 +1,11 @@
+import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import { HermesApiClient } from "../dispatcher/HermesApiClient.js";
 import { HermesRunDriver, type HermesActiveRun, type HermesRunDriverEvent } from "../dispatcher/HermesRunDriver.js";
 import type { ChatAttachment, ChatHistoryMessage, ChatModelOption, ChatSessionSummary } from "../protocol/messages.js";
+import { resolveCommand, type CommandResolution } from "../host/CommandDiscovery.js";
 import type { BridgeConfig } from "./config.js";
 import { discoverHermesModels } from "./HermesModelDiscovery.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "./harness/InMemoryHarnessSessionStore.js";
@@ -10,12 +14,15 @@ import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from ".
 interface ActiveChatRun {
   sessionKey: string;
   active: HermesActiveRun;
+  mode: "api" | "cli";
 }
 
 interface RemoteSessionObservation {
   updatedAt: number | null;
   latestRunId?: string;
 }
+
+const execFileAsync = promisify(execFile);
 
 function sendAgentDebugLog(runId: string, hypothesisId: string, location: string, message: string, data: Record<string, unknown>): void {
   // #region agent log
@@ -162,9 +169,34 @@ function modelKeys(model: ChatModelOption): string[] {
   return [...new Set([model.id, model.modelId ?? undefined].filter((value): value is string => Boolean(value)))];
 }
 
+function cliPrompt(message: string, instructions: string | undefined): string {
+  return instructions?.trim()
+    ? `${instructions.trim()}\n\nCurrent user message:\n${message}`
+    : message;
+}
+
+function hermesCliModelArgs(model: string | undefined): string[] {
+  const trimmed = model?.trim();
+  if (!trimmed) {
+    return [];
+  }
+  const separator = trimmed.indexOf(":");
+  if (separator > 0) {
+    const provider = trimmed.slice(0, separator).trim();
+    const modelId = trimmed.slice(separator + 1).trim();
+    return provider && modelId ? ["--provider", provider, "--model", modelId] : ["--model", trimmed];
+  }
+  return ["--model", trimmed];
+}
+
+function hermesCliThinkingArgs(_thinking: string | undefined): string[] {
+  return [];
+}
+
 export class HermesChatClient {
-  private readonly api: HermesApiClient;
-  private readonly driver: HermesRunDriver;
+  private readonly api?: HermesApiClient;
+  private readonly driver?: HermesRunDriver;
+  private readonly cli: CommandResolution;
   private readonly sessions: InMemoryHarnessSessionStore;
   private readonly handlers = new Set<GatewayEventHandler>();
   private readonly activeRuns = new Map<string, ActiveChatRun>();
@@ -177,16 +209,19 @@ export class HermesChatClient {
     api?: HermesApiClient,
     sessionStoragePath: string | null = join(process.cwd(), "state", "hermes-sessions.json")
   ) {
-    if (!config.hermesApiKey) {
-      throw new Error("HERMES_API_KEY is required to use the Hermes harness.");
+    this.cli = resolveCommand(config.hermesCliCommand ?? process.env.HERMES_COMMAND ?? "hermes");
+    if (!config.hermesApiKey && !this.cli.available) {
+      throw new Error("Hermes requires either HERMES_API_KEY for the runs API or a hermes CLI on PATH.");
     }
-    this.api = api ?? new HermesApiClient({
-      apiBaseUrl: config.hermesApiBaseUrl,
-      apiKey: config.hermesApiKey,
-      model: config.hermesModel,
-      runTimeoutMs: config.hermesRunTimeoutMs
-    });
-    this.driver = new HermesRunDriver(this.api, config.hermesRunTimeoutMs);
+    if (api || config.hermesApiKey) {
+      this.api = api ?? new HermesApiClient({
+        apiBaseUrl: config.hermesApiBaseUrl,
+        apiKey: config.hermesApiKey ?? "",
+        model: config.hermesModel,
+        runTimeoutMs: config.hermesRunTimeoutMs
+      });
+      this.driver = new HermesRunDriver(this.api, config.hermesRunTimeoutMs);
+    }
     this.sessions = new InMemoryHarnessSessionStore("hermes", {
       defaultModel: config.hermesModel,
       modelProvider: "hermes",
@@ -202,7 +237,7 @@ export class HermesChatClient {
   async history(sessionKey: string): Promise<unknown> {
     const local = this.sessions.history(sessionKey);
     const session = this.sessions.ensureSession(sessionKey);
-    const payload = await this.api.listSessionMessages(session.sessionId).catch(() => undefined);
+    const payload = await this.api?.listSessionMessages(session.sessionId).catch(() => undefined);
     const remoteMessages = normalizeHermesMessages(payload);
     sendAgentDebugLog("history", "H1,H2", "HermesChatClient.ts:111", "Hermes history resolved", {
       sessionKey,
@@ -236,7 +271,14 @@ export class HermesChatClient {
     this.sessions.appendUserMessage(session, options.message, options.idempotencyKey, options.attachments);
     const instructions = hermesConversationInstructions(this.sessions.historyMessages(session).slice(0, -1));
 
-    const active = await this.driver.createRun({
+    if (!await this.shouldUseRunsApi()) {
+      return this.sendCliChat(session, options, instructions);
+    }
+    const driver = this.driver;
+    if (!driver) {
+      throw new Error("Hermes runs API is not configured and Hermes CLI fallback is unavailable.");
+    }
+    const active = await driver.createRun({
       input: options.message,
       sessionId: session.sessionId,
       model: session.model,
@@ -269,7 +311,8 @@ export class HermesChatClient {
     }
     this.activeRuns.set(runId, {
       sessionKey: session.key,
-      active
+      active,
+      mode: "api"
     });
     void this.processRun(session.key, active);
     return { runId, sessionKey: session.key };
@@ -290,12 +333,16 @@ export class HermesChatClient {
         localMessageCount: session.messages.length,
         partialAssistantLength: partialAssistant?.text.length ?? 0
       });
-      await this.driver.stopRun(active.active);
+      if (active.mode === "api") {
+        await this.driver?.stopRun(active.active);
+      } else {
+        active.active.controller.abort();
+      }
     } else {
       sendAgentDebugLog(runId, "H1,H3", "HermesChatClient.ts:184", "Hermes abort requested for untracked run", {
         requestedSessionKey: _sessionKey
       });
-      await this.api.stopRun(runId);
+      await this.api?.stopRun(runId);
     }
     this.emit("agent", {
       type: "run.cancelled",
@@ -319,9 +366,12 @@ export class HermesChatClient {
     if (!active) {
       throw new Error("No active Hermes run to steer");
     }
+    if (active.mode !== "api") {
+      throw new Error("Hermes CLI fallback does not support active-turn steering.");
+    }
     const session = this.sessions.ensureSession(active.sessionKey, options.sessionId);
     this.sessions.appendUserMessage(session, options.message, options.idempotencyKey, options.attachments);
-    await this.driver.steerRun(
+    await this.driver?.steerRun(
       active.active,
       options.message,
       options.attachments,
@@ -331,7 +381,7 @@ export class HermesChatClient {
   }
 
   async listModels(): Promise<unknown> {
-    const payload = await this.api.listModels().catch(() => undefined);
+    const payload = await this.api?.listModels().catch(() => undefined);
     const apiModels = normalizeHermesApiModels(payload, this.config.hermesModel);
     const discoveredModels = discoverHermesModels(this.config.hermesModel);
     const models = mergeHermesModels(apiModels, discoveredModels, this.config.hermesModel);
@@ -339,7 +389,7 @@ export class HermesChatClient {
   }
 
   async listSessions(limit = 50): Promise<unknown> {
-    const remotePayload = await this.api.listSessions().catch(() => undefined);
+    const remotePayload = await this.api?.listSessions().catch(() => undefined);
     const remoteSessions = normalizeHermesSessions(remotePayload).slice(0, limit);
     const byKey = new Map<string, ChatSessionSummary>();
     for (const session of this.sessions.listSessions(limit)) {
@@ -362,6 +412,9 @@ export class HermesChatClient {
   }
 
   async syncRemoteReplies(limit = 50): Promise<void> {
+    if (!this.api) {
+      return;
+    }
     const remotePayload = await this.api.listSessions().catch(() => undefined);
     const remoteSessions = normalizeHermesSessions(remotePayload).slice(0, limit);
     await this.detectRemoteSessionReplies(remoteSessions);
@@ -387,12 +440,30 @@ export class HermesChatClient {
   }
 
   async effectiveTools(): Promise<unknown> {
-    const capabilities = await this.api.capabilities().catch(() => undefined);
+    const capabilities = await this.api?.capabilities().catch(() => undefined);
     return { tools: [], capabilities };
   }
 
   async health(): Promise<unknown> {
-    return await this.api.health();
+    if (this.api) {
+      try {
+        const health = await this.api.health();
+        const record = asRecord(health);
+        if (record?.ok === true) {
+          return health;
+        }
+      } catch {
+        // Fall through to CLI mode if Hermes itself is installed but no Lynk runs API is serving.
+      }
+    }
+    if (this.cli.available) {
+      return {
+        ok: true,
+        mode: "cli",
+        message: "Hermes runs API is not reachable; using Hermes CLI fallback."
+      };
+    }
+    return { ok: false, error: "Hermes runs API is not reachable and the hermes CLI was not found on PATH." };
   }
 
   close(): void {
@@ -463,7 +534,7 @@ export class HermesChatClient {
 
   private async latestRemoteAssistantMessage(session: ChatSessionSummary): Promise<ChatHistoryMessage | undefined> {
     const sessionId = session.sessionId ?? session.key.replace(/^hermes:/, "");
-    const payload = await this.api.listSessionMessages(sessionId).catch(() => undefined);
+    const payload = await this.api?.listSessionMessages(sessionId).catch(() => undefined);
     return normalizeHermesMessages(payload)
       .slice()
       .reverse()
@@ -473,8 +544,12 @@ export class HermesChatClient {
   private async processRun(sessionKey: string, active: HermesActiveRun): Promise<void> {
     const session = this.sessions.ensureSession(sessionKey);
     const runId = active.runId;
+    const driver = this.driver;
+    if (!driver) {
+      return;
+    }
     try {
-      const completed = await this.driver.streamRun(active, (event) => this.handleRunEvent(session, active.runId, event));
+      const completed = await driver.streamRun(active, (event) => this.handleRunEvent(session, active.runId, event));
       const finalText = completed.finalText;
       if (finalText.trim()) {
         this.sessions.upsertAssistantMessage(session, runId, finalText);
@@ -514,6 +589,94 @@ export class HermesChatClient {
     } finally {
       this.activeRuns.delete(runId);
       this.sessions.clearActiveRun(session, runId);
+    }
+  }
+
+  private async sendCliChat(
+    session: HarnessStoredSession,
+    options: {
+      sessionKey: string;
+      sessionId?: string;
+      message: string;
+      attachments?: ChatAttachment[];
+      thinking?: string;
+      idempotencyKey?: string;
+    },
+    instructions?: string
+  ): Promise<GatewayChatSendResult> {
+    if (!this.cli.available || !this.cli.resolvedPath) {
+      throw new Error("Hermes CLI fallback is unavailable. Install Hermes or start the Lynk-compatible Hermes runs API.");
+    }
+    const runId = options.idempotencyKey ?? `hermes_cli_${randomUUID()}`;
+    const active: HermesActiveRun = {
+      runId,
+      sessionId: session.sessionId,
+      controller: new AbortController()
+    };
+    this.sessions.setActiveRun(session, runId);
+    this.activeRuns.set(runId, {
+      sessionKey: session.key,
+      active,
+      mode: "cli"
+    });
+    void this.processCliRun(session.key, active, cliPrompt(options.message, instructions), session.model, options.thinking);
+    return { runId, sessionKey: session.key };
+  }
+
+  private async processCliRun(
+    sessionKey: string,
+    active: HermesActiveRun,
+    prompt: string,
+    model: string | undefined,
+    thinking: string | undefined
+  ): Promise<void> {
+    const session = this.sessions.ensureSession(sessionKey);
+    const runId = active.runId;
+    try {
+      const { stdout } = await execFileAsync(this.cli.resolvedPath ?? this.cli.executable, [
+        ...hermesCliModelArgs(model),
+        ...hermesCliThinkingArgs(thinking),
+        "-z",
+        prompt
+      ], {
+        timeout: this.config.hermesRunTimeoutMs,
+        maxBuffer: 1024 * 1024,
+        signal: active.controller.signal
+      });
+      const finalText = stdout.trim();
+      if (finalText) {
+        this.sessions.upsertAssistantMessage(session, runId, finalText);
+      }
+      this.emit("chat", {
+        sessionKey,
+        runId,
+        state: "final",
+        message: finalText
+      });
+    } catch (error) {
+      if (!active.controller.signal.aborted) {
+        this.emit("chat", {
+          sessionKey,
+          runId,
+          state: "error",
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    } finally {
+      this.activeRuns.delete(runId);
+      this.sessions.clearActiveRun(session, runId);
+    }
+  }
+
+  private async shouldUseRunsApi(): Promise<boolean> {
+    if (!this.api || !this.driver) {
+      return false;
+    }
+    try {
+      const health = await this.api.health();
+      return asRecord(health)?.ok === true;
+    } catch {
+      return false;
     }
   }
 

@@ -59,6 +59,7 @@ export async function detectIntegrations(): Promise<IntegrationStatus[]> {
   const tailscale = await discoverEndpoints({ port: hostConfig.phoneAgentPort ?? 8788, includeUsb: false });
   const adb = resolveExecutable(process.env.ADB?.trim() || "adb");
   const hermesApiKey = process.env.HERMES_API_KEY?.trim() || hostConfig.hermesApiKey?.trim();
+  const hermesCli = resolveCommand(process.env.HERMES_COMMAND?.trim() || "hermes");
   const hermesConfigPath = resolveHermesConfigPath();
   const hermesConfigExists = existsSync(hermesConfigPath);
 
@@ -75,11 +76,15 @@ export async function detectIntegrations(): Promise<IntegrationStatus[]> {
     {
       id: "hermes",
       label: "Hermes",
-      installed: hermesConfigExists || Boolean(hermesApiKey),
-      configured: Boolean(hermesApiKey),
-      ready: Boolean(hermesApiKey),
-      path: hermesConfigExists ? hermesConfigPath : undefined,
-      message: hermesApiKey ? "Hermes API key is configured." : "Hermes API key is missing."
+      installed: hermesConfigExists || Boolean(hermesApiKey) || hermesCli.available,
+      configured: Boolean(hermesApiKey) || hermesCli.available,
+      ready: Boolean(hermesApiKey) || hermesCli.available,
+      path: hermesConfigExists ? hermesConfigPath : hermesCli.resolvedPath,
+      message: hermesApiKey
+        ? "Hermes API key is configured."
+        : hermesCli.available
+          ? "Hermes CLI was found; Lynk can use CLI fallback if no runs API is running."
+          : "Hermes API key is missing and Hermes CLI was not found."
     },
     {
       id: "codex",

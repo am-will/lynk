@@ -1,8 +1,13 @@
 # Hermes Runs API Contract
 
-Lynk's Hermes harness expects a runs/SSE API. A generic OpenAI-compatible `/chat/completions` proxy is not enough unless a shim exposes the endpoints below.
+Lynk can use Hermes in two modes:
 
-Set `HERMES_API_BASE_URL` to the API root, usually `http://127.0.0.1:8642/v1`, and set `HERMES_API_KEY`. Every request uses `Authorization: Bearer <HERMES_API_KEY>` and JSON bodies unless noted.
+- **Default setup**: if the `hermes` CLI is on `PATH`, Lynk can answer chat turns through `hermes -z` without any extra server.
+- **Runs API setup**: for richer session history, active-turn steering, SSE deltas, and adapter-controlled cancellation, point Lynk at a Hermes-compatible runs/SSE API.
+
+A generic OpenAI-compatible `/chat/completions` proxy is not the runs API. If you want Lynk to use an HTTP adapter instead of CLI fallback, expose the endpoints below.
+
+Set `HERMES_API_BASE_URL` to the API root, usually `http://127.0.0.1:8642/v1`, and set `HERMES_API_KEY`. Every runs API request uses `Authorization: Bearer <HERMES_API_KEY>` and JSON bodies unless noted.
 
 ## Required Endpoints
 
@@ -37,6 +42,8 @@ Android selects Hermes models as `hermes:<model>`. The bridge strips the `hermes
 For multi-provider Hermes deployments, return provider metadata from `/models`. If a model row contains `provider: "xai"` and `id: "grok-4.3"`, Lynk presents and sends the raw Hermes model id as `xai:grok-4.3`. A shim can split that value before forwarding to the underlying provider. If the model name alone is globally routable in your backend, you can omit `provider`.
 
 The bridge merges live `/models` results with local `~/.hermes/config.yaml` discovery. The API list determines what is available; local config only enriches context windows, reasoning options, and fallback entries.
+
+If `/health` is unreachable but the `hermes` CLI is installed, Lynk reports Hermes health as CLI fallback mode and uses local sessions. In that mode, active-turn steering and remote session sync are limited because the standard CLI does not expose Lynk's run lifecycle endpoints.
 
 ## Local Config And Profiles
 

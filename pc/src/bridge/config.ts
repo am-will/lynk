@@ -17,6 +17,8 @@ export interface BridgeConfig {
   openClawChatSessionKey: string;
   hermesApiBaseUrl: string;
   hermesApiKey?: string;
+  hermesCliCommand?: string;
+  hermesConfigured?: boolean;
   hermesModel: string;
   hermesDefaultSessionId: string;
   hermesRunTimeoutMs: number;
@@ -84,6 +86,9 @@ export function getBridgeConfig(): BridgeConfig {
   const openClawConfig = readOpenClawConfig();
   const codexAppServerCommand = process.env.CODEX_APP_SERVER_COMMAND ?? host.codexAppServerCommand ?? "codex app-server --listen stdio://";
   const codexResolution = resolveCommand(codexAppServerCommand);
+  const hermesApiKey = process.env.HERMES_API_KEY?.trim() || host.hermesApiKey?.trim() || undefined;
+  const hermesCliCommand = process.env.HERMES_COMMAND?.trim() || "hermes";
+  const hermesCliResolution = resolveCommand(hermesCliCommand);
   return {
     host: process.env.PHONE_AGENT_HOST ?? host.phoneAgentHost ?? "0.0.0.0",
     port,
@@ -96,7 +101,9 @@ export function getBridgeConfig(): BridgeConfig {
     openClawChatAgentId: process.env.OPENCLAW_CHAT_AGENT_ID ?? host.openClawChatAgentId ?? "main",
     openClawChatSessionKey: process.env.OPENCLAW_CHAT_SESSION_KEY ?? host.openClawChatSessionKey ?? "agent:main:explicit:open-claw-agent",
     hermesApiBaseUrl: (process.env.HERMES_API_BASE_URL ?? host.hermesApiBaseUrl ?? "http://127.0.0.1:8642/v1").replace(/\/+$/, ""),
-    hermesApiKey: process.env.HERMES_API_KEY?.trim() || host.hermesApiKey?.trim() || undefined,
+    hermesApiKey,
+    hermesCliCommand,
+    hermesConfigured: Boolean(hermesApiKey) || hermesCliResolution.available,
     hermesModel: process.env.HERMES_MODEL?.trim() || host.hermesModel?.trim() || "hermes-agent",
     hermesDefaultSessionId: process.env.HERMES_DEFAULT_SESSION_ID?.trim() || host.hermesDefaultSessionId?.trim() || "hermes-agent",
     hermesRunTimeoutMs: readPositiveInt("HERMES_RUN_TIMEOUT_SECONDS", host.hermesRunTimeoutSeconds ?? 600) * 1000,

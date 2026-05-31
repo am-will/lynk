@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -107,6 +107,28 @@ async function withHermesHome<T>(files: Record<string, string>, run: () => Promi
   }
 }
 
+async function withFakeHermesCli(run: (command: string) => Promise<void>): Promise<void> {
+  const home = mkdtempSync(join(tmpdir(), "lynk-hermes-cli-"));
+  const command = join(home, "hermes");
+  try {
+    writeFileSync(command, "#!/bin/sh\nprintf 'cli fallback answer\\n'\n");
+    chmodSync(command, 0o755);
+    await run(command);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.ok(predicate());
+}
+
 test("Hermes lists sessions from dashboard API", async () => {
   const client = new HermesChatClient(config, new FakeHermesApiClient() as unknown as HermesApiClient, null);
 
@@ -200,6 +222,42 @@ test("Hermes history loads messages from dashboard API for selected sessions", a
     role: "assistant",
     text: "Hello back"
   }]);
+});
+
+test("Hermes falls back to CLI when runs API is not configured", async () => {
+  await withFakeHermesCli(async (command) => {
+    const client = new HermesChatClient({
+      ...config,
+      hermesApiKey: undefined,
+      hermesCliCommand: command,
+      hermesConfigured: true,
+      hermesModel: "local-minimax:MiniMax-M2.7"
+    }, undefined, null);
+    const events: GatewayEvent[] = [];
+    client.addEventListener((event) => events.push(event));
+
+    const health = await client.health() as Record<string, unknown>;
+    assert.equal(health.ok, true);
+    assert.equal(health.mode, "cli");
+
+    const result = await client.sendChat({
+      sessionKey: "hermes:chat",
+      message: "Use fallback",
+      idempotencyKey: "run_cli"
+    });
+    await waitFor(() => events.some((event) => event.event === "chat"));
+
+    assert.deepEqual(result, { runId: "run_cli", sessionKey: "hermes:chat" });
+    assert.deepEqual(events.at(-1), {
+      event: "chat",
+      payload: {
+        sessionKey: "hermes:chat",
+        runId: "run_cli",
+        state: "final",
+        message: "cli fallback answer"
+      }
+    });
+  });
 });
 
 test("Hermes history keeps local messages missing from remote history", async () => {
@@ -410,13 +468,14 @@ test("Hermes baselines sessions that appear after an empty initial list", async 
 test("Hermes chat steering uses the active run driver", async () => {
   const api = new FakeHermesApiClient();
   const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
-  (client as unknown as { activeRuns: Map<string, { sessionKey: string; active: { runId: string; sessionId: string; controller: AbortController } }> }).activeRuns.set("run_1", {
+  (client as unknown as { activeRuns: Map<string, { sessionKey: string; active: { runId: string; sessionId: string; controller: AbortController }; mode: "api" }> }).activeRuns.set("run_1", {
     sessionKey: "hermes:chat",
     active: {
       runId: "run_1",
       sessionId: "session_1",
       controller: new AbortController()
-    }
+    },
+    mode: "api"
   });
 
   await client.steerChat({
