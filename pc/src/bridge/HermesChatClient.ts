@@ -512,8 +512,7 @@ function normalizeHermesSession(value: unknown): ChatSessionSummary | undefined 
   if (!sessionId) {
     return undefined;
   }
-  // Hermes-compatible backends may expose token counts either nested or flat.
-  const tokenCounts = asRecord(record?.token_counts) ?? asRecord(record?.tokenCounts) ?? record;
+  const tokenCounts = asRecord(record?.token_counts) ?? asRecord(record?.tokenCounts);
   const preview = firstStringField(record, ["preview", "title", "label", "last_message"]);
   const timestamp = timestampMs(record?.timestamp ?? record?.updated_at ?? record?.created_at);
   return {

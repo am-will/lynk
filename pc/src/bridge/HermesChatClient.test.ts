@@ -104,28 +104,6 @@ test("Hermes lists sessions from dashboard API", async () => {
   }]);
 });
 
-test("Hermes lists sessions with flat token count fields", async () => {
-  const api = new FakeHermesApiClient();
-  api.sessionsPayload = {
-    sessions: [{
-      session_id: "flat_tokens",
-      model: "hermes-agent",
-      preview: "Flat usage",
-      input_tokens: 20,
-      output_tokens: 5,
-      total_tokens: 25
-    }]
-  };
-  const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
-
-  const payload = await client.listSessions() as { sessions: Array<Record<string, unknown>> };
-  const session = payload.sessions[0];
-
-  assert.equal(session?.inputTokens, 20);
-  assert.equal(session?.outputTokens, 5);
-  assert.equal(session?.totalTokens, 25);
-});
-
 test("Hermes history loads messages from dashboard API for selected sessions", async () => {
   const client = new HermesChatClient(config, new FakeHermesApiClient() as unknown as HermesApiClient, null);
 
