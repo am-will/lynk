@@ -12,7 +12,7 @@ This is not just an OpenClaw remote. Host mode can route to **OpenClaw**, **Herm
 2. The bridge registers the phone, sends available host/local model metadata, and receives `chat.*` and `realtime.*` events.
 3. The selected backend handles the request:
    - OpenClaw through the Gateway-backed host harness.
-   - Hermes through its API harness when configured.
+   - Hermes through the installed `hermes` CLI by default, or through its runs API harness when configured.
    - Codex through the bundled app-server harness when configured.
    - Local LiteRT-LM directly on Android when a `.litertlm` model is imported.
 4. Replies, tool activity, status, usage, session history, and errors stream back to the Android timeline.
@@ -26,7 +26,7 @@ Required for the host bridge:
 - Network reachability from Android to the bridge: same LAN, USB reverse via ADB, or Tailscale.
 - At least one host backend for Host mode:
   - OpenClaw CLI/Gateway for the default OpenClaw harness.
-  - Hermes API access plus `HERMES_API_KEY` for Hermes.
+  - Hermes CLI on `PATH` for the default Hermes path, or Hermes runs API access plus `HERMES_API_KEY` for advanced Hermes sessions/streaming.
   - Codex CLI with `codex app-server` for Codex.
 
 Required for the Android app:
@@ -60,6 +60,7 @@ Context:
 - If npm install is unavailable, use the source checkout fallback from the Lynk repository:
   https://github.com/am-will/lynk
   In a local checkout, the bridge package lives in the pc/ directory.
+- If the bridge will run on a VPS or SSH-only Linux host, use the headless Tailscale flow in docs/vps-headless-linux.md.
 
 First ask the user:
 1. Do you want Android phone control enabled for host agents? If yes, configure MCP after the bridge is installed.
@@ -97,6 +98,11 @@ If the user is using Tailscale:
 3. Use the Tailscale endpoint from the pairing payload. It should look like ws://<pc-magicdns-name>:8788/phone or ws://100.x.y.z:8788/phone.
 4. In a source checkout, you may also print the Tailscale URL with: npm run phone:tailscale
 5. Keep only the Lynk phone-facing bridge reachable over Tailscale. Do not expose OpenClaw Gateway, Hermes, Codex app-server, or other host-agent transports publicly.
+
+If the user is using Hermes:
+1. Standard Hermes installs should work by default when the `hermes` CLI is on PATH. Lynk falls back to `hermes -z` if no runs API is reachable.
+2. Only configure `HERMES_API_BASE_URL` and `HERMES_API_KEY` when the user has a Lynk-compatible Hermes runs API and wants richer session history, steering, and streaming.
+3. Do not point `HERMES_API_BASE_URL` at a generic OpenAI-compatible `/chat/completions` proxy unless a shim also exposes the runs API in docs/hermes-runs-api.md.
 
 Help the user get connected:
 1. Make sure the bridge service is running.
@@ -237,6 +243,8 @@ The phone must use the same token as the bridge. The easiest path is the QR/deep
 
 Use Tailscale when the Android phone and PC are not on the same LAN. This keeps the phone-facing bridge private to your tailnet. Keep OpenClaw Gateway, Hermes, Codex app-server, and other host-agent transports on localhost or trusted private networks.
 
+For VPS or SSH-only Linux hosts, use `docs/vps-headless-linux.md`. The short version is: install the bridge as a user systemd service, run `sudo loginctl enable-linger "$USER"` so it starts after reboot without an SSH session, pair over the `100.x.y.z` Tailscale URL, and keep cloud firewall/security-group rules closed to public bridge traffic.
+
 1. Install and sign in to Tailscale on the PC and Android phone with the same tailnet.
 
 2. Confirm the PC is online:
@@ -376,7 +384,7 @@ Android may still require user approval for overlay permission, Accessibility, r
 ## Backend Notes
 
 - OpenClaw is the default host harness and uses Gateway sessions for normal chat history.
-- Hermes appears in the Android model picker when `HERMES_API_KEY` is configured.
+- Hermes appears in the Android model picker when the `hermes` CLI is installed or when `HERMES_API_KEY` is configured. CLI fallback supports normal chat turns with no extra server; configure the runs API only for richer session history, active-turn steering, and SSE streaming.
 - Codex appears when the `codex app-server` command is available.
 - Local LiteRT-LM appears when local mode is enabled in Android and a `.litertlm` model is installed.
 - Keep OpenClaw Gateway, Hermes, Codex app-server, and similar host-agent transports on localhost or trusted private networks. Expose only the phone-facing bridge through Tailscale for off-LAN use.
