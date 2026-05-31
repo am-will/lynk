@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import type { HermesApiClient } from "../dispatcher/HermesApiClient.js";
 import type { ChatAttachment } from "../protocol/messages.js";
@@ -55,6 +58,7 @@ class FakeHermesApiClient {
       timestamp: "2026-05-22T03:10:23.000Z"
     }]
   };
+  modelsPayload: unknown = { models: [] };
 
   async listSessions(): Promise<unknown> {
     return this.sessionsPayload;
@@ -65,7 +69,7 @@ class FakeHermesApiClient {
   }
 
   async listModels(): Promise<unknown> {
-    return { models: [] };
+    return this.modelsPayload;
   }
 
   async capabilities(): Promise<unknown> {
@@ -81,6 +85,25 @@ class FakeHermesApiClient {
   async createRun(options: { input: string; sessionId: string; instructions?: string; idempotencyKey?: string; attachments?: ChatAttachment[]; serviceTier?: "priority" | null }): Promise<{ runId: string; sessionId: string }> {
     this.createdRuns.push(options);
     return { runId: `steer_${this.createdRuns.length}`, sessionId: options.sessionId };
+  }
+}
+
+async function withHermesHome<T>(files: Record<string, string>, run: () => Promise<T>): Promise<T> {
+  const previousHome = process.env.HERMES_HOME;
+  const home = mkdtempSync(join(tmpdir(), "lynk-hermes-client-"));
+  try {
+    for (const [name, content] of Object.entries(files)) {
+      writeFileSync(join(home, name), content);
+    }
+    process.env.HERMES_HOME = home;
+    return await run();
+  } finally {
+    if (previousHome === undefined) {
+      delete process.env.HERMES_HOME;
+    } else {
+      process.env.HERMES_HOME = previousHome;
+    }
+    rmSync(home, { recursive: true, force: true });
   }
 }
 
@@ -102,6 +125,61 @@ test("Hermes lists sessions from dashboard API", async () => {
     model: "hermes-agent",
     totalTokens: 14
   }]);
+});
+
+test("Hermes model listing keeps live API models when local config exists", async () => {
+  await withHermesHome({
+    "config.yaml": [
+      "model:",
+      "  default: MiniMax-M2.7",
+      "  provider: local-minimax",
+      "  context_length: 149429"
+    ].join("\n")
+  }, async () => {
+    const api = new FakeHermesApiClient();
+    api.modelsPayload = {
+      models: [
+        { id: "grok-4.3", name: "Grok 4.3", provider: "xai", context_window: 256000 }
+      ]
+    };
+    const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
+
+    const payload = await client.listModels() as { models: Array<Record<string, unknown>> };
+
+    assert.equal(payload.models[0]?.id, "xai:grok-4.3");
+    assert.equal(payload.models[0]?.modelId, "xai:grok-4.3");
+    assert.equal(payload.models[0]?.provider, "xai");
+    assert.equal(payload.models[0]?.contextWindow, 256000);
+    assert.ok(payload.models.some((model) => model.id === "local-minimax:MiniMax-M2.7"));
+  });
+});
+
+test("Hermes model listing enriches API models with local metadata", async () => {
+  await withHermesHome({
+    "config.yaml": [
+      "model:",
+      "  default: MiniMax-M2.7",
+      "  provider: local-minimax",
+      "providers:",
+      "  local-minimax:",
+      "    models:",
+      "      MiniMax-M2.7:",
+      "        context_length: 149429"
+    ].join("\n")
+  }, async () => {
+    const api = new FakeHermesApiClient();
+    api.modelsPayload = {
+      models: [
+        { id: "MiniMax-M2.7", provider: "local-minimax" }
+      ]
+    };
+    const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
+
+    const payload = await client.listModels() as { models: Array<Record<string, unknown>> };
+
+    assert.equal(payload.models[0]?.id, "local-minimax:MiniMax-M2.7");
+    assert.equal(payload.models[0]?.contextWindow, 149429);
+  });
 });
 
 test("Hermes history loads messages from dashboard API for selected sessions", async () => {

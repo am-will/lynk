@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { HermesApiClient } from "../dispatcher/HermesApiClient.js";
 import { HermesRunDriver, type HermesActiveRun, type HermesRunDriverEvent } from "../dispatcher/HermesRunDriver.js";
-import type { ChatAttachment, ChatHistoryMessage, ChatSessionSummary } from "../protocol/messages.js";
+import type { ChatAttachment, ChatHistoryMessage, ChatModelOption, ChatSessionSummary } from "../protocol/messages.js";
 import type { BridgeConfig } from "./config.js";
 import { discoverHermesModels } from "./HermesModelDiscovery.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "./harness/InMemoryHarnessSessionStore.js";
@@ -71,6 +71,95 @@ function firstNumberField(value: unknown, keys: string[]): number | null {
     }
   }
   return null;
+}
+
+function directStringField(value: unknown, keys: string[]): string | undefined {
+  const record = asRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  for (const key of keys) {
+    const field = record[key];
+    if (typeof field === "string" && field.trim()) {
+      return field.trim();
+    }
+  }
+  return undefined;
+}
+
+function normalizeHermesApiModels(payload: unknown, defaultModel: string): ChatModelOption[] {
+  const rawModels = Array.isArray(asRecord(payload)?.data)
+    ? asRecord(payload)?.data as unknown[]
+    : Array.isArray(asRecord(payload)?.models)
+      ? asRecord(payload)?.models as unknown[]
+      : [];
+  return rawModels
+    .map((item) => {
+      const record = asRecord(item);
+      const id = firstStringField(record, ["id", "model", "name"]) ?? defaultModel;
+      const provider = directStringField(record, ["provider", "providerId", "provider_id"]) ?? "hermes";
+      const modelId = hermesApiSelectionId(provider, id);
+      const name = directStringField(record, ["label", "displayName", "display_name", "name"]) ?? id;
+      return {
+        id: modelId,
+        label: provider === "hermes" ? name : `${provider} / ${name}`,
+        provider,
+        modelId,
+        contextWindow: firstNumberField(record, ["contextWindow", "context_window", "context_length", "maxContextTokens"]),
+        available: true
+      };
+    });
+}
+
+function mergeHermesModels(apiModels: ChatModelOption[], discoveredModels: ChatModelOption[], defaultModel: string): ChatModelOption[] {
+  if (apiModels.length === 0) {
+    return discoveredModels.length > 0 ? discoveredModels : [{
+      id: defaultModel,
+      label: defaultModel,
+      provider: "hermes",
+      modelId: defaultModel,
+      available: true
+    }];
+  }
+
+  const discoveredByKey = new Map(discoveredModels.flatMap((model) => modelKeys(model).map((key) => [key, model] as const)));
+  const seen = new Set<string>();
+  const merged = apiModels.map((apiModel) => {
+    const discovered = modelKeys(apiModel)
+      .map((key) => discoveredByKey.get(key))
+      .find(Boolean);
+    for (const key of modelKeys(apiModel)) {
+      seen.add(key);
+    }
+    if (!discovered) {
+      return apiModel;
+    }
+    for (const key of modelKeys(discovered)) {
+      seen.add(key);
+    }
+    return {
+      ...discovered,
+      ...apiModel,
+      contextWindow: apiModel.contextWindow ?? discovered.contextWindow ?? null,
+      reasoningOptions: apiModel.reasoningOptions ?? discovered.reasoningOptions ?? null,
+      defaultReasoningEffort: apiModel.defaultReasoningEffort ?? discovered.defaultReasoningEffort ?? null
+    };
+  });
+
+  for (const discovered of discoveredModels) {
+    if (!modelKeys(discovered).some((key) => seen.has(key))) {
+      merged.push(discovered);
+    }
+  }
+  return merged;
+}
+
+function hermesApiSelectionId(provider: string, id: string): string {
+  return provider && provider !== "hermes" && !id.includes(":") ? `${provider}:${id}` : id;
+}
+
+function modelKeys(model: ChatModelOption): string[] {
+  return [...new Set([model.id, model.modelId ?? undefined].filter((value): value is string => Boolean(value)))];
 }
 
 export class HermesChatClient {
@@ -243,32 +332,9 @@ export class HermesChatClient {
 
   async listModels(): Promise<unknown> {
     const payload = await this.api.listModels().catch(() => undefined);
-    const rawModels = Array.isArray(asRecord(payload)?.data)
-      ? asRecord(payload)?.data as unknown[]
-      : Array.isArray(asRecord(payload)?.models)
-        ? asRecord(payload)?.models as unknown[]
-        : [];
-    const apiModels = rawModels.length > 0
-      ? rawModels.map((item) => {
-        const record = asRecord(item);
-        const id = firstStringField(record, ["id", "name"]) ?? this.config.hermesModel;
-        return {
-          id,
-          key: id,
-          name: firstStringField(record, ["name", "id"]) ?? id,
-          provider: "hermes",
-          available: true
-        };
-      })
-      : [{
-        id: this.config.hermesModel,
-        key: this.config.hermesModel,
-        name: this.config.hermesModel,
-        provider: "hermes",
-        available: true
-      }];
+    const apiModels = normalizeHermesApiModels(payload, this.config.hermesModel);
     const discoveredModels = discoverHermesModels(this.config.hermesModel);
-    const models = discoveredModels.length > 0 ? discoveredModels : apiModels;
+    const models = mergeHermesModels(apiModels, discoveredModels, this.config.hermesModel);
     return { models };
   }
 
