@@ -2,7 +2,7 @@
 
 ## PC
 
-For Play Store style onboarding, prefer the Host Bridge installer flow in `docs/host-installer.md`. The installer creates the token, registers the background service, discovers LAN/Tailscale endpoints, and generates an Android pairing QR/deep link.
+For Play Store style onboarding, prefer the Host Bridge installer flow in `docs/host-installer.md`. The installer creates the token, registers the background service, discovers LAN/Tailscale endpoints, and generates an Android pairing QR/deep link. For a VPS or SSH-only Linux host, use `docs/vps-headless-linux.md`.
 
 Requirements:
 
@@ -45,7 +45,7 @@ cd pc
 npm run host:mcp
 ```
 
-The command updates available OpenClaw, Hermes, and Codex MCP config with the current bridge URL and token. You can rerun it after changing the token, moving the checkout, or installing one of those host agents later.
+The command updates available OpenClaw, Hermes, and Codex MCP config with the current bridge URL and token. You can rerun it after changing the token, moving the checkout, or installing one of those host agents later. For Hermes profiles, set `HERMES_CONFIG_PATH` to the active profile config before running the command. Host agents should also load the `android-control` skill from `.agents/skills/android-control/SKILL.md` so phone tasks use observe-act-verify behavior.
 
 The bridge exposes:
 
@@ -58,7 +58,7 @@ The bridge server is split into focused HTTP, WebSocket, and realtime modules. L
 The Android model picker can select multiple harnesses through this same bridge:
 
 - **OpenClaw** is enabled by default and remains the default. Its Gateway sessions are the source of truth for normal OpenClaw chat history.
-- **Hermes** appears when `HERMES_API_KEY` is set. Configure `HERMES_API_BASE_URL`, `HERMES_MODEL`, `HERMES_DEFAULT_SESSION_ID`, and `HERMES_RUN_TIMEOUT_SECONDS` in `pc/.env.local`.
+- **Hermes** appears when `HERMES_API_KEY` is set. Configure `HERMES_API_BASE_URL`, `HERMES_MODEL`, `HERMES_DEFAULT_SESSION_ID`, and `HERMES_RUN_TIMEOUT_SECONDS` in `pc/.env.local` or the persistent host config. The Hermes harness expects Lynk's runs/SSE API, not only an OpenAI-compatible chat-completions proxy; see `docs/hermes-runs-api.md`.
 - **Codex** appears through the bundled Codex app-server adapter. Configure `CODEX_APP_SERVER_COMMAND` and `CODEX_AGENT_CWD` if the defaults do not match your machine.
 - **Local LiteRT-LLM** appears only when enabled in Android and a `.litertlm` model is installed.
 
@@ -71,7 +71,7 @@ cd pc
 npm run phone:tailscale
 ```
 
-Then use the printed `ws://<pc-tailnet-name-or-ip>:8788/phone` URL in Android. Do not expose OpenClaw Gateway or app-server transports directly to the internet.
+Then use the printed `ws://<pc-tailnet-name-or-ip>:8788/phone` URL in Android. Pairing payloads include both MagicDNS and tailnet IP candidates when Tailscale reports both. On Android, the `100.x.y.z` tailnet IP is the safest manual value unless **Use Tailscale DNS** is enabled in the Tailscale app. Do not expose OpenClaw Gateway, Hermes, Codex app-server, or bridge transports directly to the public internet.
 
 The realtime voice path is separate from the task dispatcher: Android starts the WebRTC call, the PC bridge creates the OpenAI Realtime session, and completed general realtime intents route to the currently selected backend. Host selections use the PC harness router; Local LiteRT-LM selections run delegated work on Android. Phone-control tool calls remain a separate phone-task path.
 

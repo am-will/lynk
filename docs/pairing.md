@@ -21,7 +21,7 @@ If you later start the bridge from a new shell, export the same token again or g
 
 ## Tailscale Remote Mode
 
-Use this mode when the Android phone and PC are not on the same LAN. It keeps the bridge private to your Tailscale tailnet instead of exposing OpenClaw, the bridge, or any app-server transport to the public internet.
+Use this mode when the Android phone and PC are not on the same LAN. It keeps the bridge private to your Tailscale tailnet instead of exposing OpenClaw, Hermes, Codex, the bridge, or any app-server transport to the public internet. For a VPS or SSH-only Linux host, this is the primary path; see `docs/vps-headless-linux.md`.
 
 1. On the PC, confirm Tailscale is connected:
 
@@ -38,7 +38,7 @@ cd pc
 npm run phone:tailscale
 ```
 
-The helper prints a `ws://...:8788/phone` URL. It prefers this PC's MagicDNS name when available and falls back to its `100.x.y.z` Tailscale IPv4 address.
+The helper prints a `ws://...:8788/phone` URL and any fallback URLs. Pairing payloads include both MagicDNS and `100.x.y.z` tailnet IP candidates when Tailscale reports both.
 
 4. Generate a bridge token, then start OpenClaw Gateway and the bridge on the PC:
 
@@ -87,7 +87,7 @@ The listener should show `*:8788`, not only `127.0.0.1:8788`.
 
 - Keep the phone unlocked while starting the agent.
 - If macOS prompts for firewall access, allow it for the terminal or Node.js process running the bridge.
-- If MagicDNS fails on Android, use the `100.x.y.z` Tailscale IP from `npm run phone:tailscale`.
+- If MagicDNS fails on Android, either enable **Use Tailscale DNS** in the Android Tailscale app or use the `100.x.y.z` Tailscale IP from `npm run phone:tailscale`.
 
 Do not expose OpenClaw Gateway, Codex app-server, or the bridge directly to the public internet. Tailscale Funnel, Cloudflare Tunnel, and ngrok are intentionally not the default for this prototype because they add public ingress risk.
 

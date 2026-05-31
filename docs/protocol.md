@@ -151,7 +151,9 @@ Prompt policy is session-oriented where the selected harness supports it. Normal
 
 Local phone mode mirrors these outbound event types locally: `chat.models`, `chat.sessions`, `chat.history`, `chat.state`, `chat.delta`, `chat.final`, `chat.error`, `chat.tool_event`, and `chat.tools`. Local session keys use the `local:` prefix, and the local model id is currently `local-litertlm`.
 
-Host harnesses are selected by model id. OpenClaw keeps its existing bare model ids for backward compatibility, while non-default harness models are namespaced as `<harness>:<model>`, for example `hermes:gpt-5.5` or `codex:gpt-5.3-codex`. The bridge emits optional `harnessId`, `harnessLabel`, and `modelId` metadata on model, session, and state messages so Android can group the picker and keep previous chats scoped to the active harness.
+Host harnesses are selected by model id. OpenClaw keeps its existing bare model ids for backward compatibility, while non-default harness models are namespaced as `<harness>:<model>`, for example `hermes:gpt-5.5` or `codex:gpt-5.3-codex`. The bridge emits optional `harnessId`, `harnessLabel`, and `modelId` metadata on model, session, and state messages so Android can group the picker and keep previous chats scoped to the active harness. The harness prefix is a Lynk selection prefix; the bridge strips `hermes:` and `codex:` before calling those backends.
+
+For multi-provider Hermes deployments, `/models` should include provider metadata when a bare model name is ambiguous. A Hermes model row such as `{ "id": "grok-4.3", "provider": "xai" }` is presented as `hermes:xai:grok-4.3`; the Hermes runs endpoint receives `xai:grok-4.3` and can split it for provider routing.
 
 Android opens or refreshes the selected Gateway session after registration:
 
@@ -187,11 +189,13 @@ Android sends user text, optional model, optional reasoning selection, and optio
 }
 ```
 
-Attachment `kind` is `"image"` or `"file"`. Android sends selected files inline as base64 in `contentBase64`; each attachment is capped at 50 MiB before base64 encoding, and both Android and the PC protocol reject larger payloads. Host harnesses receive the attachment payload with the turn: OpenClaw receives the bridge attachment array, Hermes forwards the same array to run creation, and Codex converts image attachments to app-server image user input data URLs. `delivery` is optional and defaults to `"normal"`. Android uses `"queue"` or `"steer"` when the user sends text while a turn is already active:
+Attachment `kind` is `"image"` or `"file"`. Android sends selected files inline as base64 in `contentBase64`; each attachment is capped at 50 MiB before base64 encoding, and both Android and the PC protocol reject larger payloads. Host harnesses receive the attachment payload with the turn: OpenClaw receives the bridge attachment array, Hermes forwards the same array to run creation, and Codex converts image attachments to app-server image user input data URLs. Hermes adapters may drop unsupported attachment kinds, but they should not reinterpret the fields. `delivery` is optional and defaults to `"normal"`. Android uses `"queue"` or `"steer"` when the user sends text while a turn is already active:
 
 - `"queue"` keeps the message FIFO and starts it as the next turn after the active run settles.
 - `"steer"` sends the message into the active run at the next supported harness boundary. OpenClaw uses its explicit `/steer` path, Hermes uses active session steering, and Codex app-server uses `turn/steer` with the active turn id.
 - Slash overrides `/queue <prompt>` and `/steer <prompt>` force the delivery for that prompt, regardless of the Android default toggle.
+
+Hermes fast mode maps to `service_tier: "priority"` on `POST /runs`. When fast mode is off, Lynk omits `service_tier`; no other tier values are currently sent.
 
 Android can stop active chat work, switch or create sessions, update model/reasoning, and invoke safe UI controls:
 
@@ -361,6 +365,10 @@ Android treats unread state as local and per session. Opening the modal while th
 Metadata messages are `chat.models`, `chat.commands`, `chat.tools`, `chat.sessions`, and `chat.usage`. The Android UI treats all of them as replaceable snapshots for its local chat state. `chat.models` may contain duplicate human-readable model names across harnesses; use `id` as the selection value and show `harnessLabel` next to the model. `chat.sessions` is scoped to the active harness, so histories do not mix between OpenClaw, Hermes, Codex, and Local LiteRT. Codex session rows may additionally include `workspacePath`, `workspaceName`, `threadPath`, `preview`, and `source`; Android uses those optional fields only for the Codex previous-sessions picker so Codex threads can be grouped by their desktop workspace folder.
 
 `chat.usage` and the matching token fields on `chat.sessions` use `totalTokens` as the current consumed-token numerator and `contextTokens` as the model's effective context-window denominator. `contextTokens` is not a second consumed-token count; it should reflect the configured or discovered model window for the active harness/model, such as Hermes `context_length`, Codex app-server provider bounds, or the local LiteRT-LM context setting. Android renders context percentage as `totalTokens / contextTokens` when both values are present.
+
+The bridge exposes authenticated harness diagnostics at `/api/harnesses/health` and `/api/harnesses/readiness`. Harness health entries must use `ok: true` for healthy backends. A response such as `{ "status": "ok" }` is treated as unknown or unhealthy by Lynk UI code. Readiness combines configuration and model availability; health is the live reachability check used before chat sends.
+
+Hermes-specific HTTP expectations are documented in `docs/hermes-runs-api.md`. The required API is a runs/SSE contract under `HERMES_API_BASE_URL`, including `/health`, `/models`, `/runs`, `/runs/{id}/events`, `/runs/{id}/stop`, session listing, and capabilities.
 
 ## Realtime Voice
 

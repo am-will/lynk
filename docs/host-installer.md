@@ -16,7 +16,7 @@ The Host Bridge installer packages the PC bridge as a background companion for A
 4. Scan the QR code with Android. The QR encodes an `android-agent://pair` deep link with the token, pairing ID, and ordered endpoint candidates.
 5. Android tries the saved endpoint candidates until one completes bridge registration.
 
-Manual URL/token entry remains available in Android settings as a fallback.
+Manual URL/token entry remains available in Android settings as a fallback. On headless Linux or VPS hosts, prefer `lynk-bridge-host pairing` without `--qr`; see `docs/vps-headless-linux.md`.
 
 The installer does not register MCP servers with OpenClaw, Hermes, or Codex automatically. Host chat is available after pairing; phone-control tools inside those host agents are an optional integration the user can install later.
 
@@ -35,11 +35,11 @@ Environment variables still override the file for development and support sessio
 Pairing candidates are ordered for the common paths:
 
 1. USB reverse (`ws://127.0.0.1:8788/phone`) when ADB is used.
-2. Tailscale MagicDNS or tailnet IP when Tailscale is installed and running.
+2. Tailscale MagicDNS and tailnet IP candidates when Tailscale is installed and running.
 3. Local LAN IPv4 addresses, excluding loopback, Docker, VM, link-local, and tunnel interfaces.
 4. Loopback fallback.
 
-Only the phone-facing bridge should be reachable over Tailscale. OpenClaw Gateway, Hermes, Codex app-server, and other host-agent transports should stay on localhost or trusted private networks.
+Only the phone-facing bridge should be reachable over Tailscale. OpenClaw Gateway, Hermes, Codex app-server, and other host-agent transports should stay on localhost or trusted private networks. On Android, MagicDNS may require enabling **Use Tailscale DNS** in the Tailscale app; the `100.x.y.z` candidate remains the reliable fallback.
 
 ## Refresh Integrations
 
@@ -61,7 +61,7 @@ cd pc
 npm run host:mcp
 ```
 
-This command updates the available host-agent MCP registrations with the current bridge URL and token. It is safe to rerun after moving the app, changing the bridge port, regenerating the pairing token, or installing a host agent later. `npm run host:refresh -- --configure-mcp` performs the same MCP update while also refreshing integration discovery.
+This command updates the available host-agent MCP registrations with the current bridge URL and token. It is safe to rerun after moving the app, changing the bridge port, regenerating the pairing token, or installing a host agent later. `npm run host:refresh -- --configure-mcp` performs the same MCP update while also refreshing integration discovery. Hermes profile users should set `HERMES_CONFIG_PATH` to the active profile config. Host agents should load `.agents/skills/android-control/SKILL.md` alongside the MCP tools for proper observe-act-verify phone-control behavior.
 
 ## Diagnostics
 
