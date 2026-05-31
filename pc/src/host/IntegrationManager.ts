@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveCommand, resolveExecutable } from "./CommandDiscovery.js";
 import { discoverEndpoints } from "./EndpointDiscovery.js";
+import { resolveHermesConfigPath } from "./HermesConfigPath.js";
 import { loadOrCreateHostBridgeConfig, writeHostBridgeConfig } from "./HostConfigStore.js";
 
 export interface IntegrationStatus {
@@ -58,8 +59,8 @@ export async function detectIntegrations(): Promise<IntegrationStatus[]> {
   const tailscale = await discoverEndpoints({ port: hostConfig.phoneAgentPort ?? 8788, includeUsb: false });
   const adb = resolveExecutable(process.env.ADB?.trim() || "adb");
   const hermesApiKey = process.env.HERMES_API_KEY?.trim() || hostConfig.hermesApiKey?.trim();
-  const hermesHome = process.env.HERMES_HOME?.trim() || resolve(process.env.HOME ?? "", ".hermes");
-  const hermesConfigExists = existsSync(resolve(hermesHome, "config.yaml"));
+  const hermesConfigPath = resolveHermesConfigPath();
+  const hermesConfigExists = existsSync(hermesConfigPath);
 
   return [
     {
@@ -77,7 +78,7 @@ export async function detectIntegrations(): Promise<IntegrationStatus[]> {
       installed: hermesConfigExists || Boolean(hermesApiKey),
       configured: Boolean(hermesApiKey),
       ready: Boolean(hermesApiKey),
-      path: hermesConfigExists ? resolve(hermesHome, "config.yaml") : undefined,
+      path: hermesConfigExists ? hermesConfigPath : undefined,
       message: hermesApiKey ? "Hermes API key is configured." : "Hermes API key is missing."
     },
     {
@@ -113,21 +114,22 @@ export async function detectIntegrations(): Promise<IntegrationStatus[]> {
 async function configureAvailableMcp(integrations: IntegrationStatus[]): Promise<Array<{ integration: string; ok: boolean; message: string }>> {
   const results = [];
   if (integrations.find((integration) => integration.id === "openclaw")?.ready) {
-    results.push(await runNpmScript("openclaw", "openclaw:mcp"));
+    results.push(await runConfigureScript("openclaw", "configureOpenClawMcp"));
   }
   if (integrations.find((integration) => integration.id === "hermes")?.ready) {
-    results.push(await runNpmScript("hermes", "hermes:mcp"));
+    results.push(await runConfigureScript("hermes", "configureHermesMcp"));
   }
   if (integrations.find((integration) => integration.id === "codex")?.ready) {
-    results.push(await runNpmScript("codex", "codex:mcp"));
+    results.push(await runConfigureScript("codex", "configureCodexMcp"));
   }
   return results;
 }
 
-async function runNpmScript(integration: string, script: string): Promise<{ integration: string; ok: boolean; message: string }> {
+async function runConfigureScript(integration: string, scriptName: string): Promise<{ integration: string; ok: boolean; message: string }> {
   const loaded = loadOrCreateHostBridgeConfig();
+  const script = configureScriptCommand(scriptName);
   return await new Promise((resolvePromise) => {
-    const child = spawn(process.platform === "win32" ? "npm.cmd" : "npm", ["run", script], {
+    const child = spawn(script.command, script.args, {
       cwd: pcRoot,
       env: {
         ...process.env,
@@ -143,7 +145,22 @@ async function runNpmScript(integration: string, script: string): Promise<{ inte
     child.on("close", (code) => resolvePromise({
       integration,
       ok: code === 0,
-      message: code === 0 ? "MCP configuration updated." : output.trim() || `${script} exited with code ${code ?? "null"}.`
+      message: code === 0 ? "MCP configuration updated." : output.trim() || `${scriptName} exited with code ${code ?? "null"}.`
     }));
   });
+}
+
+function configureScriptCommand(scriptName: string): { command: string; args: string[] } {
+  const distScript = resolve(pcRoot, "dist", "scripts", `${scriptName}.js`);
+  if (existsSync(distScript)) {
+    return { command: process.execPath, args: [distScript] };
+  }
+
+  const sourceScript = resolve(pcRoot, "src", "scripts", `${scriptName}.ts`);
+  const tsxBin = resolve(pcRoot, "node_modules", ".bin", process.platform === "win32" ? "tsx.cmd" : "tsx");
+  if (existsSync(sourceScript) && existsSync(tsxBin)) {
+    return { command: tsxBin, args: [sourceScript] };
+  }
+
+  return { command: process.execPath, args: [distScript] };
 }

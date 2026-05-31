@@ -1,14 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveAndroidPhoneMcpLaunchConfig } from "../host/AndroidPhoneMcpLaunch.js";
+import { resolveHermesConfigPath } from "../host/HermesConfigPath.js";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const pcRoot = resolve(scriptDir, "../..");
 const repoRoot = resolve(pcRoot, "..");
-const tsxBin = resolve(pcRoot, "node_modules/.bin/tsx");
-const mcpServer = resolve(pcRoot, "src/mcp/androidPhoneServer.ts");
 
 interface HermesMcpServerConfig {
   command: string;
@@ -19,23 +18,15 @@ interface HermesMcpServerConfig {
   connect_timeout: number;
 }
 
-function hermesConfigPath(): string {
-  const explicit = process.env.HERMES_CONFIG_PATH?.trim();
-  if (explicit) {
-    return explicit;
-  }
-  const hermesHome = process.env.HERMES_HOME?.trim() || resolve(homedir(), ".hermes");
-  return resolve(hermesHome, "config.yaml");
-}
-
 function buildAndroidPhoneMcpConfig(options: {
   bridgeUrl: string;
   phoneAgentToken: string;
 }): HermesMcpServerConfig {
+  const launch = resolveAndroidPhoneMcpLaunchConfig({ pcRoot });
   return {
-    command: tsxBin,
-    args: [mcpServer],
-    cwd: pcRoot,
+    command: launch.command,
+    args: launch.args,
+    cwd: launch.cwd,
     env: {
       PHONE_AGENT_BRIDGE_URL: options.bridgeUrl,
       PHONE_AGENT_TOKEN: options.phoneAgentToken
@@ -92,17 +83,13 @@ function mergeHermesMcpConfig(existingYaml: string, serverConfig: HermesMcpServe
   return `${next.join("\n")}\n`;
 }
 
-if (!existsSync(tsxBin)) {
-  throw new Error(`Missing tsx executable at ${tsxBin}. Run npm install in ${pcRoot}.`);
-}
-
 const phoneAgentToken = process.env.PHONE_AGENT_TOKEN?.trim();
 if (!phoneAgentToken) {
   throw new Error("PHONE_AGENT_TOKEN is required to configure the android-phone MCP server.");
 }
 
 const bridgeUrl = process.env.PHONE_AGENT_BRIDGE_URL ?? "http://127.0.0.1:8788";
-const configPath = hermesConfigPath();
+const configPath = resolveHermesConfigPath();
 const existingYaml = existsSync(configPath) ? readFileSync(configPath, "utf8") : "";
 const nextYaml = mergeHermesMcpConfig(existingYaml, buildAndroidPhoneMcpConfig({ bridgeUrl, phoneAgentToken }));
 

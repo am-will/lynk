@@ -1,29 +1,24 @@
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveAndroidPhoneMcpLaunchConfig } from "../host/AndroidPhoneMcpLaunch.js";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const pcRoot = resolve(scriptDir, "../..");
 const repoRoot = resolve(pcRoot, "..");
-const tsxBin = resolve(pcRoot, "node_modules/.bin/tsx");
-const mcpServer = resolve(pcRoot, "src/mcp/androidPhoneServer.ts");
 const bridgeUrl = process.env.PHONE_AGENT_BRIDGE_URL ?? "http://127.0.0.1:8788";
 const phoneAgentToken = process.env.PHONE_AGENT_TOKEN?.trim();
 const openClawCommand = process.env.OPENCLAW_AGENT_COMMAND?.trim() || "openclaw";
-
-if (!existsSync(tsxBin)) {
-  throw new Error(`Missing tsx executable at ${tsxBin}. Run npm install in ${pcRoot}.`);
-}
 
 if (!phoneAgentToken) {
   throw new Error("PHONE_AGENT_TOKEN is required to configure the android-phone MCP server.");
 }
 
+const launch = resolveAndroidPhoneMcpLaunchConfig({ pcRoot });
 const config = {
-  command: tsxBin,
-  args: [mcpServer],
-  cwd: pcRoot,
+  command: launch.command,
+  args: launch.args,
+  cwd: launch.cwd,
   env: {
     PHONE_AGENT_BRIDGE_URL: bridgeUrl,
     PHONE_AGENT_TOKEN: phoneAgentToken

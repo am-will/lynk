@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveAndroidPhoneMcpLaunchConfig } from "../host/AndroidPhoneMcpLaunch.js";
 import {
   codexAndroidPhoneMcpToml,
   defaultCodexConfigPath,
@@ -11,12 +12,6 @@ import {
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const pcRoot = resolve(scriptDir, "../..");
 const repoRoot = resolve(pcRoot, "..");
-const tsxBin = resolve(pcRoot, "node_modules/.bin/tsx");
-const mcpServer = resolve(pcRoot, "src/mcp/androidPhoneServer.ts");
-
-if (!existsSync(tsxBin)) {
-  throw new Error(`Missing tsx executable at ${tsxBin}. Run npm install in ${pcRoot}.`);
-}
 
 const phoneAgentToken = process.env.PHONE_AGENT_TOKEN?.trim();
 if (!phoneAgentToken) {
@@ -26,12 +21,13 @@ if (!phoneAgentToken) {
 const bridgeUrl = process.env.PHONE_AGENT_BRIDGE_URL ?? "http://127.0.0.1:8788";
 const configPath = defaultCodexConfigPath();
 const existingToml = existsSync(configPath) ? readFileSync(configPath, "utf8") : "";
+const launch = resolveAndroidPhoneMcpLaunchConfig({ pcRoot });
 const nextToml = mergeCodexAndroidPhoneMcpConfig(
   existingToml,
   codexAndroidPhoneMcpToml({
-    command: tsxBin,
-    args: [mcpServer],
-    cwd: pcRoot,
+    command: launch.command,
+    args: launch.args,
+    cwd: launch.cwd,
     bridgeUrl,
     phoneAgentToken
   })
