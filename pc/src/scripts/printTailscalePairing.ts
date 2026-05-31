@@ -1,4 +1,4 @@
-import { discoverTailscaleEndpoint } from "../host/EndpointDiscovery.js";
+import { discoverTailscaleEndpoints } from "../host/EndpointDiscovery.js";
 import { loadOrCreateHostBridgeConfig } from "../host/HostConfigStore.js";
 const DEFAULT_PORT = 8788;
 
@@ -7,7 +7,8 @@ if (!Number.isFinite(port) || port <= 0) {
   throw new Error(`Invalid PHONE_AGENT_PORT: ${process.env.PHONE_AGENT_PORT}`);
 }
 
-const endpoint = await discoverTailscaleEndpoint(port);
+const endpoints = await discoverTailscaleEndpoints(port);
+const endpoint = endpoints[0];
 if (!endpoint) {
   throw new Error("Unable to discover a Tailscale endpoint. Install Tailscale, log in, or use LAN pairing.");
 }
@@ -21,6 +22,13 @@ console.log("");
 console.log(`WebSocket URL: ${wsUrl}`);
 console.log(`Health URL:    ${healthUrl}`);
 console.log(`Host source:   ${endpoint.source}`);
+if (endpoints.length > 1) {
+  console.log("");
+  console.log("Fallback URLs:");
+  for (const fallback of endpoints.slice(1)) {
+    console.log(`- ${fallback.url} (${fallback.source})`);
+  }
+}
 console.log("");
 console.log("Android app path:");
 console.log("  OpenAgent -> Open Connection & Config -> Bridge");

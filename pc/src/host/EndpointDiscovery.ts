@@ -15,7 +15,7 @@ export interface EndpointCandidate {
   source: string;
 }
 
-interface TailscaleStatus {
+export interface TailscaleStatus {
   BackendState?: string;
   Self?: {
     DNSName?: string;
@@ -56,8 +56,12 @@ export async function discoverEndpoints(options: { port: number; includeUsb?: bo
 }
 
 export async function discoverTailscaleEndpoint(port: number): Promise<EndpointCandidate | undefined> {
+  return (await discoverTailscaleEndpoints(port))[0];
+}
+
+export async function discoverTailscaleEndpoints(port: number): Promise<EndpointCandidate[]> {
   const snapshot = await discoverTailscale(port);
-  return snapshot.endpoints[0];
+  return snapshot.endpoints;
 }
 
 async function discoverTailscale(port: number): Promise<{ endpoints: EndpointCandidate[]; status: DiscoverySnapshot["tailscale"] }> {
@@ -69,16 +73,16 @@ async function discoverTailscale(port: number): Promise<{ endpoints: EndpointCan
   try {
     const { stdout } = await execFileAsync(cli, ["status", "--json"], { timeout: 5_000, maxBuffer: 1024 * 1024 });
     const status = JSON.parse(stdout) as TailscaleStatus;
-    const host = preferredTailnetHost(status);
+    const endpoints = tailscaleEndpointsFromStatus(status, port);
     const running = status.BackendState === undefined || status.BackendState === "Running";
     const online = status.Self?.Online ?? null;
     return {
-      endpoints: host ? [endpoint("tailscale", "Tailscale", host, port, normalizeDnsName(status.Self?.DNSName) ? "MagicDNS" : "Tailscale IP")] : [],
+      endpoints,
       status: {
         installed: true,
         running,
         online,
-        source: host ? (normalizeDnsName(status.Self?.DNSName) ? "MagicDNS" : "Tailscale IP") : undefined,
+        source: tailscaleSource(endpoints),
         ...(running ? {} : { error: status.BackendState ?? "Tailscale is not running" })
       }
     };
@@ -108,6 +112,18 @@ async function discoverTailscale(port: number): Promise<{ endpoints: EndpointCan
       };
     }
   }
+}
+
+export function tailscaleEndpointsFromStatus(status: TailscaleStatus, port: number): EndpointCandidate[] {
+  const endpoints: EndpointCandidate[] = [];
+  const dnsName = normalizeDnsName(status.Self?.DNSName);
+  if (dnsName) {
+    endpoints.push(endpoint("tailscale", "Tailscale MagicDNS", dnsName, port, "MagicDNS"));
+  }
+  for (const ip of tailnetIps(status)) {
+    endpoints.push(endpoint("tailscale", "Tailscale IP", ip, port, ip.includes(":") ? "Tailscale IPv6" : "Tailscale IPv4"));
+  }
+  return dedupeEndpoints(endpoints);
 }
 
 function endpoint(kind: EndpointKind, label: string, host: string, port: number, source: string): EndpointCandidate {
@@ -160,13 +176,19 @@ function dedupeEndpoints(endpoints: EndpointCandidate[]): EndpointCandidate[] {
   return result;
 }
 
-function preferredTailnetHost(status: TailscaleStatus): string | undefined {
-  const dnsName = normalizeDnsName(status.Self?.DNSName);
-  if (dnsName) {
-    return dnsName;
-  }
+function tailnetIps(status: TailscaleStatus): string[] {
   const ips = status.Self?.TailscaleIPs ?? [];
-  return ips.find((ip) => /^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip)) ?? ips[0];
+  const ipv4 = ips.filter((ip) => /^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip));
+  const other = ips.filter((ip) => !ipv4.includes(ip));
+  return [...ipv4, ...other];
+}
+
+function tailscaleSource(endpoints: EndpointCandidate[]): string | undefined {
+  const sources = [...new Set(endpoints.map((endpoint) => endpoint.source))];
+  if (sources.length === 0) {
+    return undefined;
+  }
+  return sources.join(" + ");
 }
 
 function normalizeDnsName(value: string | undefined): string | undefined {
