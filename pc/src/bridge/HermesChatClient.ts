@@ -512,9 +512,7 @@ function normalizeHermesSession(value: unknown): ChatSessionSummary | undefined 
   if (!sessionId) {
     return undefined;
   }
-  // Some Hermes backends return token counts as a nested token_counts object; others
-  // return them as flat fields directly on the session. Fall back to the record itself
-  // so both shapes populate the usage panel.
+  // Hermes-compatible backends may expose token counts either nested or flat.
   const tokenCounts = asRecord(record?.token_counts) ?? asRecord(record?.tokenCounts) ?? record;
   const preview = firstStringField(record, ["preview", "title", "label", "last_message"]);
   const timestamp = timestampMs(record?.timestamp ?? record?.updated_at ?? record?.created_at);
