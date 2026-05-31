@@ -252,6 +252,15 @@ export class OpenClawChatBridge {
         thinking: state.reasoningEffort ?? undefined,
         idempotencyKey
       });
+      if (state.completedRunIds.has(result.runId)) {
+        state.sessionKey = result.sessionKey;
+        state.runId = null;
+        state.activeTaskKind = null;
+        this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} finished`);
+        void this.refreshDevice(message.deviceId);
+        this.drainQueuedSends(message.deviceId);
+        return;
+      }
       state.sessionKey = result.sessionKey;
       state.runId = result.runId;
       const userMessage: ChatHistoryMessage = {
@@ -900,6 +909,10 @@ export class OpenClawChatBridge {
 
   private sendState(deviceId: string, status?: string): void {
     const state = this.stateFor(deviceId);
+    if (state.runId && state.completedRunIds.has(state.runId)) {
+      state.runId = null;
+      state.activeTaskKind = null;
+    }
     this.sendChat(deviceId, {
       type: "chat.state",
       deviceId,

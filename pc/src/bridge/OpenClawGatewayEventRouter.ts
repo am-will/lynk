@@ -93,6 +93,7 @@ export class OpenClawGatewayEventRouter {
         state.activeTaskKind = null;
       }
       if (messageRunId) {
+        state.completedRunIds.add(messageRunId);
         const replySessionKey = messageSessionKey ?? pendingRun?.sessionKey;
         if (replySessionKey) {
           this.options.sendReplyAvailable(deviceId, message, replySessionKey, pendingRun);
