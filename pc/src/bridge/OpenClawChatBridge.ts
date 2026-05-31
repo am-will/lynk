@@ -61,7 +61,7 @@ import {
   stringField,
   usageFromSession
 } from "./chat/ChatNormalizers.js";
-import { buildChatErrorMessage } from "./chat/ChatErrors.js";
+import { buildChatErrorMessage, ChatClientError } from "./chat/ChatErrors.js";
 import { normalizeChatSendContent } from "./chat/ChatSendAttachments.js";
 import { OpenClawRealtimeSessions } from "./OpenClawRealtimeSessions.js";
 import { OpenClawRunWaiters } from "./OpenClawRunWaiters.js";
@@ -99,6 +99,55 @@ function sameChatUserMessage(a: ChatHistoryMessage, b: ChatHistoryMessage): bool
     b.role === "user" &&
     a.text === b.text &&
     JSON.stringify(a.attachments ?? []) === JSON.stringify(b.attachments ?? []);
+}
+
+function healthForHarness(payload: unknown, harnessId: HarnessId): Record<string, unknown> | undefined {
+  const record = asRecord(payload);
+  const harnesses = asRecord(record?.harnesses);
+  if (harnesses) {
+    return asRecord(harnesses[harnessId]);
+  }
+  return harnessId === "openclaw" ? record : undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
+}
+
+function harnessUnavailableError(harnessId: HarnessId, label: string, cause: unknown): ChatClientError {
+  const detail = errorDetail(cause);
+  const action = harnessRecoveryAction(harnessId);
+  return new ChatClientError(`${label} backend is not reachable. ${action}${detail ? ` Details: ${detail}` : ""}`, {
+    code: `${harnessId}.unreachable`
+  });
+}
+
+function errorDetail(error: unknown): string | undefined {
+  if (typeof error === "string") {
+    return error.trim() || undefined;
+  }
+  if (error instanceof Error) {
+    return error.message.trim() || undefined;
+  }
+  const record = asRecord(error);
+  const message = typeof record?.message === "string" ? record.message : undefined;
+  const errorMessage = typeof record?.error === "string" ? record.error : undefined;
+  return message?.trim() || errorMessage?.trim() || undefined;
+}
+
+function harnessRecoveryAction(harnessId: HarnessId): string {
+  switch (harnessId) {
+    case "openclaw":
+      return "Start OpenClaw Gateway with `openclaw gateway start` or choose a healthy harness in the model picker.";
+    case "hermes":
+      return "Verify `HERMES_API_BASE_URL` points at a Lynk-compatible Hermes runs API and that `HERMES_API_KEY` is set.";
+    case "codex":
+      return "Verify the Codex app-server command and workspace are configured, then try again.";
+    default: {
+      const exhaustive: never = harnessId;
+      return exhaustive;
+    }
+  }
 }
 
 export class OpenClawChatBridge {
@@ -165,9 +214,9 @@ export class OpenClawChatBridge {
   async open(message: ChatOpenMessage): Promise<void> {
     const state = this.stateFor(message.deviceId);
     if (message.sessionKey) {
-      state.sessionKey = message.sessionKey;
+      this.states.activateSession(state, message.sessionKey);
     }
-    this.sendState(message.deviceId, "Loading OpenClaw chat");
+    this.sendState(message.deviceId, `Loading ${harnessLabel(state.harnessId)} chat`);
     await this.refreshDevice(message.deviceId);
   }
 
@@ -235,6 +284,17 @@ export class OpenClawChatBridge {
     }
     if (delivery === "steer" && state.runId) {
       await this.steerChatMessage(message, state, requestText, idempotencyKey, taskKind);
+      return;
+    }
+    const healthError = await this.activeHarnessHealthError(state);
+    if (healthError) {
+      this.sendChat(message.deviceId, buildChatErrorMessage({
+        deviceId: message.deviceId,
+        sessionKey: state.sessionKey,
+        runId: idempotencyKey,
+        error: healthError
+      }));
+      this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} is not reachable`);
       return;
     }
     try {
@@ -320,6 +380,24 @@ export class OpenClawChatBridge {
       return;
     }
     await this.fallbackSender.send(message, idempotencyKey, taskKind);
+  }
+
+  private async activeHarnessHealthError(state: DeviceChatState): Promise<ChatClientError | undefined> {
+    const label = harnessLabel(state.harnessId);
+    let payload: unknown;
+    try {
+      payload = await this.client.health();
+    } catch (error) {
+      return harnessUnavailableError(state.harnessId, label, error);
+    }
+    const health = healthForHarness(payload, state.harnessId);
+    if (!health) {
+      return undefined;
+    }
+    if (health.ok === false) {
+      return harnessUnavailableError(state.harnessId, label, health.error ?? health.message ?? payload);
+    }
+    return undefined;
   }
 
   private applyRealtimeChatOptions(

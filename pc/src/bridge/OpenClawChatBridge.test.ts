@@ -43,6 +43,7 @@ class FakeGatewayClient {
   commands: Array<Record<string, unknown>> = [];
   readonly duplicateLabels = new Set<string>();
   sendError?: Error;
+  healthResponse: unknown = { ok: true, eventLoop: { degraded: false } };
   private runCount = 0;
 
   addEventListener(handler: GatewayEventHandler): () => void {
@@ -103,7 +104,7 @@ class FakeGatewayClient {
   }
 
   async health(): Promise<unknown> {
-    return { ok: true, eventLoop: { degraded: false } };
+    return this.healthResponse;
   }
 
   close(): void {}
@@ -366,6 +367,18 @@ test("backend readiness reports configured harnesses only when live models exist
   });
 });
 
+test("open uses the selected session harness in loading status", async () => {
+  const { bridge, chatMessages } = createHarness();
+
+  await bridge.open({
+    type: "chat.open",
+    deviceId: "pixel",
+    sessionKey: "hermes:chat"
+  });
+
+  assert.equal(chatMessages.find((message) => message.type === "chat.state")?.status, "Loading Hermes chat");
+});
+
 test("explicit phone chat uses gateway session so session fast mode applies", async () => {
   const { bridge, client, fallbackCalls } = createHarness();
 
@@ -577,6 +590,53 @@ test("non-OpenClaw send failure emits chat error without gateway fallback", asyn
   assert.equal(client.sent.length, 0);
   const error = chatMessages.find((message) => message.type === "chat.error");
   assert.equal(error?.message, "hermes unavailable");
+});
+
+test("unhealthy active harness fails before sending with harness-specific guidance", async () => {
+  const { bridge, chatMessages, client, fallbackCalls } = createHarness();
+  client.healthResponse = {
+    harnesses: {
+      openclaw: { ok: true },
+      hermes: { ok: false, error: "connect ECONNREFUSED 127.0.0.1:8642" }
+    }
+  };
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    sessionKey: defaultSessionKey("pixel"),
+    text: "Use Hermes",
+    model: "hermes:gpt-5.5"
+  });
+
+  assert.equal(client.sent.length, 0);
+  assert.equal(fallbackCalls.length, 0);
+  const error = chatMessages.find((message) => message.type === "chat.error");
+  assert.equal(error?.code, "hermes.unreachable");
+  assert.match(error?.message ?? "", /Hermes backend is not reachable/);
+  assert.match(error?.message ?? "", /HERMES_API_BASE_URL/);
+});
+
+test("harness switch ignores stale OpenClaw session key on next send", async () => {
+  const { bridge, client } = createHarness();
+  const staleOpenClawSession = defaultSessionKey("pixel");
+
+  await bridge.setModel({
+    type: "chat.set_model",
+    deviceId: "pixel",
+    sessionKey: staleOpenClawSession,
+    model: "hermes:gpt-5.5"
+  });
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    sessionKey: staleOpenClawSession,
+    text: "Still route to Hermes",
+    model: "hermes:gpt-5.5"
+  });
+
+  assert.equal(client.patched[0]?.sessionKey, "hermes:hermes-agent-pixel");
+  assert.equal(client.sent[0]?.sessionKey, "hermes:hermes-agent-pixel");
 });
 
 test("coded chat failures preserve structured error details", async () => {
