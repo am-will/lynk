@@ -10,9 +10,21 @@ import { DeviceChatStateStore, type DeviceChatState, type PendingChatRun } from 
 
 export class HarnessDeviceStateStore extends DeviceChatStateStore {
   constructor(
-    private readonly harnessConfig: Pick<BridgeConfig, "openClawChatAgentId" | "openClawChatSessionKey" | "hermesDefaultSessionId">
+    private readonly harnessConfig: Pick<BridgeConfig, "openClawChatAgentId" | "openClawChatSessionKey" | "hermesDefaultSessionId" | "hermesApiKey">
   ) {
     super(harnessConfig);
+  }
+
+  override stateFor(deviceId: string): DeviceChatState {
+    const state = super.stateFor(deviceId);
+    // When a device connects for the first time and Hermes is configured, default to
+    // the hermes harness so users don't land on OpenClaw (which may not be running).
+    if (state.harnessId === "openclaw" && this.harnessConfig.hermesApiKey) {
+      state.harnessId = "hermes";
+      state.sessionKey = defaultSessionKeyForHarness("hermes", this.harnessConfig, deviceId);
+      state.sessionKeysByHarness.set("hermes", state.sessionKey);
+    }
+    return state;
   }
 
   switchHarness(deviceId: string, state: DeviceChatState, harnessId: HarnessId): void {
