@@ -19,6 +19,7 @@ enum class ClientBrand {
     Hermes,
     Codex,
     OpenCode,
+    Pi,
     Local
 }
 
@@ -188,6 +189,11 @@ object ChatPresentationHelpers {
                 title = "OpenCode",
                 logoRes = R.drawable.opencode_logo_plate
             )
+            ClientBrand.Pi -> ClientBrandPresentation(
+                brand = brand,
+                title = "Pi",
+                logoRes = R.drawable.pi_agent_logo_plate
+            )
             ClientBrand.Local -> ClientBrandPresentation(
                 brand = brand,
                 title = "LiteRT-LLM",
@@ -256,6 +262,7 @@ object ChatPresentationHelpers {
             "hermes" -> ClientBrand.Hermes
             "codex" -> ClientBrand.Codex
             "opencode" -> ClientBrand.OpenCode
+            "pi" -> ClientBrand.Pi
             "local" -> ClientBrand.Local
             else -> ClientBrand.OpenClaw
         }
@@ -267,6 +274,7 @@ object ChatPresentationHelpers {
         val providerLabel = when (modelHarnessId(model)) {
             "local" -> "LiteRT-LLM"
             "opencode" -> model.provider?.takeIf { it.isNotBlank() }?.substringBefore("/")
+            "pi" -> model.provider?.takeIf { it.isNotBlank() }?.substringBefore("/")
             else -> model.provider?.takeIf { it.isNotBlank() }
         }
         return providerLabel?.takeUnless { it.equals(groupLabel, ignoreCase = true) }
@@ -366,7 +374,7 @@ object ChatPresentationHelpers {
     }
 
     private fun replaceClientNames(text: String, replacement: String): String {
-        return Regex("\\b(local phone model|local model|litert-lm|litert-llm|openclaw|hermes|codex|opencode|litert)\\b", RegexOption.IGNORE_CASE)
+        return Regex("\\b(local phone model|local model|litert-lm|litert-llm|openclaw|hermes|codex|opencode|pi|litert)\\b", RegexOption.IGNORE_CASE)
             .replace(text, replacement)
     }
 }

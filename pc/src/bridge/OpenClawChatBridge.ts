@@ -544,15 +544,15 @@ export class OpenClawChatBridge {
     const explicitLabel = typeof message.label === "string" && message.label.trim()
       ? message.label.trim()
       : undefined;
-    const workspacePath = state.harnessId === "codex" || state.harnessId === "opencode"
-      ? codexWorkspacePathForNewSession(state, message.workspacePath)
+    const workspacePath = isWorkspaceAwareHarness(state.harnessId)
+      ? workspacePathForNewSession(state, message.workspacePath)
       : undefined;
     const created = await this.client.createSession({
       key: requestKey,
       label: explicitLabel ?? sessionUuid,
       model: selection?.modelId ?? this.states.rawModelForSelection(state.model) ?? undefined,
       ...(workspacePath ? { workspacePath } : {}),
-      ...((state.harnessId === "codex" || state.harnessId === "opencode") && message.createWorkspaceIfMissing ? { createWorkspaceIfMissing: true } : {})
+      ...(isWorkspaceAwareHarness(state.harnessId) && message.createWorkspaceIfMissing ? { createWorkspaceIfMissing: true } : {})
     });
     const record = created && typeof created === "object" ? created as Record<string, unknown> : {};
     const key = typeof record.key === "string" && record.key.trim() ? record.key.trim() : undefined;
@@ -965,12 +965,12 @@ export class OpenClawChatBridge {
   private harnessIdFromModel(model: unknown): string {
     const record = model && typeof model === "object" ? model as Record<string, unknown> : undefined;
     const harnessId = stringField(record, "harnessId") ?? stringField(record, "provider");
-    if (harnessId === "hermes" || harnessId === "codex" || harnessId === "opencode" || harnessId === "local") {
+    if (harnessId === "hermes" || harnessId === "codex" || harnessId === "opencode" || harnessId === "pi" || harnessId === "local") {
       return harnessId;
     }
     const id = stringField(record, "id") ?? "";
     const prefix = id.split(":", 1)[0]?.toLowerCase();
-    return prefix === "hermes" || prefix === "codex" || prefix === "opencode" || prefix === "local" ? prefix : "openclaw";
+    return prefix === "hermes" || prefix === "codex" || prefix === "opencode" || prefix === "pi" || prefix === "local" ? prefix : "openclaw";
   }
 
   private sendReplyAvailable(
@@ -987,11 +987,15 @@ export class OpenClawChatBridge {
   }
 }
 
-function codexWorkspacePathForNewSession(state: DeviceChatState, requestedWorkspacePath: string | undefined): string | undefined {
+function workspacePathForNewSession(state: DeviceChatState, requestedWorkspacePath: string | undefined): string | undefined {
   const requested = requestedWorkspacePath?.trim();
   if (requested) {
     return requested;
   }
   const currentWorkspace = state.sessionSummaries.get(state.sessionKey)?.workspacePath?.trim();
   return currentWorkspace || undefined;
+}
+
+function isWorkspaceAwareHarness(harnessId: HarnessId): boolean {
+  return harnessId === "codex" || harnessId === "opencode" || harnessId === "pi";
 }

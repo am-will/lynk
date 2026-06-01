@@ -15,6 +15,7 @@ import type { BridgeConfig } from "../config.js";
 import type { ChatCommandOption } from "../../protocol/messages.js";
 import { HermesChatClient } from "../HermesChatClient.js";
 import { OpenCodeChatClient } from "../opencode/OpenCodeChatClient.js";
+import { PiChatClient } from "../pi/PiChatClient.js";
 import type { GatewayChatClient } from "../OpenClawChatTypes.js";
 import { assertHarnessSupportsAttachments } from "../chat/ChatSendAttachments.js";
 import type {
@@ -93,6 +94,14 @@ export class HarnessChatRouter implements GatewayChatClient {
         timeoutMs: config.opencodeRunTimeoutMs
       }), { supportsAttachments: true }));
     }
+    if (config.piConfigured) {
+      this.adapters.set("pi", new NormalizedHarnessAdapter("pi", new PiChatClient(audit, undefined, undefined, {
+        cwd: config.piAgentCwd,
+        agentDir: config.piAgentDir,
+        defaultModel: config.piDefaultModel,
+        timeoutMs: config.piRunTimeoutMs
+      }), { supportsAttachments: true }));
+    }
   }
 
   addEventListener(handler: GatewayEventHandler): () => void {
@@ -168,8 +177,8 @@ export class HarnessChatRouter implements GatewayChatClient {
       key,
       label: options.label,
       model: selection?.modelId ?? options.model,
-      ...((harnessId === "codex" || harnessId === "opencode") && options.workspacePath ? { workspacePath: options.workspacePath } : {}),
-      ...((harnessId === "codex" || harnessId === "opencode") && options.createWorkspaceIfMissing ? { createWorkspaceIfMissing: true } : {})
+      ...(isWorkspaceAwareHarness(harnessId) && options.workspacePath ? { workspacePath: options.workspacePath } : {}),
+      ...(isWorkspaceAwareHarness(harnessId) && options.createWorkspaceIfMissing ? { createWorkspaceIfMissing: true } : {})
     });
     return this.namespaceCreatedSession(created, harnessId, key);
   }
@@ -285,6 +294,10 @@ export class HarnessChatRouter implements GatewayChatClient {
       harnessLabel: harnessInfos(this.config).find((info) => info.id === harnessId)?.label
     };
   }
+}
+
+function isWorkspaceAwareHarness(harnessId: HarnessId): boolean {
+  return harnessId === "codex" || harnessId === "opencode" || harnessId === "pi";
 }
 
 function isSkillCommand(command: ChatCommandOption): boolean {

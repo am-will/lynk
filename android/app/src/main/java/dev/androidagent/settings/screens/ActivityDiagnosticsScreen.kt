@@ -231,6 +231,7 @@ object ActivityDiagnosticsScreen {
             BackendEntry(DiagnosticsBackendId.Hermes, R.drawable.ic_chip, BadgeTone.Violet),
             BackendEntry(DiagnosticsBackendId.Codex, R.drawable.ic_terminal, BadgeTone.Blue),
             BackendEntry(DiagnosticsBackendId.OpenCode, R.drawable.ic_terminal, BadgeTone.Blue),
+            BackendEntry(DiagnosticsBackendId.Pi, R.drawable.pi_agent_logo_plate, BadgeTone.Blue),
             BackendEntry(DiagnosticsBackendId.Local, R.drawable.ic_file, BadgeTone.Slate)
         )
         entries.forEachIndexed { index, entry ->

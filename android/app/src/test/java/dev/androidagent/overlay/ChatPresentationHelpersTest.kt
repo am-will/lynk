@@ -127,6 +127,18 @@ class ChatPresentationHelpersTest {
                     available = true,
                     reasoningOptions = null,
                     defaultReasoningEffort = null
+                ),
+                ChatModelOption(
+                    id = "pi:anthropic/claude-sonnet-4-5",
+                    label = "Claude Sonnet 4.5",
+                    provider = "pi",
+                    harnessId = "pi",
+                    harnessLabel = "Pi",
+                    modelId = "anthropic/claude-sonnet-4-5",
+                    contextWindow = null,
+                    available = true,
+                    reasoningOptions = null,
+                    defaultReasoningEffort = null
                 )
             ),
             localLiteRtAvailable = false
@@ -136,9 +148,11 @@ class ChatPresentationHelpersTest {
         assertEquals("OpenClaw", ChatPresentationHelpers.modelHarnessLabel(merged.first { it.id == "gpt-5.5" }))
         assertEquals("Hermes", ChatPresentationHelpers.modelHarnessLabel(merged.first { it.id == "hermes:gpt-5.5" }))
         assertEquals("OpenCode", ChatPresentationHelpers.modelHarnessLabel(merged.first { it.id == "opencode:openai/gpt-5.5" }))
+        assertEquals("Pi", ChatPresentationHelpers.modelHarnessLabel(merged.first { it.id == "pi:anthropic/claude-sonnet-4-5" }))
         assertEquals("openclaw", ChatPresentationHelpers.modelHarnessId(merged.first { it.id == "gpt-5.5" }))
         assertEquals("hermes", ChatPresentationHelpers.modelHarnessId(merged.first { it.id == "hermes:gpt-5.5" }))
-        assertEquals(listOf("openclaw", "hermes", "codex", "opencode", "local"), listOf("local", "opencode", "codex", "hermes", "openclaw").sortedBy(ChatPresentationHelpers::modelHarnessSortOrder))
+        assertEquals("pi", ChatPresentationHelpers.modelHarnessId(merged.first { it.id == "pi:anthropic/claude-sonnet-4-5" }))
+        assertEquals(listOf("openclaw", "hermes", "codex", "opencode", "pi", "local"), listOf("local", "pi", "opencode", "codex", "hermes", "openclaw").sortedBy(ChatPresentationHelpers::modelHarnessSortOrder))
     }
 
     @Test
@@ -148,13 +162,15 @@ class ChatPresentationHelpersTest {
                 model("gpt-5.5", harnessId = "openclaw"),
                 model("hermes:gpt-5.5", harnessId = "hermes"),
                 model("codex:gpt-5.3-codex", harnessId = "codex"),
-                model("opencode:openai/gpt-5.5", harnessId = "opencode")
+                model("opencode:openai/gpt-5.5", harnessId = "opencode"),
+                model("pi:anthropic/claude-sonnet-4-5", harnessId = "pi")
             ),
             hostModels = listOf(
                 model("gpt-5.5", harnessId = "openclaw"),
                 model("hermes:gpt-5.5", harnessId = "hermes"),
                 model("codex:gpt-5.3-codex", harnessId = "codex"),
-                model("opencode:openai/gpt-5.5", harnessId = "opencode")
+                model("opencode:openai/gpt-5.5", harnessId = "opencode"),
+                model("pi:anthropic/claude-sonnet-4-5", harnessId = "pi")
             ),
             localModels = listOf(model(AgentModelOptions.LOCAL_LITERT_MODEL_ID, harnessId = "local", provider = "android"))
         )
@@ -206,6 +222,7 @@ class ChatPresentationHelpersTest {
                 model("hermes:qwen", harnessId = "hermes"),
                 model("codex:gpt-5.3-codex", harnessId = "codex"),
                 model("opencode:openai/gpt-5.5", harnessId = "opencode"),
+                model("pi:anthropic/claude-sonnet-4-5", harnessId = "pi"),
                 model(AgentModelOptions.LOCAL_LITERT_MODEL_ID, harnessId = "local", provider = "android")
             ),
             enabledHarnessIds = setOf("hermes", "local")
@@ -222,7 +239,8 @@ class ChatPresentationHelpersTest {
             model("hermes:qwen", harnessId = "hermes"),
             model("hermes:gpt-5.5", harnessId = "hermes"),
             model("codex:gpt-5.3-codex", harnessId = "codex"),
-            model("opencode:openai/gpt-5.5", harnessId = "opencode")
+            model("opencode:openai/gpt-5.5", harnessId = "opencode"),
+            model("pi:anthropic/claude-sonnet-4-5", harnessId = "pi")
         )
 
         assertEquals(
@@ -259,6 +277,15 @@ class ChatPresentationHelpersTest {
                 configuredDefaultModel = "openai/gpt-5.5",
                 models = models,
                 enabledHarnessIds = setOf("hermes", "codex", "opencode")
+            )
+        )
+        assertEquals(
+            "pi:anthropic/claude-sonnet-4-5",
+            ChatPresentationHelpers.defaultModelForHarness(
+                harnessId = "pi",
+                configuredDefaultModel = "anthropic/claude-sonnet-4-5",
+                models = models,
+                enabledHarnessIds = setOf("hermes", "codex", "opencode", "pi")
             )
         )
     }
@@ -307,6 +334,7 @@ class ChatPresentationHelpersTest {
             model("hermes:gpt-5.5", harnessId = "hermes"),
             model("codex:gpt-5.3-codex", harnessId = "codex"),
             model("opencode:openai/gpt-5.5", harnessId = "opencode"),
+            model("pi:anthropic/claude-sonnet-4-5", harnessId = "pi"),
             model(AgentModelOptions.LOCAL_LITERT_MODEL_ID, harnessId = "local", provider = "android")
         )
 
@@ -324,6 +352,12 @@ class ChatPresentationHelpersTest {
         )
         val opencode = ChatPresentationHelpers.clientBrandPresentation(
             selectedModel = "opencode:openai/gpt-5.5",
+            models = models,
+            harnessId = "openclaw",
+            localLiteRtAvailable = true
+        )
+        val pi = ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = "pi:anthropic/claude-sonnet-4-5",
             models = models,
             harnessId = "openclaw",
             localLiteRtAvailable = true
@@ -347,6 +381,10 @@ class ChatPresentationHelpersTest {
         assertEquals("OpenCode", opencode.title)
         assertEquals(R.drawable.opencode_logo_plate, opencode.logoRes)
         assertEquals(BrandTitleTreatment.PLAIN, opencode.titleTreatment)
+        assertEquals(ClientBrand.Pi, pi.brand)
+        assertEquals("Pi", pi.title)
+        assertEquals(R.drawable.pi_agent_logo_plate, pi.logoRes)
+        assertEquals(BrandTitleTreatment.PLAIN, pi.titleTreatment)
         assertEquals(ClientBrand.Local, local.brand)
         assertEquals("LiteRT-LLM", local.title)
         assertEquals(R.drawable.huggingface_logo, local.logoRes)
@@ -363,7 +401,7 @@ class ChatPresentationHelpersTest {
         val fallback = ChatPresentationHelpers.clientBrandPresentation(
             selectedModel = null,
             models = emptyList(),
-            harnessId = "opencode",
+            harnessId = "pi",
             localLiteRtAvailable = false
         )
         val default = ChatPresentationHelpers.clientBrandPresentation(
@@ -374,7 +412,7 @@ class ChatPresentationHelpersTest {
         )
 
         assertEquals(ClientBrand.Hermes, prefixed.brand)
-        assertEquals(ClientBrand.OpenCode, fallback.brand)
+        assertEquals(ClientBrand.Pi, fallback.brand)
         assertEquals(ClientBrand.OpenClaw, default.brand)
         assertEquals("OpenClaw", default.title)
         assertEquals(R.drawable.openclaw_bubble_logo, default.logoRes)
@@ -401,6 +439,12 @@ class ChatPresentationHelpersTest {
             harnessId = "openclaw",
             localLiteRtAvailable = false
         )
+        val pi = ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = "pi:anthropic/claude-sonnet-4-5",
+            models = emptyList(),
+            harnessId = "openclaw",
+            localLiteRtAvailable = false
+        )
 
         assertEquals("Message Hermes", hermes.copy.composerPlaceholder)
         assertEquals("Loading Hermes Chat", ChatPresentationHelpers.chatStatusText("Loading OpenClaw chat", isRunning = false, hermes))
@@ -410,6 +454,8 @@ class ChatPresentationHelpersTest {
         assertEquals("Stop Codex turn", codex.copy.stopTurnDescription)
         assertEquals("Message OpenCode", opencode.copy.composerPlaceholder)
         assertEquals("Stop OpenCode turn", opencode.copy.stopTurnDescription)
+        assertEquals("Message Pi", pi.copy.composerPlaceholder)
+        assertEquals("Pi is thinking", ChatPresentationHelpers.chatStatusText("OpenCode is reasoning", isRunning = true, pi))
     }
 
     @Test

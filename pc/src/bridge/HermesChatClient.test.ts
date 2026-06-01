@@ -31,7 +31,10 @@ const config: BridgeConfig = {
   codexAgentCwd: "/tmp",
   codexAppServerApprovalPolicy: "never",
   codexAppServerSandbox: "workspace-write",
-  codexConfigured: true
+  codexConfigured: true,
+  piAgentCwd: "/tmp",
+  piRunTimeoutMs: 600_000,
+  piConfigured: true
 };
 
 class FakeHermesApiClient {

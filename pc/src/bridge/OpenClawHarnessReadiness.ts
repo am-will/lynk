@@ -42,6 +42,8 @@ export function readinessAction(harnessId: HarnessId): string {
       return "Install Codex CLI with app-server support, then run host integration refresh.";
     case "opencode":
       return "Install OpenCode CLI or configure OPENCODE_SERVER_URL, then run host integration refresh.";
+    case "pi":
+      return "Configure Pi credentials and available models in the Pi agent directory, then run host integration refresh.";
     default: {
       const exhaustive: never = harnessId;
       return exhaustive;
@@ -76,6 +78,8 @@ function harnessRecoveryAction(harnessId: HarnessId): string {
       return "Verify the Codex app-server command and workspace are configured, then try again.";
     case "opencode":
       return "Verify the OpenCode server URL or serve command and workspace are configured, then try again.";
+    case "pi":
+      return "Verify Pi SDK credentials, model availability, and workspace configuration, then try again.";
     default: {
       const exhaustive: never = harnessId;
       return exhaustive;

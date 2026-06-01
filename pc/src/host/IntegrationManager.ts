@@ -8,7 +8,7 @@ import { resolveHermesConfigPath } from "./HermesConfigPath.js";
 import { loadOrCreateHostBridgeConfig, writeHostBridgeConfig } from "./HostConfigStore.js";
 
 export interface IntegrationStatus {
-  id: "openclaw" | "hermes" | "codex" | "opencode" | "tailscale" | "adb";
+  id: "openclaw" | "hermes" | "codex" | "opencode" | "pi" | "tailscale" | "adb";
   label: string;
   installed: boolean;
   configured: boolean;
@@ -58,6 +58,8 @@ export async function detectIntegrations(): Promise<IntegrationStatus[]> {
   const codex = resolveCommand(process.env.CODEX_APP_SERVER_COMMAND ?? hostConfig.codexAppServerCommand ?? "codex app-server --listen stdio://");
   const opencodeServerUrl = process.env.OPENCODE_SERVER_URL?.trim() || hostConfig.opencodeServerUrl?.trim();
   const opencode = resolveCommand(process.env.OPENCODE_SERVER_COMMAND ?? hostConfig.opencodeServerCommand ?? "opencode serve --hostname 127.0.0.1 --port 4096");
+  const piPackagePath = resolve(pcRoot, "node_modules", "@earendil-works", "pi-coding-agent", "package.json");
+  const piInstalled = existsSync(piPackagePath);
   const tailscale = await discoverEndpoints({ port: hostConfig.phoneAgentPort ?? 8788, includeUsb: false });
   const adb = resolveExecutable(process.env.ADB?.trim() || "adb");
   const hermesApiKey = process.env.HERMES_API_KEY?.trim() || hostConfig.hermesApiKey?.trim();
@@ -109,6 +111,15 @@ export async function detectIntegrations(): Promise<IntegrationStatus[]> {
         : opencode.available
           ? "OpenCode serve command is available."
           : `OpenCode command '${opencode.executable || "opencode"}' was not found.`
+    },
+    {
+      id: "pi",
+      label: "Pi",
+      installed: piInstalled,
+      configured: piInstalled,
+      ready: piInstalled,
+      path: piInstalled ? piPackagePath : undefined,
+      message: piInstalled ? "Pi SDK package is installed." : "Pi SDK package was not found in bridge dependencies."
     },
     {
       id: "tailscale",

@@ -25,7 +25,8 @@ export async function buildDiagnosticsBundle(): Promise<Record<string, unknown>>
       defaultDeviceId: bridgeConfig.defaultDeviceId,
       bridgeUrl: bridgeConfig.bridgeUrl,
       codexConfigured: bridgeConfig.codexConfigured,
-      opencodeConfigured: bridgeConfig.opencodeConfigured
+      opencodeConfigured: bridgeConfig.opencodeConfigured,
+      piConfigured: bridgeConfig.piConfigured
     },
     discovery,
     integrations,

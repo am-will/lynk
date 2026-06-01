@@ -118,6 +118,8 @@ class OverlayController(
     private val onSetCodexWorkspacePath: (String) -> Unit = {},
     private val onGetOpenCodeWorkspacePath: () -> String = { "" },
     private val onSetOpenCodeWorkspacePath: (String) -> Unit = {},
+    private val onGetPiWorkspacePath: () -> String = { "" },
+    private val onSetPiWorkspacePath: (String) -> Unit = {},
     private val onSetChatModel: (String) -> Unit = {},
     private val onSetChatHarness: (String) -> Unit = {},
     private val onSetChatReasoning: (String) -> Unit = {},
@@ -1798,7 +1800,9 @@ class OverlayController(
             ChatModelCatalog.harnessFromSessionKey(lastChatState.sessionKey)
         )
         return candidates.firstOrNull { harnessId ->
-            harnessId == AgentConfig.HARNESS_CODEX || harnessId == AgentConfig.HARNESS_OPENCODE
+            harnessId == AgentConfig.HARNESS_CODEX ||
+                harnessId == AgentConfig.HARNESS_OPENCODE ||
+                harnessId == AgentConfig.HARNESS_PI
         }
     }
 
@@ -1982,6 +1986,7 @@ class OverlayController(
     private fun workspacePathForHarness(harnessId: String): String {
         return when (harnessId) {
             AgentConfig.HARNESS_OPENCODE -> onGetOpenCodeWorkspacePath()
+            AgentConfig.HARNESS_PI -> onGetPiWorkspacePath()
             else -> onGetCodexWorkspacePath()
         }
     }
@@ -1989,6 +1994,7 @@ class OverlayController(
     private fun setWorkspacePathForHarness(harnessId: String, path: String) {
         when (harnessId) {
             AgentConfig.HARNESS_OPENCODE -> onSetOpenCodeWorkspacePath(path)
+            AgentConfig.HARNESS_PI -> onSetPiWorkspacePath(path)
             else -> onSetCodexWorkspacePath(path)
         }
     }

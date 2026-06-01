@@ -129,8 +129,8 @@ export const selectedChatBackendModelSchema = z.string().min(1).refine((value) =
   if ((AGENT_MODEL_IDS as readonly string[]).includes(trimmed) || trimmed === "local-litertlm") {
     return true;
   }
-  return /^(hermes|codex|opencode):\S+$/.test(trimmed);
-}, "Expected a bare OpenClaw model id, a Hermes/Codex/OpenCode namespaced model id, or local-litertlm");
+  return /^(hermes|codex|opencode|pi):\S+$/.test(trimmed);
+}, "Expected a bare OpenClaw model id, a Hermes/Codex/OpenCode/Pi namespaced model id, or local-litertlm");
 
 export const userRequestMessageSchema = z.object({
   type: z.literal("user_request"),

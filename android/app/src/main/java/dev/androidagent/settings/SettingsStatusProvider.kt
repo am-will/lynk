@@ -53,6 +53,7 @@ object SettingsStatusProvider {
             "Hermes".takeIf { config.hermesHarnessEnabled },
             "Codex".takeIf { config.codexHarnessEnabled },
             "OpenCode".takeIf { config.opencodeHarnessEnabled },
+            "Pi".takeIf { config.piHarnessEnabled },
             "Local".takeIf { config.experimentalLocalModelsEnabled }
         ).ifEmpty { listOf("none") }.joinToString(", ")
         val localLine = when {
