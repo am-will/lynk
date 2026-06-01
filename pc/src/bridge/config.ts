@@ -40,6 +40,11 @@ export interface BridgeConfig {
   opencodeDefaultAgent?: string;
   opencodeRunTimeoutMs?: number;
   opencodeConfigured?: boolean;
+  piAgentCwd: string;
+  piAgentDir?: string;
+  piDefaultModel?: string;
+  piRunTimeoutMs: number;
+  piConfigured: boolean;
 }
 
 function readOpenClawConfig(): unknown {
@@ -135,6 +140,11 @@ export function getBridgeConfig(): BridgeConfig {
     opencodeServerPassword: process.env.OPENCODE_SERVER_PASSWORD?.trim() || host.opencodeServerPassword?.trim() || undefined,
     opencodeDefaultAgent: process.env.OPENCODE_DEFAULT_AGENT?.trim() || host.opencodeDefaultAgent?.trim() || undefined,
     opencodeRunTimeoutMs: readPositiveInt("OPENCODE_RUN_TIMEOUT_SECONDS", host.opencodeRunTimeoutSeconds ?? 600) * 1000,
-    opencodeConfigured: Boolean(opencodeServerUrl) || opencodeResolution.available
+    opencodeConfigured: Boolean(opencodeServerUrl) || opencodeResolution.available,
+    piAgentCwd: process.env.PI_AGENT_CWD ?? host.piAgentCwd ?? process.cwd(),
+    piAgentDir: process.env.PI_AGENT_DIR?.trim() || host.piAgentDir?.trim() || undefined,
+    piDefaultModel: process.env.PI_DEFAULT_MODEL?.trim() || host.piDefaultModel?.trim() || undefined,
+    piRunTimeoutMs: readPositiveInt("PI_RUN_TIMEOUT_SECONDS", host.piRunTimeoutSeconds ?? 600) * 1000,
+    piConfigured: true
   };
 }

@@ -36,6 +36,10 @@ export interface HostBridgeConfigFile {
   opencodeServerPassword?: string;
   opencodeDefaultAgent?: string;
   opencodeRunTimeoutSeconds?: number;
+  piAgentCwd?: string;
+  piAgentDir?: string;
+  piDefaultModel?: string;
+  piRunTimeoutSeconds?: number;
   discoveredPaths?: Record<string, string>;
 }
 
@@ -109,7 +113,11 @@ export function loadOrCreateHostBridgeConfig(path = defaultHostBridgeConfigPath(
     opencodeServerCommand: "opencode serve --hostname 127.0.0.1 --port 4096",
     opencodeAgentCwd: process.cwd(),
     opencodeServerUsername: "opencode",
-    opencodeRunTimeoutSeconds: 600
+    opencodeRunTimeoutSeconds: 600,
+    piAgentCwd: process.cwd(),
+    piAgentDir: "",
+    piDefaultModel: "",
+    piRunTimeoutSeconds: 600
   };
   writeHostBridgeConfig(path, config);
   return { path, config, created: true };
