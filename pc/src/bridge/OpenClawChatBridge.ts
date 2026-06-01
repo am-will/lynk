@@ -9,6 +9,15 @@ import {
   harnessLabel
 } from "./AgentHarness.js";
 import type {
+  BackendReadinessStatus,
+  HarnessReadinessStatus
+} from "./OpenClawHarnessReadiness.js";
+import {
+  harnessUnavailableError,
+  healthForHarness,
+  readinessAction
+} from "./OpenClawHarnessReadiness.js";
+import type {
   ChatControlCommandMessage,
   ChatErrorMessage,
   ChatFinalMessage,
@@ -16,7 +25,6 @@ import type {
   ChatNewSessionMessage,
   ChatOpenMessage,
   ChatOutboundMessage,
-  ChatReplyAvailableMessage,
   ChatSelectSessionMessage,
   ChatSendMessage,
   ChatSetModelMessage,
@@ -42,9 +50,13 @@ import {
   formatHelp,
   formatStatusReport,
   formatTaskList,
-  formatToolList,
-  previewText
+  formatToolList
 } from "./OpenClawChatFormatters.js";
+import {
+  buildChatReplyAvailableMessage,
+  buildChatRoleMessage,
+  buildChatStateMessage
+} from "./OpenClawChatMessages.js";
 import type { DeviceChatState, GatewayChatClient, PendingChatRun } from "./OpenClawChatTypes.js";
 import { defaultSessionLabelForDevice } from "./OpenClawChatTypes.js";
 import { OpenClawFallbackSender } from "./OpenClawFallbackSender.js";
@@ -67,20 +79,6 @@ import { OpenClawRealtimeSessions } from "./OpenClawRealtimeSessions.js";
 import { OpenClawRunWaiters } from "./OpenClawRunWaiters.js";
 import { PhoneHub } from "./PhoneHub.js";
 
-export interface HarnessReadinessStatus {
-  ok: boolean;
-  configured: boolean;
-  label: string;
-  modelCount: number;
-  state: "ready" | "missing_config" | "no_models";
-  message: string;
-  action?: string;
-}
-
-export interface BackendReadinessStatus {
-  harnesses: Record<HarnessId, HarnessReadinessStatus>;
-}
-
 interface RealtimeChatOptions {
   taskKind: AgentTaskKind;
   callId?: string;
@@ -93,57 +91,6 @@ function sameChatUserMessage(a: ChatHistoryMessage, b: ChatHistoryMessage): bool
     b.role === "user" &&
     a.text === b.text &&
     JSON.stringify(a.attachments ?? []) === JSON.stringify(b.attachments ?? []);
-}
-
-function healthForHarness(payload: unknown, harnessId: HarnessId): Record<string, unknown> | undefined {
-  const record = asRecord(payload);
-  const harnesses = asRecord(record?.harnesses);
-  if (harnesses) {
-    return asRecord(harnesses[harnessId]);
-  }
-  return harnessId === "openclaw" ? record : undefined;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
-}
-
-function harnessUnavailableError(harnessId: HarnessId, label: string, cause: unknown): ChatClientError {
-  const detail = errorDetail(cause);
-  const action = harnessRecoveryAction(harnessId);
-  return new ChatClientError(`${label} backend is not reachable. ${action}${detail ? ` Details: ${detail}` : ""}`, {
-    code: `${harnessId}.unreachable`
-  });
-}
-
-function errorDetail(error: unknown): string | undefined {
-  if (typeof error === "string") {
-    return error.trim() || undefined;
-  }
-  if (error instanceof Error) {
-    return error.message.trim() || undefined;
-  }
-  const record = asRecord(error);
-  const message = typeof record?.message === "string" ? record.message : undefined;
-  const errorMessage = typeof record?.error === "string" ? record.error : undefined;
-  return message?.trim() || errorMessage?.trim() || undefined;
-}
-
-function harnessRecoveryAction(harnessId: HarnessId): string {
-  switch (harnessId) {
-    case "openclaw":
-      return "Start OpenClaw Gateway with `openclaw gateway start` or choose a healthy harness in the model picker.";
-    case "hermes":
-      return "Verify `HERMES_API_BASE_URL` points at a Lynk-compatible Hermes runs API and that `HERMES_API_KEY` is set.";
-    case "codex":
-      return "Verify the Codex app-server command and workspace are configured, then try again.";
-    case "opencode":
-      return "Verify the OpenCode server URL or serve command and workspace are configured, then try again.";
-    default: {
-      const exhaustive: never = harnessId;
-      return exhaustive;
-    }
-  }
 }
 
 export class OpenClawChatBridge {
@@ -965,23 +912,7 @@ export class OpenClawChatBridge {
       state.runId = null;
       state.activeTaskKind = null;
     }
-    this.sendChat(deviceId, {
-      type: "chat.state",
-      deviceId,
-      sessionKey: state.sessionKey,
-      sessionId: state.sessionId,
-      harnessId: state.harnessId,
-      harnessLabel: harnessLabel(state.harnessId),
-      runId: state.runId ?? null,
-      isRunning: Boolean(state.runId),
-      status: status ?? null,
-      taskKind: state.runId ? state.activeTaskKind ?? null : null,
-      model: state.model ?? null,
-      reasoningEffort: state.reasoningEffort ?? null,
-      reasoningStream: state.reasoningStream ?? null,
-      fastMode: state.fastMode ?? null,
-      verboseLevel: state.verboseLevel ?? null
-    });
+    this.sendChat(deviceId, buildChatStateMessage(deviceId, state, status));
   }
 
   private sendReasoningClear(deviceId: string, sessionKey: string, runId?: string | null): void {
@@ -995,36 +926,12 @@ export class OpenClawChatBridge {
 
   private appendUserMessage(deviceId: string, text: string, id: string): void {
     const state = this.stateFor(deviceId);
-    const message: ChatHistoryMessage = {
-      id,
-      role: "user",
-      text,
-      timestamp: Date.now()
-    };
-    this.sendChat(deviceId, {
-      type: "chat.message",
-      deviceId,
-      sessionKey: state.sessionKey,
-      sessionId: state.sessionId,
-      message
-    });
+    this.sendChat(deviceId, buildChatRoleMessage(deviceId, state, "user", text, id));
   }
 
   private appendSystemMessage(deviceId: string, text: string, id: string): void {
     const state = this.stateFor(deviceId);
-    const message: ChatHistoryMessage = {
-      id,
-      role: "system",
-      text,
-      timestamp: Date.now()
-    };
-    this.sendChat(deviceId, {
-      type: "chat.message",
-      deviceId,
-      sessionKey: state.sessionKey,
-      sessionId: state.sessionId,
-      message
-    });
+    this.sendChat(deviceId, buildChatRoleMessage(deviceId, state, "system", text, id));
   }
 
   private sendChat(deviceId: string, message: ChatOutboundMessage): void {
@@ -1072,28 +979,11 @@ export class OpenClawChatBridge {
     sessionKey: string,
     pendingRun?: PendingChatRun
   ): void {
-    const runId = message.runId;
-    if (!runId) {
-      return;
-    }
     const state = this.stateFor(deviceId);
-    const session = state.sessionSummaries.get(sessionKey);
-    const sourceHarnessId = harnessForSessionKey(sessionKey);
-    const reply: ChatReplyAvailableMessage = {
-      type: "chat.reply_available",
-      deviceId,
-      sessionKey,
-      runId,
-      status: message.type === "chat.final" ? "completed" : "failed",
-      textPreview: previewText(message.type === "chat.final" ? message.text : message.message),
-      sessionId: session?.sessionId ?? pendingRun?.sessionId ?? null,
-      sessionLabel: session?.label ?? null,
-      sessionDisplayName: session?.displayName ?? null,
-      harnessId: session?.harnessId ?? sourceHarnessId,
-      harnessLabel: session?.harnessLabel ?? harnessLabel(sourceHarnessId),
-      model: session?.model ?? (sessionKey === state.sessionKey ? state.model : null)
-    };
-    this.sendChat(deviceId, reply);
+    const reply = buildChatReplyAvailableMessage(deviceId, state, message, sessionKey, pendingRun);
+    if (reply) {
+      this.sendChat(deviceId, reply);
+    }
   }
 }
 
@@ -1104,21 +994,4 @@ function codexWorkspacePathForNewSession(state: DeviceChatState, requestedWorksp
   }
   const currentWorkspace = state.sessionSummaries.get(state.sessionKey)?.workspacePath?.trim();
   return currentWorkspace || undefined;
-}
-
-function readinessAction(harnessId: HarnessId): string {
-  switch (harnessId) {
-    case "openclaw":
-      return "Install and start OpenClaw Gateway, then run host integration refresh.";
-    case "hermes":
-      return "Set HERMES_API_KEY or configure Hermes in the host bridge config, then run host integration refresh.";
-    case "codex":
-      return "Install Codex CLI with app-server support, then run host integration refresh.";
-    case "opencode":
-      return "Install OpenCode CLI or configure OPENCODE_SERVER_URL, then run host integration refresh.";
-    default: {
-      const exhaustive: never = harnessId;
-      return exhaustive;
-    }
-  }
 }
