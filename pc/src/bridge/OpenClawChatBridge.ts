@@ -1099,12 +1099,12 @@ export class OpenClawChatBridge {
   private harnessIdFromModel(model: unknown): string {
     const record = model && typeof model === "object" ? model as Record<string, unknown> : undefined;
     const harnessId = stringField(record, "harnessId") ?? stringField(record, "provider");
-    if (harnessId === "hermes" || harnessId === "codex" || harnessId === "local") {
+    if (harnessId === "hermes" || harnessId === "codex" || harnessId === "opencode" || harnessId === "local") {
       return harnessId;
     }
     const id = stringField(record, "id") ?? "";
     const prefix = id.split(":", 1)[0]?.toLowerCase();
-    return prefix === "hermes" || prefix === "codex" || prefix === "local" ? prefix : "openclaw";
+    return prefix === "hermes" || prefix === "codex" || prefix === "opencode" || prefix === "local" ? prefix : "openclaw";
   }
 
   private sendReplyAvailable(

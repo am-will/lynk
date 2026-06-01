@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { delimiter, isAbsolute, join } from "node:path";
 
 export interface CommandResolution {
@@ -63,5 +64,18 @@ export function resolveExecutable(executable: string): string | undefined {
       }
     }
   }
+  for (const candidate of bundledCommandFallbacks(executable)) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
   return undefined;
+}
+
+function bundledCommandFallbacks(executable: string): string[] {
+  if (executable !== "opencode") {
+    return [];
+  }
+  const home = process.env.HOME || process.env.USERPROFILE || homedir();
+  return home ? [join(home, ".opencode", "bin", "opencode")] : [];
 }

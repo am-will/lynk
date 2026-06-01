@@ -19,8 +19,16 @@ export function messageForGateway(text: string, taskKind: AgentTaskKind): string
 
 export function isExplicitPhoneTask(text: string): boolean {
   const normalized = text.toLowerCase();
-  return /\b(android|phone|device|screen|tap|swipe|scroll|keyboard|notification|settings app|facebook app|instagram app|messages app|sms)\b/.test(normalized)
-    && !/\b(mac|desktop|pc|laptop|browser|terminal|repo|codebase)\b/.test(normalized);
+  if (/\b(mac|desktop|pc|laptop|browser|terminal|repo|codebase)\b/.test(normalized)) {
+    return false;
+  }
+  const phoneTarget = /\b(android|phone|device|screen|keyboard|notification|notifications|settings app|facebook app|instagram app|messages app|sms)\b/.test(normalized);
+  const phoneAction = /\b(open|launch|go to|tap|press|click|swipe|scroll|type|enter|read|check|show|look at|inspect|unlock|dismiss|enable|disable|send|text|screenshot|capture|summarize)\b/.test(normalized)
+    || /\bturn\s+(?:on|off)\b/.test(normalized)
+    || /\bwhat(?:'s| is)\s+on\b/.test(normalized);
+  const directPhoneGesture = /\b(tap|press|click|swipe|scroll|type|enter)\b/.test(normalized)
+    && /\b(button|field|screen|app|keyboard|notification|settings)\b/.test(normalized);
+  return (phoneTarget && phoneAction) || directPhoneGesture;
 }
 
 export function firstMessageDisplayName(text: string): string | undefined {

@@ -116,7 +116,7 @@ class FakeGatewayClient {
   }
 }
 
-function createHarness() {
+function createHarness(overrides: Partial<BridgeConfig> = {}) {
   const chatMessages: ChatOutboundMessage[] = [];
   const fallbackCalls: unknown[] = [];
   const hub = {
@@ -132,7 +132,7 @@ function createHarness() {
     async stopActiveTurn() {}
   };
   const client = new FakeGatewayClient();
-  const bridge = new OpenClawChatBridge(config, hub, dispatcher, undefined, client);
+  const bridge = new OpenClawChatBridge({ ...config, ...overrides }, hub, dispatcher, undefined, client);
   return { bridge, chatMessages, client, fallbackCalls };
 }
 
@@ -374,6 +374,20 @@ test("backend readiness reports configured harnesses only when live models exist
       }
     }
   });
+});
+
+test("backend readiness counts OpenCode models as OpenCode", async () => {
+  const { bridge, client } = createHarness({ opencodeConfigured: true });
+  client.models = [
+    { id: "opencode:openai/gpt-5.5", harnessId: "opencode", provider: "opencode" }
+  ];
+
+  const readiness = await bridge.backendReadiness();
+
+  assert.equal(readiness.harnesses.opencode.ok, true);
+  assert.equal(readiness.harnesses.opencode.modelCount, 1);
+  assert.equal(readiness.harnesses.opencode.state, "ready");
+  assert.equal(readiness.harnesses.openclaw.modelCount, 0);
 });
 
 test("open uses the selected session harness in loading status", async () => {
