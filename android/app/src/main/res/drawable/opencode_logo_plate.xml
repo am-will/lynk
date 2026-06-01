@@ -1,0 +1,14 @@
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#FFFFFF" />
+            <corners android:radius="16dp" />
+        </shape>
+    </item>
+    <item
+        android:bottom="10dp"
+        android:left="12dp"
+        android:right="12dp"
+        android:top="10dp"
+        android:drawable="@drawable/opencode_logo" />
+</layer-list>
