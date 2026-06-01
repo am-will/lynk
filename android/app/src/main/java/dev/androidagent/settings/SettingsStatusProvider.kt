@@ -52,6 +52,7 @@ object SettingsStatusProvider {
             "OpenClaw".takeIf { config.openClawHarnessEnabled },
             "Hermes".takeIf { config.hermesHarnessEnabled },
             "Codex".takeIf { config.codexHarnessEnabled },
+            "OpenCode".takeIf { config.opencodeHarnessEnabled },
             "Local".takeIf { config.experimentalLocalModelsEnabled }
         ).ifEmpty { listOf("none") }.joinToString(", ")
         val localLine = when {

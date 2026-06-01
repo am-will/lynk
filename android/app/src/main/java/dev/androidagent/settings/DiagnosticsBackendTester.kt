@@ -16,6 +16,7 @@ enum class DiagnosticsBackendId(val harnessId: String, val label: String) {
     OpenClaw("openclaw", "OpenClaw"),
     Hermes("hermes", "Hermes"),
     Codex("codex", "Codex"),
+    OpenCode("opencode", "OpenCode"),
     Local("local", "Local")
 }
 
@@ -163,6 +164,7 @@ object DiagnosticsBackendTester {
             DiagnosticsBackendId.OpenClaw -> config.openClawHarnessEnabled
             DiagnosticsBackendId.Hermes -> config.hermesHarnessEnabled
             DiagnosticsBackendId.Codex -> config.codexHarnessEnabled
+            DiagnosticsBackendId.OpenCode -> config.opencodeHarnessEnabled
             DiagnosticsBackendId.Local -> config.experimentalLocalModelsEnabled
         }
 

@@ -62,6 +62,7 @@ import java.util.UUID
 
 private const val PHONE_CONTROL_COMPLETION_VISIBLE_MS = 30_000L
 private const val CODEX_WORKSPACE_NOT_FOUND_CODE = "codex.workspace_not_found"
+private const val OPENCODE_WORKSPACE_NOT_FOUND_CODE = "opencode.workspace_not_found"
 private const val CODEX_WORKSPACE_CREATE_MESSAGE = "Folder not found. Would you like to create it?"
 
 class AgentForegroundService : Service() {
@@ -135,6 +136,8 @@ class AgentForegroundService : Service() {
             onNewChatSession = { startNewChatFromUi() },
             onGetCodexWorkspacePath = { AgentConfigStore.load(this).codexWorkspacePath },
             onSetCodexWorkspacePath = { path -> setCodexWorkspacePath(path) },
+            onGetOpenCodeWorkspacePath = { AgentConfigStore.load(this).opencodeWorkspacePath },
+            onSetOpenCodeWorkspacePath = { path -> setOpenCodeWorkspacePath(path) },
             onSetChatModel = { model ->
                 setChatModelFromUi(model)
             },
@@ -612,18 +615,36 @@ class AgentForegroundService : Service() {
         AgentConfigStore.save(this, config.copy(codexWorkspacePath = CodexWorkspacePaths.normalizeInput(path)))
     }
 
+    private fun setOpenCodeWorkspacePath(path: String) {
+        val config = AgentConfigStore.load(this)
+        AgentConfigStore.save(this, config.copy(opencodeWorkspacePath = CodexWorkspacePaths.normalizeInput(path)))
+    }
+
     private fun maybeUpdateCodexWorkspaceFromSession(sessionKey: String) {
         val session = chatState.sessions.firstOrNull { it.key == sessionKey } ?: return
         val harnessId = session.harnessId ?: harnessFromSessionKey(session.key)
-        if (harnessId != AgentConfig.HARNESS_CODEX) return
+        if (harnessId != AgentConfig.HARNESS_CODEX && harnessId != AgentConfig.HARNESS_OPENCODE) return
         val workspacePath = session.workspacePath?.trim()?.takeIf { it.isNotBlank() } ?: return
-        setCodexWorkspacePath(workspacePath)
+        when (harnessId) {
+            AgentConfig.HARNESS_CODEX -> setCodexWorkspacePath(workspacePath)
+            AgentConfig.HARNESS_OPENCODE -> setOpenCodeWorkspacePath(workspacePath)
+        }
     }
 
     private fun isCodexChatSelection(model: String): Boolean {
         return chatState.harnessId == AgentConfig.HARNESS_CODEX ||
             ChatModelCatalog.harnessForModel(model) == AgentConfig.HARNESS_CODEX ||
             chatState.sessionKey?.startsWith("${AgentConfig.HARNESS_CODEX}:") == true
+    }
+
+    private fun isOpenCodeChatSelection(model: String): Boolean {
+        return chatState.harnessId == AgentConfig.HARNESS_OPENCODE ||
+            ChatModelCatalog.harnessForModel(model) == AgentConfig.HARNESS_OPENCODE ||
+            chatState.sessionKey?.startsWith("${AgentConfig.HARNESS_OPENCODE}:") == true
+    }
+
+    private fun isWorkspaceChatSelection(model: String): Boolean {
+        return isCodexChatSelection(model) || isOpenCodeChatSelection(model)
     }
 
     private fun commandExecutor(): AccessibilityCommandExecutor {
@@ -854,7 +875,7 @@ class AgentForegroundService : Service() {
     private fun harnessFromSessionKey(sessionKey: String?): String? {
         val prefix = sessionKey?.substringBefore(":", missingDelimiterValue = "")?.lowercase()
         return when (prefix) {
-            "hermes", "codex", "local" -> prefix
+            "hermes", "codex", "opencode", "local" -> prefix
             else -> null
         }
     }
@@ -903,9 +924,10 @@ class AgentForegroundService : Service() {
             return
         }
         val route = routeForModel(selectedModel, config)
-        val candidateWorkspacePath = currentCodexWorkspacePath() ?: config.codexWorkspacePath
+        val candidateWorkspacePath = currentHostWorkspacePathForModel(selectedModel)
+            ?: defaultWorkspacePathForModel(selectedModel, config)
         val workspacePath = candidateWorkspacePath
-            .takeIf { route == ChatClientRoute.Host && isCodexChatSelection(selectedModel) && CodexWorkspacePaths.hasDefault(it) }
+            .takeIf { route == ChatClientRoute.Host && isWorkspaceChatSelection(selectedModel) && CodexWorkspacePaths.hasDefault(it) }
         beginNewChatAttempt(
             request = PendingNewChatRequest(
                 selectedModel = selectedModel,
@@ -931,12 +953,26 @@ class AgentForegroundService : Service() {
         return activeHarnessModel ?: selectedChatModel(config)
     }
 
-    private fun currentCodexWorkspacePath(): String? {
+    private fun currentHostWorkspacePathForModel(model: String): String? {
         val activeSessionKey = chatState.sessionKey?.takeIf { it.isNotBlank() } ?: return null
         val session = chatState.sessions.firstOrNull { it.key == activeSessionKey } ?: return null
         val harnessId = session.harnessId ?: harnessFromSessionKey(session.key)
-        if (harnessId != AgentConfig.HARNESS_CODEX) return null
+        if (
+            harnessId != AgentConfig.HARNESS_CODEX &&
+            harnessId != AgentConfig.HARNESS_OPENCODE
+        ) {
+            return null
+        }
+        if (harnessId != ChatModelCatalog.harnessForModel(model)) return null
         return session.workspacePath?.trim()?.takeIf { CodexWorkspacePaths.hasDefault(it) }
+    }
+
+    private fun defaultWorkspacePathForModel(model: String, config: AgentConfig): String? {
+        return when (ChatModelCatalog.harnessForModel(model)) {
+            AgentConfig.HARNESS_CODEX -> config.codexWorkspacePath
+            AgentConfig.HARNESS_OPENCODE -> config.opencodeWorkspacePath
+            else -> null
+        }
     }
 
     private fun beginNewChatAttempt(request: PendingNewChatRequest, createWorkspaceIfMissing: Boolean) {
@@ -963,7 +999,7 @@ class AgentForegroundService : Service() {
         connectAgentClient(request.selectedModel).newSession(
             model = request.model,
             workspacePath = request.workspacePath,
-            createWorkspaceIfMissing = createWorkspaceIfMissing && request.route == ChatClientRoute.Host && isCodexChatSelection(request.selectedModel)
+            createWorkspaceIfMissing = createWorkspaceIfMissing && request.route == ChatClientRoute.Host && isWorkspaceChatSelection(request.selectedModel)
         )
         isAgentTurnActive = false
         updateNotification()
@@ -1052,13 +1088,14 @@ class AgentForegroundService : Service() {
 
     private fun isCodexWorkspaceNotFoundError(message: JSONObject): Boolean {
         if (message.optString("type") != "chat.error") return false
-        return message.optString("code") == CODEX_WORKSPACE_NOT_FOUND_CODE
+        val code = message.optString("code")
+        return code == CODEX_WORKSPACE_NOT_FOUND_CODE || code == OPENCODE_WORKSPACE_NOT_FOUND_CODE
     }
 
     private fun promptCreateCodexWorkspace(request: PendingNewChatRequest?) {
         val retryRequest = request ?: return
         if (retryRequest.route != ChatClientRoute.Host || retryRequest.workspacePath.isNullOrBlank()) return
-        if (!isCodexChatSelection(retryRequest.selectedModel)) return
+        if (!isWorkspaceChatSelection(retryRequest.selectedModel)) return
         if (!newChatCoordinator.startWorkspacePrompt()) return
         serviceScope.launch {
             val allow = overlayController

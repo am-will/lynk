@@ -18,6 +18,7 @@ enum class ClientBrand {
     OpenClaw,
     Hermes,
     Codex,
+    OpenCode,
     Local
 }
 
@@ -182,6 +183,11 @@ object ChatPresentationHelpers {
                 title = "Codex",
                 logoRes = R.drawable.codex_bubble_logo
             )
+            ClientBrand.OpenCode -> ClientBrandPresentation(
+                brand = brand,
+                title = "OpenCode",
+                logoRes = R.drawable.ic_terminal
+            )
             ClientBrand.Local -> ClientBrandPresentation(
                 brand = brand,
                 title = "LiteRT-LLM",
@@ -249,6 +255,7 @@ object ChatPresentationHelpers {
         return when (resolvedHarness) {
             "hermes" -> ClientBrand.Hermes
             "codex" -> ClientBrand.Codex
+            "opencode" -> ClientBrand.OpenCode
             "local" -> ClientBrand.Local
             else -> ClientBrand.OpenClaw
         }
@@ -259,6 +266,7 @@ object ChatPresentationHelpers {
     fun modelProviderSublabel(model: ChatModelOption, groupLabel: String): String? {
         val providerLabel = when (modelHarnessId(model)) {
             "local" -> "LiteRT-LLM"
+            "opencode" -> model.provider?.takeIf { it.isNotBlank() }?.substringBefore("/")
             else -> model.provider?.takeIf { it.isNotBlank() }
         }
         return providerLabel?.takeUnless { it.equals(groupLabel, ignoreCase = true) }
@@ -358,7 +366,7 @@ object ChatPresentationHelpers {
     }
 
     private fun replaceClientNames(text: String, replacement: String): String {
-        return Regex("\\b(local phone model|local model|litert-lm|litert-llm|openclaw|hermes|codex|litert)\\b", RegexOption.IGNORE_CASE)
+        return Regex("\\b(local phone model|local model|litert-lm|litert-llm|openclaw|hermes|codex|opencode|litert)\\b", RegexOption.IGNORE_CASE)
             .replace(text, replacement)
     }
 }

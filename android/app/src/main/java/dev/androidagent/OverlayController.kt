@@ -114,6 +114,8 @@ class OverlayController(
     private val onNewChatSession: () -> Unit = {},
     private val onGetCodexWorkspacePath: () -> String = { "" },
     private val onSetCodexWorkspacePath: (String) -> Unit = {},
+    private val onGetOpenCodeWorkspacePath: () -> String = { "" },
+    private val onSetOpenCodeWorkspacePath: (String) -> Unit = {},
     private val onSetChatModel: (String) -> Unit = {},
     private val onSetChatHarness: (String) -> Unit = {},
     private val onSetChatReasoning: (String) -> Unit = {},
@@ -1712,7 +1714,7 @@ class OverlayController(
     }
 
     private fun sessionPickerSections(limit: Int = Int.MAX_VALUE): List<AnchoredPicker.Section> {
-        if (!isCodexHarness()) {
+        if (!isWorkspaceHarness()) {
             return listOf(AnchoredPicker.Section(null, sessionPickerRows(limit = 30)))
         }
         return CodexSessionPickerSections.build(
@@ -1724,10 +1726,19 @@ class OverlayController(
         )
     }
 
-    private fun isCodexHarness(): Boolean {
-        return lastChatState.harnessId == AgentConfig.HARNESS_CODEX ||
-            lastChatState.selectedModel?.startsWith("${AgentConfig.HARNESS_CODEX}:") == true ||
-            lastChatState.sessionKey?.startsWith("${AgentConfig.HARNESS_CODEX}:") == true
+    private fun workspaceHarnessId(): String? {
+        val candidates = listOfNotNull(
+            lastChatState.harnessId?.takeIf { it.isNotBlank() },
+            lastChatState.selectedModel?.takeIf { it.isNotBlank() }?.let(ChatModelCatalog::harnessForModel),
+            ChatModelCatalog.harnessFromSessionKey(lastChatState.sessionKey)
+        )
+        return candidates.firstOrNull { harnessId ->
+            harnessId == AgentConfig.HARNESS_CODEX || harnessId == AgentConfig.HARNESS_OPENCODE
+        }
+    }
+
+    private fun isWorkspaceHarness(): Boolean {
+        return workspaceHarnessId() != null
     }
 
     private fun startNewChatSession() {
@@ -1759,16 +1770,18 @@ class OverlayController(
             iconRes = R.drawable.ic_new_chat,
             onSelect = { startNewChatSession() }
         ))
-        if (isCodexHarness()) {
-            sessionRows.add(codexWorkspaceMenuRow())
+        val workspaceHarnessId = workspaceHarnessId()
+        if (workspaceHarnessId != null) {
+            sessionRows.add(hostWorkspaceMenuRow(workspaceHarnessId))
         }
         if (sessions.isNotEmpty()) {
             val sessionCount = sessions.size.coerceAtMost(30)
             val workspaceCount = CodexSessionPickerSections.workspaceCount(sessions)
+            val workspaceHarnessLabel = workspaceHarnessId?.let(ChatPresentationHelpers::harnessLabel)
             sessionRows.add(AnchoredPicker.Row(
                 id = "chat:previous",
-                label = if (isCodexHarness()) "Previous Codex sessions" else "Previous chats",
-                sublabel = if (isCodexHarness() && workspaceCount > 0) {
+                label = workspaceHarnessLabel?.let { "Previous $it sessions" } ?: "Previous chats",
+                sublabel = if (workspaceHarnessId != null && workspaceCount > 0) {
                     "$sessionCount across $workspaceCount folders"
                 } else {
                     "Last $sessionCount"
@@ -1871,23 +1884,26 @@ class OverlayController(
         )
     }
 
-    private fun codexWorkspaceMenuRow(path: String = onGetCodexWorkspacePath()): AnchoredPicker.Row {
+    private fun hostWorkspaceMenuRow(
+        harnessId: String,
+        path: String = workspacePathForHarness(harnessId)
+    ): AnchoredPicker.Row {
         return AnchoredPicker.Row(
             id = PLUS_ROW_CODEX_WORKSPACE,
             label = "Current Workspace",
             sublabel = CodexWorkspacePaths.defaultWorkspaceLabel(path),
             iconRes = R.drawable.ic_file,
             dismissOnSelect = false,
-            onSelect = { showCodexWorkspaceDialog() }
+            onSelect = { showHostWorkspaceDialog(harnessId) }
         )
     }
 
-    private fun updateCodexWorkspaceMenuRow(path: String) {
-        anchoredPicker?.updateRow(codexWorkspaceMenuRow(path))
+    private fun updateHostWorkspaceMenuRow(harnessId: String, path: String) {
+        anchoredPicker?.updateRow(hostWorkspaceMenuRow(harnessId, path))
     }
 
-    private fun refreshCodexWorkspaceMenuAfterDialog(path: String) {
-        updateCodexWorkspaceMenuRow(path)
+    private fun refreshHostWorkspaceMenuAfterDialog(harnessId: String, path: String) {
+        updateHostWorkspaceMenuRow(harnessId, path)
         val anchor = headerSessionAnchor ?: return
         if (anchoredPicker?.isShowingFor(anchor) == true) {
             showPlusMenu(
@@ -1898,13 +1914,28 @@ class OverlayController(
         }
     }
 
-    private fun showCodexWorkspaceDialog() {
+    private fun workspacePathForHarness(harnessId: String): String {
+        return when (harnessId) {
+            AgentConfig.HARNESS_OPENCODE -> onGetOpenCodeWorkspacePath()
+            else -> onGetCodexWorkspacePath()
+        }
+    }
+
+    private fun setWorkspacePathForHarness(harnessId: String, path: String) {
+        when (harnessId) {
+            AgentConfig.HARNESS_OPENCODE -> onSetOpenCodeWorkspacePath(path)
+            else -> onSetCodexWorkspacePath(path)
+        }
+    }
+
+    private fun showHostWorkspaceDialog(harnessId: String) {
         val tokens = DesignTokens.resolve(context)
         var pathToRefreshAfterDismiss: String? = null
+        val harnessLabel = ChatPresentationHelpers.harnessLabel(harnessId)
         val editor = EditText(context).apply {
             setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setText(CodexWorkspacePaths.editorText(onGetCodexWorkspacePath()))
+            setText(CodexWorkspacePaths.editorText(workspacePathForHarness(harnessId)))
             selectAll()
             setTextColor(tokens.primaryText)
             setHintTextColor(tokens.tertiaryText)
@@ -1914,7 +1945,7 @@ class OverlayController(
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(12), dp(24), 0)
             addView(TextView(context).apply {
-                text = "New Codex chats will start in this workspace folder. Leave blank for QuickChats."
+                text = "New $harnessLabel chats will start in this workspace folder. Leave blank for QuickChats."
                 setTextColor(tokens.secondaryText)
                 textSize = 13f
             }, LinearLayout.LayoutParams(
@@ -1931,20 +1962,20 @@ class OverlayController(
             .setView(content)
             .setPositiveButton("Save") { _, _ ->
                 val path = CodexWorkspacePaths.normalizeInput(editor.text?.toString())
-                onSetCodexWorkspacePath(path)
+                setWorkspacePathForHarness(harnessId, path)
                 pathToRefreshAfterDismiss = path
-                setStatus("Codex workspace: ${CodexWorkspacePaths.defaultWorkspaceLabel(path)}")
+                setStatus("$harnessLabel workspace: ${CodexWorkspacePaths.defaultWorkspaceLabel(path)}")
             }
             .setNeutralButton("Clear") { _, _ ->
-                onSetCodexWorkspacePath("")
+                setWorkspacePathForHarness(harnessId, "")
                 pathToRefreshAfterDismiss = ""
-                setStatus("Codex workspace: ${CodexWorkspacePaths.defaultWorkspaceLabel("")}")
+                setStatus("$harnessLabel workspace: ${CodexWorkspacePaths.defaultWorkspaceLabel("")}")
             }
             .setNegativeButton("Cancel", null)
             .create()
         dialog.setOnDismissListener {
             pathToRefreshAfterDismiss?.let { path ->
-                refreshCodexWorkspaceMenuAfterDialog(path)
+                refreshHostWorkspaceMenuAfterDialog(harnessId, path)
             }
         }
         dialog.window?.setType(
@@ -2169,9 +2200,12 @@ class OverlayController(
             setStatus("No previous chats yet.")
             return
         }
+        val title = workspaceHarnessId()
+            ?.let { "Previous ${ChatPresentationHelpers.harnessLabel(it)} sessions" }
+            ?: "Previous chats"
         showAnchoredPicker(
             anchor,
-            if (isCodexHarness()) "Previous Codex sessions" else "Previous chats",
+            title,
             sections,
             toggleSameAnchor = false,
             onDismiss = if (anchor === headerSessionAnchor) {

@@ -125,7 +125,14 @@ object ChatModelCatalog {
         val cleanModel = model?.trim()?.takeIf { it.isNotBlank() } ?: return null
         val harness = normalizeHarnessId(harnessId)
         if (cleanModel == AgentModelOptions.LOCAL_LITERT_MODEL_ID) return cleanModel
-        if ((harness == AgentConfig.HARNESS_CODEX || harness == AgentConfig.HARNESS_HERMES) && harnessFromModelPrefix(cleanModel) == null) {
+        if (
+            (
+                harness == AgentConfig.HARNESS_CODEX ||
+                    harness == AgentConfig.HARNESS_HERMES ||
+                    harness == AgentConfig.HARNESS_OPENCODE
+                ) &&
+            harnessFromModelPrefix(cleanModel) == null
+        ) {
             return "$harness:$cleanModel"
         }
         return cleanModel
@@ -193,7 +200,10 @@ object ChatModelCatalog {
             .takeIf { it.isNotBlank() }
             ?.lowercase()
         return when (prefix) {
-            AgentConfig.HARNESS_CODEX, AgentConfig.HARNESS_HERMES, AgentConfig.HARNESS_LOCAL -> prefix
+            AgentConfig.HARNESS_CODEX,
+            AgentConfig.HARNESS_HERMES,
+            AgentConfig.HARNESS_OPENCODE,
+            AgentConfig.HARNESS_LOCAL -> prefix
             else -> AgentConfig.HARNESS_OPENCLAW
         }
     }
@@ -204,6 +214,7 @@ object ChatModelCatalog {
             AgentConfig.HARNESS_OPENCLAW,
             AgentConfig.HARNESS_CODEX,
             AgentConfig.HARNESS_HERMES,
+            AgentConfig.HARNESS_OPENCODE,
             AgentConfig.HARNESS_LOCAL -> cleanHarnessId
             else -> null
         }
@@ -223,6 +234,7 @@ object ChatModelCatalog {
                 AgentConfig.HARNESS_OPENCLAW -> "OpenClaw"
                 AgentConfig.HARNESS_HERMES -> "Hermes"
                 AgentConfig.HARNESS_CODEX -> "Codex"
+                AgentConfig.HARNESS_OPENCODE -> "OpenCode"
                 AgentConfig.HARNESS_LOCAL -> "Local"
                 else -> model.provider?.takeIf { it.isNotBlank() } ?: "OpenClaw"
             }
@@ -233,6 +245,7 @@ object ChatModelCatalog {
             ?: when (model.provider?.lowercase()) {
                 "hermes" -> AgentConfig.HARNESS_HERMES
                 "codex" -> AgentConfig.HARNESS_CODEX
+                "opencode" -> AgentConfig.HARNESS_OPENCODE
                 "android" -> AgentConfig.HARNESS_LOCAL
                 else -> AgentConfig.HARNESS_OPENCLAW
             }
@@ -243,8 +256,9 @@ object ChatModelCatalog {
             AgentConfig.HARNESS_OPENCLAW -> 0
             AgentConfig.HARNESS_HERMES -> 1
             AgentConfig.HARNESS_CODEX -> 2
-            AgentConfig.HARNESS_LOCAL -> 3
-            else -> 4
+            AgentConfig.HARNESS_OPENCODE -> 3
+            AgentConfig.HARNESS_LOCAL -> 4
+            else -> 5
         }
     }
 
@@ -253,6 +267,7 @@ object ChatModelCatalog {
             AgentConfig.HARNESS_OPENCLAW -> "OpenClaw"
             AgentConfig.HARNESS_HERMES -> "Hermes"
             AgentConfig.HARNESS_CODEX -> "Codex"
+            AgentConfig.HARNESS_OPENCODE -> "OpenCode"
             AgentConfig.HARNESS_LOCAL -> "Local"
             else -> harnessId
         }
@@ -262,6 +277,7 @@ object ChatModelCatalog {
         AgentConfig.HARNESS_OPENCLAW,
         AgentConfig.HARNESS_HERMES,
         AgentConfig.HARNESS_CODEX,
+        AgentConfig.HARNESS_OPENCODE,
         AgentConfig.HARNESS_LOCAL
     )
 
