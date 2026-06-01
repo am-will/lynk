@@ -223,8 +223,11 @@ class OverlayController(
     private var panelContent: LinearLayout? = null
     private var anchoredPicker: AnchoredPicker? = null
     private val expandedModelHarnesses = mutableSetOf<String>()
+    private val expandedSessionWorkspaces = mutableSetOf<String>()
     private val expandedCommandPickerGroups = mutableSetOf<String>()
     private var modelPickerActiveHarnessId: String? = null
+    private var sessionPickerActiveWorkspaceKey: String? = null
+    private var activeSessionsMenuAnchor: View? = null
     private var headerSessionAnchor: View? = null
     private var headerSessionChevron: ImageView? = null
     private var headerBrandLogo: ImageView? = null
@@ -1720,13 +1723,37 @@ class OverlayController(
         if (!isWorkspaceHarness()) {
             return listOf(AnchoredPicker.Section(null, sessionPickerRows(limit = 30)))
         }
+        syncExpandedSessionWorkspace()
         return CodexSessionPickerSections.build(
             sessions = lastChatState.sessions,
             selectedSessionKey = lastChatState.sessionKey,
+            expandedWorkspaceKeys = expandedSessionWorkspaces,
             unreadCountForSession = lastChatState::unreadCountForSession,
+            onToggleWorkspace = { workspaceKey -> toggleSessionWorkspace(workspaceKey) },
             onSelectSession = onSelectChatSession,
             limit = limit
         )
+    }
+
+    private fun syncExpandedSessionWorkspace() {
+        val activeWorkspaceKey = CodexSessionPickerSections.workspaceKeyForSession(
+            sessions = lastChatState.sessions,
+            sessionKey = lastChatState.sessionKey
+        )
+        if (sessionPickerActiveWorkspaceKey != activeWorkspaceKey) {
+            expandedSessionWorkspaces.clear()
+            activeWorkspaceKey?.let(expandedSessionWorkspaces::add)
+            sessionPickerActiveWorkspaceKey = activeWorkspaceKey
+        }
+    }
+
+    private fun toggleSessionWorkspace(workspaceKey: String) {
+        if (workspaceKey in expandedSessionWorkspaces) {
+            expandedSessionWorkspaces.remove(workspaceKey)
+        } else {
+            expandedSessionWorkspaces.add(workspaceKey)
+        }
+        showSessionsMenu(anchorOverride = activeSessionsMenuAnchor ?: headerSessionAnchor ?: panelHost)
     }
 
     private fun workspaceHarnessId(): String? {
@@ -2220,6 +2247,7 @@ class OverlayController(
 
     private fun showSessionsMenu(anchorOverride: View? = null) {
         val anchor = anchorOverride ?: headerSessionAnchor ?: panelHost ?: return
+        activeSessionsMenuAnchor = anchor
         val sections = sessionPickerSections()
         if (sections.all { it.rows.isEmpty() }) {
             setStatus("No previous chats yet.")

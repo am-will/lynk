@@ -44,6 +44,7 @@ class AnchoredPicker(
         val iconRes: Int? = null,
         val selected: Boolean = false,
         val selectable: Boolean = true,
+        val emphasizeLabel: Boolean = false,
         val emphasizeSublabel: Boolean = false,
         val destructive: Boolean = false,
         val enabled: Boolean = true,
@@ -555,7 +556,7 @@ class AnchoredPicker(
             text = row.label
             Typography.applyCallout(this, tokens)
             if (row.destructive) setTextColor(tokens.danger)
-            if (row.selected) setTextColor(tokens.accent)
+            if (row.selected || row.emphasizeLabel) setTextColor(tokens.accent)
             isSingleLine = true
         })
         row.sublabel?.takeIf { it.isNotBlank() }?.let { sub ->

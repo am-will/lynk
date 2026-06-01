@@ -487,6 +487,7 @@ class ChatPresentationHelpersTest {
                     harnessLabel = "Codex",
                     displayName = "Workspace chat",
                     workspacePath = "/Users/example/Projects/app",
+                    updatedAt = 200,
                     model = "gpt-5.3-codex"
                 ),
                 session(
@@ -495,19 +496,71 @@ class ChatPresentationHelpersTest {
                     harnessLabel = "Codex",
                     displayName = "Quick chat",
                     preview = "quick question",
+                    updatedAt = 100,
                     model = "gpt-5.3-codex"
                 )
             ),
             selectedSessionKey = "codex:workspace",
+            expandedWorkspaceKeys = setOf("/Users/example/Projects/app"),
             unreadCountForSession = { key -> if (key == "codex:quick") 2 else 0 },
+            onToggleWorkspace = {},
             onSelectSession = {}
         )
 
-        assertEquals(listOf("~/Projects/app", "QuickChats"), sections.map { it.title })
-        assertEquals("Codex / ~/Projects/app", sections[0].rows[0].sublabel)
-        assertTrue(sections[0].rows[0].selected)
+        assertEquals(listOf(null, "QuickChats"), sections.map { it.title })
+        assertEquals("~/Projects/app", sections[0].rows[0].label)
+        assertEquals("Active workspace, 1 session", sections[0].rows[0].sublabel)
+        assertTrue(sections[0].rows[0].emphasizeLabel)
+        assertEquals("Codex / ~/Projects/app", sections[0].rows[1].sublabel)
+        assertTrue(sections[0].rows[1].selected)
         assertEquals("Codex / quick question", sections[1].rows[0].sublabel)
         assertEquals(2, sections[1].rows[0].badgeCount)
+    }
+
+    @Test
+    fun codexSessionPickerCollapsesWorkspaceRowsAndSortsByRecency() {
+        val sections = CodexSessionPickerSections.build(
+            sessions = listOf(
+                session(
+                    key = "codex:old",
+                    harnessId = "codex",
+                    harnessLabel = "Codex",
+                    displayName = "Old workspace chat",
+                    workspacePath = "/Users/example/Projects/old",
+                    updatedAt = 100,
+                    model = "gpt-5.3-codex"
+                ),
+                session(
+                    key = "codex:recent",
+                    harnessId = "codex",
+                    harnessLabel = "Codex",
+                    displayName = "Recent workspace chat",
+                    workspacePath = "/Users/example/Projects/recent",
+                    updatedAt = 300,
+                    model = "gpt-5.3-codex"
+                ),
+                session(
+                    key = "codex:old-newer",
+                    harnessId = "codex",
+                    harnessLabel = "Codex",
+                    displayName = "Old newer workspace chat",
+                    workspacePath = "/Users/example/Projects/old",
+                    updatedAt = 200,
+                    model = "gpt-5.3-codex"
+                )
+            ),
+            selectedSessionKey = "codex:old-newer",
+            expandedWorkspaceKeys = setOf("/Users/example/Projects/old"),
+            unreadCountForSession = { 0 },
+            onToggleWorkspace = {},
+            onSelectSession = {}
+        )
+
+        assertEquals(listOf("~/Projects/recent", "~/Projects/old"), sections.map { it.rows[0].label })
+        assertEquals(1, sections[0].rows.size)
+        assertEquals(3, sections[1].rows.size)
+        assertEquals("Old newer workspace chat", sections[1].rows[1].label)
+        assertEquals("Old workspace chat", sections[1].rows[2].label)
     }
 
     @Test
@@ -520,6 +573,7 @@ class ChatPresentationHelpersTest {
                     harnessLabel = "OpenCode",
                     displayName = "Workspace chat",
                     workspacePath = "/Users/example/Projects/app",
+                    updatedAt = 200,
                     model = "opencode:openai/gpt-5.5"
                 ),
                 session(
@@ -528,17 +582,23 @@ class ChatPresentationHelpersTest {
                     harnessLabel = "OpenCode",
                     displayName = "Quick chat",
                     preview = "quick question",
+                    updatedAt = 100,
                     model = "opencode:openai/gpt-5.5"
                 )
             ),
             selectedSessionKey = "opencode:workspace",
+            expandedWorkspaceKeys = setOf("/Users/example/Projects/app"),
             unreadCountForSession = { key -> if (key == "opencode:quick") 1 else 0 },
+            onToggleWorkspace = {},
             onSelectSession = {}
         )
 
-        assertEquals(listOf("~/Projects/app", "QuickChats"), sections.map { it.title })
-        assertEquals("OpenCode / ~/Projects/app", sections[0].rows[0].sublabel)
-        assertTrue(sections[0].rows[0].selected)
+        assertEquals(listOf(null, "QuickChats"), sections.map { it.title })
+        assertEquals("~/Projects/app", sections[0].rows[0].label)
+        assertEquals("Active workspace, 1 session", sections[0].rows[0].sublabel)
+        assertTrue(sections[0].rows[0].emphasizeLabel)
+        assertEquals("OpenCode / ~/Projects/app", sections[0].rows[1].sublabel)
+        assertTrue(sections[0].rows[1].selected)
         assertEquals("OpenCode / quick question", sections[1].rows[0].sublabel)
         assertEquals(1, sections[1].rows[0].badgeCount)
     }
@@ -552,6 +612,7 @@ class ChatPresentationHelpersTest {
         workspaceName: String? = null,
         preview: String? = null,
         source: String? = null,
+        updatedAt: Long? = null,
         model: String? = null,
         harnessId: String? = "openclaw",
         harnessLabel: String? = "OpenClaw"
@@ -568,7 +629,7 @@ class ChatPresentationHelpersTest {
             threadPath = null,
             preview = preview,
             source = source,
-            updatedAt = null,
+            updatedAt = updatedAt,
             model = model,
             modelProvider = null,
             contextTokens = null,
