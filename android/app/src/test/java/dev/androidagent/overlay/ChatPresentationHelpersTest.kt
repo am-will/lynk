@@ -569,6 +569,46 @@ class ChatPresentationHelpersTest {
     }
 
     @Test
+    fun codexSessionPickerHighlightsActiveDefaultWorkspace() {
+        val sections = CodexSessionPickerSections.build(
+            sessions = listOf(
+                session(
+                    key = "codex:workspace",
+                    harnessId = "codex",
+                    harnessLabel = "Codex",
+                    displayName = "Workspace chat",
+                    workspacePath = "/Users/example/Projects/app",
+                    updatedAt = 200,
+                    model = "gpt-5.3-codex"
+                ),
+                session(
+                    key = "codex:quick",
+                    harnessId = "codex",
+                    harnessLabel = "Codex",
+                    displayName = "Quick chat",
+                    preview = "quick question",
+                    updatedAt = 100,
+                    model = "gpt-5.3-codex"
+                )
+            ),
+            selectedSessionKey = "codex:quick",
+            activeWorkspacePath = "~/Projects/app",
+            expandedWorkspaceKeys = setOf("/Users/example/Projects/app"),
+            expandedQuickChats = true,
+            unreadCountForSession = { 0 },
+            onToggleWorkspace = {},
+            onToggleQuickChats = {},
+            onSelectSession = {}
+        )
+
+        assertEquals("~/Projects/app", sections[0].rows[0].label)
+        assertEquals("Active workspace, 1 session", sections[0].rows[0].sublabel)
+        assertTrue(sections[0].rows[0].emphasizeLabel)
+        assertEquals("QuickChats", sections[1].rows[0].label)
+        assertTrue(sections[1].rows[0].emphasizeLabel)
+    }
+
+    @Test
     fun codexSessionPickerCollapsesAndExpandsQuickChats() {
         val collapsed = CodexSessionPickerSections.build(
             sessions = listOf(

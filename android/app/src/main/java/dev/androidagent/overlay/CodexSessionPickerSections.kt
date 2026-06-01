@@ -11,6 +11,7 @@ object CodexSessionPickerSections {
     fun build(
         sessions: List<ChatSessionRow>,
         selectedSessionKey: String?,
+        activeWorkspacePath: String? = null,
         expandedWorkspaceKeys: Set<String>,
         expandedQuickChats: Boolean,
         unreadCountForSession: (String) -> Int,
@@ -23,9 +24,11 @@ object CodexSessionPickerSections {
         val workspaceSessions = scoped.filter { !it.workspacePath.isNullOrBlank() || !it.workspaceName.isNullOrBlank() }
         val quickChatSessions = scoped.filter { it.workspacePath.isNullOrBlank() && it.workspaceName.isNullOrBlank() }
         val sections = mutableListOf<AnchoredPicker.Section>()
-        val activeWorkspaceKey = workspaceSessions
-            .firstOrNull { it.key == selectedSessionKey }
-            ?.let(::workspaceKey)
+        val activeWorkspaceKey = activeWorkspaceKey(
+            sessions = workspaceSessions,
+            selectedSessionKey = selectedSessionKey,
+            activeWorkspacePath = activeWorkspacePath
+        )
         val activeQuickChats = quickChatSessions.any { it.key == selectedSessionKey }
 
         workspaceSessions
@@ -110,10 +113,20 @@ object CodexSessionPickerSections {
             .size
     }
 
-    fun workspaceKeyForSession(sessions: List<ChatSessionRow>, sessionKey: String?): String? {
-        if (sessionKey.isNullOrBlank()) return null
-        return sessions.firstOrNull { it.key == sessionKey }?.takeIf {
-            !it.workspacePath.isNullOrBlank() || !it.workspaceName.isNullOrBlank()
+    fun activeWorkspaceKey(
+        sessions: List<ChatSessionRow>,
+        selectedSessionKey: String?,
+        activeWorkspacePath: String?
+    ): String? {
+        selectedSessionKey?.takeIf { it.isNotBlank() }?.let { sessionKey ->
+            sessions.firstOrNull { it.key == sessionKey }?.takeIf(::hasWorkspace)?.let(::workspaceKey)?.let {
+                return it
+            }
+        }
+
+        val activeWorkspaceCandidates = workspaceCandidates(activeWorkspacePath).takeIf { it.isNotEmpty() } ?: return null
+        return sessions.firstOrNull { session ->
+            hasWorkspace(session) && workspaceCandidates(workspaceKey(session)).any { it in activeWorkspaceCandidates }
         }?.let(::workspaceKey)
     }
 
@@ -169,6 +182,15 @@ object CodexSessionPickerSections {
         return session.workspacePath?.takeIf { it.isNotBlank() }
             ?: session.workspaceName?.takeIf { it.isNotBlank() }
             ?: "Workspace"
+    }
+
+    private fun hasWorkspace(session: ChatSessionRow): Boolean {
+        return !session.workspacePath.isNullOrBlank() || !session.workspaceName.isNullOrBlank()
+    }
+
+    private fun workspaceCandidates(path: String?): Set<String> {
+        val trimmed = path?.trim()?.takeIf { it.isNotBlank() } ?: return emptySet()
+        return setOf(trimmed, CodexWorkspacePaths.display(trimmed))
     }
 
     private fun workspaceSublabel(active: Boolean, sessionCount: Int): String {

@@ -1732,6 +1732,7 @@ class OverlayController(
         return CodexSessionPickerSections.build(
             sessions = lastChatState.sessions,
             selectedSessionKey = lastChatState.sessionKey,
+            activeWorkspacePath = activeWorkspacePathForSessionPicker(),
             expandedWorkspaceKeys = expandedSessionWorkspaces,
             expandedQuickChats = expandedSessionQuickChats,
             unreadCountForSession = lastChatState::unreadCountForSession,
@@ -1743,9 +1744,10 @@ class OverlayController(
     }
 
     private fun syncExpandedSessionWorkspace() {
-        val activeWorkspaceKey = CodexSessionPickerSections.workspaceKeyForSession(
+        val activeWorkspaceKey = CodexSessionPickerSections.activeWorkspaceKey(
             sessions = lastChatState.sessions,
-            sessionKey = lastChatState.sessionKey
+            selectedSessionKey = lastChatState.sessionKey,
+            activeWorkspacePath = activeWorkspacePathForSessionPicker()
         )
         val activeGroupKey = activeWorkspaceKey?.let { "workspace:$it" }
             ?: if (CodexSessionPickerSections.isQuickChatSession(lastChatState.sessions, lastChatState.sessionKey)) {
@@ -1783,6 +1785,10 @@ class OverlayController(
             revealRowId = CodexSessionPickerSections.QUICK_CHATS_ROW_ID,
             revealRowVerticalBias = SESSION_TOGGLE_REVEAL_BIAS
         )
+    }
+
+    private fun activeWorkspacePathForSessionPicker(): String? {
+        return workspaceHarnessId()?.let(::workspacePathForHarness)?.takeIf(CodexWorkspacePaths::hasDefault)
     }
 
     private fun workspaceHarnessId(): String? {
