@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
+import { defaultHostBridgeConfigDir } from "../host/HostConfigStore.js";
 
 interface AuditEvent {
   id: string;
@@ -42,7 +43,7 @@ export class AuditLog {
 
   constructor(
     private readonly maxEvents = 1_000,
-    auditDir = process.env.PHONE_AGENT_AUDIT_DIR ?? join(process.cwd(), "audit")
+    auditDir = defaultAuditDir()
   ) {
     mkdirSync(auditDir, { recursive: true });
     this.filePath = join(auditDir, "phone-agent-audit.jsonl");
@@ -97,4 +98,8 @@ export class AuditLog {
   async flush(): Promise<void> {
     await this.writeChain;
   }
+}
+
+export function defaultAuditDir(): string {
+  return process.env.PHONE_AGENT_AUDIT_DIR?.trim() || join(defaultHostBridgeConfigDir(), "audit");
 }

@@ -27,3 +27,32 @@ test("AuditLog records in memory immediately and flushes writes asynchronously",
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test("AuditLog default directory is independent of process cwd", async () => {
+  const configDir = await mkdtemp(join(tmpdir(), "lynk-config-"));
+  const previousConfigDir = process.env.PHONE_AGENT_CONFIG_DIR;
+  const previousAuditDir = process.env.PHONE_AGENT_AUDIT_DIR;
+  try {
+    process.env.PHONE_AGENT_CONFIG_DIR = configDir;
+    delete process.env.PHONE_AGENT_AUDIT_DIR;
+
+    const audit = new AuditLog(10);
+    audit.record("startup_check");
+    await audit.flush();
+
+    const jsonl = await readFile(join(configDir, "audit", "phone-agent-audit.jsonl"), "utf8");
+    assert.match(jsonl, /"type":"startup_check"/);
+  } finally {
+    if (previousConfigDir === undefined) {
+      delete process.env.PHONE_AGENT_CONFIG_DIR;
+    } else {
+      process.env.PHONE_AGENT_CONFIG_DIR = previousConfigDir;
+    }
+    if (previousAuditDir === undefined) {
+      delete process.env.PHONE_AGENT_AUDIT_DIR;
+    } else {
+      process.env.PHONE_AGENT_AUDIT_DIR = previousAuditDir;
+    }
+    await rm(configDir, { recursive: true, force: true });
+  }
+});

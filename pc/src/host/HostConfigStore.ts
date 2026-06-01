@@ -1,8 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { homedir, platform } from "node:os";
+import { fileURLToPath } from "node:url";
 
 export interface HostBridgeConfigFile {
   schemaVersion: 1;
@@ -50,6 +51,8 @@ export interface LoadedHostBridgeConfig {
 }
 
 const DEFAULT_CONFIG_FILE = "config.json";
+const hostScriptDir = dirname(fileURLToPath(import.meta.url));
+const defaultAgentCwd = resolve(hostScriptDir, "../..");
 
 export function defaultHostBridgeConfigDir(): string {
   const explicit = process.env.PHONE_AGENT_CONFIG_DIR?.trim();
@@ -106,15 +109,15 @@ export function loadOrCreateHostBridgeConfig(path = defaultHostBridgeConfigPath(
     openAiRealtimeVoice: "marin",
     openAiWebSearchModel: "gpt-5.5",
     codexAppServerCommand: "codex app-server --listen stdio://",
-    codexAgentCwd: process.cwd(),
+    codexAgentCwd: defaultAgentCwd,
     codexAppServerApprovalPolicy: "never",
     codexAppServerSandbox: "workspace-write",
     opencodeServerUrl: "",
     opencodeServerCommand: "opencode serve --hostname 127.0.0.1 --port 4096",
-    opencodeAgentCwd: process.cwd(),
+    opencodeAgentCwd: defaultAgentCwd,
     opencodeServerUsername: "opencode",
     opencodeRunTimeoutSeconds: 600,
-    piAgentCwd: process.cwd(),
+    piAgentCwd: defaultAgentCwd,
     piAgentDir: "",
     piDefaultModel: "",
     piRunTimeoutSeconds: 600

@@ -114,11 +114,11 @@ export async function hostServiceStatus(): Promise<ServiceActionResult> {
 }
 
 function macLaunchAgentPlist(program: string, args: string[], configPath: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n  <key>Label</key><string>dev.androidagent.bridge</string>\n  <key>ProgramArguments</key>\n  <array>\n    <string>${escapeXml(program)}</string>\n${args.map((arg) => `    <string>${escapeXml(arg)}</string>`).join("\n")}\n  </array>\n  <key>EnvironmentVariables</key>\n  <dict><key>PHONE_AGENT_CONFIG_PATH</key><string>${escapeXml(configPath)}</string></dict>\n  <key>RunAtLoad</key><true/>\n  <key>KeepAlive</key><true/>\n</dict>\n</plist>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n  <key>Label</key><string>dev.androidagent.bridge</string>\n  <key>ProgramArguments</key>\n  <array>\n    <string>${escapeXml(program)}</string>\n${args.map((arg) => `    <string>${escapeXml(arg)}</string>`).join("\n")}\n  </array>\n  <key>WorkingDirectory</key><string>${escapeXml(pcRoot)}</string>\n  <key>EnvironmentVariables</key>\n  <dict><key>PHONE_AGENT_CONFIG_PATH</key><string>${escapeXml(configPath)}</string></dict>\n  <key>RunAtLoad</key><true/>\n  <key>KeepAlive</key><true/>\n</dict>\n</plist>`;
 }
 
 function linuxSystemdUnit(command: string, configPath: string): string {
-  return `[Unit]\nDescription=Lynk Bridge\nAfter=network-online.target\n\n[Service]\nType=simple\nEnvironment=PHONE_AGENT_CONFIG_PATH=${systemdEscape(configPath)}\nExecStart=${command}\nRestart=on-failure\nRestartSec=5\n\n[Install]\nWantedBy=default.target`;
+  return `[Unit]\nDescription=Lynk Bridge\nAfter=network-online.target\n\n[Service]\nType=simple\nWorkingDirectory=${systemdEscape(pcRoot)}\nEnvironment=PHONE_AGENT_CONFIG_PATH=${systemdEscape(configPath)}\nExecStart=${command}\nRestart=on-failure\nRestartSec=5\n\n[Install]\nWantedBy=default.target`;
 }
 
 function escapeXml(value: string): string {
