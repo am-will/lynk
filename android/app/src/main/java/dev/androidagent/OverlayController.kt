@@ -224,9 +224,10 @@ class OverlayController(
     private var anchoredPicker: AnchoredPicker? = null
     private val expandedModelHarnesses = mutableSetOf<String>()
     private val expandedSessionWorkspaces = mutableSetOf<String>()
+    private var expandedSessionQuickChats = false
     private val expandedCommandPickerGroups = mutableSetOf<String>()
     private var modelPickerActiveHarnessId: String? = null
-    private var sessionPickerActiveWorkspaceKey: String? = null
+    private var sessionPickerActiveGroupKey: String? = null
     private var activeSessionsMenuAnchor: View? = null
     private var headerSessionAnchor: View? = null
     private var headerSessionChevron: ImageView? = null
@@ -1728,8 +1729,10 @@ class OverlayController(
             sessions = lastChatState.sessions,
             selectedSessionKey = lastChatState.sessionKey,
             expandedWorkspaceKeys = expandedSessionWorkspaces,
+            expandedQuickChats = expandedSessionQuickChats,
             unreadCountForSession = lastChatState::unreadCountForSession,
             onToggleWorkspace = { workspaceKey -> toggleSessionWorkspace(workspaceKey) },
+            onToggleQuickChats = { toggleSessionQuickChats() },
             onSelectSession = onSelectChatSession,
             limit = limit
         )
@@ -1740,10 +1743,17 @@ class OverlayController(
             sessions = lastChatState.sessions,
             sessionKey = lastChatState.sessionKey
         )
-        if (sessionPickerActiveWorkspaceKey != activeWorkspaceKey) {
+        val activeGroupKey = activeWorkspaceKey?.let { "workspace:$it" }
+            ?: if (CodexSessionPickerSections.isQuickChatSession(lastChatState.sessions, lastChatState.sessionKey)) {
+                "quick-chats"
+            } else {
+                null
+            }
+        if (sessionPickerActiveGroupKey != activeGroupKey) {
             expandedSessionWorkspaces.clear()
             activeWorkspaceKey?.let(expandedSessionWorkspaces::add)
-            sessionPickerActiveWorkspaceKey = activeWorkspaceKey
+            expandedSessionQuickChats = activeGroupKey == "quick-chats"
+            sessionPickerActiveGroupKey = activeGroupKey
         }
     }
 
@@ -1753,6 +1763,11 @@ class OverlayController(
         } else {
             expandedSessionWorkspaces.add(workspaceKey)
         }
+        showSessionsMenu(anchorOverride = activeSessionsMenuAnchor ?: headerSessionAnchor ?: panelHost)
+    }
+
+    private fun toggleSessionQuickChats() {
+        expandedSessionQuickChats = !expandedSessionQuickChats
         showSessionsMenu(anchorOverride = activeSessionsMenuAnchor ?: headerSessionAnchor ?: panelHost)
     }
 

@@ -502,19 +502,22 @@ class ChatPresentationHelpersTest {
             ),
             selectedSessionKey = "codex:workspace",
             expandedWorkspaceKeys = setOf("/Users/example/Projects/app"),
+            expandedQuickChats = false,
             unreadCountForSession = { key -> if (key == "codex:quick") 2 else 0 },
             onToggleWorkspace = {},
+            onToggleQuickChats = {},
             onSelectSession = {}
         )
 
-        assertEquals(listOf(null, "QuickChats"), sections.map { it.title })
+        assertEquals(listOf(null, null), sections.map { it.title })
         assertEquals("~/Projects/app", sections[0].rows[0].label)
         assertEquals("Active workspace, 1 session", sections[0].rows[0].sublabel)
         assertTrue(sections[0].rows[0].emphasizeLabel)
         assertEquals("Codex / ~/Projects/app", sections[0].rows[1].sublabel)
         assertTrue(sections[0].rows[1].selected)
-        assertEquals("Codex / quick question", sections[1].rows[0].sublabel)
-        assertEquals(2, sections[1].rows[0].badgeCount)
+        assertEquals("QuickChats", sections[1].rows[0].label)
+        assertEquals("1 session", sections[1].rows[0].sublabel)
+        assertEquals(1, sections[1].rows.size)
     }
 
     @Test
@@ -551,8 +554,10 @@ class ChatPresentationHelpersTest {
             ),
             selectedSessionKey = "codex:old-newer",
             expandedWorkspaceKeys = setOf("/Users/example/Projects/old"),
+            expandedQuickChats = false,
             unreadCountForSession = { 0 },
             onToggleWorkspace = {},
+            onToggleQuickChats = {},
             onSelectSession = {}
         )
 
@@ -561,6 +566,78 @@ class ChatPresentationHelpersTest {
         assertEquals(3, sections[1].rows.size)
         assertEquals("Old newer workspace chat", sections[1].rows[1].label)
         assertEquals("Old workspace chat", sections[1].rows[2].label)
+    }
+
+    @Test
+    fun codexSessionPickerCollapsesAndExpandsQuickChats() {
+        val collapsed = CodexSessionPickerSections.build(
+            sessions = listOf(
+                session(
+                    key = "codex:quick-old",
+                    harnessId = "codex",
+                    harnessLabel = "Codex",
+                    displayName = "Old quick chat",
+                    preview = "old question",
+                    updatedAt = 100,
+                    model = "gpt-5.3-codex"
+                ),
+                session(
+                    key = "codex:quick-new",
+                    harnessId = "codex",
+                    harnessLabel = "Codex",
+                    displayName = "New quick chat",
+                    preview = "new question",
+                    updatedAt = 300,
+                    model = "gpt-5.3-codex"
+                )
+            ),
+            selectedSessionKey = "codex:quick-new",
+            expandedWorkspaceKeys = emptySet(),
+            expandedQuickChats = false,
+            unreadCountForSession = { key -> if (key == "codex:quick-old") 1 else 0 },
+            onToggleWorkspace = {},
+            onToggleQuickChats = {},
+            onSelectSession = {}
+        )
+        val expanded = CodexSessionPickerSections.build(
+            sessions = listOf(
+                session(
+                    key = "codex:quick-old",
+                    harnessId = "codex",
+                    harnessLabel = "Codex",
+                    displayName = "Old quick chat",
+                    preview = "old question",
+                    updatedAt = 100,
+                    model = "gpt-5.3-codex"
+                ),
+                session(
+                    key = "codex:quick-new",
+                    harnessId = "codex",
+                    harnessLabel = "Codex",
+                    displayName = "New quick chat",
+                    preview = "new question",
+                    updatedAt = 300,
+                    model = "gpt-5.3-codex"
+                )
+            ),
+            selectedSessionKey = "codex:quick-new",
+            expandedWorkspaceKeys = emptySet(),
+            expandedQuickChats = true,
+            unreadCountForSession = { key -> if (key == "codex:quick-old") 1 else 0 },
+            onToggleWorkspace = {},
+            onToggleQuickChats = {},
+            onSelectSession = {}
+        )
+
+        assertEquals(1, collapsed.single().rows.size)
+        assertEquals("QuickChats", collapsed.single().rows[0].label)
+        assertEquals("Active quick chats, 2 sessions", collapsed.single().rows[0].sublabel)
+        assertTrue(collapsed.single().rows[0].emphasizeLabel)
+        assertEquals(3, expanded.single().rows.size)
+        assertEquals("New quick chat", expanded.single().rows[1].label)
+        assertTrue(expanded.single().rows[1].selected)
+        assertEquals("Old quick chat", expanded.single().rows[2].label)
+        assertEquals(1, expanded.single().rows[2].badgeCount)
     }
 
     @Test
@@ -588,19 +665,22 @@ class ChatPresentationHelpersTest {
             ),
             selectedSessionKey = "opencode:workspace",
             expandedWorkspaceKeys = setOf("/Users/example/Projects/app"),
+            expandedQuickChats = false,
             unreadCountForSession = { key -> if (key == "opencode:quick") 1 else 0 },
             onToggleWorkspace = {},
+            onToggleQuickChats = {},
             onSelectSession = {}
         )
 
-        assertEquals(listOf(null, "QuickChats"), sections.map { it.title })
+        assertEquals(listOf(null, null), sections.map { it.title })
         assertEquals("~/Projects/app", sections[0].rows[0].label)
         assertEquals("Active workspace, 1 session", sections[0].rows[0].sublabel)
         assertTrue(sections[0].rows[0].emphasizeLabel)
         assertEquals("OpenCode / ~/Projects/app", sections[0].rows[1].sublabel)
         assertTrue(sections[0].rows[1].selected)
-        assertEquals("OpenCode / quick question", sections[1].rows[0].sublabel)
-        assertEquals(1, sections[1].rows[0].badgeCount)
+        assertEquals("QuickChats", sections[1].rows[0].label)
+        assertEquals("1 session", sections[1].rows[0].sublabel)
+        assertEquals(1, sections[1].rows.size)
     }
 
     private fun session(

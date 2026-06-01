@@ -10,8 +10,10 @@ object CodexSessionPickerSections {
         sessions: List<ChatSessionRow>,
         selectedSessionKey: String?,
         expandedWorkspaceKeys: Set<String>,
+        expandedQuickChats: Boolean,
         unreadCountForSession: (String) -> Int,
         onToggleWorkspace: (String) -> Unit,
+        onToggleQuickChats: () -> Unit,
         onSelectSession: (String) -> Unit,
         limit: Int = Int.MAX_VALUE
     ): List<AnchoredPicker.Section> {
@@ -22,6 +24,7 @@ object CodexSessionPickerSections {
         val activeWorkspaceKey = workspaceSessions
             .firstOrNull { it.key == selectedSessionKey }
             ?.let(::workspaceKey)
+        val activeQuickChats = quickChatSessions.any { it.key == selectedSessionKey }
 
         workspaceSessions
             .groupBy(::workspaceKey)
@@ -65,14 +68,32 @@ object CodexSessionPickerSections {
             }
 
         if (quickChatSessions.isNotEmpty()) {
-            sections.add(AnchoredPicker.Section(
-                "QuickChats",
-                rows(
-                    sessions = quickChatSessions.sortedByRecency(),
+            val sortedQuickChats = quickChatSessions.sortedByRecency()
+            val rows = mutableListOf(
+                AnchoredPicker.Row(
+                    id = "quick-chats",
+                    label = "QuickChats",
+                    sublabel = quickChatsSublabel(activeQuickChats, sortedQuickChats.size),
+                    selectable = false,
+                    emphasizeLabel = activeQuickChats,
+                    emphasizeSublabel = activeQuickChats,
+                    trailingIconRes = R.drawable.ic_chevron_right,
+                    trailingIconRotation = if (expandedQuickChats) 90f else 0f,
+                    dismissOnSelect = false,
+                    onSelect = onToggleQuickChats
+                )
+            )
+            if (expandedQuickChats) {
+                rows.addAll(rows(
+                    sessions = sortedQuickChats,
                     selectedSessionKey = selectedSessionKey,
                     unreadCountForSession = unreadCountForSession,
                     onSelectSession = onSelectSession
-                )
+                ))
+            }
+            sections.add(AnchoredPicker.Section(
+                null,
+                rows
             ))
         }
 
@@ -92,6 +113,13 @@ object CodexSessionPickerSections {
         return sessions.firstOrNull { it.key == sessionKey }?.takeIf {
             !it.workspacePath.isNullOrBlank() || !it.workspaceName.isNullOrBlank()
         }?.let(::workspaceKey)
+    }
+
+    fun isQuickChatSession(sessions: List<ChatSessionRow>, sessionKey: String?): Boolean {
+        if (sessionKey.isNullOrBlank()) return false
+        return sessions.firstOrNull { it.key == sessionKey }?.let {
+            it.workspacePath.isNullOrBlank() && it.workspaceName.isNullOrBlank()
+        } == true
     }
 
     private fun rows(
@@ -140,6 +168,11 @@ object CodexSessionPickerSections {
     private fun workspaceSublabel(active: Boolean, sessionCount: Int): String {
         val count = "$sessionCount session${if (sessionCount == 1) "" else "s"}"
         return if (active) "Active workspace, $count" else count
+    }
+
+    private fun quickChatsSublabel(active: Boolean, sessionCount: Int): String {
+        val count = "$sessionCount session${if (sessionCount == 1) "" else "s"}"
+        return if (active) "Active quick chats, $count" else count
     }
 
     private fun List<ChatSessionRow>.sortedByRecency(): List<ChatSessionRow> {
