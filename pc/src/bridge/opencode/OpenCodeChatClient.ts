@@ -6,6 +6,7 @@ import type { ChatAttachment } from "../../protocol/messages.js";
 import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "../chat/ChatTransportTypes.js";
 import { DEFAULT_REASONING_OPTIONS } from "../chat/ModelCatalog.js";
 import { OpenCodeServerClient, type OpenCodeModelRef } from "./OpenCodeServerClient.js";
+import { prepareOpenCodeWorkspace } from "./OpenCodeWorkspace.js";
 
 interface ActiveRun {
   sessionKey: string;
@@ -282,7 +283,7 @@ export class OpenCodeChatClient {
   }
 
   async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string; createWorkspaceIfMissing?: boolean }): Promise<unknown> {
-    const directory = options.workspacePath?.trim() || this.client.defaultDirectory();
+    const directory = prepareOpenCodeWorkspace(options.workspacePath, options.createWorkspaceIfMissing === true) ?? this.client.defaultDirectory();
     const createdPayload = await this.client.createSession({
       directory,
       title: options.label,

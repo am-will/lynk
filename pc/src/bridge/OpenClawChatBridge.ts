@@ -627,7 +627,7 @@ export class OpenClawChatBridge {
     const explicitLabel = typeof message.label === "string" && message.label.trim()
       ? message.label.trim()
       : undefined;
-    const workspacePath = state.harnessId === "codex"
+    const workspacePath = state.harnessId === "codex" || state.harnessId === "opencode"
       ? codexWorkspacePathForNewSession(state, message.workspacePath)
       : undefined;
     const created = await this.client.createSession({
@@ -635,7 +635,7 @@ export class OpenClawChatBridge {
       label: explicitLabel ?? sessionUuid,
       model: selection?.modelId ?? this.states.rawModelForSelection(state.model) ?? undefined,
       ...(workspacePath ? { workspacePath } : {}),
-      ...(state.harnessId === "codex" && message.createWorkspaceIfMissing ? { createWorkspaceIfMissing: true } : {})
+      ...((state.harnessId === "codex" || state.harnessId === "opencode") && message.createWorkspaceIfMissing ? { createWorkspaceIfMissing: true } : {})
     });
     const record = created && typeof created === "object" ? created as Record<string, unknown> : {};
     const key = typeof record.key === "string" && record.key.trim() ? record.key.trim() : undefined;
