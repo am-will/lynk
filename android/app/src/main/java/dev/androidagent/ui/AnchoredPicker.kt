@@ -77,7 +77,8 @@ class AnchoredPicker(
         sections: List<Section>,
         heightFraction: Float? = null,
         preferAbove: Boolean? = null,
-        revealRowId: String? = null
+        revealRowId: String? = null,
+        revealRowVerticalBias: Float? = null
     ) {
         val sheet = sheetView as? LinearLayout ?: return
         val scrollY = findBodyScroller(sheet)?.scrollY ?: 0
@@ -100,7 +101,13 @@ class AnchoredPicker(
             preDrawListener = null
             findBodyScroller(sheet)?.scrollTo(0, scrollY)
             revealRowId?.let { rowId ->
-                sheet.post { revealRowFullyIfNeeded(rowId) }
+                sheet.post {
+                    if (revealRowVerticalBias == null) {
+                        revealRowFullyIfNeeded(rowId)
+                    } else {
+                        revealRowNearViewportPosition(rowId, revealRowVerticalBias)
+                    }
+                }
             }
             true
         }
@@ -443,6 +450,21 @@ class AnchoredPicker(
         val contentHeight = scroller.getChildAt(0)?.height ?: 0
         val viewportHeight = (scroller.height - scroller.paddingTop - scroller.paddingBottom).coerceAtLeast(0)
         val maxScrollY = (contentHeight - viewportHeight).coerceAtLeast(0)
+        scroller.smoothScrollTo(0, targetScrollY.coerceIn(0, maxScrollY))
+    }
+
+    private fun revealRowNearViewportPosition(rowId: String, verticalBias: Float) {
+        val sheet = sheetView as? LinearLayout ?: return
+        val scroller = findBodyScroller(sheet) ?: return
+        val row = rowViewsById[rowId] ?: return
+        if (!row.isAttachedToWindow || row.height <= 0 || scroller.height <= 0) return
+
+        val content = scroller.getChildAt(0) ?: return
+        val rowTop = row.topInAncestor(content) ?: return
+        val viewportHeight = (scroller.height - scroller.paddingTop - scroller.paddingBottom).coerceAtLeast(0)
+        val maxScrollY = ((scroller.getChildAt(0)?.height ?: 0) - viewportHeight).coerceAtLeast(0)
+        val targetOffset = ((viewportHeight - row.height).coerceAtLeast(0) * verticalBias.coerceIn(0f, 1f)).toInt()
+        val targetScrollY = rowTop - targetOffset - scroller.paddingTop
         scroller.smoothScrollTo(0, targetScrollY.coerceIn(0, maxScrollY))
     }
 

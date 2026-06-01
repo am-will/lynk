@@ -6,6 +6,8 @@ import dev.androidagent.chat.ChatSessionRow
 import dev.androidagent.ui.AnchoredPicker
 
 object CodexSessionPickerSections {
+    const val QUICK_CHATS_ROW_ID = "quick-chats"
+
     fun build(
         sessions: List<ChatSessionRow>,
         selectedSessionKey: String?,
@@ -41,7 +43,7 @@ object CodexSessionPickerSections {
                 val active = group.key == activeWorkspaceKey
                 val rows = mutableListOf(
                     AnchoredPicker.Row(
-                        id = "workspace:${group.key}",
+                        id = workspaceRowId(group.key),
                         label = group.title(),
                         sublabel = workspaceSublabel(active, group.sessions.size),
                         selectable = false,
@@ -71,7 +73,7 @@ object CodexSessionPickerSections {
             val sortedQuickChats = quickChatSessions.sortedByRecency()
             val rows = mutableListOf(
                 AnchoredPicker.Row(
-                    id = "quick-chats",
+                    id = QUICK_CHATS_ROW_ID,
                     label = "QuickChats",
                     sublabel = quickChatsSublabel(activeQuickChats, sortedQuickChats.size),
                     selectable = false,
@@ -120,6 +122,10 @@ object CodexSessionPickerSections {
         return sessions.firstOrNull { it.key == sessionKey }?.let {
             it.workspacePath.isNullOrBlank() && it.workspaceName.isNullOrBlank()
         } == true
+    }
+
+    fun workspaceRowId(workspaceKey: String): String {
+        return "workspace:$workspaceKey"
     }
 
     private fun rows(

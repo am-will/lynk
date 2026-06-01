@@ -89,6 +89,8 @@ import kotlin.math.roundToInt
 
 private class SkillTokenSpan(color: Int) : ForegroundColorSpan(color)
 
+private const val SESSION_TOGGLE_REVEAL_BIAS = 0.35f
+
 internal fun shouldMinimizeHostAppAfterVoiceStart(presentation: PanelPresentation): Boolean {
     return when (presentation) {
         PanelPresentation.Popup -> false
@@ -1176,6 +1178,7 @@ class OverlayController(
         heightFraction: Float? = null,
         preferAbove: Boolean = false,
         revealRowId: String? = null,
+        revealRowVerticalBias: Float? = null,
         onDismiss: (() -> Unit)? = null
     ) {
         val host = panelHost ?: return
@@ -1189,7 +1192,8 @@ class OverlayController(
                     sections = sections,
                     heightFraction = heightFraction,
                     preferAbove = shouldPreferAbove,
-                    revealRowId = revealRowId
+                    revealRowId = revealRowId,
+                    revealRowVerticalBias = revealRowVerticalBias
                 )
                 return
             }
@@ -1763,12 +1767,22 @@ class OverlayController(
         } else {
             expandedSessionWorkspaces.add(workspaceKey)
         }
-        showSessionsMenu(anchorOverride = activeSessionsMenuAnchor ?: headerSessionAnchor ?: panelHost)
+        showSessionsMenu(
+            anchorOverride = activeSessionsMenuAnchor ?: headerSessionAnchor ?: panelHost,
+            replace = true,
+            revealRowId = CodexSessionPickerSections.workspaceRowId(workspaceKey),
+            revealRowVerticalBias = SESSION_TOGGLE_REVEAL_BIAS
+        )
     }
 
     private fun toggleSessionQuickChats() {
         expandedSessionQuickChats = !expandedSessionQuickChats
-        showSessionsMenu(anchorOverride = activeSessionsMenuAnchor ?: headerSessionAnchor ?: panelHost)
+        showSessionsMenu(
+            anchorOverride = activeSessionsMenuAnchor ?: headerSessionAnchor ?: panelHost,
+            replace = true,
+            revealRowId = CodexSessionPickerSections.QUICK_CHATS_ROW_ID,
+            revealRowVerticalBias = SESSION_TOGGLE_REVEAL_BIAS
+        )
     }
 
     private fun workspaceHarnessId(): String? {
@@ -2260,7 +2274,12 @@ class OverlayController(
         setStatus("Active send: ${next.label}")
     }
 
-    private fun showSessionsMenu(anchorOverride: View? = null) {
+    private fun showSessionsMenu(
+        anchorOverride: View? = null,
+        replace: Boolean = false,
+        revealRowId: String? = null,
+        revealRowVerticalBias: Float? = null
+    ) {
         val anchor = anchorOverride ?: headerSessionAnchor ?: panelHost ?: return
         activeSessionsMenuAnchor = anchor
         val sections = sessionPickerSections()
@@ -2276,6 +2295,9 @@ class OverlayController(
             title,
             sections,
             toggleSameAnchor = false,
+            replaceShowing = replace,
+            revealRowId = revealRowId,
+            revealRowVerticalBias = revealRowVerticalBias,
             onDismiss = if (anchor === headerSessionAnchor) {
                 { animateHeaderSessionChevron(expanded = false) }
             } else {
