@@ -924,8 +924,8 @@ class AgentForegroundService : Service() {
             return
         }
         val route = routeForModel(selectedModel, config)
-        val candidateWorkspacePath = currentHostWorkspacePathForModel(selectedModel)
-            ?: defaultWorkspacePathForModel(selectedModel, config)
+        val candidateWorkspacePath = defaultWorkspacePathForModel(selectedModel, config)
+            ?: currentHostWorkspacePathForModel(selectedModel)
         val workspacePath = candidateWorkspacePath
             .takeIf { route == ChatClientRoute.Host && isWorkspaceChatSelection(selectedModel) && CodexWorkspacePaths.hasDefault(it) }
         beginNewChatAttempt(
