@@ -70,50 +70,7 @@ object RuntimeSettingsScreen {
             }
         }, SettingsUi.stackedParams(activity))
 
-        val codexWorkspaceInput = SettingsUi.configField(
-            activity,
-            "Default workspace",
-            CodexWorkspacePaths.editorText(config.codexWorkspacePath),
-            tokens,
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-        ).apply {
-            keepCodexHomePrefix(this)
-        }
-        root.addView(SettingsUi.card(activity, tokens).apply {
-            addView(SettingsUi.sectionHeader(activity, "Codex Default Workspace", "New Codex chats start here when Codex is selected.", tokens))
-            addView(SettingsUi.labeledField(activity, "Workspace path", codexWorkspaceInput, tokens, DesignTokens.Spacing.md))
-            addView(SettingsUi.body(activity, "Leave blank for QuickChats. The ~/ prefix means your user folder.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
-        }, SettingsUi.stackedParams(activity))
-
-        val opencodeWorkspaceInput = SettingsUi.configField(
-            activity,
-            "Default workspace",
-            CodexWorkspacePaths.editorText(config.opencodeWorkspacePath),
-            tokens,
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-        ).apply {
-            keepCodexHomePrefix(this)
-        }
-        root.addView(SettingsUi.card(activity, tokens).apply {
-            addView(SettingsUi.sectionHeader(activity, "OpenCode Default Workspace", "New OpenCode chats start here when OpenCode is selected.", tokens))
-            addView(SettingsUi.labeledField(activity, "Workspace path", opencodeWorkspaceInput, tokens, DesignTokens.Spacing.md))
-            addView(SettingsUi.body(activity, "Leave blank for QuickChats. The ~/ prefix means your user folder.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
-        }, SettingsUi.stackedParams(activity))
-
-        val piWorkspaceInput = SettingsUi.configField(
-            activity,
-            "Default workspace",
-            CodexWorkspacePaths.editorText(config.piWorkspacePath),
-            tokens,
-            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-        ).apply {
-            keepCodexHomePrefix(this)
-        }
-        root.addView(SettingsUi.card(activity, tokens).apply {
-            addView(SettingsUi.sectionHeader(activity, "Pi Default Workspace", "New Pi chats start here when Pi is selected.", tokens))
-            addView(SettingsUi.labeledField(activity, "Workspace path", piWorkspaceInput, tokens, DesignTokens.Spacing.md))
-            addView(SettingsUi.body(activity, "Leave blank for QuickChats. The ~/ prefix means your user folder.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
-        }, SettingsUi.stackedParams(activity))
+        val workspaceControls = root.addWorkspaceCards(activity, tokens, config)
 
         val localModelPathInput = SettingsUi.configField(activity, "Model file", config.localModelPath, tokens).apply {
             exposeToAccessibility(R.id.openclaw_local_model_path_field, "Local LiteRT model path")
@@ -193,9 +150,9 @@ object RuntimeSettingsScreen {
                     localContextTokens = localContextInput.text.toString().toIntOrNull()?.coerceIn(512, 131_072)
                         ?: config.localContextTokens,
                     localDeveloperToolsEnabled = localDeveloperTools.isChecked,
-                    codexWorkspacePath = CodexWorkspacePaths.normalizeInput(codexWorkspaceInput.text?.toString()),
-                    opencodeWorkspacePath = CodexWorkspacePaths.normalizeInput(opencodeWorkspaceInput.text?.toString()),
-                    piWorkspacePath = CodexWorkspacePaths.normalizeInput(piWorkspaceInput.text?.toString())
+                    codexWorkspacePath = workspaceControls.workspacePath(AgentConfig.HARNESS_CODEX),
+                    opencodeWorkspacePath = workspaceControls.workspacePath(AgentConfig.HARNESS_OPENCODE),
+                    piWorkspacePath = workspaceControls.workspacePath(AgentConfig.HARNESS_PI)
                 )
             )
             callbacks.onSettingsChanged()
@@ -207,9 +164,9 @@ object RuntimeSettingsScreen {
         defaultModelControls.forEach { control ->
             control.spinner?.let { SettingsUi.onSpinnerSelectionChanged(it) { saveCurrent() } }
         }
-        SettingsUi.onTextChanged(codexWorkspaceInput) { saveCurrent() }
-        SettingsUi.onTextChanged(opencodeWorkspaceInput) { saveCurrent() }
-        SettingsUi.onTextChanged(piWorkspaceInput) { saveCurrent() }
+        workspaceControls.forEach { control ->
+            SettingsUi.onTextChanged(control.input) { saveCurrent() }
+        }
         SettingsUi.onTextChanged(localModelPathInput) { saveCurrent() }
         SettingsUi.onSpinnerSelectionChanged(localBackendSpinner) { saveCurrent() }
         SettingsUi.onTextChanged(localContextInput) { saveCurrent() }
@@ -222,6 +179,72 @@ object RuntimeSettingsScreen {
         val models: List<ChatModelOption>,
         val spinner: Spinner?
     )
+
+    private data class WorkspaceControl(
+        val harnessId: String,
+        val input: EditText
+    )
+
+    private data class WorkspaceSpec(
+        val harnessId: String,
+        val title: String,
+        val description: String,
+        val path: String
+    )
+
+    private fun LinearLayout.addWorkspaceCards(
+        activity: Activity,
+        tokens: ThemeTokens,
+        config: AgentConfig
+    ): List<WorkspaceControl> {
+        return workspaceSpecs(config).map { spec ->
+            val input = SettingsUi.configField(
+                activity,
+                "Default workspace",
+                CodexWorkspacePaths.editorText(spec.path),
+                tokens,
+                InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            ).apply {
+                keepCodexHomePrefix(this)
+            }
+            addView(SettingsUi.card(activity, tokens).apply {
+                addView(SettingsUi.sectionHeader(activity, spec.title, spec.description, tokens))
+                addView(SettingsUi.labeledField(activity, "Workspace path", input, tokens, DesignTokens.Spacing.md))
+                addView(SettingsUi.body(activity, "Leave blank for QuickChats. The ~/ prefix means your user folder.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
+            }, SettingsUi.stackedParams(activity))
+            WorkspaceControl(spec.harnessId, input)
+        }
+    }
+
+    private fun workspaceSpecs(config: AgentConfig): List<WorkspaceSpec> = listOf(
+        WorkspaceSpec(
+            harnessId = AgentConfig.HARNESS_CODEX,
+            title = "Codex Default Workspace",
+            description = "New Codex chats start here when Codex is selected.",
+            path = config.codexWorkspacePath
+        ),
+        WorkspaceSpec(
+            harnessId = AgentConfig.HARNESS_OPENCODE,
+            title = "OpenCode Default Workspace",
+            description = "New OpenCode chats start here when OpenCode is selected.",
+            path = config.opencodeWorkspacePath
+        ),
+        WorkspaceSpec(
+            harnessId = AgentConfig.HARNESS_PI,
+            title = "Pi Default Workspace",
+            description = "New Pi chats start here when Pi is selected.",
+            path = config.piWorkspacePath
+        )
+    )
+
+    private fun List<WorkspaceControl>.workspacePath(harnessId: String): String {
+        return firstOrNull { it.harnessId == harnessId }
+            ?.input
+            ?.text
+            ?.toString()
+            ?.let(CodexWorkspacePaths::normalizeInput)
+            .orEmpty()
+    }
 
     private fun LinearLayout.addDefaultModelRows(
         activity: Activity,
