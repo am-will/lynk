@@ -42,3 +42,4 @@ Resolve the thermo-nuclear code-quality findings from the Pi harness integration
 - 2026-06-01: Centralized workspace-harness checks in `AgentHarness` and `AgentConfig`, reused them in PC bridge/router and Android overlay/service paths, and reduced `OpenClawChatBridge.ts` from 1001 to 998 lines.
 - 2026-06-01: Canonicalized implicit Pi sessions by making unresolved `pi:<device>` keys temporary controls only; first send now creates a real SDK session and returns the canonical `pi:<sdkSessionId>` key.
 - 2026-06-01: Replaced Pi's single global active run with per-run/per-session maps, so separate Pi sessions can run concurrently while each session still rejects overlapping turns.
+- 2026-06-01: Extracted Pi message/history/model/usage normalization into `PiHistoryNormalizer`, reducing `PiChatClient.ts` from 716 lines after run fixes to 573 lines.
