@@ -213,6 +213,8 @@ test("OpenCode sessions, commands, and tools are normalized with workspace direc
     assert.equal(created.workspacePath, workspace);
     assert.equal(fake.created[0]?.directory, workspace);
     assert.equal(fake.created[0]?.title, "New work");
+    assert.equal("agent" in (fake.created[0] ?? {}), false);
+    assert.equal("model" in (fake.created[0] ?? {}), false);
     assert.deepEqual(commands.commands.map((command) => command.name), ["init"]);
     assert.deepEqual(tools.tools.map((tool) => tool.name), ["bash"]);
     assert.deepEqual(fake.toolsRequested[0], { directory: workspace, providerID: "openai", modelID: "gpt-5.5" });
@@ -385,6 +387,38 @@ test("OpenCode permission replies and aborts use the session workspace directory
     }]);
     assert.deepEqual(fake.aborts, [{ sessionId: "ses_1", directory: workspace }]);
   } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test("OpenCode run driver emits stream errors and keeps active-run cleanup atomic", async () => {
+  const workspace = mkdtempSync(join(tmpdir(), "opencode-chat-error-"));
+  const fake = new FakeOpenCodeServerClient(workspace);
+  fake.events = [opencodeEvent("session.error", { sessionID: "ses_1", error: { message: "tool failed" } })];
+  fake.messagesPayload = { messages: [] };
+  fake.statusPayload = { ses_1: { type: "running" } };
+  const client = new OpenCodeChatClient(undefined, fake as never, null);
+  const events: Array<{ event: string; payload: Record<string, unknown> }> = [];
+  client.addEventListener((event) => events.push(event as { event: string; payload: Record<string, unknown> }));
+
+  try {
+    const created = await client.createSession({ label: "Error", model: "openai/gpt-5.5", workspacePath: workspace }) as Record<string, unknown>;
+    await client.sendChat({ sessionKey: created.key as string, message: "fail", idempotencyKey: "run_error" });
+    await waitFor(() => events.some((event) => event.payload.state === "error"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    fake.events = [];
+    fake.messagesPayload = {
+      messages: [{ info: { role: "assistant" }, parts: [{ type: "text", text: "recovered" }] }]
+    };
+    fake.statusPayload = {};
+    await client.sendChat({ sessionKey: created.key as string, message: "after error", idempotencyKey: "run_after_error" });
+    await waitFor(() => events.some((event) => event.payload.state === "final" && event.payload.runId === "run_after_error"));
+
+    const error = events.find((event) => event.payload.state === "error")?.payload;
+    assert.equal(error?.error, "tool failed");
+    assert.equal(fake.prompts.length, 2);
+  } finally {
+    client.close();
     rmSync(workspace, { recursive: true, force: true });
   }
 });

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk";
+import type { ChatAttachment } from "../../protocol/messages.js";
 import type { AuditLog } from "../AuditLog.js";
 
 export interface OpenCodeModelRef {
@@ -30,6 +31,11 @@ export interface OpenCodeSessionPromptOptions {
   messageId?: string;
 }
 
+export interface OpenCodeSessionCreateOptions {
+  directory?: string;
+  title?: string;
+}
+
 export interface OpenCodeSessionCommandOptions {
   sessionId: string;
   directory?: string;
@@ -43,6 +49,33 @@ interface RequestResult<T> {
   data?: T;
   error?: unknown;
   response?: Response;
+}
+
+interface OpenCodeDirectoryQuery {
+  directory?: string;
+}
+
+interface OpenCodeSessionCreateBody {
+  title?: string;
+}
+
+interface OpenCodePromptBody {
+  messageID?: string;
+  model?: OpenCodeModelRef;
+  agent?: string;
+  system?: string;
+  parts: unknown[];
+}
+
+interface OpenCodeCommandBody {
+  command: string;
+  arguments: string;
+  model?: string;
+  agent?: string;
+}
+
+interface OpenCodePermissionReplyBody {
+  response: "once" | "always" | "reject";
 }
 
 export interface OpenCodeStreamEvent {
@@ -59,7 +92,7 @@ function commandParts(command: string): string[] {
   return command.match(/(?:[^\s"]+|"[^"]*")+/g)?.map((part) => part.replace(/^"|"$/g, "")) ?? [];
 }
 
-function query(directory: string | undefined): { directory?: string } | undefined {
+function query(directory: string | undefined): OpenCodeDirectoryQuery | undefined {
   return directory ? { directory } : undefined;
 }
 
@@ -140,6 +173,16 @@ function promptParts(text: string, attachments: ChatAttachment[] | undefined): u
   return parts;
 }
 
+function promptBody(options: OpenCodeSessionPromptOptions, defaultAgent: string | undefined): OpenCodePromptBody {
+  return {
+    ...(options.messageId ? { messageID: options.messageId } : {}),
+    ...(options.model ? { model: { providerID: options.model.providerID, modelID: options.model.modelID, ...(options.model.variant ? { variant: options.model.variant } : {}) } } : {}),
+    ...(options.agent ?? defaultAgent ? { agent: options.agent ?? defaultAgent } : {}),
+    ...(options.system ? { system: options.system } : {}),
+    parts: promptParts(options.text, options.attachments)
+  };
+}
+
 export class OpenCodeServerClient {
   private client?: OpencodeClient;
   private child?: ChildProcessWithoutNullStreams;
@@ -215,13 +258,14 @@ export class OpenCodeServerClient {
     return unwrap(await client.session.list() as RequestResult<unknown>);
   }
 
-  async createSession(options: { directory?: string; title?: string; agent?: string; model?: OpenCodeModelRef } = {}): Promise<unknown> {
+  async createSession(options: OpenCodeSessionCreateOptions = {}): Promise<unknown> {
     const client = await this.ensureStarted();
+    const body: OpenCodeSessionCreateBody = {
+      ...(options.title ? { title: options.title } : {})
+    };
     return unwrap(await client.session.create({
       query: query(options.directory ?? this.cwd),
-      body: {
-        ...(options.title ? { title: options.title } : {})
-      } as any
+      body: body as any
     }) as RequestResult<unknown>);
   }
 
@@ -248,45 +292,36 @@ export class OpenCodeServerClient {
 
   async promptAsync(options: OpenCodeSessionPromptOptions): Promise<unknown> {
     const client = await this.ensureStarted();
+    const body = promptBody(options, this.defaultAgent);
     return unwrap(await client.session.promptAsync({
       path: { id: options.sessionId },
       query: query(options.directory),
-      body: {
-        ...(options.messageId ? { messageID: options.messageId } : {}),
-        ...(options.model ? { model: { providerID: options.model.providerID, modelID: options.model.modelID, ...(options.model.variant ? { variant: options.model.variant } : {}) } } : {}),
-        ...(options.agent ?? this.defaultAgent ? { agent: options.agent ?? this.defaultAgent } : {}),
-        ...(options.system ? { system: options.system } : {}),
-        parts: promptParts(options.text, options.attachments)
-      } as any
+      body: body as any
     }) as RequestResult<unknown>);
   }
 
   async prompt(options: OpenCodeSessionPromptOptions): Promise<unknown> {
     const client = await this.ensureStarted();
+    const body = promptBody(options, this.defaultAgent);
     return unwrap(await client.session.prompt({
       path: { id: options.sessionId },
       query: query(options.directory),
-      body: {
-        ...(options.messageId ? { messageID: options.messageId } : {}),
-        ...(options.model ? { model: { providerID: options.model.providerID, modelID: options.model.modelID, ...(options.model.variant ? { variant: options.model.variant } : {}) } } : {}),
-        ...(options.agent ?? this.defaultAgent ? { agent: options.agent ?? this.defaultAgent } : {}),
-        ...(options.system ? { system: options.system } : {}),
-        parts: promptParts(options.text, options.attachments)
-      } as any
+      body: body as any
     }) as RequestResult<unknown>);
   }
 
   async command(options: OpenCodeSessionCommandOptions): Promise<unknown> {
     const client = await this.ensureStarted();
+    const body: OpenCodeCommandBody = {
+      command: options.command,
+      arguments: options.arguments ?? "",
+      ...(options.agent ?? this.defaultAgent ? { agent: options.agent ?? this.defaultAgent } : {}),
+      ...(options.model ? { model: options.model } : {})
+    };
     return unwrap(await client.session.command({
       path: { id: options.sessionId },
       query: query(options.directory),
-      body: {
-        command: options.command,
-        arguments: options.arguments ?? "",
-        ...(options.agent ?? this.defaultAgent ? { agent: options.agent ?? this.defaultAgent } : {}),
-        ...(options.model ? { model: options.model } : {})
-      } as any
+      body: body as any
     }) as RequestResult<unknown>);
   }
 
@@ -321,10 +356,11 @@ export class OpenCodeServerClient {
 
   async respondToPermission(options: { sessionId: string; permissionId: string; directory?: string; response: "once" | "always" | "reject" }): Promise<unknown> {
     const client = await this.ensureStarted();
+    const body: OpenCodePermissionReplyBody = { response: options.response };
     return unwrap(await client.postSessionIdPermissionsPermissionId({
       path: { id: options.sessionId, permissionID: options.permissionId },
       query: query(options.directory),
-      body: { response: options.response }
+      body
     }) as RequestResult<unknown>);
   }
 
@@ -415,4 +451,3 @@ export class OpenCodeServerClient {
     }
   }
 }
-import type { ChatAttachment } from "../../protocol/messages.js";
