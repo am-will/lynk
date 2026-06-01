@@ -24,3 +24,4 @@ Refactor the last-18-hours changes to remove committed debug side effects, decom
 ## Step Log
 
 - Step 0: Plan saved. Implementation not started.
+- Step 1: Removed hard-coded debug telemetry helpers and call sites from Hermes and OpenClaw bridge code. Verified with `rg` for debug endpoint/call names and `cd pc && npm run check`.
