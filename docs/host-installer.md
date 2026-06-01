@@ -34,10 +34,11 @@ Environment variables still override the file for development and support sessio
 
 Pairing candidates are ordered for the common paths:
 
-1. USB reverse (`ws://127.0.0.1:8788/phone`) when ADB is used.
-2. Tailscale MagicDNS and tailnet IP candidates when Tailscale is installed and running.
-3. Local LAN IPv4 addresses, excluding loopback, Docker, VM, link-local, and tunnel interfaces.
-4. Loopback fallback.
+1. Tailscale MagicDNS and tailnet IP candidates when Tailscale is installed and running.
+2. Local LAN IPv4 addresses, excluding loopback, Docker, VM, link-local, and tunnel interfaces.
+
+USB reverse is not included in normal pairing because it depends on `adb reverse`. For development-only USB pairing, set `PHONE_AGENT_PAIRING_INCLUDE_USB=1` before printing the pairing QR.
+Loopback is also omitted from normal Android pairing because `127.0.0.1` points at the phone, not the host. For host-local diagnostics, set `PHONE_AGENT_PAIRING_INCLUDE_LOOPBACK=1`.
 
 Only the phone-facing bridge should be reachable over Tailscale. OpenClaw Gateway, Hermes, Codex app-server, and other host-agent transports should stay on localhost or trusted private networks. On Android, MagicDNS may require enabling **Use Tailscale DNS** in the Tailscale app; the `100.x.y.z` candidate remains the reliable fallback.
 

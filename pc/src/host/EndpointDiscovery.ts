@@ -35,11 +35,10 @@ export interface DiscoverySnapshot {
   };
 }
 
-export async function discoverEndpoints(options: { port: number; includeUsb?: boolean } = { port: 8788 }): Promise<DiscoverySnapshot> {
+export async function discoverEndpoints(
+  options: { port: number; includeUsb?: boolean; includeLoopback?: boolean } = { port: 8788 }
+): Promise<DiscoverySnapshot> {
   const endpoints: EndpointCandidate[] = [];
-  if (options.includeUsb !== false) {
-    endpoints.push(endpoint("usb", "USB reverse", "127.0.0.1", options.port, "adb reverse"));
-  }
 
   const tailscale = await discoverTailscale(options.port);
   endpoints.push(...tailscale.endpoints);
@@ -48,7 +47,13 @@ export async function discoverEndpoints(options: { port: number; includeUsb?: bo
     endpoints.push(endpoint("lan", `Local network (${address.interfaceName})`, address.address, options.port, address.family));
   }
 
-  endpoints.push(endpoint("loopback", "This computer", "127.0.0.1", options.port, "loopback"));
+  if (options.includeUsb === true) {
+    endpoints.push(endpoint("usb", "USB reverse", "127.0.0.1", options.port, "adb reverse"));
+  }
+
+  if (options.includeLoopback !== false) {
+    endpoints.push(endpoint("loopback", "This computer", "127.0.0.1", options.port, "loopback"));
+  }
   return {
     endpoints: dedupeEndpoints(endpoints),
     tailscale: tailscale.status

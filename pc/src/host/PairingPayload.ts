@@ -11,7 +11,11 @@ export interface HostPairingPayload {
 }
 
 export async function createHostPairingPayload(config: Pick<BridgeConfig, "defaultDeviceId" | "port" | "token">): Promise<HostPairingPayload> {
-  const discovery = await discoverEndpoints({ port: config.port });
+  const discovery = await discoverEndpoints({
+    port: config.port,
+    includeUsb: process.env.PHONE_AGENT_PAIRING_INCLUDE_USB === "1",
+    includeLoopback: process.env.PHONE_AGENT_PAIRING_INCLUDE_LOOPBACK === "1"
+  });
   const endpoints = discovery.endpoints;
   return {
     version: 1,

@@ -151,7 +151,7 @@ The listener should show `*:8788`, not only `127.0.0.1:8788`.
 
 ## USB Development Mode
 
-USB mode is useful while installing or debugging, but it depends on `adb reverse`. If the cable is unplugged, the reverse port mapping disappears.
+USB mode is useful while installing or debugging, but it depends on `adb reverse`. It is not part of the normal pairing QR because the app must keep working after the cable is unplugged.
 
 ```bash
 cd pc
@@ -165,3 +165,9 @@ ws://127.0.0.1:8788/phone
 ```
 
 Run `npm run phone:usb` again after reconnecting USB.
+
+To intentionally include USB reverse in a development pairing payload, run:
+
+```bash
+PHONE_AGENT_PAIRING_INCLUDE_USB=1 npm run host:pairing:qr
+```
