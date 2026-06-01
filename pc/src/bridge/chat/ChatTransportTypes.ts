@@ -31,6 +31,12 @@ export interface HarnessChatSteerOptions extends HarnessChatSendOptions {
   runId?: string;
 }
 
+export interface HarnessPermissionReplyOptions {
+  sessionKey: string;
+  permissionId: string;
+  response: "once" | "always" | "reject";
+}
+
 export class HarnessAttachmentUnsupportedError extends Error {
   constructor(readonly harnessId: HarnessId) {
     super(`${harnessId} harness does not support chat attachments.`);

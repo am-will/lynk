@@ -24,6 +24,7 @@ interface ControlCommandRouterOptions {
   patchSession(deviceId: string, sessionKey: string, patch: Record<string, unknown>, status?: string): Promise<void>;
   sendState(deviceId: string, status?: string): void;
   send(message: ChatSendMessage): Promise<void>;
+  respondToPermission(sessionKey: string, permissionId: string, response: "once" | "always" | "reject"): Promise<void>;
 }
 
 export class OpenClawControlCommandRouter {
@@ -70,6 +71,18 @@ export class OpenClawControlCommandRouter {
 
     if (name === "tasks") {
       this.options.sendTaskList(message.deviceId);
+      return;
+    }
+
+    if (name === "opencode.permission") {
+      const permissionId = typeof message.args.permissionId === "string" ? message.args.permissionId.trim() : "";
+      const response = typeof message.args.response === "string" ? message.args.response.trim().toLowerCase() : "";
+      if (!permissionId || !isPermissionResponse(response)) {
+        this.options.sendState(message.deviceId, "Invalid OpenCode permission reply.");
+        return;
+      }
+      await this.options.respondToPermission(state.sessionKey, permissionId, response);
+      this.options.sendState(message.deviceId, `OpenCode permission ${response === "reject" ? "rejected" : "approved"}.`);
       return;
     }
 
@@ -206,6 +219,10 @@ export class OpenClawControlCommandRouter {
     );
     return true;
   }
+}
+
+function isPermissionResponse(value: string): value is "once" | "always" | "reject" {
+  return value === "once" || value === "always" || value === "reject";
 }
 
 function parseDeliveryOverride(name: string | undefined, rawText: string): { delivery: "queue" | "steer"; text: string } | undefined {

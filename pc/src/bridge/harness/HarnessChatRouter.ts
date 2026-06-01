@@ -21,7 +21,8 @@ import type {
   GatewayChatSendResult,
   GatewayEventHandler,
   HarnessChatSendOptions,
-  HarnessChatSteerOptions
+  HarnessChatSteerOptions,
+  HarnessPermissionReplyOptions
 } from "../chat/ChatTransportTypes.js";
 import { OpenClawGatewayChatClient } from "../OpenClawGatewayChatClient.js";
 import { NormalizedHarnessAdapter, type HarnessChatAdapter, type HarnessCreatedSession } from "./HarnessChatAdapter.js";
@@ -194,6 +195,14 @@ export class HarnessChatRouter implements GatewayChatClient {
 
   async effectiveTools(sessionKey: string): Promise<unknown> {
     return { tools: await this.adapterForSession(sessionKey).effectiveTools(sessionKey) };
+  }
+
+  async respondToPermission(options: HarnessPermissionReplyOptions): Promise<unknown> {
+    const adapter = this.adapterForSession(options.sessionKey);
+    if (!adapter.respondToPermission) {
+      throw new Error(`${adapter.harnessId} harness does not support permission replies.`);
+    }
+    return await adapter.respondToPermission(options);
   }
 
   async health(): Promise<unknown> {

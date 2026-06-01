@@ -136,7 +136,10 @@ class OverlayController(
     )
     private val chatTimelineBinder = ChatTimelineBinder(
         context = context,
-        onToggleChatTool = onToggleChatTool
+        onToggleChatTool = onToggleChatTool,
+        onChatToolAction = { action ->
+            onChatControlCommand(action.command, action.args)
+        }
     )
     private val panelChrome = PanelChrome(
         context = context,

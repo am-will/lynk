@@ -706,6 +706,7 @@ export function normalizeGatewayToolEvent(
     args: args ?? null,
     output: output ?? null,
     error,
+    actions: Array.isArray(data.actions) ? data.actions : undefined,
     raw: payload
   };
 }

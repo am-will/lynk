@@ -8,6 +8,7 @@ import android.text.style.ForegroundColorSpan
 import android.view.Gravity
 import android.view.View
 import android.widget.ImageView
+import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -18,6 +19,7 @@ import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatTimelineItem
 import dev.androidagent.chat.ChatTimelineKind
 import dev.androidagent.chat.ChatTimelineRenderer
+import dev.androidagent.chat.ChatToolAction
 import dev.androidagent.localmodel.LocalResponseTextNormalizer
 import dev.androidagent.ui.ClipboardHelper
 import dev.androidagent.ui.DesignTokens
@@ -49,7 +51,8 @@ internal fun assistantMessageRenderMode(item: ChatTimelineItem): AssistantMessag
 
 class ChatTimelineBinder(
     private val context: Context,
-    private val onToggleChatTool: (String) -> Unit
+    private val onToggleChatTool: (String) -> Unit,
+    private val onChatToolAction: (ChatToolAction) -> Unit = {}
 ) {
     private var historyContainer: LinearLayout? = null
     private var historyScrollView: ScrollView? = null
@@ -571,6 +574,37 @@ class ChatTimelineBinder(
                         LinearLayout.LayoutParams.WRAP_CONTENT
                     ).apply { topMargin = dp(DesignTokens.Spacing.sm) })
                 }
+            }
+            if (tool?.actions?.isNotEmpty() == true) {
+                addView(toolActionsRow(tool.actions, tokens), LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(DesignTokens.Spacing.sm) })
+            }
+        }
+    }
+
+    private fun toolActionsRow(actions: List<ChatToolAction>, tokens: ThemeTokens): LinearLayout {
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            actions.forEachIndexed { index, action ->
+                addView(Button(context).apply {
+                    text = action.label
+                    textSize = DesignTokens.Text.caption
+                    isAllCaps = false
+                    setTextColor(if (action.style == "primary") tokens.accentInk else tokens.primaryText)
+                    background = if (action.style == "primary") {
+                        Drawables.accentSurface(context, tokens, DesignTokens.Radius.pill)
+                    } else {
+                        Drawables.pillSurface(context, tokens)
+                    }
+                    backgroundTintList = null
+                    setOnClickListener { onChatToolAction(action) }
+                    exposeToAccessibility(description = action.label, focusable = true)
+                }, LinearLayout.LayoutParams(0, dp(DesignTokens.Sizes.action), 1f).apply {
+                    if (index > 0) leftMargin = dp(DesignTokens.Spacing.xs)
+                })
             }
         }
     }

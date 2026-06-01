@@ -1,7 +1,7 @@
 import type { ChatHistoryMessage, ChatModelOption, ChatSendMessage, ChatSessionSummary, ChatTaskKind } from "../protocol/messages.js";
 import type { HarnessId } from "./AgentHarness.js";
 import type { BridgeConfig } from "./config.js";
-import type { GatewayChatSendResult, GatewayEventHandler, HarnessChatSendOptions, HarnessChatSteerOptions } from "./chat/ChatTransportTypes.js";
+import type { GatewayChatSendResult, GatewayEventHandler, HarnessChatSendOptions, HarnessChatSteerOptions, HarnessPermissionReplyOptions } from "./chat/ChatTransportTypes.js";
 import { requestKeyFromSessionKey } from "./chat/ChatNormalizers.js";
 
 export interface DeviceChatState {
@@ -49,6 +49,7 @@ export interface GatewayChatClient {
   patchSession(sessionKey: string, patch: Record<string, unknown>): Promise<unknown>;
   listCommands(sessionKey?: string): Promise<unknown>;
   effectiveTools(sessionKey: string): Promise<unknown>;
+  respondToPermission?(options: HarnessPermissionReplyOptions): Promise<unknown>;
   health(): Promise<unknown>;
   close(): void;
 }

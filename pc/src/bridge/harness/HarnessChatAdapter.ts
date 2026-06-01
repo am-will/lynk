@@ -12,7 +12,8 @@ import type {
   GatewayEventHandler,
   HarnessCapabilities,
   HarnessChatSendOptions,
-  HarnessChatSteerOptions
+  HarnessChatSteerOptions,
+  HarnessPermissionReplyOptions
 } from "../chat/ChatTransportTypes.js";
 import {
   chatMessagesFromHistory,
@@ -61,6 +62,7 @@ export interface HarnessChatAdapter {
   patchSession(sessionKey: string, patch: Record<string, unknown>): Promise<unknown>;
   listCommands(sessionKey?: string): Promise<ChatCommandOption[]>;
   effectiveTools(sessionKey: string): Promise<ChatToolSummary[]>;
+  respondToPermission?(options: HarnessPermissionReplyOptions): Promise<unknown>;
   health(): Promise<unknown>;
   close(): void;
 }
@@ -78,6 +80,7 @@ interface RawHarnessClient {
   patchSession(sessionKey: string, patch: Record<string, unknown>): Promise<unknown>;
   listCommands(sessionKey?: string): Promise<unknown>;
   effectiveTools(sessionKey: string): Promise<unknown>;
+  respondToPermission?(options: HarnessPermissionReplyOptions): Promise<unknown>;
   health(): Promise<unknown>;
   close(): void;
 }
@@ -158,6 +161,13 @@ export class NormalizedHarnessAdapter implements HarnessChatAdapter {
 
   async effectiveTools(sessionKey: string): Promise<ChatToolSummary[]> {
     return normalizeTools(await this.client.effectiveTools(sessionKey));
+  }
+
+  async respondToPermission(options: HarnessPermissionReplyOptions): Promise<unknown> {
+    if (!this.client.respondToPermission) {
+      throw new Error(`${this.harnessId} harness does not support permission replies.`);
+    }
+    return await this.client.respondToPermission(options);
   }
 
   async health(): Promise<unknown> {

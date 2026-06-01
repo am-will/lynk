@@ -33,7 +33,16 @@ data class ChatToolEvent(
     val args: String?,
     val output: String?,
     val error: String?,
+    val actions: List<ChatToolAction> = emptyList(),
     val isExpanded: Boolean = false
+)
+
+data class ChatToolAction(
+    val id: String,
+    val label: String,
+    val command: String,
+    val args: JSONObject,
+    val style: String?
 )
 
 data class ChatSessionRow(
@@ -503,7 +512,8 @@ object ChatStateReducer {
             summary = message.optNullableString("summary"),
             args = compactJson(message.opt("args")),
             output = compactJson(message.opt("output")),
-            error = message.optNullableString("error")
+            error = message.optNullableString("error"),
+            actions = parseToolActions(message.optJSONArray("actions"))
         )
         val existing = state.timeline.firstOrNull { it.id == "tool_${event.eventId}" }?.toolEvent
         val merged = event.copy(
@@ -512,6 +522,7 @@ object ChatStateReducer {
             args = event.args ?: existing?.args,
             output = event.output ?: existing?.output,
             error = event.error ?: existing?.error,
+            actions = event.actions.ifEmpty { existing?.actions.orEmpty() },
             isExpanded = existing?.isExpanded ?: false
         )
         return state.copy(
@@ -871,6 +882,25 @@ object ChatStateReducer {
                     description = item.optNullableString("description"),
                     source = item.optNullableString("source"),
                     group = item.optNullableString("group")
+                ))
+            }
+        }
+    }
+
+    private fun parseToolActions(array: JSONArray?): List<ChatToolAction> {
+        if (array == null) return emptyList()
+        return buildList {
+            for (index in 0 until array.length()) {
+                val item = array.optJSONObject(index) ?: continue
+                val id = item.optString("id").takeIf { it.isNotBlank() } ?: continue
+                val label = item.optString("label").takeIf { it.isNotBlank() } ?: continue
+                val command = item.optString("command").takeIf { it.isNotBlank() } ?: continue
+                add(ChatToolAction(
+                    id = id,
+                    label = label,
+                    command = command,
+                    args = item.optJSONObject("args") ?: JSONObject(),
+                    style = item.optNullableString("style")
                 ))
             }
         }

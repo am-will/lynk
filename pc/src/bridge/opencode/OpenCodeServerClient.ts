@@ -45,6 +45,13 @@ interface RequestResult<T> {
   response?: Response;
 }
 
+export interface OpenCodeStreamEvent {
+  data: unknown;
+  event?: string;
+  id?: string;
+  retry?: number;
+}
+
 const DEFAULT_OPENCODE_COMMAND = "opencode serve --hostname 127.0.0.1 --port 4096";
 const DEFAULT_TIMEOUT_MS = 600_000;
 
@@ -87,9 +94,21 @@ function errorMessage(error: unknown): string {
   if (error && typeof error === "object") {
     const record = error as Record<string, unknown>;
     const data = record.data && typeof record.data === "object" ? record.data as Record<string, unknown> : undefined;
-    const message = data?.message ?? record.message ?? record.error;
+    const message = data?.message ?? data?.error ?? record.message ?? record.error;
     if (typeof message === "string") {
       return message;
+    }
+    if (record.error && typeof record.error === "object") {
+      const nested = record.error as Record<string, unknown>;
+      const nestedMessage = nested.message ?? nested.error;
+      if (typeof nestedMessage === "string") {
+        return nestedMessage;
+      }
+    }
+    try {
+      return JSON.stringify(record);
+    } catch {
+      return String(error);
     }
   }
   return String(error);
@@ -196,9 +215,7 @@ export class OpenCodeServerClient {
     return unwrap(await client.session.create({
       query: query(options.directory ?? this.cwd),
       body: {
-        ...(options.title ? { title: options.title } : {}),
-        ...(options.agent ? { agent: options.agent } : {}),
-        ...(options.model ? { model: options.model } : {})
+        ...(options.title ? { title: options.title } : {})
       } as any
     }) as RequestResult<unknown>);
   }
@@ -306,9 +323,14 @@ export class OpenCodeServerClient {
     }) as RequestResult<unknown>);
   }
 
-  async subscribe(directory?: string): Promise<AsyncGenerator<unknown>> {
+  async subscribe(directory?: string, options: { signal?: AbortSignal; onEvent?: (event: OpenCodeStreamEvent) => void } = {}): Promise<AsyncGenerator<unknown>> {
     const client = await this.ensureStarted();
-    const result = await client.event.subscribe({ query: query(directory) } as any);
+    const result = await client.event.subscribe({
+      query: query(directory),
+      signal: options.signal,
+      sseMaxRetryAttempts: 0,
+      onSseEvent: options.onEvent
+    } as any);
     return result.stream as AsyncGenerator<unknown>;
   }
 

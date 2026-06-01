@@ -183,7 +183,9 @@ export class OpenClawChatBridge {
       patchSession: (deviceId, sessionKey, patch, status) =>
         this.patchSession(deviceId, sessionKey, patch, status),
       sendState: (deviceId, status) => this.sendState(deviceId, status),
-      send: (message) => this.send(message)
+      send: (message) => this.send(message),
+      respondToPermission: (sessionKey, permissionId, response) =>
+        this.respondToPermission(sessionKey, permissionId, response)
     });
     this.fallbackSender = new OpenClawFallbackSender({
       states: this.states,
@@ -693,6 +695,17 @@ export class OpenClawChatBridge {
 
   async controlCommand(message: ChatControlCommandMessage): Promise<void> {
     await this.commandRouter.controlCommand(message);
+  }
+
+  private async respondToPermission(
+    sessionKey: string,
+    permissionId: string,
+    response: "once" | "always" | "reject"
+  ): Promise<void> {
+    if (!this.client.respondToPermission) {
+      throw new Error("Current harness does not support permission replies.");
+    }
+    await this.client.respondToPermission({ sessionKey, permissionId, response });
   }
 
   close(): void {

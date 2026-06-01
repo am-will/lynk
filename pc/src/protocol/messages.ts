@@ -569,7 +569,16 @@ export interface ChatToolEventMessage {
   args?: unknown;
   output?: unknown;
   error?: string | null;
+  actions?: ChatToolAction[];
   raw?: unknown;
+}
+
+export interface ChatToolAction {
+  id: string;
+  label: string;
+  command: string;
+  args?: Record<string, unknown>;
+  style?: "primary" | "secondary" | "danger";
 }
 
 export interface ChatModelsMessage {
@@ -888,6 +897,13 @@ export const chatToolEventMessageSchema = z.object({
   args: z.unknown().optional(),
   output: z.unknown().optional(),
   error: z.string().optional().nullable(),
+  actions: z.array(z.object({
+    id: z.string().min(1),
+    label: z.string().min(1),
+    command: z.string().min(1),
+    args: z.record(z.string(), z.unknown()).optional(),
+    style: z.enum(["primary", "secondary", "danger"]).optional()
+  })).optional(),
   raw: z.unknown().optional()
 });
 
