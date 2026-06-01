@@ -152,6 +152,20 @@ export class HermesApiClient {
     });
   }
 
+  async listSkills(): Promise<unknown> {
+    return await this.requestJson("/skills", {
+      method: "GET",
+      headers: this.headers()
+    });
+  }
+
+  async listToolsets(): Promise<unknown> {
+    return await this.requestJson("/toolsets", {
+      method: "GET",
+      headers: this.headers()
+    });
+  }
+
   async listSessions(): Promise<unknown> {
     return await this.requestJson("/api/sessions", {
       method: "GET",
