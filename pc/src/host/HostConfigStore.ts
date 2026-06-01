@@ -29,6 +29,13 @@ export interface HostBridgeConfigFile {
   codexAgentCwd?: string;
   codexAppServerApprovalPolicy?: string;
   codexAppServerSandbox?: string;
+  opencodeServerUrl?: string;
+  opencodeServerCommand?: string;
+  opencodeAgentCwd?: string;
+  opencodeServerUsername?: string;
+  opencodeServerPassword?: string;
+  opencodeDefaultAgent?: string;
+  opencodeRunTimeoutSeconds?: number;
   discoveredPaths?: Record<string, string>;
 }
 
@@ -97,7 +104,12 @@ export function loadOrCreateHostBridgeConfig(path = defaultHostBridgeConfigPath(
     codexAppServerCommand: "codex app-server --listen stdio://",
     codexAgentCwd: process.cwd(),
     codexAppServerApprovalPolicy: "never",
-    codexAppServerSandbox: "workspace-write"
+    codexAppServerSandbox: "workspace-write",
+    opencodeServerUrl: "",
+    opencodeServerCommand: "opencode serve --hostname 127.0.0.1 --port 4096",
+    opencodeAgentCwd: process.cwd(),
+    opencodeServerUsername: "opencode",
+    opencodeRunTimeoutSeconds: 600
   };
   writeHostBridgeConfig(path, config);
   return { path, config, created: true };
@@ -115,7 +127,8 @@ export function redactedHostBridgeConfig(config: HostBridgeConfigFile): Record<s
     openClawGatewayToken: redact(config.openClawGatewayToken),
     openClawGatewayPassword: redact(config.openClawGatewayPassword),
     hermesApiKey: redact(config.hermesApiKey),
-    openAiApiKey: redact(config.openAiApiKey)
+    openAiApiKey: redact(config.openAiApiKey),
+    opencodeServerPassword: redact(config.opencodeServerPassword)
   };
 }
 

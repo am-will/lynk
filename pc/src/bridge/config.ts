@@ -32,6 +32,14 @@ export interface BridgeConfig {
   codexAppServerApprovalPolicy: string;
   codexAppServerSandbox: string;
   codexConfigured: boolean;
+  opencodeServerUrl?: string;
+  opencodeServerCommand?: string;
+  opencodeAgentCwd?: string;
+  opencodeServerUsername?: string;
+  opencodeServerPassword?: string;
+  opencodeDefaultAgent?: string;
+  opencodeRunTimeoutMs?: number;
+  opencodeConfigured?: boolean;
 }
 
 function readOpenClawConfig(): unknown {
@@ -86,6 +94,9 @@ export function getBridgeConfig(): BridgeConfig {
   const openClawConfig = readOpenClawConfig();
   const codexAppServerCommand = process.env.CODEX_APP_SERVER_COMMAND ?? host.codexAppServerCommand ?? "codex app-server --listen stdio://";
   const codexResolution = resolveCommand(codexAppServerCommand);
+  const opencodeServerUrl = process.env.OPENCODE_SERVER_URL?.trim() || host.opencodeServerUrl?.trim() || undefined;
+  const opencodeServerCommand = process.env.OPENCODE_SERVER_COMMAND ?? host.opencodeServerCommand ?? "opencode serve --hostname 127.0.0.1 --port 4096";
+  const opencodeResolution = resolveCommand(opencodeServerCommand);
   const hermesApiKey = process.env.HERMES_API_KEY?.trim() || host.hermesApiKey?.trim() || undefined;
   const hermesCliCommand = process.env.HERMES_COMMAND?.trim() || "hermes";
   const hermesCliResolution = resolveCommand(hermesCliCommand);
@@ -116,6 +127,14 @@ export function getBridgeConfig(): BridgeConfig {
     codexAgentCwd: process.env.CODEX_AGENT_CWD ?? host.codexAgentCwd ?? process.cwd(),
     codexAppServerApprovalPolicy: process.env.CODEX_APP_SERVER_APPROVAL_POLICY?.trim() || host.codexAppServerApprovalPolicy || "never",
     codexAppServerSandbox: process.env.CODEX_APP_SERVER_SANDBOX?.trim() || host.codexAppServerSandbox || "workspace-write",
-    codexConfigured: codexResolution.available
+    codexConfigured: codexResolution.available,
+    opencodeServerUrl,
+    opencodeServerCommand,
+    opencodeAgentCwd: process.env.OPENCODE_AGENT_CWD ?? host.opencodeAgentCwd ?? process.cwd(),
+    opencodeServerUsername: process.env.OPENCODE_SERVER_USERNAME?.trim() || host.opencodeServerUsername?.trim() || "opencode",
+    opencodeServerPassword: process.env.OPENCODE_SERVER_PASSWORD?.trim() || host.opencodeServerPassword?.trim() || undefined,
+    opencodeDefaultAgent: process.env.OPENCODE_DEFAULT_AGENT?.trim() || host.opencodeDefaultAgent?.trim() || undefined,
+    opencodeRunTimeoutMs: readPositiveInt("OPENCODE_RUN_TIMEOUT_SECONDS", host.opencodeRunTimeoutSeconds ?? 600) * 1000,
+    opencodeConfigured: Boolean(opencodeServerUrl) || opencodeResolution.available
   };
 }

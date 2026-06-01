@@ -1,0 +1,70 @@
+# OpenCode Harness Integration Plan
+
+## Execution Rules
+
+- Save this file at `docs/opencode-harness-integration-plan.md`.
+- Complete tasks in order.
+- Before moving to the next task, update the **Implementation Log** section with a concise dated entry: task number, summary, files changed, tests run, and commit hash.
+- Commit after every task. Do not batch multiple tasks into one commit unless the task explicitly says so.
+- Preserve unrelated dirty files. Do not revert pre-existing changes.
+
+## Tasks
+
+1. **Document And Config Surface**
+   - Add OpenCode env/config fields: server URL, serve command, cwd, username, password, default agent, run timeout.
+   - Update `.env.example`, host config defaults/redaction, setup docs, and protocol docs.
+   - Commit: `docs/config: add OpenCode harness configuration plan surface`.
+
+2. **Protocol And Harness Identity**
+   - Add `opencode` to harness ids, labels, model/session namespacing, default session keys, and protocol validation.
+   - Ensure `opencode:<provider>/<model>` and `opencode:<sessionId>` route correctly.
+   - Commit: `bridge: register OpenCode harness identity`.
+
+3. **OpenCode Server Client**
+   - Implement an OpenCode HTTP/SDK client with health, auth, managed server startup, timeout, SSE event subscription, and shutdown.
+   - Use OpenCode's existing `directory` query/header for workspace scoping.
+   - Commit: `bridge: add OpenCode server client`.
+
+4. **OpenCode Chat Adapter**
+   - Add the Lynk chat adapter: list models, create/list sessions, read history, send async prompts, stream deltas/tool events, abort runs, commands, tools, and usage.
+   - Normalize OpenCode sessions by workspace path/name like Codex.
+   - Commit: `bridge: add OpenCode chat adapter`.
+
+5. **Workspace Error Flow**
+   - Generalize Codex workspace validation for Codex and OpenCode.
+   - Add `opencode.workspace_not_found` so Android can reuse create-folder confirmation.
+   - Commit: `bridge: share workspace validation for host harnesses`.
+
+6. **Android Harness UI**
+   - Add OpenCode harness enable toggle, default model setting, default workspace setting, model grouping, labels, session routing, and brand presentation.
+   - Reuse workspace-grouped previous chats for OpenCode.
+   - Commit: `android: add OpenCode harness UI`.
+
+7. **Permissions And Tool Events**
+   - Surface OpenCode permission requests with Allow Once, Always Allow, and Reject.
+   - Map OpenCode tool/patch/status/error events into Lynk `chat.tool_event`, `chat.delta`, `chat.final`, and `chat.error`.
+   - Commit: `bridge android: handle OpenCode permissions and events`.
+
+8. **Tests**
+   - Add PC fake OpenCode server/SSE tests for auth, workspace directory, model/session normalization, prompt streaming, abort, permissions, commands, and tools.
+   - Extend harness router and protocol contract tests.
+   - Extend Android config/model/presentation/workspace tests.
+   - Commit: `test: cover OpenCode harness integration`.
+
+9. **Verification**
+   - Run `cd pc && npm run check && npm test`.
+   - Run `cd android && ./gradlew :app:testDebugUnitTest`.
+   - Run `cd android && ./gradlew :app:assembleDebug` if Android sources/resources changed.
+   - Fix failures in follow-up commits, one logical fix per commit.
+   - Commit final docs/log update: `docs: record OpenCode integration verification`.
+
+## Implementation Log
+
+- Pending. Add one concise entry after each task before starting the next task.
+
+## Assumptions
+
+- Use the existing `@opencode-ai/sdk` dependency already present in the dirty package files.
+- OpenCode is a peer host harness, not a Codex sub-mode.
+- Use OpenCode's existing server functionality only; do not add custom OpenCode storage behavior.
+- Keep OpenCode bound to localhost/private network by default.

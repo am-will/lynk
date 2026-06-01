@@ -145,13 +145,13 @@ Android can ask the bridge to stop the active phone-control turn. The same messa
 
 ## Harness Chat
 
-The large Android overlay uses explicit `chat.*` messages for harness-backed session chat. OpenClaw Gateway remains the default harness, while Hermes and Codex can be selected through model-picker entries when they are configured on the bridge. The legacy `user_request` message remains available for compatibility, but normal typed overlay submissions use `chat.send`.
+The large Android overlay uses explicit `chat.*` messages for harness-backed session chat. OpenClaw Gateway remains the default harness, while Hermes, Codex, and OpenCode can be selected through model-picker entries when they are configured on the bridge. The legacy `user_request` message remains available for compatibility, but normal typed overlay submissions use `chat.send`.
 
 Prompt policy is session-oriented where the selected harness supports it. Normal `chat.send` messages do not carry the Android settings `systemPrompt`; the bridge sends only user text plus a short phone-task hint when the request is explicitly about phone control. Legacy `user_request` callers may still include `systemPrompt`, but Android does not send it by default.
 
 Local phone mode mirrors these outbound event types locally: `chat.models`, `chat.sessions`, `chat.history`, `chat.state`, `chat.delta`, `chat.final`, `chat.error`, `chat.tool_event`, and `chat.tools`. Local session keys use the `local:` prefix, and the local model id is currently `local-litertlm`.
 
-Host harnesses are selected by model id. OpenClaw keeps its existing bare model ids for backward compatibility, while non-default harness models are namespaced as `<harness>:<model>`, for example `hermes:gpt-5.5` or `codex:gpt-5.3-codex`. The bridge emits optional `harnessId`, `harnessLabel`, and `modelId` metadata on model, session, and state messages so Android can group the picker and keep previous chats scoped to the active harness. The harness prefix is a Lynk selection prefix; the bridge strips `hermes:` and `codex:` before calling those backends.
+Host harnesses are selected by model id. OpenClaw keeps its existing bare model ids for backward compatibility, while non-default harness models are namespaced as `<harness>:<model>`, for example `hermes:gpt-5.5`, `codex:gpt-5.3-codex`, or `opencode:anthropic/claude-sonnet-4-5`. The bridge emits optional `harnessId`, `harnessLabel`, and `modelId` metadata on model, session, and state messages so Android can group the picker and keep previous chats scoped to the active harness. The harness prefix is a Lynk selection prefix; the bridge strips `hermes:`, `codex:`, and `opencode:` before calling those backends.
 
 For multi-provider Hermes deployments, `/models` should include provider metadata when a bare model name is ambiguous. A Hermes model row such as `{ "id": "grok-4.3", "provider": "xai" }` is presented as `hermes:xai:grok-4.3`; the Hermes runs endpoint receives `xai:grok-4.3` and can split it for provider routing.
 
@@ -211,7 +211,7 @@ Android can stop active chat work, switch or create sessions, update model/reaso
 { "type": "chat.new_session", "deviceId": "openclaw-agent", "label": "Android bubble", "workspacePath": "/Users/me/project" }
 ```
 
-`workspacePath` is optional and Codex-only. When present on a Codex `chat.new_session`, the bridge passes it as the app-server thread `cwd` so the new thread starts in that workspace. Android may include `createWorkspaceIfMissing: true` after user confirmation to create a missing Codex workspace folder before starting the thread. Other harnesses ignore these workspace fields.
+`workspacePath` is optional and applies to Codex and OpenCode. When present on a Codex `chat.new_session`, the bridge passes it as the app-server thread `cwd` so the new thread starts in that workspace. When present on an OpenCode `chat.new_session`, the bridge passes it as OpenCode's `directory` query/header so the new session starts in that workspace. Android may include `createWorkspaceIfMissing: true` after user confirmation to create a missing host workspace folder before starting the thread. Other harnesses ignore these workspace fields.
 
 ```json
 { "type": "chat.set_model", "deviceId": "openclaw-agent", "sessionKey": "agent:main:main", "model": "codex:gpt-5.3-codex" }
@@ -362,7 +362,7 @@ Android treats unread state as local and per session. Opening the modal while th
 }
 ```
 
-Metadata messages are `chat.models`, `chat.commands`, `chat.tools`, `chat.sessions`, and `chat.usage`. The Android UI treats all of them as replaceable snapshots for its local chat state. `chat.models` may contain duplicate human-readable model names across harnesses; use `id` as the selection value and show `harnessLabel` next to the model. `chat.sessions` is scoped to the active harness, so histories do not mix between OpenClaw, Hermes, Codex, and Local LiteRT. Codex session rows may additionally include `workspacePath`, `workspaceName`, `threadPath`, `preview`, and `source`; Android uses those optional fields only for the Codex previous-sessions picker so Codex threads can be grouped by their desktop workspace folder.
+Metadata messages are `chat.models`, `chat.commands`, `chat.tools`, `chat.sessions`, and `chat.usage`. The Android UI treats all of them as replaceable snapshots for its local chat state. `chat.models` may contain duplicate human-readable model names across harnesses; use `id` as the selection value and show `harnessLabel` next to the model. `chat.sessions` is scoped to the active harness, so histories do not mix between OpenClaw, Hermes, Codex, OpenCode, and Local LiteRT. Codex and OpenCode session rows may additionally include `workspacePath`, `workspaceName`, `threadPath`, `preview`, and `source`; Android uses those optional fields for previous-session pickers so desktop threads can be grouped by workspace folder.
 
 `chat.usage` and the matching token fields on `chat.sessions` use `totalTokens` as the current consumed-token numerator and `contextTokens` as the model's effective context-window denominator. `contextTokens` is not a second consumed-token count; it should reflect the configured or discovered model window for the active harness/model, such as Hermes `context_length`, Codex app-server provider bounds, or the local LiteRT-LM context setting. Android renders context percentage as `totalTokens / contextTokens` when both values are present.
 
