@@ -6,7 +6,8 @@ import {
   defaultSessionKeyForHarness,
   harnessForSessionKey,
   harnessInfos,
-  harnessLabel
+  harnessLabel,
+  isWorkspaceAwareHarness
 } from "./AgentHarness.js";
 import type {
   BackendReadinessStatus,
@@ -994,8 +995,4 @@ function workspacePathForNewSession(state: DeviceChatState, requestedWorkspacePa
   }
   const currentWorkspace = state.sessionSummaries.get(state.sessionKey)?.workspacePath?.trim();
   return currentWorkspace || undefined;
-}
-
-function isWorkspaceAwareHarness(harnessId: HarnessId): boolean {
-  return harnessId === "codex" || harnessId === "opencode" || harnessId === "pi";
 }

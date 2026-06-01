@@ -1799,11 +1799,7 @@ class OverlayController(
             lastChatState.selectedModel?.takeIf { it.isNotBlank() }?.let(ChatModelCatalog::harnessForModel),
             ChatModelCatalog.harnessFromSessionKey(lastChatState.sessionKey)
         )
-        return candidates.firstOrNull { harnessId ->
-            harnessId == AgentConfig.HARNESS_CODEX ||
-                harnessId == AgentConfig.HARNESS_OPENCODE ||
-                harnessId == AgentConfig.HARNESS_PI
-        }
+        return candidates.firstOrNull(AgentConfig::isWorkspaceHarness)
     }
 
     private fun isWorkspaceHarness(): Boolean {

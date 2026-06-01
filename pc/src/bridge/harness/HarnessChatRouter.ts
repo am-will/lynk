@@ -5,6 +5,7 @@ import {
   encodeHarnessModel,
   harnessForSessionKey,
   harnessInfos,
+  isWorkspaceAwareHarness,
   namespaceModelOption,
   namespaceSessionSummary,
   parseHarnessModel,
@@ -294,10 +295,6 @@ export class HarnessChatRouter implements GatewayChatClient {
       harnessLabel: harnessInfos(this.config).find((info) => info.id === harnessId)?.label
     };
   }
-}
-
-function isWorkspaceAwareHarness(harnessId: HarnessId): boolean {
-  return harnessId === "codex" || harnessId === "opencode" || harnessId === "pi";
 }
 
 function isSkillCommand(command: ChatCommandOption): boolean {

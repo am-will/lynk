@@ -631,11 +631,7 @@ class AgentForegroundService : Service() {
     private fun maybeUpdateCodexWorkspaceFromSession(sessionKey: String) {
         val session = chatState.sessions.firstOrNull { it.key == sessionKey } ?: return
         val harnessId = session.harnessId ?: harnessFromSessionKey(session.key)
-        if (
-            harnessId != AgentConfig.HARNESS_CODEX &&
-            harnessId != AgentConfig.HARNESS_OPENCODE &&
-            harnessId != AgentConfig.HARNESS_PI
-        ) return
+        if (!AgentConfig.isWorkspaceHarness(harnessId)) return
         val workspacePath = session.workspacePath?.trim()?.takeIf { it.isNotBlank() } ?: return
         when (harnessId) {
             AgentConfig.HARNESS_CODEX -> setCodexWorkspacePath(workspacePath)
@@ -644,26 +640,10 @@ class AgentForegroundService : Service() {
         }
     }
 
-    private fun isCodexChatSelection(model: String): Boolean {
-        return chatState.harnessId == AgentConfig.HARNESS_CODEX ||
-            ChatModelCatalog.harnessForModel(model) == AgentConfig.HARNESS_CODEX ||
-            chatState.sessionKey?.startsWith("${AgentConfig.HARNESS_CODEX}:") == true
-    }
-
-    private fun isOpenCodeChatSelection(model: String): Boolean {
-        return chatState.harnessId == AgentConfig.HARNESS_OPENCODE ||
-            ChatModelCatalog.harnessForModel(model) == AgentConfig.HARNESS_OPENCODE ||
-            chatState.sessionKey?.startsWith("${AgentConfig.HARNESS_OPENCODE}:") == true
-    }
-
-    private fun isPiChatSelection(model: String): Boolean {
-        return chatState.harnessId == AgentConfig.HARNESS_PI ||
-            ChatModelCatalog.harnessForModel(model) == AgentConfig.HARNESS_PI ||
-            chatState.sessionKey?.startsWith("${AgentConfig.HARNESS_PI}:") == true
-    }
-
     private fun isWorkspaceChatSelection(model: String): Boolean {
-        return isCodexChatSelection(model) || isOpenCodeChatSelection(model) || isPiChatSelection(model)
+        return AgentConfig.isWorkspaceHarness(chatState.harnessId) ||
+            AgentConfig.isWorkspaceHarness(ChatModelCatalog.harnessForModel(model)) ||
+            AgentConfig.isWorkspaceHarness(ChatModelCatalog.harnessFromSessionKey(chatState.sessionKey))
     }
 
     private fun commandExecutor(): AccessibilityCommandExecutor {
@@ -976,13 +956,7 @@ class AgentForegroundService : Service() {
         val activeSessionKey = chatState.sessionKey?.takeIf { it.isNotBlank() } ?: return null
         val session = chatState.sessions.firstOrNull { it.key == activeSessionKey } ?: return null
         val harnessId = session.harnessId ?: harnessFromSessionKey(session.key)
-        if (
-            harnessId != AgentConfig.HARNESS_CODEX &&
-            harnessId != AgentConfig.HARNESS_OPENCODE &&
-            harnessId != AgentConfig.HARNESS_PI
-        ) {
-            return null
-        }
+        if (!AgentConfig.isWorkspaceHarness(harnessId)) return null
         if (harnessId != ChatModelCatalog.harnessForModel(model)) return null
         return session.workspacePath?.trim()?.takeIf { CodexWorkspacePaths.hasDefault(it) }
     }

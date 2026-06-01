@@ -105,6 +105,15 @@ data class AgentConfig(
         const val HARNESS_OPENCODE = "opencode"
         const val HARNESS_PI = "pi"
         const val HARNESS_LOCAL = "local"
+
+        fun isWorkspaceHarness(harnessId: String?): Boolean {
+            return when (harnessId?.lowercase()) {
+                HARNESS_CODEX,
+                HARNESS_OPENCODE,
+                HARNESS_PI -> true
+                else -> false
+            }
+        }
     }
 }
 

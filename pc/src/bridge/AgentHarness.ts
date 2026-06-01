@@ -10,6 +10,7 @@ export interface HarnessInfo {
   id: HarnessId;
   label: string;
   enabled: boolean;
+  supportsWorkspaces: boolean;
 }
 
 export interface HarnessModelSelection {
@@ -36,12 +37,28 @@ export function harnessLabel(harnessId: HarnessId): string {
 
 export function harnessInfos(config: Pick<BridgeConfig, "hermesApiKey" | "hermesConfigured" | "codexConfigured" | "opencodeConfigured" | "piConfigured">): HarnessInfo[] {
   return [
-    { id: "openclaw", label: harnessLabel("openclaw"), enabled: true },
-    { id: "hermes", label: harnessLabel("hermes"), enabled: Boolean(config.hermesConfigured ?? config.hermesApiKey) },
-    { id: "codex", label: harnessLabel("codex"), enabled: config.codexConfigured },
-    { id: "opencode", label: harnessLabel("opencode"), enabled: Boolean(config.opencodeConfigured) },
-    { id: "pi", label: harnessLabel("pi"), enabled: Boolean(config.piConfigured) }
+    { id: "openclaw", label: harnessLabel("openclaw"), enabled: true, supportsWorkspaces: false },
+    { id: "hermes", label: harnessLabel("hermes"), enabled: Boolean(config.hermesConfigured ?? config.hermesApiKey), supportsWorkspaces: false },
+    { id: "codex", label: harnessLabel("codex"), enabled: config.codexConfigured, supportsWorkspaces: true },
+    { id: "opencode", label: harnessLabel("opencode"), enabled: Boolean(config.opencodeConfigured), supportsWorkspaces: true },
+    { id: "pi", label: harnessLabel("pi"), enabled: Boolean(config.piConfigured), supportsWorkspaces: true }
   ];
+}
+
+export function isWorkspaceAwareHarness(harnessId: HarnessId): boolean {
+  switch (harnessId) {
+    case "codex":
+    case "opencode":
+    case "pi":
+      return true;
+    case "openclaw":
+    case "hermes":
+      return false;
+    default: {
+      const exhaustive: never = harnessId;
+      return exhaustive;
+    }
+  }
 }
 
 export function encodeHarnessModel(harnessId: HarnessId, modelId: string): string {

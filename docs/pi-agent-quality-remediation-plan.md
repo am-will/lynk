@@ -38,4 +38,5 @@ Resolve the thermo-nuclear code-quality findings from the Pi harness integration
 
 ## Implementation Log
 
-- Pending.
+- 2026-06-01: Committed initial plan.
+- 2026-06-01: Centralized workspace-harness checks in `AgentHarness` and `AgentConfig`, reused them in PC bridge/router and Android overlay/service paths, and reduced `OpenClawChatBridge.ts` from 1001 to 998 lines.
