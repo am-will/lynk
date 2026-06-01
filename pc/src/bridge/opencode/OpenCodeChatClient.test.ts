@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type { ChatAttachment } from "../../protocol/messages.js";
 import { OpenCodeChatClient, normalizeOpenCodeModels } from "./OpenCodeChatClient.js";
@@ -168,6 +169,7 @@ test("OpenCode model normalization namespaces provider/model ids", () => {
 test("OpenCode sessions, commands, and tools are normalized with workspace directory", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "opencode-chat-workspace-"));
   const otherWorkspace = mkdtempSync(join(tmpdir(), "opencode-chat-other-"));
+  const dataDir = mkdtempSync(join(tmpdir(), "opencode-chat-storage-empty-"));
   const fake = new FakeOpenCodeServerClient(workspace);
   fake.sessionsPayload = [
     {
@@ -183,7 +185,10 @@ test("OpenCode sessions, commands, and tools are normalized with workspace direc
       time: { updated: 90 }
     }
   ];
-  const client = new OpenCodeChatClient(undefined, fake as never, null);
+  fake.messagesPayload = {
+    messages: [{ info: { role: "user" }, parts: [{ type: "text", text: "hello" }] }]
+  };
+  const client = new OpenCodeChatClient(undefined, fake as never, null, { storageDataDir: dataDir });
 
   try {
     const models = await client.listModels() as { models: Array<Record<string, unknown>> };
@@ -213,6 +218,72 @@ test("OpenCode sessions, commands, and tools are normalized with workspace direc
   } finally {
     rmSync(workspace, { recursive: true, force: true });
     rmSync(otherWorkspace, { recursive: true, force: true });
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("OpenCode session listing merges storage-backed workspaces and filters empty sessions", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "opencode-chat-storage-"));
+  const fake = new FakeOpenCodeServerClient("/repo");
+  fake.sessionsPayload = [{ id: "ses_repo", title: "Repo from server", directory: "/repo", time: { updated: 300 } }];
+  writeOpenCodeDb(dataDir, [
+    { id: "ses_repo", title: "Repo from storage", directory: "/repo", updatedAt: 300, userMessages: 1 },
+    { id: "ses_other", title: "Other workspace", directory: "/other-repo", updatedAt: 250, userMessages: 1 },
+    { id: "ses_global", title: "Global workspace", directory: "/Users/example/Applications", updatedAt: 200, userMessages: 1 },
+    { id: "ses_empty", title: "Empty workspace", directory: "/empty", updatedAt: 400, userMessages: 0 }
+  ]);
+  const client = new OpenCodeChatClient(undefined, fake as never, null, { storageDataDir: dataDir });
+
+  try {
+    const sessions = await client.listSessions() as { sessions: Array<Record<string, unknown>> };
+
+    assert.deepEqual(sessions.sessions.map((session) => session.key), [
+      "opencode:ses_repo",
+      "opencode:ses_other",
+      "opencode:ses_global"
+    ]);
+    assert.deepEqual(sessions.sessions.map((session) => session.workspacePath), [
+      "/repo",
+      "/other-repo",
+      "/Users/example/Applications"
+    ]);
+    assert.equal(sessions.sessions.some((session) => session.key === "opencode:ses_empty"), false);
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+});
+
+test("OpenCode local sessions appear after first user message and empty sessions are not persisted", async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), "opencode-chat-storage-empty-"));
+  const statePath = join(dataDir, "state", "opencode-sessions.json");
+  const workspace = mkdtempSync(join(tmpdir(), "opencode-chat-workspace-"));
+  const fake = new FakeOpenCodeServerClient(workspace);
+  fake.sessionsPayload = [];
+  fake.messagesPayload = {
+    messages: [{ info: { role: "assistant" }, parts: [{ type: "text", text: "ack" }] }]
+  };
+  const client = new OpenCodeChatClient(undefined, fake as never, statePath, { storageDataDir: dataDir });
+
+  try {
+    const created = await client.createSession({ label: "Draft", model: "openai/gpt-5.5", workspacePath: workspace }) as Record<string, unknown>;
+    const emptyList = await client.listSessions() as { sessions: Array<Record<string, unknown>> };
+    assert.deepEqual(emptyList.sessions, []);
+    assert.deepEqual(readStoredSessionKeys(statePath), []);
+
+    await client.sendChat({
+      sessionKey: created.key as string,
+      message: "first user message",
+      idempotencyKey: "run_first"
+    });
+    const afterFirstMessage = await client.listSessions() as { sessions: Array<Record<string, unknown>> };
+
+    assert.deepEqual(afterFirstMessage.sessions.map((session) => session.key), [created.key]);
+    assert.equal(afterFirstMessage.sessions[0]?.workspacePath, workspace);
+    assert.deepEqual(readStoredSessionKeys(statePath), [created.key]);
+  } finally {
+    client.close();
+    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(workspace, { recursive: true, force: true });
   }
 });
 
@@ -316,3 +387,60 @@ test("OpenCode permission replies and aborts use the session workspace directory
     rmSync(workspace, { recursive: true, force: true });
   }
 });
+
+function writeOpenCodeDb(
+  dataDir: string,
+  sessions: Array<{ id: string; title: string; directory: string; updatedAt: number; userMessages: number }>
+): void {
+  const db = new DatabaseSync(join(dataDir, "opencode.db"));
+  try {
+    db.exec(`
+      CREATE TABLE session (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        directory TEXT NOT NULL,
+        time_created INTEGER NOT NULL,
+        time_updated INTEGER NOT NULL,
+        model TEXT,
+        cost REAL DEFAULT 0 NOT NULL,
+        tokens_input INTEGER DEFAULT 0 NOT NULL,
+        tokens_output INTEGER DEFAULT 0 NOT NULL,
+        tokens_reasoning INTEGER DEFAULT 0 NOT NULL,
+        tokens_cache_read INTEGER DEFAULT 0 NOT NULL,
+        tokens_cache_write INTEGER DEFAULT 0 NOT NULL,
+        time_archived INTEGER
+      );
+      CREATE TABLE message (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        time_created INTEGER NOT NULL,
+        time_updated INTEGER NOT NULL,
+        data TEXT NOT NULL
+      );
+    `);
+    const sessionStatement = db.prepare(`
+      INSERT INTO session (
+        id, title, directory, time_created, time_updated, model,
+        tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write, cost
+      )
+      VALUES (?, ?, ?, 100, ?, '{"providerID":"openai","id":"gpt-5.5"}', 1, 2, 3, 4, 5, 0.01)
+    `);
+    const messageStatement = db.prepare("INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, 100, 100, ?)");
+    for (const session of sessions) {
+      sessionStatement.run(session.id, session.title, session.directory, session.updatedAt);
+      for (let index = 0; index < session.userMessages; index += 1) {
+        messageStatement.run(`msg_${session.id}_${index}`, session.id, JSON.stringify({ role: "user" }));
+      }
+    }
+  } finally {
+    db.close();
+  }
+}
+
+function readStoredSessionKeys(path: string): string[] {
+  if (!existsSync(path)) {
+    return [];
+  }
+  const parsed = JSON.parse(readFileSync(path, "utf8")) as { sessions?: Array<{ key?: string }> };
+  return parsed.sessions?.map((session) => session.key).filter((key): key is string => Boolean(key)) ?? [];
+}
