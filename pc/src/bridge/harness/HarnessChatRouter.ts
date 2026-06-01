@@ -15,6 +15,7 @@ import type { BridgeConfig } from "../config.js";
 import type { ChatCommandOption } from "../../protocol/messages.js";
 import { HermesChatClient } from "../HermesChatClient.js";
 import { OpenCodeChatClient } from "../opencode/OpenCodeChatClient.js";
+import { PiChatClient } from "../pi/PiChatClient.js";
 import type { GatewayChatClient } from "../OpenClawChatTypes.js";
 import { assertHarnessSupportsAttachments } from "../chat/ChatSendAttachments.js";
 import type {
@@ -91,6 +92,14 @@ export class HarnessChatRouter implements GatewayChatClient {
         password: config.opencodeServerPassword,
         defaultAgent: config.opencodeDefaultAgent,
         timeoutMs: config.opencodeRunTimeoutMs
+      }), { supportsAttachments: true }));
+    }
+    if (config.piConfigured) {
+      this.adapters.set("pi", new NormalizedHarnessAdapter("pi", new PiChatClient(audit, undefined, undefined, {
+        cwd: config.piAgentCwd,
+        agentDir: config.piAgentDir,
+        defaultModel: config.piDefaultModel,
+        timeoutMs: config.piRunTimeoutMs
       }), { supportsAttachments: true }));
     }
   }
