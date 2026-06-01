@@ -350,6 +350,9 @@ export class OpenClawChatBridge {
         attachments: attachments.length
       });
       this.sendPendingUserHistory(message.deviceId, state, result.sessionKey);
+      if (state.harnessId === "opencode") {
+        void this.refreshMetadata(message.deviceId);
+      }
       sendAgentDebugLog(result.runId, "H1,H3", "OpenClawChatBridge.ts:287", "Bridge tracked sent chat run", {
         deviceId: message.deviceId,
         requestedSessionKey: message.sessionKey ?? null,

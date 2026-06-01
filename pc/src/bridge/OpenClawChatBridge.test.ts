@@ -279,6 +279,41 @@ test("new chats use uuid labels until first message display name is set", async 
   ]);
 });
 
+test("OpenCode sends refresh sessions immediately after first user message", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+  client.models = [{ id: "opencode:openai/gpt-5.5", harnessId: "opencode", available: true }];
+
+  await bridge.setModel({
+    type: "chat.set_model",
+    deviceId: "pixel",
+    sessionKey: defaultSessionKey("pixel"),
+    model: "opencode:openai/gpt-5.5"
+  });
+  const opencodeSessionKey = client.patched[0]?.sessionKey ?? "opencode:pixel";
+  client.sessions = [{
+    key: opencodeSessionKey,
+    sessionId: "ses_first",
+    label: "First message",
+    harnessId: "opencode",
+    model: "opencode:openai/gpt-5.5",
+    workspacePath: "/Users/example/Applications"
+  }];
+  chatMessages.length = 0;
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    sessionKey: opencodeSessionKey,
+    model: "opencode:openai/gpt-5.5",
+    text: "first user message"
+  });
+  await waitFor(() => chatMessages.some((message) => message.type === "chat.sessions"));
+
+  const sessions = chatMessages.find((message) => message.type === "chat.sessions");
+  assert.equal(sessions?.sessions[0]?.key, opencodeSessionKey);
+  assert.equal(sessions?.sessions[0]?.workspacePath, "/Users/example/Applications");
+});
+
 test("new chat workspace options are forwarded only for Codex", async () => {
   const { bridge, client } = createHarness();
   const workspacePath = "/Users/am.will/Applications/cryptoclub";
