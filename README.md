@@ -4,7 +4,7 @@ https://github.com/user-attachments/assets/9878e172-5ada-433c-8500-e84ccbef0aa2
 
 Lynk turns an Android phone into a persistent chat and voice endpoint for AI agents running on your computer. The Android app is the bubble, notification, voice, and optional phone-control surface. The PC bridge is the local companion that pairs the phone, routes chat to host agents, starts realtime voice sessions, and exposes Android tools when a selected agent needs to touch the phone.
 
-This is not just an OpenClaw remote. Host mode can route to **OpenClaw**, **Hermes**, or **Codex** from the same Android model picker. Local phone mode can run an imported **LiteRT-LM** model on-device and use Android/local app-private tools without a PC agent for every request.
+Host mode can route to **OpenClaw**, **Hermes**, **Pi Agent, Opencode** or **Codex** from the same Android model picker. Local phone mode can run an imported **LiteRT-LM** model on-device and use Android/local app-private tools without a PC agent for every request.
 
 ## How It Works
 
