@@ -115,17 +115,30 @@ class ChatPresentationHelpersTest {
                     available = true,
                     reasoningOptions = null,
                     defaultReasoningEffort = null
+                ),
+                ChatModelOption(
+                    id = "opencode:openai/gpt-5.5",
+                    label = "GPT 5.5",
+                    provider = "opencode",
+                    harnessId = "opencode",
+                    harnessLabel = "OpenCode",
+                    modelId = "openai/gpt-5.5",
+                    contextWindow = null,
+                    available = true,
+                    reasoningOptions = null,
+                    defaultReasoningEffort = null
                 )
             ),
             localLiteRtAvailable = false
         )
 
-        assertEquals(listOf("gpt-5.5", "hermes:gpt-5.5"), merged.map { it.id }.filter { it.contains("gpt-5.5") })
+        assertEquals(listOf("gpt-5.5", "hermes:gpt-5.5", "opencode:openai/gpt-5.5"), merged.map { it.id }.filter { it.contains("gpt-5.5") })
         assertEquals("OpenClaw", ChatPresentationHelpers.modelHarnessLabel(merged.first { it.id == "gpt-5.5" }))
         assertEquals("Hermes", ChatPresentationHelpers.modelHarnessLabel(merged.first { it.id == "hermes:gpt-5.5" }))
+        assertEquals("OpenCode", ChatPresentationHelpers.modelHarnessLabel(merged.first { it.id == "opencode:openai/gpt-5.5" }))
         assertEquals("openclaw", ChatPresentationHelpers.modelHarnessId(merged.first { it.id == "gpt-5.5" }))
         assertEquals("hermes", ChatPresentationHelpers.modelHarnessId(merged.first { it.id == "hermes:gpt-5.5" }))
-        assertEquals(listOf("openclaw", "hermes", "codex", "local"), listOf("local", "codex", "hermes", "openclaw").sortedBy(ChatPresentationHelpers::modelHarnessSortOrder))
+        assertEquals(listOf("openclaw", "hermes", "codex", "opencode", "local"), listOf("local", "opencode", "codex", "hermes", "openclaw").sortedBy(ChatPresentationHelpers::modelHarnessSortOrder))
     }
 
     @Test
@@ -134,12 +147,14 @@ class ChatPresentationHelpersTest {
             models = listOf(
                 model("gpt-5.5", harnessId = "openclaw"),
                 model("hermes:gpt-5.5", harnessId = "hermes"),
-                model("codex:gpt-5.3-codex", harnessId = "codex")
+                model("codex:gpt-5.3-codex", harnessId = "codex"),
+                model("opencode:openai/gpt-5.5", harnessId = "opencode")
             ),
             hostModels = listOf(
                 model("gpt-5.5", harnessId = "openclaw"),
                 model("hermes:gpt-5.5", harnessId = "hermes"),
-                model("codex:gpt-5.3-codex", harnessId = "codex")
+                model("codex:gpt-5.3-codex", harnessId = "codex"),
+                model("opencode:openai/gpt-5.5", harnessId = "opencode")
             ),
             localModels = listOf(model(AgentModelOptions.LOCAL_LITERT_MODEL_ID, harnessId = "local", provider = "android"))
         )
@@ -190,6 +205,7 @@ class ChatPresentationHelpersTest {
                 model("gpt-5.5", harnessId = "openclaw"),
                 model("hermes:qwen", harnessId = "hermes"),
                 model("codex:gpt-5.3-codex", harnessId = "codex"),
+                model("opencode:openai/gpt-5.5", harnessId = "opencode"),
                 model(AgentModelOptions.LOCAL_LITERT_MODEL_ID, harnessId = "local", provider = "android")
             ),
             enabledHarnessIds = setOf("hermes", "local")
@@ -205,7 +221,8 @@ class ChatPresentationHelpersTest {
         val models = listOf(
             model("hermes:qwen", harnessId = "hermes"),
             model("hermes:gpt-5.5", harnessId = "hermes"),
-            model("codex:gpt-5.3-codex", harnessId = "codex")
+            model("codex:gpt-5.3-codex", harnessId = "codex"),
+            model("opencode:openai/gpt-5.5", harnessId = "opencode")
         )
 
         assertEquals(
@@ -233,6 +250,15 @@ class ChatPresentationHelpersTest {
                 configuredDefaultModel = "codex:gpt-5.3-codex",
                 models = models,
                 enabledHarnessIds = setOf("hermes")
+            )
+        )
+        assertEquals(
+            "opencode:openai/gpt-5.5",
+            ChatPresentationHelpers.defaultModelForHarness(
+                harnessId = "opencode",
+                configuredDefaultModel = "openai/gpt-5.5",
+                models = models,
+                enabledHarnessIds = setOf("hermes", "codex", "opencode")
             )
         )
     }
@@ -280,6 +306,7 @@ class ChatPresentationHelpersTest {
         val models = listOf(
             model("hermes:gpt-5.5", harnessId = "hermes"),
             model("codex:gpt-5.3-codex", harnessId = "codex"),
+            model("opencode:openai/gpt-5.5", harnessId = "opencode"),
             model(AgentModelOptions.LOCAL_LITERT_MODEL_ID, harnessId = "local", provider = "android")
         )
 
@@ -291,6 +318,12 @@ class ChatPresentationHelpersTest {
         )
         val codex = ChatPresentationHelpers.clientBrandPresentation(
             selectedModel = "codex:gpt-5.3-codex",
+            models = models,
+            harnessId = "openclaw",
+            localLiteRtAvailable = true
+        )
+        val opencode = ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = "opencode:openai/gpt-5.5",
             models = models,
             harnessId = "openclaw",
             localLiteRtAvailable = true
@@ -310,6 +343,10 @@ class ChatPresentationHelpersTest {
         assertEquals("Codex", codex.title)
         assertEquals(R.drawable.codex_bubble_logo, codex.logoRes)
         assertEquals(BrandTitleTreatment.PLAIN, codex.titleTreatment)
+        assertEquals(ClientBrand.OpenCode, opencode.brand)
+        assertEquals("OpenCode", opencode.title)
+        assertEquals(R.drawable.opencode_logo, opencode.logoRes)
+        assertEquals(BrandTitleTreatment.PLAIN, opencode.titleTreatment)
         assertEquals(ClientBrand.Local, local.brand)
         assertEquals("LiteRT-LLM", local.title)
         assertEquals(R.drawable.huggingface_logo, local.logoRes)
@@ -326,7 +363,7 @@ class ChatPresentationHelpersTest {
         val fallback = ChatPresentationHelpers.clientBrandPresentation(
             selectedModel = null,
             models = emptyList(),
-            harnessId = "codex",
+            harnessId = "opencode",
             localLiteRtAvailable = false
         )
         val default = ChatPresentationHelpers.clientBrandPresentation(
@@ -337,7 +374,7 @@ class ChatPresentationHelpersTest {
         )
 
         assertEquals(ClientBrand.Hermes, prefixed.brand)
-        assertEquals(ClientBrand.Codex, fallback.brand)
+        assertEquals(ClientBrand.OpenCode, fallback.brand)
         assertEquals(ClientBrand.OpenClaw, default.brand)
         assertEquals("OpenClaw", default.title)
         assertEquals(R.drawable.openclaw_bubble_logo, default.logoRes)
@@ -358,6 +395,12 @@ class ChatPresentationHelpersTest {
             harnessId = "openclaw",
             localLiteRtAvailable = false
         )
+        val opencode = ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = "opencode:openai/gpt-5.5",
+            models = emptyList(),
+            harnessId = "openclaw",
+            localLiteRtAvailable = false
+        )
 
         assertEquals("Message Hermes", hermes.copy.composerPlaceholder)
         assertEquals("Loading Hermes Chat", ChatPresentationHelpers.chatStatusText("Loading OpenClaw chat", isRunning = false, hermes))
@@ -365,6 +408,8 @@ class ChatPresentationHelpersTest {
         assertEquals("Hermes finished", ChatPresentationHelpers.chatStatusText("Codex finished", isRunning = false, hermes))
         assertEquals("Message Codex", codex.copy.composerPlaceholder)
         assertEquals("Stop Codex turn", codex.copy.stopTurnDescription)
+        assertEquals("Message OpenCode", opencode.copy.composerPlaceholder)
+        assertEquals("Stop OpenCode turn", opencode.copy.stopTurnDescription)
     }
 
     @Test
@@ -463,6 +508,39 @@ class ChatPresentationHelpersTest {
         assertTrue(sections[0].rows[0].selected)
         assertEquals("Codex / quick question", sections[1].rows[0].sublabel)
         assertEquals(2, sections[1].rows[0].badgeCount)
+    }
+
+    @Test
+    fun opencodeSessionPickerGroupsWorkspacesAndQuickChats() {
+        val sections = CodexSessionPickerSections.build(
+            sessions = listOf(
+                session(
+                    key = "opencode:workspace",
+                    harnessId = "opencode",
+                    harnessLabel = "OpenCode",
+                    displayName = "Workspace chat",
+                    workspacePath = "/Users/example/Projects/app",
+                    model = "opencode:openai/gpt-5.5"
+                ),
+                session(
+                    key = "opencode:quick",
+                    harnessId = "opencode",
+                    harnessLabel = "OpenCode",
+                    displayName = "Quick chat",
+                    preview = "quick question",
+                    model = "opencode:openai/gpt-5.5"
+                )
+            ),
+            selectedSessionKey = "opencode:workspace",
+            unreadCountForSession = { key -> if (key == "opencode:quick") 1 else 0 },
+            onSelectSession = {}
+        )
+
+        assertEquals(listOf("~/Projects/app", "QuickChats"), sections.map { it.title })
+        assertEquals("OpenCode / ~/Projects/app", sections[0].rows[0].sublabel)
+        assertTrue(sections[0].rows[0].selected)
+        assertEquals("OpenCode / quick question", sections[1].rows[0].sublabel)
+        assertEquals(1, sections[1].rows[0].badgeCount)
     }
 
     private fun session(

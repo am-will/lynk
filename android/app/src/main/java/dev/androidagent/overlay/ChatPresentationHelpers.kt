@@ -186,7 +186,7 @@ object ChatPresentationHelpers {
             ClientBrand.OpenCode -> ClientBrandPresentation(
                 brand = brand,
                 title = "OpenCode",
-                logoRes = R.drawable.ic_terminal
+                logoRes = R.drawable.opencode_logo
             )
             ClientBrand.Local -> ClientBrandPresentation(
                 brand = brand,

@@ -138,7 +138,7 @@ test("chat attachments enforce base64 and size limits", () => {
 });
 
 test("realtime start accepts selected chat backend model IDs", () => {
-  for (const model of ["gpt-5.5", "hermes:gpt-5.5", "codex:gpt-5.3-codex", "local-litertlm"]) {
+  for (const model of ["gpt-5.5", "hermes:gpt-5.5", "codex:gpt-5.3-codex", "opencode:openai/gpt-5.5", "local-litertlm"]) {
     assert.equal(realtimeStartMessageSchema.safeParse({
       type: "realtime.start",
       deviceId: "pixel",
@@ -215,7 +215,16 @@ test("PC outbound phone messages have validating schemas for dev and tests", () 
     { type: "chat.final", deviceId: "pixel", sessionKey: "session", runId: "run", text: "done" },
     { type: "chat.error", deviceId: "pixel", sessionKey: "session", runId: "run", message: "failed" },
     { type: "chat.reply_available", deviceId: "pixel", sessionKey: "session", runId: "run", status: "completed", textPreview: "done", harnessId: "openclaw", harnessLabel: "OpenClaw", model: "gpt-5.5" },
-    { type: "chat.tool_event", deviceId: "pixel", sessionKey: "session", eventId: "tool_1", toolName: "exec", title: "Ran command", status: "completed" },
+    {
+      type: "chat.tool_event",
+      deviceId: "pixel",
+      sessionKey: "session",
+      eventId: "tool_1",
+      toolName: "exec",
+      title: "Ran command",
+      status: "completed",
+      actions: [{ id: "once", label: "Allow Once", command: "opencode.permission", args: { permissionId: "perm_1", response: "once" }, style: "primary" }]
+    },
     { type: "chat.models", deviceId: "pixel", models: [], reasoningOptions: [] },
     { type: "chat.commands", deviceId: "pixel", commands: [] },
     { type: "chat.tools", deviceId: "pixel", sessionKey: "session", tools: [] },

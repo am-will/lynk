@@ -362,6 +362,15 @@ test("backend readiness reports configured harnesses only when live models exist
         modelCount: 1,
         state: "ready",
         message: "Codex backend is ready."
+      },
+      opencode: {
+        ok: false,
+        configured: false,
+        label: "OpenCode",
+        modelCount: 0,
+        state: "missing_config",
+        message: "OpenCode is not configured on the PC bridge.",
+        action: "Install OpenCode CLI or configure OPENCODE_SERVER_URL, then run host integration refresh."
       }
     }
   });

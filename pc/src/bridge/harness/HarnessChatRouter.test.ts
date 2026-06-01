@@ -103,20 +103,23 @@ function createRouter(overrides: Partial<BridgeConfig> = {}) {
   const openclaw = new FakeAdapter("openclaw");
   const hermes = new FakeAdapter("hermes");
   const codex = new FakeAdapter("codex");
-  const router = new HarnessChatRouter({ ...config, ...overrides }, undefined, [openclaw, hermes, codex]);
-  return { router, openclaw, hermes, codex };
+  const opencode = new FakeAdapter("opencode");
+  const router = new HarnessChatRouter({ ...config, ...overrides }, undefined, [openclaw, hermes, codex, opencode]);
+  return { router, openclaw, hermes, codex, opencode };
 }
 
 test("harness router routes bare and namespaced model selections", async () => {
-  const { router, openclaw, hermes, codex } = createRouter();
+  const { router, openclaw, hermes, codex, opencode } = createRouter();
 
   await router.createSession({ model: "gpt-5.5" });
   await router.createSession({ model: "hermes:gpt-5.5" });
   await router.createSession({ model: "codex:gpt-5.5" });
+  await router.createSession({ model: "opencode:openai/gpt-5.5" });
 
   assert.deepEqual(openclaw.created.map((entry) => entry.model), ["gpt-5.5"]);
   assert.deepEqual(hermes.created.map((entry) => entry.model), ["gpt-5.5"]);
   assert.deepEqual(codex.created.map((entry) => entry.model), ["gpt-5.5"]);
+  assert.deepEqual(opencode.created.map((entry) => entry.model), ["openai/gpt-5.5"]);
 });
 
 test("harness router lets explicit non-default session keys choose the harness", async () => {
@@ -134,13 +137,14 @@ test("harness router lets explicit non-default session keys choose the harness",
   assert.equal(created.key, "codex:phone-pixel-123");
 });
 
-test("harness router forwards workspace options only to Codex", async () => {
-  const { router, openclaw, hermes, codex } = createRouter();
+test("harness router forwards workspace options only to workspace-aware harnesses", async () => {
+  const { router, openclaw, hermes, codex, opencode } = createRouter();
   const workspacePath = "/Users/am.will/Applications/cryptoclub";
 
   await router.createSession({ model: "gpt-5.5", workspacePath, createWorkspaceIfMissing: true });
   await router.createSession({ model: "hermes:gpt-5.5", workspacePath, createWorkspaceIfMissing: true });
   await router.createSession({ model: "codex:gpt-5.5", workspacePath, createWorkspaceIfMissing: true });
+  await router.createSession({ model: "opencode:openai/gpt-5.5", workspacePath, createWorkspaceIfMissing: true });
 
   assert.equal(openclaw.created[0]?.workspacePath, undefined);
   assert.equal(openclaw.created[0]?.createWorkspaceIfMissing, undefined);
@@ -148,6 +152,8 @@ test("harness router forwards workspace options only to Codex", async () => {
   assert.equal(hermes.created[0]?.createWorkspaceIfMissing, undefined);
   assert.equal(codex.created[0]?.workspacePath, workspacePath);
   assert.equal(codex.created[0]?.createWorkspaceIfMissing, true);
+  assert.equal(opencode.created[0]?.workspacePath, workspacePath);
+  assert.equal(opencode.created[0]?.createWorkspaceIfMissing, true);
 });
 
 test("harness router scopes session lists to the active harness", async () => {
