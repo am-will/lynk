@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type { ChatAttachment } from "../../protocol/messages.js";
-import { OpenCodeChatClient, normalizeOpenCodeModels } from "./OpenCodeChatClient.js";
+import { OpenCodeChatClient } from "./OpenCodeChatClient.js";
+import { normalizeOpenCodeModels } from "./OpenCodeNormalizers.js";
 import type { OpenCodeSessionPromptOptions } from "./OpenCodeServerClient.js";
 
 function opencodeEvent(type: string, properties: Record<string, unknown> = {}): Record<string, unknown> {
