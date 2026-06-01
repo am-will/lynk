@@ -192,7 +192,7 @@ object ChatPresentationHelpers {
             ClientBrand.Pi -> ClientBrandPresentation(
                 brand = brand,
                 title = "Pi",
-                logoRes = R.drawable.ic_brand_circle
+                logoRes = R.drawable.pi_agent_logo_plate
             )
             ClientBrand.Local -> ClientBrandPresentation(
                 brand = brand,
