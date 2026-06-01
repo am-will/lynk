@@ -3,7 +3,7 @@ import type { ChatModelOption, ChatSessionSummary } from "../protocol/messages.j
 import type { BridgeConfig } from "./config.js";
 import { defaultSessionKeyForDevice } from "./OpenClawChatTypes.js";
 
-export const HARNESS_IDS = ["openclaw", "hermes", "codex", "opencode"] as const;
+export const HARNESS_IDS = ["openclaw", "hermes", "codex", "opencode", "pi"] as const;
 export type HarnessId = typeof HARNESS_IDS[number];
 
 export interface HarnessInfo {
@@ -24,7 +24,8 @@ const HARNESS_LABELS = {
   openclaw: "OpenClaw",
   hermes: "Hermes",
   codex: "Codex",
-  opencode: "OpenCode"
+  opencode: "OpenCode",
+  pi: "Pi"
 } as const satisfies Record<HarnessId, string>;
 
 const HARNESS_PREFIXES = new Set<string>(HARNESS_IDS);
@@ -33,12 +34,13 @@ export function harnessLabel(harnessId: HarnessId): string {
   return HARNESS_LABELS[harnessId];
 }
 
-export function harnessInfos(config: Pick<BridgeConfig, "hermesApiKey" | "hermesConfigured" | "codexConfigured" | "opencodeConfigured">): HarnessInfo[] {
+export function harnessInfos(config: Pick<BridgeConfig, "hermesApiKey" | "hermesConfigured" | "codexConfigured" | "opencodeConfigured" | "piConfigured">): HarnessInfo[] {
   return [
     { id: "openclaw", label: harnessLabel("openclaw"), enabled: true },
     { id: "hermes", label: harnessLabel("hermes"), enabled: Boolean(config.hermesConfigured ?? config.hermesApiKey) },
     { id: "codex", label: harnessLabel("codex"), enabled: config.codexConfigured },
-    { id: "opencode", label: harnessLabel("opencode"), enabled: Boolean(config.opencodeConfigured) }
+    { id: "opencode", label: harnessLabel("opencode"), enabled: Boolean(config.opencodeConfigured) },
+    { id: "pi", label: harnessLabel("pi"), enabled: Boolean(config.piConfigured) }
   ];
 }
 
@@ -97,6 +99,8 @@ export function defaultSessionKeyForHarness(
       return `codex:${sanitizeSessionSegment(deviceId)}`;
     case "opencode":
       return `opencode:${sanitizeSessionSegment(deviceId)}`;
+    case "pi":
+      return `pi:${sanitizeSessionSegment(deviceId)}`;
     default: {
       const exhaustive: never = harnessId;
       return exhaustive;

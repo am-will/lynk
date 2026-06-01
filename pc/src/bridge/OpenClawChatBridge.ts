@@ -139,6 +139,8 @@ function harnessRecoveryAction(harnessId: HarnessId): string {
       return "Verify the Codex app-server command and workspace are configured, then try again.";
     case "opencode":
       return "Verify the OpenCode server URL or serve command and workspace are configured, then try again.";
+    case "pi":
+      return "Verify Pi SDK credentials, model availability, and workspace configuration, then try again.";
     default: {
       const exhaustive: never = harnessId;
       return exhaustive;
@@ -1058,12 +1060,12 @@ export class OpenClawChatBridge {
   private harnessIdFromModel(model: unknown): string {
     const record = model && typeof model === "object" ? model as Record<string, unknown> : undefined;
     const harnessId = stringField(record, "harnessId") ?? stringField(record, "provider");
-    if (harnessId === "hermes" || harnessId === "codex" || harnessId === "opencode" || harnessId === "local") {
+    if (harnessId === "hermes" || harnessId === "codex" || harnessId === "opencode" || harnessId === "pi" || harnessId === "local") {
       return harnessId;
     }
     const id = stringField(record, "id") ?? "";
     const prefix = id.split(":", 1)[0]?.toLowerCase();
-    return prefix === "hermes" || prefix === "codex" || prefix === "opencode" || prefix === "local" ? prefix : "openclaw";
+    return prefix === "hermes" || prefix === "codex" || prefix === "opencode" || prefix === "pi" || prefix === "local" ? prefix : "openclaw";
   }
 
   private sendReplyAvailable(
@@ -1116,6 +1118,8 @@ function readinessAction(harnessId: HarnessId): string {
       return "Install Codex CLI with app-server support, then run host integration refresh.";
     case "opencode":
       return "Install OpenCode CLI or configure OPENCODE_SERVER_URL, then run host integration refresh.";
+    case "pi":
+      return "Configure Pi credentials and available models in the Pi agent directory, then run host integration refresh.";
     default: {
       const exhaustive: never = harnessId;
       return exhaustive;
