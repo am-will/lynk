@@ -59,6 +59,9 @@ class FakeHermesApiClient {
     }]
   };
   modelsPayload: unknown = { models: [] };
+  skillsPayload: unknown = { data: [] };
+  toolsetsPayload: unknown = { data: [] };
+  healthPayload: unknown = { ok: true };
 
   async listSessions(): Promise<unknown> {
     return this.sessionsPayload;
@@ -72,12 +75,20 @@ class FakeHermesApiClient {
     return this.modelsPayload;
   }
 
+  async listSkills(): Promise<unknown> {
+    return this.skillsPayload;
+  }
+
+  async listToolsets(): Promise<unknown> {
+    return this.toolsetsPayload;
+  }
+
   async capabilities(): Promise<unknown> {
     return {};
   }
 
   async health(): Promise<unknown> {
-    return { ok: true };
+    return this.healthPayload;
   }
 
   async stopRun(): Promise<void> {}
@@ -202,6 +213,72 @@ test("Hermes model listing enriches API models with local metadata", async () =>
     assert.equal(payload.models[0]?.id, "local-minimax:MiniMax-M2.7");
     assert.equal(payload.models[0]?.contextWindow, 149429);
   });
+});
+
+test("Hermes model listing suppresses generic API proxy when provider models are discovered", async () => {
+  await withHermesHome({
+    "config.yaml": [
+      "model:",
+      "  default: gpt-5.5",
+      "  provider: openai-codex"
+    ].join("\n"),
+    "auth.json": JSON.stringify({
+      credential_pool: {
+        "openai-codex": [{}]
+      }
+    })
+  }, async () => {
+    const api = new FakeHermesApiClient();
+    api.modelsPayload = { data: [{ id: "gpt-5.5", owned_by: "hermes" }] };
+    const client = new HermesChatClient({ ...config, hermesModel: "talos" }, api as unknown as HermesApiClient, null);
+
+    const payload = await client.listModels() as { models: Array<Record<string, unknown>> };
+
+    assert.equal(payload.models.some((model) => model.id === "gpt-5.5" && model.provider === "hermes"), false);
+    assert.equal(payload.models[0]?.id, "openai-codex:gpt-5.5");
+  });
+});
+
+test("Hermes lists native API skills as skill commands", async () => {
+  const api = new FakeHermesApiClient();
+  api.skillsPayload = {
+    data: [{ name: "android-control", description: "Control Android", category: "phone" }]
+  };
+  const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
+
+  const payload = await client.listCommands() as { commands: Array<Record<string, unknown>> };
+  const skill = payload.commands.find((command) => command.name === "android-control");
+
+  assert.equal(skill?.source, "skill");
+  assert.deepEqual(skill?.textAliases, ["/skill android-control"]);
+  assert.equal(skill?.description, "Control Android");
+  assert.ok(payload.commands.some((command) => command.name === "skill"));
+});
+
+test("Hermes lists native API toolsets as effective tools", async () => {
+  const api = new FakeHermesApiClient();
+  api.toolsetsPayload = {
+    data: [{ name: "terminal", label: "Terminal", enabled: true, tools: ["terminal", "process"] }, { name: "browser", label: "Browser", enabled: false, tools: ["browser_click"] }]
+  };
+  const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
+
+  const payload = await client.effectiveTools() as { tools: Array<Record<string, unknown>> };
+
+  assert.deepEqual(payload.tools.map((tool) => tool.id), ["terminal", "process"]);
+  assert.equal(payload.tools[0]?.group, "Terminal");
+  assert.equal(payload.tools[0]?.source, "terminal");
+});
+
+test("Hermes health normalizes native API status responses", async () => {
+  const api = new FakeHermesApiClient();
+  api.healthPayload = { status: "ok" };
+  const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
+
+  const payload = await client.health() as Record<string, unknown>;
+
+  assert.equal(payload.ok, true);
+  assert.equal(payload.mode, "api");
+  assert.equal(payload.status, "ok");
 });
 
 test("Hermes lists sessions with flat token count fields", async () => {

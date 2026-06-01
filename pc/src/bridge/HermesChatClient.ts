@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { HermesApiClient } from "../dispatcher/HermesApiClient.js";
 import { HermesRunDriver, type HermesActiveRun, type HermesRunDriverEvent } from "../dispatcher/HermesRunDriver.js";
-import type { ChatAttachment, ChatHistoryMessage, ChatModelOption, ChatSessionSummary } from "../protocol/messages.js";
+import type { ChatAttachment, ChatCommandOption, ChatHistoryMessage, ChatModelOption, ChatSessionSummary, ChatToolSummary } from "../protocol/messages.js";
 import { resolveCommand, type CommandResolution } from "../host/CommandDiscovery.js";
 import type { BridgeConfig } from "./config.js";
 import { discoverHermesModels } from "./HermesModelDiscovery.js";
@@ -32,6 +32,11 @@ function sendAgentDebugLog(runId: string, hypothesisId: string, location: string
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
+}
+
+function isHealthyHermesResponse(value: unknown): boolean {
+  const record = asRecord(value);
+  return record?.ok === true || record?.status === "ok";
 }
 
 function firstStringField(value: unknown, keys: string[]): string | undefined {
@@ -131,7 +136,11 @@ function mergeHermesModels(apiModels: ChatModelOption[], discoveredModels: ChatM
 
   const discoveredByKey = new Map(discoveredModels.flatMap((model) => modelKeys(model).map((key) => [key, model] as const)));
   const seen = new Set<string>();
-  const merged = apiModels.map((apiModel) => {
+  const suppressGenericHermesProxy = discoveredModels.length > 0;
+  const merged = apiModels.flatMap((apiModel) => {
+    if (suppressGenericHermesProxy && isGenericHermesProxyModel(apiModel, discoveredModels, defaultModel)) {
+      return [];
+    }
     const discovered = modelKeys(apiModel)
       .map((key) => discoveredByKey.get(key))
       .find(Boolean);
@@ -139,18 +148,18 @@ function mergeHermesModels(apiModels: ChatModelOption[], discoveredModels: ChatM
       seen.add(key);
     }
     if (!discovered) {
-      return apiModel;
+      return [apiModel];
     }
     for (const key of modelKeys(discovered)) {
       seen.add(key);
     }
-    return {
+    return [{
       ...discovered,
       ...apiModel,
       contextWindow: apiModel.contextWindow ?? discovered.contextWindow ?? null,
       reasoningOptions: apiModel.reasoningOptions ?? discovered.reasoningOptions ?? null,
       defaultReasoningEffort: apiModel.defaultReasoningEffort ?? discovered.defaultReasoningEffort ?? null
-    };
+    }];
   });
 
   for (const discovered of discoveredModels) {
@@ -167,6 +176,81 @@ function hermesApiSelectionId(provider: string, id: string): string {
 
 function modelKeys(model: ChatModelOption): string[] {
   return [...new Set([model.id, model.modelId ?? undefined].filter((value): value is string => Boolean(value)))];
+}
+
+function isGenericHermesProxyModel(apiModel: ChatModelOption, discoveredModels: ChatModelOption[], defaultModel: string): boolean {
+  if (apiModel.provider !== "hermes") {
+    return false;
+  }
+  const apiBareId = bareSelectionModel(apiModel.id);
+  if (!apiBareId) {
+    return false;
+  }
+  return apiModel.id === defaultModel || discoveredModels.some((model) => model.provider !== "hermes" && bareSelectionModel(model.modelId ?? model.id) === apiBareId);
+}
+
+function bareSelectionModel(value: string): string {
+  const separator = value.indexOf(":");
+  return separator > 0 ? value.slice(separator + 1) : value;
+}
+
+function normalizeHermesSkills(payload: unknown): ChatCommandOption[] {
+  const rawSkills = Array.isArray(asRecord(payload)?.data)
+    ? asRecord(payload)?.data as unknown[]
+    : Array.isArray(asRecord(payload)?.skills)
+      ? asRecord(payload)?.skills as unknown[]
+      : [];
+  return rawSkills.flatMap((item) => {
+    const record = asRecord(item);
+    const name = directStringField(record, ["name", "id"]);
+    if (!name) {
+      return [];
+    }
+    return [{
+      name,
+      description: directStringField(record, ["description", "summary"]),
+      category: directStringField(record, ["category"]),
+      textAliases: [`/skill ${name}`],
+      source: "skill",
+      acceptsArgs: true,
+      args: [{ name: "input", description: "Optional prompt or instructions for this skill", type: "string", required: false }]
+    }];
+  });
+}
+
+function normalizeHermesToolsets(payload: unknown): ChatToolSummary[] {
+  const rawToolsets = Array.isArray(asRecord(payload)?.data)
+    ? asRecord(payload)?.data as unknown[]
+    : Array.isArray(asRecord(payload)?.toolsets)
+      ? asRecord(payload)?.toolsets as unknown[]
+      : [];
+  const tools: ChatToolSummary[] = [];
+  const seen = new Set<string>();
+  for (const item of rawToolsets) {
+    const record = asRecord(item);
+    if (record?.enabled === false) {
+      continue;
+    }
+    const group = directStringField(record, ["label", "name"]);
+    const source = directStringField(record, ["name"]);
+    const rawTools = Array.isArray(record?.tools) ? record.tools as unknown[] : [];
+    for (const rawTool of rawTools) {
+      const rawToolRecord = asRecord(rawTool);
+      const id = typeof rawTool === "string" ? rawTool : directStringField(rawToolRecord, ["id", "name"]);
+      if (!id || seen.has(id)) {
+        continue;
+      }
+      seen.add(id);
+      tools.push({
+        id,
+        label: id,
+        description: typeof rawTool === "string" ? null : directStringField(rawToolRecord, ["description"]),
+        source,
+        group
+      });
+    }
+  }
+  return tools;
 }
 
 function cliPrompt(message: string, instructions: string | undefined): string {
@@ -430,27 +514,31 @@ export class HermesChatClient {
   }
 
   async listCommands(): Promise<unknown> {
+    const skills = this.api ? normalizeHermesSkills(await this.api.listSkills().catch(() => undefined)) : [];
     return {
       commands: [
         { name: "status", description: "Show Hermes status", textAliases: ["/status"], acceptsArgs: false },
         { name: "new", description: "Start a new Hermes chat", textAliases: ["/new"], acceptsArgs: false },
-        { name: "help", description: "Show available Hermes commands", textAliases: ["/help"], acceptsArgs: false }
+        { name: "help", description: "Show available Hermes commands", textAliases: ["/help"], acceptsArgs: false },
+        { name: "skills", description: "List available Hermes skills", textAliases: ["/skills"], acceptsArgs: false },
+        { name: "skill", description: "Load or use a Hermes skill", textAliases: ["/skill"], acceptsArgs: true },
+        ...skills
       ]
     };
   }
 
   async effectiveTools(): Promise<unknown> {
     const capabilities = await this.api?.capabilities().catch(() => undefined);
-    return { tools: [], capabilities };
+    const toolsets = await this.api?.listToolsets().catch(() => undefined);
+    return { tools: normalizeHermesToolsets(toolsets), capabilities, toolsets: asRecord(toolsets)?.data ?? [] };
   }
 
   async health(): Promise<unknown> {
     if (this.api) {
       try {
         const health = await this.api.health();
-        const record = asRecord(health);
-        if (record?.ok === true) {
-          return health;
+        if (isHealthyHermesResponse(health)) {
+          return { ...asRecord(health), ok: true, mode: "api" };
         }
       } catch {
         // Fall through to CLI mode if Hermes itself is installed but no Lynk runs API is serving.
@@ -674,7 +762,7 @@ export class HermesChatClient {
     }
     try {
       const health = await this.api.health();
-      return asRecord(health)?.ok === true;
+      return isHealthyHermesResponse(health);
     } catch {
       return false;
     }
