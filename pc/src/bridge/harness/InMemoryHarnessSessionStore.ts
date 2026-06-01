@@ -32,6 +32,7 @@ export interface InMemoryHarnessSessionStoreOptions {
   defaultModel: string;
   modelProvider: string;
   storagePath?: string;
+  persistEmptySessions?: boolean;
 }
 
 export class InMemoryHarnessSessionStore {
@@ -77,25 +78,18 @@ export class InMemoryHarnessSessionStore {
   }
 
   listSessions(limit = 50): ChatSessionSummary[] {
+    return this.listStoredSessions(limit)
+      .map((session) => this.toSummary(session));
+  }
+
+  listStoredSessions(limit = 50): HarnessStoredSession[] {
     return [...this.sessions.values()]
       .sort((left, right) => right.updatedAt - left.updatedAt)
-      .slice(0, limit)
-      .map((session) => ({
-        key: session.key,
-        sessionId: session.sessionId,
-        label: session.label,
-        displayName: session.displayName ?? session.label,
-        model: session.model ?? this.options.defaultModel,
-        modelProvider: this.options.modelProvider,
-        updatedAt: session.updatedAt,
-        hasActiveRun: Boolean(session.activeRunId),
-        thinkingLevel: session.thinkingLevel ?? null,
-        fastMode: session.fastMode ?? null,
-        inputTokens: numberFromUsage(session.usage, "input_tokens", "inputTokens"),
-        outputTokens: numberFromUsage(session.usage, "output_tokens", "outputTokens"),
-        totalTokens: numberFromUsage(session.usage, "total_tokens", "totalTokens"),
-        contextTokens: numberFromUsage(session.usage, "context_tokens", "contextTokens")
-      }));
+      .slice(0, limit);
+  }
+
+  hasUserMessage(session: HarnessStoredSession): boolean {
+    return session.messages.some((message) => message.role === "user");
   }
 
   createSession(options: { key?: string; label?: string; model?: string }): HarnessCreatedSession {
@@ -258,12 +252,34 @@ export class InMemoryHarnessSessionStore {
     if (!path) {
       return;
     }
+    const sessions = [...this.sessions.values()].filter((session) =>
+      this.options.persistEmptySessions !== false || this.hasUserMessage(session)
+    );
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, JSON.stringify({
       version: 1,
       harnessId: this.harnessId,
-      sessions: [...this.sessions.values()]
+      sessions
     }, null, 2));
+  }
+
+  private toSummary(session: HarnessStoredSession): ChatSessionSummary {
+    return {
+      key: session.key,
+      sessionId: session.sessionId,
+      label: session.label,
+      displayName: session.displayName ?? session.label,
+      model: session.model ?? this.options.defaultModel,
+      modelProvider: this.options.modelProvider,
+      updatedAt: session.updatedAt,
+      hasActiveRun: Boolean(session.activeRunId),
+      thinkingLevel: session.thinkingLevel ?? null,
+      fastMode: session.fastMode ?? null,
+      inputTokens: numberFromUsage(session.usage, "input_tokens", "inputTokens"),
+      outputTokens: numberFromUsage(session.usage, "output_tokens", "outputTokens"),
+      totalTokens: numberFromUsage(session.usage, "total_tokens", "totalTokens"),
+      contextTokens: numberFromUsage(session.usage, "context_tokens", "contextTokens")
+    };
   }
 }
 

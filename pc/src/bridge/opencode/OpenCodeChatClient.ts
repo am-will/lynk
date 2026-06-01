@@ -6,6 +6,7 @@ import type { ChatAttachment, ChatToolEventMessage } from "../../protocol/messag
 import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler, HarnessPermissionReplyOptions } from "../chat/ChatTransportTypes.js";
 import { DEFAULT_REASONING_OPTIONS } from "../chat/ModelCatalog.js";
 import { OpenCodeServerClient, type OpenCodeModelRef } from "./OpenCodeServerClient.js";
+import { listOpenCodeStoredSessions } from "./OpenCodeSessionDiscovery.js";
 import { prepareOpenCodeWorkspace } from "./OpenCodeWorkspace.js";
 
 interface ActiveRun {
@@ -135,6 +136,11 @@ function messagesFromOpenCode(payload: unknown): Array<Record<string, unknown>> 
     .filter((message): message is Record<string, unknown> => message !== undefined);
 }
 
+function payloadHasUserMessage(payload: unknown): boolean {
+  const records = Array.isArray(payload) ? payload : arrayField(asRecord(payload), "messages");
+  return records.some((entry) => stringField(asRecord(asRecord(entry)?.info) ?? asRecord(entry), "role") === "user");
+}
+
 function latestAssistantText(payload: unknown): string {
   const messages = messagesFromOpenCode(payload);
   return [...messages].reverse().find((message) => message.role === "assistant")?.text as string | undefined ?? "";
@@ -243,6 +249,7 @@ export class OpenCodeChatClient {
   private readonly sessions: InMemoryHarnessSessionStore;
   private readonly handlers = new Set<GatewayEventHandler>();
   private readonly partTypes = new Map<string, string>();
+  private readonly storageDataDir?: string;
   private active?: ActiveRun;
 
   constructor(
@@ -257,14 +264,17 @@ export class OpenCodeChatClient {
       password?: string;
       defaultAgent?: string;
       timeoutMs?: number;
+      storageDataDir?: string;
     } = {}
   ) {
     this.client = client ?? new OpenCodeServerClient(audit, options);
     this.sessions = new InMemoryHarnessSessionStore("opencode", {
       defaultModel: OPENCODE_DEFAULT_MODEL,
       modelProvider: "opencode",
-      storagePath: sessionStoragePath ?? undefined
+      storagePath: sessionStoragePath ?? undefined,
+      persistEmptySessions: false
     });
+    this.storageDataDir = options.storageDataDir;
   }
 
   addEventListener(handler: GatewayEventHandler): () => void {
@@ -343,21 +353,31 @@ export class OpenCodeChatClient {
 
   async listSessions(limit = 50): Promise<unknown> {
     const directory = this.client.defaultDirectory();
+    const storageSessions = listOpenCodeStoredSessions({ dataDir: this.storageDataDir });
+    const storageSessionIds = new Set(storageSessions.map((session) => session.id));
     const payload = await this.client.listAllSessions()
       .catch(() => this.client.listSessions(directory).catch(() => undefined));
     const remoteSessions = Array.isArray(payload) ? payload.map(asRecord).filter(Boolean) as Record<string, unknown>[] : [];
-    if (remoteSessions.length > 0) {
+    const filteredRemoteSessions = await this.filterRemoteSessionsWithUserMessages(remoteSessions, storageSessionIds);
+    const summaries = [
+      ...storageSessions.map((session) => this.sessionToSummary(session as unknown as Record<string, unknown>)),
+      ...filteredRemoteSessions.map((session) => this.sessionToSummary(session)),
+      ...this.localUserSessionSummaries()
+    ];
+    const merged = mergeSessionSummaries(summaries)
+      .sort((left, right) => (numberField(left, "updatedAt") ?? 0) - (numberField(right, "updatedAt") ?? 0))
+      .reverse()
+      .slice(0, Math.max(1, limit));
+    if (merged.length > 0) {
       return {
-        sessions: remoteSessions
-          .slice(0, Math.max(1, limit))
-          .map((session) => this.sessionToSummary(session)),
+        sessions: merged,
         defaults: {
           thinkingLevels: DEFAULT_REASONING_OPTIONS.map((option) => option.id)
         }
       };
     }
     return {
-      sessions: this.sessions.listSessions(limit),
+      sessions: [],
       defaults: {
         thinkingLevels: DEFAULT_REASONING_OPTIONS.map((option) => option.id)
       }
@@ -903,6 +923,7 @@ export class OpenCodeChatClient {
     if (directory) {
       this.sessions.setMetadata(local, OPENCODE_SESSION_DIRECTORY_KEY, directory);
     }
+    const model = stringField(session, "model") ?? local.model ?? OPENCODE_DEFAULT_MODEL;
     return {
       key,
       sessionId: id,
@@ -911,12 +932,60 @@ export class OpenCodeChatClient {
       workspacePath: directory,
       workspaceName: workspaceNameFromPath(directory),
       source: "opencode",
-      model: local.model ?? OPENCODE_DEFAULT_MODEL,
+      model,
       modelProvider: "opencode",
       updatedAt: secondsToMillis(numberField(asRecord(session.time), "updated") ?? numberField(asRecord(session.time), "created")),
       hasActiveRun: false,
-      thinkingLevel: null
+      thinkingLevel: null,
+      inputTokens: numberField(session, "inputTokens"),
+      outputTokens: numberField(session, "outputTokens"),
+      totalTokens: numberField(session, "totalTokens"),
+      estimatedCostUsd: numberField(session, "estimatedCostUsd")
     };
+  }
+
+  private localUserSessionSummaries(): Record<string, unknown>[] {
+    return this.sessions.listStoredSessions(500)
+      .filter((session) => this.sessions.hasUserMessage(session))
+      .map((session) => {
+        const directory = directoryForSession(session) ?? this.client.defaultDirectory();
+        return {
+          key: session.key,
+          sessionId: session.sessionId,
+          label: session.label,
+          displayName: session.displayName ?? session.label,
+          workspacePath: directory,
+          workspaceName: workspaceNameFromPath(directory),
+          source: "opencode",
+          model: session.model ?? OPENCODE_DEFAULT_MODEL,
+          modelProvider: "opencode",
+          updatedAt: session.updatedAt,
+          hasActiveRun: Boolean(session.activeRunId),
+          thinkingLevel: session.thinkingLevel ?? null
+        };
+      });
+  }
+
+  private async filterRemoteSessionsWithUserMessages(
+    sessions: Record<string, unknown>[],
+    storageSessionIds: Set<string>
+  ): Promise<Record<string, unknown>[]> {
+    if (storageSessionIds.size > 0) {
+      return sessions.filter((session) => {
+        const id = stringField(session, "id");
+        return Boolean(id && storageSessionIds.has(id));
+      });
+    }
+    const results = await Promise.all(sessions.map(async (session) => {
+      const id = stringField(session, "id");
+      if (!id) {
+        return undefined;
+      }
+      const directory = sessionDirectory(session, this.client.defaultDirectory()) ?? undefined;
+      const payload = await this.client.messages(id, directory).catch(() => undefined);
+      return payloadHasUserMessage(payload) ? session : undefined;
+    }));
+    return results.filter((session): session is Record<string, unknown> => session !== undefined);
   }
 
   private emit(event: string, payload: unknown): void {
@@ -929,6 +998,21 @@ export class OpenCodeChatClient {
 
 function directoryForSession(session: HarnessStoredSession): string | undefined {
   return stringField(session.metadata, OPENCODE_SESSION_DIRECTORY_KEY);
+}
+
+function mergeSessionSummaries(summaries: Record<string, unknown>[]): Record<string, unknown>[] {
+  const byKey = new Map<string, Record<string, unknown>>();
+  for (const summary of summaries) {
+    const key = stringField(summary, "key");
+    if (!key) {
+      continue;
+    }
+    const existing = byKey.get(key);
+    if (!existing || (numberField(summary, "updatedAt") ?? 0) >= (numberField(existing, "updatedAt") ?? 0)) {
+      byKey.set(key, summary);
+    }
+  }
+  return [...byKey.values()];
 }
 
 function normalizeTools(payload: unknown): Array<Record<string, unknown>> {
