@@ -90,6 +90,7 @@ import kotlin.math.roundToInt
 private class SkillTokenSpan(color: Int) : ForegroundColorSpan(color)
 
 private const val SESSION_TOGGLE_REVEAL_BIAS = 0.35f
+private const val COMMAND_GROUP_TOGGLE_REVEAL_BIAS = 0.5f
 
 internal fun shouldMinimizeHostAppAfterVoiceStart(presentation: PanelPresentation): Boolean {
     return when (presentation) {
@@ -1815,6 +1816,8 @@ class OverlayController(
     private fun showPlusMenu(
         anchorOverride: View? = null,
         replace: Boolean = false,
+        revealRowId: String? = null,
+        revealRowVerticalBias: Float? = null,
         onDismiss: (() -> Unit)? = null
     ) {
         val menuAnchor: View = anchorOverride ?: headerSessionAnchor ?: panelContent ?: panelHost ?: return
@@ -1945,6 +1948,8 @@ class OverlayController(
             toggleSameAnchor = !replace,
             replaceShowing = replace,
             heightFraction = if (expandedCommandPickerGroups.isNotEmpty()) 0.65f else null,
+            revealRowId = revealRowId,
+            revealRowVerticalBias = revealRowVerticalBias,
             onDismiss = onDismiss
         )
     }
@@ -2131,7 +2136,7 @@ class OverlayController(
 
     private fun unavailableCommandSkillRow(groupId: String, label: String): AnchoredPicker.Row {
         return AnchoredPicker.Row(
-            id = "commands-skills:$groupId",
+            id = commandSkillGroupRowId(groupId),
             label = label,
             sublabel = "None available in local mode",
             selectable = false,
@@ -2150,7 +2155,7 @@ class OverlayController(
     ) {
         val expanded = groupId in expandedCommandPickerGroups
         add(AnchoredPicker.Row(
-            id = "commands-skills:$groupId",
+            id = commandSkillGroupRowId(groupId),
             label = label,
             sublabel = if (count == 0) "None available" else "$count available",
             selectable = false,
@@ -2164,10 +2169,18 @@ class OverlayController(
                 } else {
                     expandedCommandPickerGroups.add(groupId)
                 }
-                showPlusMenu(anchorOverride = menuAnchor, replace = true, onDismiss = onDismiss)
+                showPlusMenu(
+                    anchorOverride = menuAnchor,
+                    replace = true,
+                    revealRowId = commandSkillGroupRowId(groupId),
+                    revealRowVerticalBias = COMMAND_GROUP_TOGGLE_REVEAL_BIAS,
+                    onDismiss = onDismiss
+                )
             }
         ))
     }
+
+    private fun commandSkillGroupRowId(groupId: String): String = "commands-skills:$groupId"
 
     private fun isLocalChatMode(): Boolean {
         return lastChatState.modelSource == ChatModelSource.LOCAL ||
