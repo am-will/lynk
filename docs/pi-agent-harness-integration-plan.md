@@ -66,6 +66,8 @@
 ## Implementation Log
 
 - 2026-06-01 Task 0: Created worktree `/Users/am.will/Applications/open-claw-agent-pi-agent` from current `HEAD` on branch `codex/pi-agent-harness`; left the original checkout dirty files untouched. Files changed: none. Tests: not run. Commit: pending.
+- 2026-06-01 Task 1a: Saved the Pi integration plan file. Files changed: `docs/pi-agent-harness-integration-plan.md`. Tests: not run. Commit: `b689c9b`.
+- 2026-06-01 Task 1b: Added `@earendil-works/pi-coding-agent@^0.78.0` to PC package metadata and lockfile; npm required `--min-release-age=0` because local npm release-age filtering excluded the May 29 package. Files changed: `pc/package.json`, `pc/package-lock.json`, `docs/pi-agent-harness-integration-plan.md`. Tests: not run. Commit: pending.
 
 ## Assumptions
 
