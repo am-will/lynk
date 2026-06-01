@@ -23,6 +23,7 @@ export interface OpenCodeSessionPromptOptions {
   sessionId: string;
   directory?: string;
   text: string;
+  attachments?: ChatAttachment[];
   model?: OpenCodeModelRef;
   agent?: string;
   system?: string;
@@ -102,6 +103,22 @@ function unwrap<T>(result: RequestResult<T>): T {
     throw new Error(`OpenCode request returned no data${result.response ? ` (${result.response.status})` : ""}`);
   }
   return result.data;
+}
+
+function promptParts(text: string, attachments: ChatAttachment[] | undefined): unknown[] {
+  const parts: unknown[] = [{ type: "text", text }];
+  for (const attachment of attachments ?? []) {
+    if (!attachment.contentBase64) {
+      continue;
+    }
+    parts.push({
+      type: "file",
+      mime: attachment.mimeType,
+      filename: attachment.displayName,
+      url: `data:${attachment.mimeType};base64,${attachment.contentBase64}`
+    });
+  }
+  return parts;
 }
 
 export class OpenCodeServerClient {
@@ -217,7 +234,7 @@ export class OpenCodeServerClient {
         ...(options.model ? { model: { providerID: options.model.providerID, modelID: options.model.modelID, ...(options.model.variant ? { variant: options.model.variant } : {}) } } : {}),
         ...(options.agent ?? this.defaultAgent ? { agent: options.agent ?? this.defaultAgent } : {}),
         ...(options.system ? { system: options.system } : {}),
-        parts: [{ type: "text", text: options.text }]
+        parts: promptParts(options.text, options.attachments)
       } as any
     }) as RequestResult<unknown>);
   }
@@ -232,7 +249,7 @@ export class OpenCodeServerClient {
         ...(options.model ? { model: { providerID: options.model.providerID, modelID: options.model.modelID, ...(options.model.variant ? { variant: options.model.variant } : {}) } } : {}),
         ...(options.agent ?? this.defaultAgent ? { agent: options.agent ?? this.defaultAgent } : {}),
         ...(options.system ? { system: options.system } : {}),
-        parts: [{ type: "text", text: options.text }]
+        parts: promptParts(options.text, options.attachments)
       } as any
     }) as RequestResult<unknown>);
   }
@@ -371,3 +388,4 @@ export class OpenCodeServerClient {
     }
   }
 }
+import type { ChatAttachment } from "../../protocol/messages.js";

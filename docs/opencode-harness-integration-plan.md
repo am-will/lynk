@@ -62,6 +62,7 @@
 
 - 2026-06-01 Task 1: Added the OpenCode plan file, host/env config fields, redaction/diagnostics/discovery hooks, setup/protocol docs, and SDK dependency metadata. Files changed: `docs/opencode-harness-integration-plan.md`, `docs/protocol.md`, `docs/setup.md`, `pc/.env.example`, `pc/package.json`, `pc/package-lock.json`, `pc/src/bridge/config.ts`, `pc/src/host/Diagnostics.ts`, `pc/src/host/HostConfigStore.ts`, `pc/src/host/IntegrationManager.ts`. Tests: `cd pc && npm run check`. Commit: `9a492d7`.
 - 2026-06-01 Task 2: Registered OpenCode as a host harness id, model/session namespace, protocol model prefix, and readiness/recovery target. Files changed: `docs/opencode-harness-integration-plan.md`, `docs/protocol.md`, `pc/src/bridge/AgentHarness.ts`, `pc/src/bridge/OpenClawChatBridge.ts`, `pc/src/protocol/messages.ts`. Tests: `cd pc && npm run check`. Commit: `10b402d`.
+- 2026-06-01 Task 3: Added the OpenCode SDK-backed server client with managed server startup, Basic Auth, health probing, request timeout, session/model/command/tool methods, SSE subscription access, and permission replies. Files changed: `docs/opencode-harness-integration-plan.md`, `pc/src/bridge/opencode/OpenCodeServerClient.ts`. Tests: `cd pc && npm run check`. Commit: `4a7743d`.
 
 ## Assumptions
 

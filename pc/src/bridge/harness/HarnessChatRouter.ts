@@ -14,6 +14,7 @@ import { CodexChatClient } from "../CodexChatClient.js";
 import type { BridgeConfig } from "../config.js";
 import type { ChatCommandOption } from "../../protocol/messages.js";
 import { HermesChatClient } from "../HermesChatClient.js";
+import { OpenCodeChatClient } from "../opencode/OpenCodeChatClient.js";
 import type { GatewayChatClient } from "../OpenClawChatTypes.js";
 import { assertHarnessSupportsAttachments } from "../chat/ChatSendAttachments.js";
 import type {
@@ -78,6 +79,17 @@ export class HarnessChatRouter implements GatewayChatClient {
         cwd: config.codexAgentCwd,
         approvalPolicy: config.codexAppServerApprovalPolicy,
         sandbox: config.codexAppServerSandbox
+      }), { supportsAttachments: true }));
+    }
+    if (config.opencodeConfigured) {
+      this.adapters.set("opencode", new NormalizedHarnessAdapter("opencode", new OpenCodeChatClient(audit, undefined, undefined, {
+        serverUrl: config.opencodeServerUrl,
+        command: config.opencodeServerCommand,
+        cwd: config.opencodeAgentCwd,
+        username: config.opencodeServerUsername,
+        password: config.opencodeServerPassword,
+        defaultAgent: config.opencodeDefaultAgent,
+        timeoutMs: config.opencodeRunTimeoutMs
       }), { supportsAttachments: true }));
     }
   }
@@ -155,8 +167,8 @@ export class HarnessChatRouter implements GatewayChatClient {
       key,
       label: options.label,
       model: selection?.modelId ?? options.model,
-      ...(harnessId === "codex" && options.workspacePath ? { workspacePath: options.workspacePath } : {}),
-      ...(harnessId === "codex" && options.createWorkspaceIfMissing ? { createWorkspaceIfMissing: true } : {})
+      ...((harnessId === "codex" || harnessId === "opencode") && options.workspacePath ? { workspacePath: options.workspacePath } : {}),
+      ...((harnessId === "codex" || harnessId === "opencode") && options.createWorkspaceIfMissing ? { createWorkspaceIfMissing: true } : {})
     });
     return this.namespaceCreatedSession(created, harnessId, key);
   }
