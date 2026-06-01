@@ -47,7 +47,8 @@ export class PiChatClient {
   private readonly sessions: InMemoryHarnessSessionStore;
   private readonly handlers = new Set<GatewayEventHandler>();
   private readonly runtimes = new Map<string, AgentSessionRuntime>();
-  private active?: ActiveRun;
+  private readonly activeRuns = new Map<string, ActiveRun>();
+  private readonly activeRunBySession = new Map<string, string>();
 
   constructor(
     private readonly audit?: AuditLog,
@@ -99,15 +100,15 @@ export class PiChatClient {
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
-    if (this.active) {
-      throw new Error("A Pi task is already running");
-    }
     const existingControls = this.storedSessionForKey(options.sessionKey);
     const session = await this.resolveStoredSession(options.sessionKey, options.sessionId)
       ?? (await this.createRuntimeBackedSession({
         model: existingControls?.model,
         thinkingLevel: existingControls?.thinkingLevel ?? options.thinking ?? "medium"
       })).session;
+    if (this.activeRunBySession.has(session.key)) {
+      throw new Error("A Pi task is already running for this session");
+    }
     this.sessions.setThinkingLevel(session, options.thinking ?? "medium");
     const runtime = await this.ensureRuntime(session, {
       model: session.model ?? undefined,
@@ -118,7 +119,8 @@ export class PiChatClient {
     this.sessions.setActiveRun(session, runId);
     const active: ActiveRun = { sessionKey: session.key, runId, runtime, finalEmitted: false };
     active.unsubscribe = runtime.session.subscribe((event) => this.handleSessionEvent(active, event));
-    this.active = active;
+    this.activeRuns.set(runId, active);
+    this.activeRunBySession.set(session.key, runId);
     void this.processRun(active, options.message, options.attachments);
     return { runId, sessionKey: session.key };
   }
@@ -129,18 +131,19 @@ export class PiChatClient {
     message: string;
     attachments?: ChatAttachment[];
   }): Promise<GatewayChatSendResult> {
-    if (!this.active || this.active.sessionKey !== options.sessionKey || (options.runId && this.active.runId !== options.runId)) {
+    const active = this.activeFor(options.sessionKey, options.runId);
+    if (!active) {
       throw new Error("No active Pi task is running for this session");
     }
-    await this.active.runtime.session.steer(options.message, imageAttachments(options.attachments));
-    return { runId: this.active.runId, sessionKey: this.active.sessionKey };
+    await active.runtime.session.steer(options.message, imageAttachments(options.attachments));
+    return { runId: active.runId, sessionKey: active.sessionKey };
   }
 
-  async abort(_sessionKey: string, runId?: string): Promise<unknown> {
-    if (!this.active || (runId && this.active.runId !== runId)) {
+  async abort(sessionKey: string, runId?: string): Promise<unknown> {
+    const active = this.activeFor(sessionKey, runId);
+    if (!active) {
       return {};
     }
-    const active = this.active;
     await this.client.abort(active.runtime);
     this.emit("chat", {
       sessionKey: active.sessionKey,
@@ -148,8 +151,7 @@ export class PiChatClient {
       state: "error",
       error: "Pi run stopped."
     });
-    active.unsubscribe?.();
-    this.active = undefined;
+    this.clearActiveRun(active);
     return { status: "stopping" };
   }
 
@@ -233,8 +235,11 @@ export class PiChatClient {
       void this.client.close(runtime);
     }
     this.runtimes.clear();
-    this.active?.unsubscribe?.();
-    this.active = undefined;
+    for (const active of this.activeRuns.values()) {
+      active.unsubscribe?.();
+    }
+    this.activeRuns.clear();
+    this.activeRunBySession.clear();
   }
 
   private async processRun(active: ActiveRun, message: string, attachments?: ChatAttachment[]): Promise<void> {
@@ -255,12 +260,7 @@ export class PiChatClient {
         error: errorMessage(error)
       });
     } finally {
-      active.unsubscribe?.();
-      const session = this.sessions.ensureSession(active.sessionKey);
-      this.sessions.clearActiveRun(session, active.runId);
-      if (this.active?.runId === active.runId) {
-        this.active = undefined;
-      }
+      this.clearActiveRun(active);
     }
   }
 
@@ -355,6 +355,25 @@ export class PiChatClient {
     for (const handler of this.handlers) {
       handler(gatewayEvent);
     }
+  }
+
+  private activeFor(sessionKey: string, runId?: string): ActiveRun | undefined {
+    if (runId) {
+      const active = this.activeRuns.get(runId);
+      return active?.sessionKey === sessionKey ? active : undefined;
+    }
+    const activeRunId = this.activeRunBySession.get(sessionKey);
+    return activeRunId ? this.activeRuns.get(activeRunId) : undefined;
+  }
+
+  private clearActiveRun(active: ActiveRun): void {
+    active.unsubscribe?.();
+    this.activeRuns.delete(active.runId);
+    if (this.activeRunBySession.get(active.sessionKey) === active.runId) {
+      this.activeRunBySession.delete(active.sessionKey);
+    }
+    const session = this.sessions.ensureSession(active.sessionKey);
+    this.sessions.clearActiveRun(session, active.runId);
   }
 
   private async resolveStoredSession(sessionKey: string, sessionId?: string): Promise<HarnessStoredSession | undefined> {

@@ -127,9 +127,38 @@ test("Pi chat adapter aborts active runs", async () => {
   client.close();
 });
 
+test("Pi chat adapter scopes active runs by session", async () => {
+  const fake = new FakePiClient();
+  const client = new PiChatClient(undefined, fake, null);
+  const first = await client.createSession({}) as { key: string };
+  const second = await client.createSession({}) as { key: string };
+
+  const firstRun = await client.sendChat({ sessionKey: first.key, message: "first", idempotencyKey: "run-first" });
+  const secondRun = await client.sendChat({ sessionKey: second.key, message: "second", idempotencyKey: "run-second" });
+
+  assert.equal(firstRun.sessionKey, first.key);
+  assert.equal(secondRun.sessionKey, second.key);
+  assert.equal(fake.sessions[0]?.promptCalls[0]?.message, "first");
+  assert.equal(fake.sessions[1]?.promptCalls[0]?.message, "second");
+  await assert.rejects(
+    () => client.sendChat({ sessionKey: first.key, message: "blocked" }),
+    /already running for this session/
+  );
+  fake.sessions[0]?.releasePrompt();
+  fake.sessions[1]?.releasePrompt();
+  await waitFor(() => fake.sessions.every((session) => session.messages.length > 0));
+  client.close();
+});
+
 class FakePiClient implements PiClientLike {
-  readonly session = new FakePiSession();
+  readonly sessions: FakePiSession[] = [];
   readonly createdRuntimes: Array<{ cwd?: string; model?: string; thinkingLevel?: string | null }> = [];
+
+  get session(): FakePiSession {
+    const latest = this.sessions.at(-1);
+    assert.ok(latest);
+    return latest;
+  }
 
   defaultCwd(): string {
     return "/tmp";
@@ -141,10 +170,12 @@ class FakePiClient implements PiClientLike {
 
   async createRuntime(options: { cwd?: string; model?: string; thinkingLevel?: string | null } = {}): Promise<AgentSessionRuntime> {
     this.createdRuntimes.push(options);
-    this.session.applyOptions(options);
+    const session = new FakePiSession(`session-${this.sessions.length + 1}`);
+    this.sessions.push(session);
+    session.applyOptions(options);
     return {
       cwd: options.cwd ?? this.defaultCwd(),
-      session: this.session,
+      session,
       switchSession: async () => undefined,
       newSession: async () => undefined,
       dispose: async () => undefined
@@ -175,7 +206,7 @@ class FakePiClient implements PiClientLike {
 }
 
 class FakePiSession {
-  sessionId = "session-1";
+  constructor(readonly sessionId = "session-1") {}
   sessionName = "Pi Test Session";
   sessionFile = "/tmp/pi-session.jsonl";
   model = model;
