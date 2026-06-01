@@ -155,6 +155,7 @@ USB mode is useful while installing or debugging, but it depends on `adb reverse
 
 ```bash
 cd pc
+PHONE_AGENT_ADB_REVERSE=1 npm run bridge
 npm run phone:usb
 ```
 
