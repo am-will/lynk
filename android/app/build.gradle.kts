@@ -3,6 +3,15 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+import java.util.Properties
+
+val uploadSigningProperties = Properties().apply {
+    val file = file("${System.getProperty("user.home")}/.android/lynk-upload.properties")
+    if (file.exists()) {
+        file.inputStream().use(::load)
+    }
+}
+
 android {
     namespace = "dev.androidagent"
     compileSdk = 36
@@ -11,8 +20,26 @@ android {
         applicationId = "app.lynk"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.1.3"
+    }
+
+    signingConfigs {
+        create("release") {
+            val storeFilePath = uploadSigningProperties.getProperty("storeFile")
+            if (!storeFilePath.isNullOrBlank()) {
+                storeFile = file(storeFilePath)
+                storePassword = uploadSigningProperties.getProperty("storePassword")
+                keyAlias = uploadSigningProperties.getProperty("keyAlias")
+                keyPassword = uploadSigningProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     compileOptions {

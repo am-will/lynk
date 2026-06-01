@@ -77,7 +77,7 @@ object ActivityDiagnosticsScreen {
             tone2 = if (localReady) StatusLevel.Good else StatusLevel.Warning
         ))
 
-        // Test backends 2x2
+        // Test backends 3x2
         root.addView(SettingsComponents.sectionHeader(activity, tokens, "Test backends"),
             SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.lg))
 
@@ -224,7 +224,7 @@ object ActivityDiagnosticsScreen {
 
     private fun buildTestBackendsGrid(activity: Activity, tokens: ThemeTokens): LinearLayout {
         val grid = LinearLayout(activity).apply {
-            orientation = LinearLayout.HORIZONTAL
+            orientation = LinearLayout.VERTICAL
         }
         val entries = listOf(
             BackendEntry(DiagnosticsBackendId.OpenClaw, R.drawable.ic_brand_circle, BadgeTone.Teal),
@@ -234,24 +234,48 @@ object ActivityDiagnosticsScreen {
             BackendEntry(DiagnosticsBackendId.Pi, R.drawable.pi_agent_logo_plate, BadgeTone.Blue),
             BackendEntry(DiagnosticsBackendId.Local, R.drawable.ic_file, BadgeTone.Slate)
         )
-        entries.forEachIndexed { index, entry ->
-            val cell = LinearLayout(activity).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER
-                background = SettingsComponents.darkCardBackground(activity, tokens)
-                setPadding(
-                    SettingsComponents.dp(activity, DesignTokens.Spacing.sm),
-                    SettingsComponents.dp(activity, DesignTokens.Spacing.md - 2),
-                    SettingsComponents.dp(activity, DesignTokens.Spacing.sm),
-                    SettingsComponents.dp(activity, DesignTokens.Spacing.md - 2)
-                )
-                isClickable = true
-                isFocusable = true
-                setOnClickListener {
-                    runBackendTest(activity, entry.backend)
-                }
+        val gap = SettingsComponents.dp(activity, DesignTokens.Spacing.sm)
+        val cellHeight = SettingsComponents.dp(activity, 104)
+        entries.chunked(3).forEachIndexed { rowIndex, rowEntries ->
+            val row = LinearLayout(activity).apply {
+                orientation = LinearLayout.HORIZONTAL
             }
-            cell.addView(TextView(activity).apply {
+            rowEntries.forEachIndexed { columnIndex, entry ->
+                row.addView(buildBackendTestCell(activity, tokens, entry), LinearLayout.LayoutParams(
+                    0,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    1f
+                ).apply {
+                    if (columnIndex > 0) marginStart = gap
+                })
+            }
+            grid.addView(row, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                cellHeight
+            ).apply {
+                if (rowIndex > 0) topMargin = gap
+            })
+        }
+        return grid
+    }
+
+    private fun buildBackendTestCell(activity: Activity, tokens: ThemeTokens, entry: BackendEntry): LinearLayout {
+        return LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            background = SettingsComponents.darkCardBackground(activity, tokens)
+            setPadding(
+                SettingsComponents.dp(activity, DesignTokens.Spacing.md),
+                SettingsComponents.dp(activity, DesignTokens.Spacing.md),
+                SettingsComponents.dp(activity, DesignTokens.Spacing.md),
+                SettingsComponents.dp(activity, DesignTokens.Spacing.md)
+            )
+            isClickable = true
+            isFocusable = true
+            setOnClickListener {
+                runBackendTest(activity, entry.backend)
+            }
+            addView(TextView(activity).apply {
                 text = entry.backend.label
                 setTextColor(tokens.primaryText)
                 typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
@@ -259,14 +283,16 @@ object ActivityDiagnosticsScreen {
                 includeFontPadding = false
                 gravity = Gravity.CENTER
                 textAlignment = View.TEXT_ALIGNMENT_CENTER
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
             })
-            cell.addView(SettingsComponents.iconBadge(activity, tokens, entry.iconRes, entry.tone, sizeDp = 36), LinearLayout.LayoutParams(
+            addView(SettingsComponents.iconBadge(activity, tokens, entry.iconRes, entry.tone, sizeDp = 36), LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
                 topMargin = SettingsComponents.dp(activity, DesignTokens.Spacing.sm)
             })
-            cell.addView(TextView(activity).apply {
+            addView(TextView(activity).apply {
                 text = "Test"
                 setTextColor(tokens.secondaryText)
                 textSize = DesignTokens.Text.caption
@@ -275,11 +301,7 @@ object ActivityDiagnosticsScreen {
                 textAlignment = View.TEXT_ALIGNMENT_CENTER
                 setPadding(0, SettingsComponents.dp(activity, DesignTokens.Spacing.xs), 0, 0)
             })
-            grid.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-                if (index > 0) marginStart = SettingsComponents.dp(activity, DesignTokens.Spacing.sm)
-            })
         }
-        return grid
     }
 
     private fun buildLogsCard(activity: Activity, tokens: ThemeTokens): LinearLayout {
