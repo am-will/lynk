@@ -25,3 +25,4 @@ Refactor the last-18-hours changes to remove committed debug side effects, decom
 
 - Step 0: Plan saved. Implementation not started.
 - Step 1: Removed hard-coded debug telemetry helpers and call sites from Hermes and OpenClaw bridge code. Verified with `rg` for debug endpoint/call names and `cd pc && npm run check`.
+- Step 2: Extracted Hermes model, skill, toolset, and CLI helpers into `pc/src/bridge/hermes/HermesChatHelpers.ts`; `HermesChatClient.ts` is now 722 lines. Verified with `cd pc && npm run check` and `node --import tsx --test src/bridge/HermesChatClient.test.ts`.
