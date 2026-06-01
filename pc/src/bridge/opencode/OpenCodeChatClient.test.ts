@@ -7,7 +7,7 @@ import test from "node:test";
 import type { ChatAttachment } from "../../protocol/messages.js";
 import { OpenCodeChatClient } from "./OpenCodeChatClient.js";
 import { normalizeOpenCodeModels } from "./OpenCodeNormalizers.js";
-import type { OpenCodeSessionPromptOptions } from "./OpenCodeServerClient.js";
+import { OpenCodeServerClient, type OpenCodeSessionPromptOptions } from "./OpenCodeServerClient.js";
 
 function opencodeEvent(type: string, properties: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -17,6 +17,19 @@ function opencodeEvent(type: string, properties: Record<string, unknown> = {}): 
     }
   };
 }
+
+test("OpenCode managed server spawn failures report unhealthy instead of crashing", async () => {
+  const client = new OpenCodeServerClient(undefined, {
+    command: "missing-opencode-binary-for-test serve --hostname 127.0.0.1 --port 4199",
+    cwd: "/tmp",
+    timeoutMs: 100
+  });
+
+  const health = await client.health();
+
+  assert.equal(health.ok, false);
+  assert.match(String(health.error), /failed to start|ENOENT|missing-opencode-binary-for-test/);
+});
 
 async function* streamEvents(events: unknown[]): AsyncGenerator<unknown> {
   for (const event of events) {

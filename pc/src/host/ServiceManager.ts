@@ -114,7 +114,7 @@ export async function hostServiceStatus(): Promise<ServiceActionResult> {
 }
 
 function macLaunchAgentPlist(program: string, args: string[], configPath: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n  <key>Label</key><string>dev.androidagent.bridge</string>\n  <key>ProgramArguments</key>\n  <array>\n    <string>${escapeXml(program)}</string>\n${args.map((arg) => `    <string>${escapeXml(arg)}</string>`).join("\n")}\n  </array>\n  <key>WorkingDirectory</key><string>${escapeXml(pcRoot)}</string>\n  <key>EnvironmentVariables</key>\n  <dict><key>PHONE_AGENT_CONFIG_PATH</key><string>${escapeXml(configPath)}</string></dict>\n  <key>RunAtLoad</key><true/>\n  <key>KeepAlive</key><true/>\n</dict>\n</plist>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<dict>\n  <key>Label</key><string>dev.androidagent.bridge</string>\n  <key>ProgramArguments</key>\n  <array>\n    <string>${escapeXml(program)}</string>\n${args.map((arg) => `    <string>${escapeXml(arg)}</string>`).join("\n")}\n  </array>\n  <key>WorkingDirectory</key><string>${escapeXml(pcRoot)}</string>\n  <key>EnvironmentVariables</key>\n  <dict>\n    <key>PHONE_AGENT_CONFIG_PATH</key><string>${escapeXml(configPath)}</string>\n    <key>PATH</key><string>${escapeXml(servicePath())}</string>\n  </dict>\n  <key>RunAtLoad</key><true/>\n  <key>KeepAlive</key><true/>\n</dict>\n</plist>`;
 }
 
 function linuxSystemdUnit(command: string, configPath: string): string {
@@ -128,6 +128,10 @@ function escapeXml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
+}
+
+function servicePath(): string {
+  return process.env.PATH?.trim() || "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin";
 }
 
 async function installMacLaunchAgent(configPath: string): Promise<ServiceActionResult> {

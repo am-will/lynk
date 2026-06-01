@@ -194,6 +194,7 @@ export class OpenCodeServerClient {
   private readonly defaultAgent?: string;
   private readonly timeoutMs: number;
   private readonly manageServer: boolean;
+  private serverStartError?: Error;
 
   constructor(
     private readonly audit?: AuditLog,
@@ -403,6 +404,7 @@ export class OpenCodeServerClient {
     if (this.child) {
       return;
     }
+    this.serverStartError = undefined;
     const [bin, ...args] = commandParts(this.serverCommand);
     if (!bin) {
       throw new Error("OPENCODE_SERVER_COMMAND is empty");
@@ -413,6 +415,12 @@ export class OpenCodeServerClient {
     });
     this.child.stderr.on("data", (chunk) => {
       this.audit?.record("opencode_server_stderr", undefined, { message: chunk.toString().trim() });
+    });
+    this.child.once("error", (error) => {
+      this.serverStartError = error;
+      this.audit?.record("opencode_server_error", undefined, { message: error.message, code: (error as NodeJS.ErrnoException).code });
+      this.child = undefined;
+      this.client = undefined;
     });
     this.child.on("exit", (code, signal) => {
       this.audit?.record("opencode_server_exit", undefined, { code, signal });
@@ -425,6 +433,9 @@ export class OpenCodeServerClient {
     const startedAt = Date.now();
     let lastError: unknown;
     while (Date.now() - startedAt < 10_000) {
+      if (this.serverStartError) {
+        throw new Error(`OpenCode server failed to start with "${this.serverCommand}": ${this.serverStartError.message}`);
+      }
       try {
         await this.path(this.cwd);
         return;
