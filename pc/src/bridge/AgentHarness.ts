@@ -3,7 +3,7 @@ import type { ChatModelOption, ChatSessionSummary } from "../protocol/messages.j
 import type { BridgeConfig } from "./config.js";
 import { defaultSessionKeyForDevice } from "./OpenClawChatTypes.js";
 
-export const HARNESS_IDS = ["openclaw", "hermes", "codex"] as const;
+export const HARNESS_IDS = ["openclaw", "hermes", "codex", "opencode"] as const;
 export type HarnessId = typeof HARNESS_IDS[number];
 
 export interface HarnessInfo {
@@ -23,7 +23,8 @@ export const DEFAULT_HARNESS_ID: HarnessId = "openclaw";
 const HARNESS_LABELS = {
   openclaw: "OpenClaw",
   hermes: "Hermes",
-  codex: "Codex"
+  codex: "Codex",
+  opencode: "OpenCode"
 } as const satisfies Record<HarnessId, string>;
 
 const HARNESS_PREFIXES = new Set<string>(HARNESS_IDS);
@@ -32,11 +33,12 @@ export function harnessLabel(harnessId: HarnessId): string {
   return HARNESS_LABELS[harnessId];
 }
 
-export function harnessInfos(config: Pick<BridgeConfig, "hermesApiKey" | "hermesConfigured" | "codexConfigured">): HarnessInfo[] {
+export function harnessInfos(config: Pick<BridgeConfig, "hermesApiKey" | "hermesConfigured" | "codexConfigured" | "opencodeConfigured">): HarnessInfo[] {
   return [
     { id: "openclaw", label: harnessLabel("openclaw"), enabled: true },
     { id: "hermes", label: harnessLabel("hermes"), enabled: Boolean(config.hermesConfigured ?? config.hermesApiKey) },
-    { id: "codex", label: harnessLabel("codex"), enabled: config.codexConfigured }
+    { id: "codex", label: harnessLabel("codex"), enabled: config.codexConfigured },
+    { id: "opencode", label: harnessLabel("opencode"), enabled: Boolean(config.opencodeConfigured) }
   ];
 }
 
@@ -93,6 +95,8 @@ export function defaultSessionKeyForHarness(
       return `hermes:${sanitizeSessionSegment(config.hermesDefaultSessionId)}-${sanitizeSessionSegment(deviceId)}`;
     case "codex":
       return `codex:${sanitizeSessionSegment(deviceId)}`;
+    case "opencode":
+      return `opencode:${sanitizeSessionSegment(deviceId)}`;
     default: {
       const exhaustive: never = harnessId;
       return exhaustive;

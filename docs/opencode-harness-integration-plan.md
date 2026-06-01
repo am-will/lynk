@@ -60,7 +60,7 @@
 
 ## Implementation Log
 
-- Pending. Add one concise entry after each task before starting the next task.
+- 2026-06-01 Task 1: Added the OpenCode plan file, host/env config fields, redaction/diagnostics/discovery hooks, setup/protocol docs, and SDK dependency metadata. Files changed: `docs/opencode-harness-integration-plan.md`, `docs/protocol.md`, `docs/setup.md`, `pc/.env.example`, `pc/package.json`, `pc/package-lock.json`, `pc/src/bridge/config.ts`, `pc/src/host/Diagnostics.ts`, `pc/src/host/HostConfigStore.ts`, `pc/src/host/IntegrationManager.ts`. Tests: `cd pc && npm run check`. Commit: `9a492d7`.
 
 ## Assumptions
 

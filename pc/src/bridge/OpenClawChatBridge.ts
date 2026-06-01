@@ -143,6 +143,8 @@ function harnessRecoveryAction(harnessId: HarnessId): string {
       return "Verify `HERMES_API_BASE_URL` points at a Lynk-compatible Hermes runs API and that `HERMES_API_KEY` is set.";
     case "codex":
       return "Verify the Codex app-server command and workspace are configured, then try again.";
+    case "opencode":
+      return "Verify the OpenCode server URL or serve command and workspace are configured, then try again.";
     default: {
       const exhaustive: never = harnessId;
       return exhaustive;
@@ -1140,6 +1142,8 @@ function readinessAction(harnessId: HarnessId): string {
       return "Set HERMES_API_KEY or configure Hermes in the host bridge config, then run host integration refresh.";
     case "codex":
       return "Install Codex CLI with app-server support, then run host integration refresh.";
+    case "opencode":
+      return "Install OpenCode CLI or configure OPENCODE_SERVER_URL, then run host integration refresh.";
     default: {
       const exhaustive: never = harnessId;
       return exhaustive;
