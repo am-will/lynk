@@ -52,12 +52,15 @@ data class AgentConfig(
     val hermesHarnessEnabled: Boolean = true,
     val codexHarnessEnabled: Boolean = true,
     val opencodeHarnessEnabled: Boolean = true,
+    val piHarnessEnabled: Boolean = true,
     val openClawDefaultModel: String = "",
     val hermesDefaultModel: String = "",
     val codexDefaultModel: String = "",
     val opencodeDefaultModel: String = "",
+    val piDefaultModel: String = "",
     val codexWorkspacePath: String = "",
     val opencodeWorkspacePath: String = "",
+    val piWorkspacePath: String = "",
     val activeSendMode: ChatActiveSendMode = ChatActiveSendMode.Steer,
     val petEnabled: Boolean = true
 ) {
@@ -67,6 +70,7 @@ data class AgentConfig(
         if (hermesHarnessEnabled) ids.add(HARNESS_HERMES)
         if (codexHarnessEnabled) ids.add(HARNESS_CODEX)
         if (opencodeHarnessEnabled) ids.add(HARNESS_OPENCODE)
+        if (piHarnessEnabled) ids.add(HARNESS_PI)
         if (experimentalLocalModelsEnabled) ids.add(HARNESS_LOCAL)
         return ids
     }
@@ -77,6 +81,7 @@ data class AgentConfig(
             HARNESS_HERMES -> hermesHarnessEnabled
             HARNESS_CODEX -> codexHarnessEnabled
             HARNESS_OPENCODE -> opencodeHarnessEnabled
+            HARNESS_PI -> piHarnessEnabled
             HARNESS_LOCAL -> experimentalLocalModelsEnabled
             else -> true
         }
@@ -88,6 +93,7 @@ data class AgentConfig(
             HARNESS_HERMES -> hermesDefaultModel
             HARNESS_CODEX -> codexDefaultModel
             HARNESS_OPENCODE -> opencodeDefaultModel
+            HARNESS_PI -> piDefaultModel
             else -> null
         }?.trim()?.takeIf { it.isNotBlank() }
     }
@@ -97,6 +103,7 @@ data class AgentConfig(
         const val HARNESS_HERMES = "hermes"
         const val HARNESS_CODEX = "codex"
         const val HARNESS_OPENCODE = "opencode"
+        const val HARNESS_PI = "pi"
         const val HARNESS_LOCAL = "local"
     }
 }
@@ -122,12 +129,15 @@ object AgentConfigStore {
     private const val HERMES_HARNESS_ENABLED = "hermes_harness_enabled"
     private const val CODEX_HARNESS_ENABLED = "codex_harness_enabled"
     private const val OPENCODE_HARNESS_ENABLED = "opencode_harness_enabled"
+    private const val PI_HARNESS_ENABLED = "pi_harness_enabled"
     private const val OPENCLAW_DEFAULT_MODEL = "openclaw_default_model"
     private const val HERMES_DEFAULT_MODEL = "hermes_default_model"
     private const val CODEX_DEFAULT_MODEL = "codex_default_model"
     private const val OPENCODE_DEFAULT_MODEL = "opencode_default_model"
+    private const val PI_DEFAULT_MODEL = "pi_default_model"
     private const val CODEX_WORKSPACE_PATH = "codex_workspace_path"
     private const val OPENCODE_WORKSPACE_PATH = "opencode_workspace_path"
+    private const val PI_WORKSPACE_PATH = "pi_workspace_path"
     private const val ACTIVE_SEND_MODE = "active_send_mode"
     private const val PET_ENABLED = "pet_enabled"
     private const val DEFAULT_LOCAL_CONTEXT_TOKENS = 4096
@@ -162,12 +172,15 @@ object AgentConfigStore {
             hermesHarnessEnabled = prefs.getBoolean(HERMES_HARNESS_ENABLED, true),
             codexHarnessEnabled = prefs.getBoolean(CODEX_HARNESS_ENABLED, true),
             opencodeHarnessEnabled = prefs.getBoolean(OPENCODE_HARNESS_ENABLED, true),
+            piHarnessEnabled = prefs.getBoolean(PI_HARNESS_ENABLED, true),
             openClawDefaultModel = prefs.getString(OPENCLAW_DEFAULT_MODEL, "") ?: "",
             hermesDefaultModel = prefs.getString(HERMES_DEFAULT_MODEL, "") ?: "",
             codexDefaultModel = prefs.getString(CODEX_DEFAULT_MODEL, "") ?: "",
             opencodeDefaultModel = prefs.getString(OPENCODE_DEFAULT_MODEL, "") ?: "",
+            piDefaultModel = prefs.getString(PI_DEFAULT_MODEL, "") ?: "",
             codexWorkspacePath = prefs.getString(CODEX_WORKSPACE_PATH, "") ?: "",
             opencodeWorkspacePath = prefs.getString(OPENCODE_WORKSPACE_PATH, "") ?: "",
+            piWorkspacePath = prefs.getString(PI_WORKSPACE_PATH, "") ?: "",
             activeSendMode = ChatActiveSendMode.fromKey(prefs.getString(ACTIVE_SEND_MODE, ChatActiveSendMode.Steer.key)),
             petEnabled = prefs.getBoolean(PET_ENABLED, true)
         )
@@ -194,12 +207,15 @@ object AgentConfigStore {
             .putBoolean(HERMES_HARNESS_ENABLED, config.hermesHarnessEnabled)
             .putBoolean(CODEX_HARNESS_ENABLED, config.codexHarnessEnabled)
             .putBoolean(OPENCODE_HARNESS_ENABLED, config.opencodeHarnessEnabled)
+            .putBoolean(PI_HARNESS_ENABLED, config.piHarnessEnabled)
             .putString(OPENCLAW_DEFAULT_MODEL, config.openClawDefaultModel.trim())
             .putString(HERMES_DEFAULT_MODEL, config.hermesDefaultModel.trim())
             .putString(CODEX_DEFAULT_MODEL, config.codexDefaultModel.trim())
             .putString(OPENCODE_DEFAULT_MODEL, config.opencodeDefaultModel.trim())
+            .putString(PI_DEFAULT_MODEL, config.piDefaultModel.trim())
             .putString(CODEX_WORKSPACE_PATH, config.codexWorkspacePath.trim())
             .putString(OPENCODE_WORKSPACE_PATH, config.opencodeWorkspacePath.trim())
+            .putString(PI_WORKSPACE_PATH, config.piWorkspacePath.trim())
             .putString(ACTIVE_SEND_MODE, config.activeSendMode.key)
             .putBoolean(PET_ENABLED, config.petEnabled)
             .apply()

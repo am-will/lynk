@@ -40,6 +40,7 @@ object RuntimeSettingsScreen {
         val hermes = SettingsUi.harnessCheckBox(activity, "Hermes", config.hermesHarnessEnabled, "Enable Hermes harness", tokens, R.id.openclaw_harness_hermes_checkbox)
         val codex = SettingsUi.harnessCheckBox(activity, "Codex", config.codexHarnessEnabled, "Enable Codex harness", tokens, R.id.openclaw_harness_codex_checkbox)
         val opencode = SettingsUi.harnessCheckBox(activity, "OpenCode", config.opencodeHarnessEnabled, "Enable OpenCode harness", tokens, R.id.openclaw_harness_opencode_checkbox)
+        val pi = SettingsUi.harnessCheckBox(activity, "Pi", config.piHarnessEnabled, "Enable Pi harness", tokens, R.id.openclaw_harness_pi_checkbox)
         val local = SettingsUi.harnessCheckBox(activity, "Local LiteRT-LM (experimental)", config.experimentalLocalModelsEnabled, "Enable local harness", tokens, R.id.openclaw_harness_local_litert_checkbox)
 
         root.addView(SettingsUi.card(activity, tokens).apply {
@@ -48,6 +49,7 @@ object RuntimeSettingsScreen {
             addView(hermes, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
             addView(codex, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
             addView(opencode, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
+            addView(pi, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
             addView(local, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
         }, SettingsUi.stackedParams(activity))
 
@@ -95,6 +97,21 @@ object RuntimeSettingsScreen {
         root.addView(SettingsUi.card(activity, tokens).apply {
             addView(SettingsUi.sectionHeader(activity, "OpenCode Default Workspace", "New OpenCode chats start here when OpenCode is selected.", tokens))
             addView(SettingsUi.labeledField(activity, "Workspace path", opencodeWorkspaceInput, tokens, DesignTokens.Spacing.md))
+            addView(SettingsUi.body(activity, "Leave blank for QuickChats. The ~/ prefix means your user folder.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
+        }, SettingsUi.stackedParams(activity))
+
+        val piWorkspaceInput = SettingsUi.configField(
+            activity,
+            "Default workspace",
+            CodexWorkspacePaths.editorText(config.piWorkspacePath),
+            tokens,
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+        ).apply {
+            keepCodexHomePrefix(this)
+        }
+        root.addView(SettingsUi.card(activity, tokens).apply {
+            addView(SettingsUi.sectionHeader(activity, "Pi Default Workspace", "New Pi chats start here when Pi is selected.", tokens))
+            addView(SettingsUi.labeledField(activity, "Workspace path", piWorkspaceInput, tokens, DesignTokens.Spacing.md))
             addView(SettingsUi.body(activity, "Leave blank for QuickChats. The ~/ prefix means your user folder.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
         }, SettingsUi.stackedParams(activity))
 
@@ -149,6 +166,7 @@ object RuntimeSettingsScreen {
                     hermesHarnessEnabled = hermes.isChecked,
                     codexHarnessEnabled = codex.isChecked,
                     opencodeHarnessEnabled = opencode.isChecked,
+                    piHarnessEnabled = pi.isChecked,
                     openClawDefaultModel = defaultModelControls.selectedModel(
                         AgentConfig.HARNESS_OPENCLAW,
                         config.openClawDefaultModel
@@ -165,6 +183,10 @@ object RuntimeSettingsScreen {
                         AgentConfig.HARNESS_OPENCODE,
                         config.opencodeDefaultModel
                     ),
+                    piDefaultModel = defaultModelControls.selectedModel(
+                        AgentConfig.HARNESS_PI,
+                        config.piDefaultModel
+                    ),
                     experimentalLocalModelsEnabled = local.isChecked,
                     localModelPath = localModelPathInput.text.toString().trim(),
                     localModelBackend = localBackends.getOrElse(localBackendSpinner.selectedItemPosition) { LocalModelBackend.Cpu },
@@ -172,13 +194,14 @@ object RuntimeSettingsScreen {
                         ?: config.localContextTokens,
                     localDeveloperToolsEnabled = localDeveloperTools.isChecked,
                     codexWorkspacePath = CodexWorkspacePaths.normalizeInput(codexWorkspaceInput.text?.toString()),
-                    opencodeWorkspacePath = CodexWorkspacePaths.normalizeInput(opencodeWorkspaceInput.text?.toString())
+                    opencodeWorkspacePath = CodexWorkspacePaths.normalizeInput(opencodeWorkspaceInput.text?.toString()),
+                    piWorkspacePath = CodexWorkspacePaths.normalizeInput(piWorkspaceInput.text?.toString())
                 )
             )
             callbacks.onSettingsChanged()
         }
 
-        listOf(openClaw, hermes, codex, opencode, local, localDeveloperTools).forEach { checkBox ->
+        listOf(openClaw, hermes, codex, opencode, pi, local, localDeveloperTools).forEach { checkBox ->
             checkBox.setOnCheckedChangeListener { _, _ -> saveCurrent() }
         }
         defaultModelControls.forEach { control ->
@@ -186,6 +209,7 @@ object RuntimeSettingsScreen {
         }
         SettingsUi.onTextChanged(codexWorkspaceInput) { saveCurrent() }
         SettingsUi.onTextChanged(opencodeWorkspaceInput) { saveCurrent() }
+        SettingsUi.onTextChanged(piWorkspaceInput) { saveCurrent() }
         SettingsUi.onTextChanged(localModelPathInput) { saveCurrent() }
         SettingsUi.onSpinnerSelectionChanged(localBackendSpinner) { saveCurrent() }
         SettingsUi.onTextChanged(localContextInput) { saveCurrent() }
@@ -230,6 +254,12 @@ object RuntimeSettingsScreen {
                 label = "OpenCode default",
                 enabled = config.opencodeHarnessEnabled,
                 viewId = R.id.openclaw_opencode_default_model_spinner
+            ),
+            DefaultModelSpec(
+                harnessId = AgentConfig.HARNESS_PI,
+                label = "Pi default",
+                enabled = config.piHarnessEnabled,
+                viewId = R.id.openclaw_pi_default_model_spinner
             )
         )
         var visibleRows = 0
