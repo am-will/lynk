@@ -21,12 +21,32 @@ object CodexWorkspacePaths {
         return if (trimmed.isBlank()) "" else display(trimmed)
     }
 
+    fun requiredHomeEditorText(path: String?): String {
+        return requireHomePrefix(display(path))
+    }
+
     fun normalizeInput(path: String?): String {
         val trimmed = path?.trim().orEmpty()
         return when {
             trimmed.isBlank() -> ""
             trimmed == "~" -> "~/"
             else -> display(trimmed)
+        }
+    }
+
+    fun normalizeRequiredHomeInput(path: String?): String {
+        return requireHomePrefix(path)
+    }
+
+    fun requireHomePrefix(path: String?): String {
+        val trimmed = path?.trim().orEmpty()
+        if (trimmed.isBlank() || trimmed == "~") return "~/"
+        val displayed = display(trimmed)
+        return when {
+            displayed == "~" -> "~/"
+            displayed.startsWith("~/") -> displayed
+            displayed.startsWith("~") -> "~/${displayed.drop(1).trimStart('/')}"
+            else -> "~/${displayed.trimStart('/')}"
         }
     }
 }

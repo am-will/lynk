@@ -343,7 +343,8 @@ export class OpenCodeChatClient {
 
   async listSessions(limit = 50): Promise<unknown> {
     const directory = this.client.defaultDirectory();
-    const payload = await this.client.listSessions(directory).catch(() => undefined);
+    const payload = await this.client.listAllSessions()
+      .catch(() => this.client.listSessions(directory).catch(() => undefined));
     const remoteSessions = Array.isArray(payload) ? payload.map(asRecord).filter(Boolean) as Record<string, unknown>[] : [];
     if (remoteSessions.length > 0) {
       return {

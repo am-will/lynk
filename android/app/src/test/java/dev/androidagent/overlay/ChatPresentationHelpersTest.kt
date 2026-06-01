@@ -345,7 +345,7 @@ class ChatPresentationHelpersTest {
         assertEquals(BrandTitleTreatment.PLAIN, codex.titleTreatment)
         assertEquals(ClientBrand.OpenCode, opencode.brand)
         assertEquals("OpenCode", opencode.title)
-        assertEquals(R.drawable.opencode_logo, opencode.logoRes)
+        assertEquals(R.drawable.opencode_logo_plate, opencode.logoRes)
         assertEquals(BrandTitleTreatment.PLAIN, opencode.titleTreatment)
         assertEquals(ClientBrand.Local, local.brand)
         assertEquals("LiteRT-LLM", local.title)

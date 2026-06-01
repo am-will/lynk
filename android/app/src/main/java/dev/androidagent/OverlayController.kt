@@ -1938,17 +1938,18 @@ class OverlayController(
         val editor = EditText(context).apply {
             setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            setText(CodexWorkspacePaths.editorText(workspacePathForHarness(harnessId)))
-            selectAll()
+            val workspaceText = CodexWorkspacePaths.requiredHomeEditorText(workspacePathForHarness(harnessId))
+            setText(workspaceText)
+            setSelection(workspaceText.length)
             setTextColor(tokens.primaryText)
             setHintTextColor(tokens.tertiaryText)
-            hint = "~/Applications/project"
+            keepRequiredHomePrefix(this)
         }
         val content = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(12), dp(24), 0)
             addView(TextView(context).apply {
-                text = "New $harnessLabel chats will start in this workspace folder. Leave blank for QuickChats."
+                text = "New $harnessLabel chats will start in this workspace folder. ~/ means your Mac home folder."
                 setTextColor(tokens.secondaryText)
                 textSize = 13f
             }, LinearLayout.LayoutParams(
@@ -1964,15 +1965,10 @@ class OverlayController(
             .setTitle("Current Workspace")
             .setView(content)
             .setPositiveButton("Save") { _, _ ->
-                val path = CodexWorkspacePaths.normalizeInput(editor.text?.toString())
+                val path = CodexWorkspacePaths.normalizeRequiredHomeInput(editor.text?.toString())
                 setWorkspacePathForHarness(harnessId, path)
                 pathToRefreshAfterDismiss = path
                 setStatus("$harnessLabel workspace: ${CodexWorkspacePaths.defaultWorkspaceLabel(path)}")
-            }
-            .setNeutralButton("Clear") { _, _ ->
-                setWorkspacePathForHarness(harnessId, "")
-                pathToRefreshAfterDismiss = ""
-                setStatus("$harnessLabel workspace: ${CodexWorkspacePaths.defaultWorkspaceLabel("")}")
             }
             .setNegativeButton("Cancel", null)
             .create()
@@ -2002,6 +1998,32 @@ class OverlayController(
             editor.requestFocus()
         }
         dialog.show()
+    }
+
+    private fun keepRequiredHomePrefix(editor: EditText) {
+        editor.addTextChangedListener(object : TextWatcher {
+            private var correcting = false
+
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+
+            override fun afterTextChanged(s: Editable?) {
+                if (correcting) return
+                val current = s?.toString().orEmpty()
+                val fixed = CodexWorkspacePaths.requireHomePrefix(current)
+                if (fixed != current) {
+                    correcting = true
+                    editor.setText(fixed)
+                    editor.setSelection(fixed.length)
+                    correcting = false
+                    return
+                }
+                if (editor.selectionStart in 0..1) {
+                    editor.setSelection(2.coerceAtMost(editor.text?.length ?: 0))
+                }
+            }
+        })
     }
 
     private fun commandSkillMenuRows(

@@ -42,6 +42,15 @@ class AgentConfigModeTest {
     }
 
     @Test
+    fun requiredHomeWorkspaceInputAlwaysKeepsHomePrefix() {
+        assertEquals("~/", CodexWorkspacePaths.requiredHomeEditorText(""))
+        assertEquals("~/", CodexWorkspacePaths.normalizeRequiredHomeInput(""))
+        assertEquals("~/", CodexWorkspacePaths.requireHomePrefix("~"))
+        assertEquals("~/Applications/project", CodexWorkspacePaths.requireHomePrefix("Applications/project"))
+        assertEquals("~/Projects", CodexWorkspacePaths.normalizeRequiredHomeInput("/Users/example/Projects"))
+    }
+
+    @Test
     fun experimentalLocalModelsAreDisabledByDefault() {
         val config = AgentConfig(
             hostUrl = "ws://127.0.0.1:8788/phone",

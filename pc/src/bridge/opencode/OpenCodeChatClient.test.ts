@@ -39,6 +39,7 @@ class FakeOpenCodeServerClient {
   readonly aborts: Array<{ sessionId: string; directory?: string }> = [];
   readonly permissionReplies: Array<{ sessionId: string; permissionId: string; directory?: string; response: string }> = [];
   readonly subscriptions: Array<{ directory?: string; signal?: AbortSignal }> = [];
+  readonly sessionListDirectories: Array<string | undefined> = [];
   readonly commandsRequested: Array<string | undefined> = [];
   readonly toolsRequested: Array<{ directory?: string; providerID: string; modelID: string }> = [];
   providerPayload: unknown = {
@@ -76,7 +77,13 @@ class FakeOpenCodeServerClient {
     return this.providerPayload;
   }
 
-  async listSessions(): Promise<unknown> {
+  async listAllSessions(): Promise<unknown> {
+    this.sessionListDirectories.push(undefined);
+    return this.sessionsPayload;
+  }
+
+  async listSessions(directory?: string): Promise<unknown> {
+    this.sessionListDirectories.push(directory);
     return this.sessionsPayload;
   }
 
@@ -160,13 +167,22 @@ test("OpenCode model normalization namespaces provider/model ids", () => {
 
 test("OpenCode sessions, commands, and tools are normalized with workspace directory", async () => {
   const workspace = mkdtempSync(join(tmpdir(), "opencode-chat-workspace-"));
+  const otherWorkspace = mkdtempSync(join(tmpdir(), "opencode-chat-other-"));
   const fake = new FakeOpenCodeServerClient(workspace);
-  fake.sessionsPayload = [{
-    id: "ses_existing",
-    title: "Repo work",
-    directory: workspace,
-    time: { updated: 100 }
-  }];
+  fake.sessionsPayload = [
+    {
+      id: "ses_existing",
+      title: "Repo work",
+      directory: workspace,
+      time: { updated: 100 }
+    },
+    {
+      id: "ses_other",
+      title: "Other work",
+      directory: otherWorkspace,
+      time: { updated: 90 }
+    }
+  ];
   const client = new OpenCodeChatClient(undefined, fake as never, null);
 
   try {
@@ -181,9 +197,12 @@ test("OpenCode sessions, commands, and tools are normalized with workspace direc
     const tools = await client.effectiveTools(created.key as string) as { tools: Array<Record<string, unknown>> };
 
     assert.equal(models.models.some((model) => model.id === "openai/gpt-5.5"), true);
-    assert.equal(sessions.sessions[0]?.key, "opencode:ses_existing");
+    assert.deepEqual(sessions.sessions.map((session) => session.key), ["opencode:ses_existing", "opencode:ses_other"]);
     assert.equal(sessions.sessions[0]?.workspacePath, workspace);
     assert.equal(sessions.sessions[0]?.workspaceName, workspace.substring(workspace.lastIndexOf("/") + 1));
+    assert.equal(sessions.sessions[1]?.workspacePath, otherWorkspace);
+    assert.equal(sessions.sessions[1]?.workspaceName, otherWorkspace.substring(otherWorkspace.lastIndexOf("/") + 1));
+    assert.deepEqual(fake.sessionListDirectories, [undefined]);
     assert.equal(created.key, "opencode:ses_1");
     assert.equal(created.workspacePath, workspace);
     assert.equal(fake.created[0]?.directory, workspace);
@@ -193,6 +212,7 @@ test("OpenCode sessions, commands, and tools are normalized with workspace direc
     assert.deepEqual(fake.toolsRequested[0], { directory: workspace, providerID: "openai", modelID: "gpt-5.5" });
   } finally {
     rmSync(workspace, { recursive: true, force: true });
+    rmSync(otherWorkspace, { recursive: true, force: true });
   }
 });
 

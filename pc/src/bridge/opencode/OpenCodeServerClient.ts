@@ -210,6 +210,11 @@ export class OpenCodeServerClient {
     return unwrap(await client.session.list({ query: query(directory) }) as RequestResult<unknown>);
   }
 
+  async listAllSessions(): Promise<unknown> {
+    const client = await this.ensureStarted();
+    return unwrap(await client.session.list() as RequestResult<unknown>);
+  }
+
   async createSession(options: { directory?: string; title?: string; agent?: string; model?: OpenCodeModelRef } = {}): Promise<unknown> {
     const client = await this.ensureStarted();
     return unwrap(await client.session.create({
