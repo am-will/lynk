@@ -85,6 +85,32 @@ test("Pi chat adapter streams text, reasoning, tools, final usage, and steer", a
   client.close();
 });
 
+test("Pi chat adapter canonicalizes implicit session keys before sending", async () => {
+  const fake = new FakePiClient();
+  const client = new PiChatClient(undefined, fake, null);
+  const events: Array<{ event: string; payload: Record<string, unknown> }> = [];
+  client.addEventListener((event) => events.push(event as { event: string; payload: Record<string, unknown> }));
+
+  await assert.rejects(() => client.history("pi:pixel"), /Pi session not found/);
+  await client.patchSession("pi:pixel", { model: "anthropic/claude-sonnet-4-5", thinking: "high" });
+  const result = await client.sendChat({
+    sessionKey: "pi:pixel",
+    message: "first implicit run",
+    idempotencyKey: "run-canonical"
+  });
+
+  assert.equal(result.sessionKey, "pi:session-1");
+  assert.notEqual(result.sessionKey, "pi:pixel");
+  assert.deepEqual(fake.createdRuntimes.at(-1), {
+    cwd: "/tmp",
+    model: "anthropic/claude-sonnet-4-5",
+    thinkingLevel: "high"
+  });
+  fake.session.releasePrompt();
+  await waitFor(() => events.some((event) => event.payload.state === "final"));
+  client.close();
+});
+
 test("Pi chat adapter aborts active runs", async () => {
   const fake = new FakePiClient();
   const client = new PiChatClient(undefined, fake, null);

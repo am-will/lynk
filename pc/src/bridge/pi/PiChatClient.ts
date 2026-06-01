@@ -75,7 +75,10 @@ export class PiChatClient {
   }
 
   async history(sessionKey: string): Promise<unknown> {
-    const session = await this.ensureStoredSession(sessionKey);
+    const session = await this.resolveStoredSession(sessionKey);
+    if (!session) {
+      throw new Error(`Pi session not found: ${sessionKey}`);
+    }
     const sessionPath = sessionPathForSession(session);
     if (sessionPath) {
       const manager = SessionManager.open(sessionPath, undefined, directoryForSession(session));
@@ -85,7 +88,7 @@ export class PiChatClient {
         messages: messagesFromPiEntries(manager.getEntries())
       };
     }
-    return this.sessions.history(sessionKey);
+    return this.sessions.history(session.key);
   }
 
   async sendChat(options: {
@@ -99,7 +102,12 @@ export class PiChatClient {
     if (this.active) {
       throw new Error("A Pi task is already running");
     }
-    const session = await this.ensureStoredSession(options.sessionKey, options.sessionId);
+    const existingControls = this.storedSessionForKey(options.sessionKey);
+    const session = await this.resolveStoredSession(options.sessionKey, options.sessionId)
+      ?? (await this.createRuntimeBackedSession({
+        model: existingControls?.model,
+        thinkingLevel: existingControls?.thinkingLevel ?? options.thinking ?? "medium"
+      })).session;
     this.sessions.setThinkingLevel(session, options.thinking ?? "medium");
     const runtime = await this.ensureRuntime(session, {
       model: session.model ?? undefined,
@@ -172,23 +180,15 @@ export class PiChatClient {
   }
 
   async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string; createWorkspaceIfMissing?: boolean }): Promise<unknown> {
-    const cwd = preparePiWorkspace(options.workspacePath, options.createWorkspaceIfMissing === true) ?? this.client.defaultCwd();
-    const runtime = await this.client.createRuntime({
-      cwd,
+    const { session: local, runtime } = await this.createRuntimeBackedSession({
+      label: options.label,
       model: options.model,
+      workspacePath: options.workspacePath,
+      createWorkspaceIfMissing: options.createWorkspaceIfMissing,
       thinkingLevel: "medium"
     });
-    const key = `${PI_SESSION_PREFIX}${runtime.session.sessionId}`;
-    const local = this.sessions.ensureSession(key, runtime.session.sessionId);
-    local.label = options.label?.trim() || runtime.session.sessionName || "Pi session";
-    local.displayName = local.label;
-    local.model = options.model?.trim() || piModelId(runtime.session.model as PiModel);
-    this.sessions.setSessionId(local, runtime.session.sessionId);
-    this.sessions.setMetadata(local, PI_SESSION_PATH_KEY, runtime.session.sessionFile);
-    this.sessions.setMetadata(local, PI_SESSION_CWD_KEY, runtime.cwd);
-    this.runtimes.set(key, runtime);
     return {
-      key,
+      key: local.key,
       sessionId: runtime.session.sessionId,
       label: local.label,
       displayName: local.displayName,
@@ -357,18 +357,50 @@ export class PiChatClient {
     }
   }
 
-  private async ensureStoredSession(sessionKey: string, sessionId?: string): Promise<HarnessStoredSession> {
-    const session = this.sessions.ensureSession(sessionKey, sessionId ?? piSessionIdFromKey(sessionKey));
+  private async resolveStoredSession(sessionKey: string, sessionId?: string): Promise<HarnessStoredSession | undefined> {
+    const session = this.storedSessionForKey(sessionKey)
+      ?? this.storedSessionForId(sessionId ?? piSessionIdFromKey(sessionKey));
+    if (session) {
+      return await this.hydrateStoredSession(session);
+    }
+    const match = await this.findPiSessionInfo(sessionId ?? piSessionIdFromKey(sessionKey));
+    return match ? this.storeSessionInfo(match) : undefined;
+  }
+
+  private async hydrateStoredSession(session: HarnessStoredSession): Promise<HarnessStoredSession | undefined> {
     if (!sessionPathForSession(session)) {
       const match = await this.findPiSessionInfo(session.sessionId);
       if (match) {
-        this.sessions.setMetadata(session, PI_SESSION_PATH_KEY, match.path);
-        this.sessions.setMetadata(session, PI_SESSION_CWD_KEY, match.cwd);
-        session.label = match.name ?? firstMessageTitle(match.firstMessage) ?? session.label;
-        session.displayName = session.label;
+        return this.storeSessionInfo(match, session);
       }
+      return undefined;
     }
     return session;
+  }
+
+  private async createRuntimeBackedSession(options: {
+    label?: string;
+    model?: string;
+    workspacePath?: string;
+    createWorkspaceIfMissing?: boolean;
+    thinkingLevel?: string | null;
+  }): Promise<{ session: HarnessStoredSession; runtime: AgentSessionRuntime }> {
+    const cwd = preparePiWorkspace(options.workspacePath, options.createWorkspaceIfMissing === true) ?? this.client.defaultCwd();
+    const runtime = await this.client.createRuntime({
+      cwd,
+      model: options.model,
+      thinkingLevel: options.thinkingLevel ?? "medium"
+    });
+    const key = `${PI_SESSION_PREFIX}${runtime.session.sessionId}`;
+    const local = this.sessions.ensureSession(key, runtime.session.sessionId);
+    local.label = options.label?.trim() || runtime.session.sessionName || "Pi session";
+    local.displayName = local.label;
+    local.model = options.model?.trim() || piModelId(runtime.session.model as PiModel);
+    this.sessions.setSessionId(local, runtime.session.sessionId);
+    this.sessions.setMetadata(local, PI_SESSION_PATH_KEY, runtime.session.sessionFile);
+    this.sessions.setMetadata(local, PI_SESSION_CWD_KEY, runtime.cwd);
+    this.runtimes.set(key, runtime);
+    return { session: local, runtime };
   }
 
   private async ensureRuntime(
@@ -416,10 +448,7 @@ export class PiChatClient {
 
   private sessionInfoToSummary(info: SessionInfo): Record<string, unknown> {
     const key = `${PI_SESSION_PREFIX}${info.id}`;
-    const local = this.sessions.ensureSession(key, info.id);
-    this.sessions.setSessionId(local, info.id);
-    this.sessions.setMetadata(local, PI_SESSION_PATH_KEY, info.path);
-    this.sessions.setMetadata(local, PI_SESSION_CWD_KEY, info.cwd);
+    const local = this.storeSessionInfo(info);
     const model = readPiSessionModel(info.path) ?? local.model ?? PI_DEFAULT_MODEL;
     return {
       key,
@@ -445,6 +474,25 @@ export class PiChatClient {
     }
     const all = await SessionManager.listAll().catch(() => []);
     return all.find((session) => session.id === sessionId);
+  }
+
+  private storeSessionInfo(info: SessionInfo, session = this.sessions.ensureSession(`${PI_SESSION_PREFIX}${info.id}`, info.id)): HarnessStoredSession {
+    this.sessions.setSessionId(session, info.id);
+    this.sessions.setMetadata(session, PI_SESSION_PATH_KEY, info.path);
+    this.sessions.setMetadata(session, PI_SESSION_CWD_KEY, info.cwd);
+    session.label = info.name ?? firstMessageTitle(info.firstMessage) ?? session.label;
+    session.displayName = session.label;
+    return session;
+  }
+
+  private storedSessionForKey(sessionKey: string | undefined): HarnessStoredSession | undefined {
+    return this.sessions.listStoredSessions(Number.MAX_SAFE_INTEGER)
+      .find((session) => session.key === sessionKey);
+  }
+
+  private storedSessionForId(sessionId: string | undefined): HarnessStoredSession | undefined {
+    return sessionId ? this.sessions.listStoredSessions(Number.MAX_SAFE_INTEGER)
+      .find((session) => session.sessionId === sessionId) : undefined;
   }
 }
 
