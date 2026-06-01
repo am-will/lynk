@@ -82,10 +82,12 @@ class AgentConfigModeTest {
         assertTrue(config.hermesHarnessEnabled)
         assertTrue(config.codexHarnessEnabled)
         assertTrue(config.opencodeHarnessEnabled)
+        assertTrue(config.piHarnessEnabled)
         assertTrue(config.isModelHarnessEnabled("openclaw"))
         assertTrue(config.isModelHarnessEnabled("hermes"))
         assertTrue(config.isModelHarnessEnabled("codex"))
         assertTrue(config.isModelHarnessEnabled("opencode"))
+        assertTrue(config.isModelHarnessEnabled("pi"))
         assertFalse(config.isModelHarnessEnabled("local"))
     }
 
@@ -105,6 +107,7 @@ class AgentConfigModeTest {
         assertEquals(null, config.defaultModelForHarness("hermes"))
         assertEquals(null, config.defaultModelForHarness("codex"))
         assertEquals(null, config.defaultModelForHarness("opencode"))
+        assertEquals(null, config.defaultModelForHarness("pi"))
     }
 
     @Test
@@ -120,13 +123,15 @@ class AgentConfigModeTest {
             openClawDefaultModel = " gpt-5.4 ",
             hermesDefaultModel = " hermes:qwen ",
             codexDefaultModel = " codex:gpt-5.3-codex ",
-            opencodeDefaultModel = " opencode:openai/gpt-5.5 "
+            opencodeDefaultModel = " opencode:openai/gpt-5.5 ",
+            piDefaultModel = " pi:anthropic/claude-sonnet-4-5 "
         )
 
         assertEquals("gpt-5.4", config.defaultModelForHarness("openclaw"))
         assertEquals("hermes:qwen", config.defaultModelForHarness("hermes"))
         assertEquals("codex:gpt-5.3-codex", config.defaultModelForHarness("codex"))
         assertEquals("opencode:openai/gpt-5.5", config.defaultModelForHarness("opencode"))
+        assertEquals("pi:anthropic/claude-sonnet-4-5", config.defaultModelForHarness("pi"))
         assertEquals(null, config.defaultModelForHarness("local"))
     }
 }

@@ -13,7 +13,7 @@ import type { ChatAttachment } from "../../protocol/messages.js";
 import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "../chat/ChatTransportTypes.js";
 import { DEFAULT_REASONING_OPTIONS } from "../chat/ModelCatalog.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "../harness/InMemoryHarnessSessionStore.js";
-import { PiSdkClient, piModelId, type PiModel } from "./PiSdkClient.js";
+import { PiSdkClient, piModelId, type PiModel, type PiThinkingLevel } from "./PiSdkClient.js";
 import { preparePiWorkspace } from "./PiWorkspace.js";
 
 interface ActiveRun {
@@ -24,13 +24,26 @@ interface ActiveRun {
   finalEmitted: boolean;
 }
 
+export interface PiClientLike {
+  defaultCwd(): string;
+  listModels(): PiModel[];
+  createRuntime(options?: { cwd?: string; sessionPath?: string; model?: string; thinkingLevel?: string | null }): Promise<AgentSessionRuntime>;
+  runWithTimeout<T>(label: string, run: () => Promise<T>, onTimeout?: () => Promise<void>): Promise<T>;
+  abort(runtime: AgentSessionRuntime | undefined): Promise<void>;
+  close(runtime?: AgentSessionRuntime): Promise<void>;
+  health(): Promise<Record<string, unknown>>;
+  findModel(selection: string | undefined | null): PiModel | undefined;
+  normalizeThinkingLevel(level: string | null | undefined): PiThinkingLevel;
+}
+
 const PI_SESSION_PREFIX = "pi:";
 const PI_SESSION_PATH_KEY = "piSessionPath";
 const PI_SESSION_CWD_KEY = "piCwd";
 const PI_DEFAULT_MODEL = "anthropic/claude-sonnet-4-5";
+const PI_REASONING_OPTION_IDS = ["minimal", ...DEFAULT_REASONING_OPTIONS.map((option) => option.id)];
 
 export class PiChatClient {
-  private readonly client: PiSdkClient;
+  private readonly client: PiClientLike;
   private readonly sessions: InMemoryHarnessSessionStore;
   private readonly handlers = new Set<GatewayEventHandler>();
   private readonly runtimes = new Map<string, AgentSessionRuntime>();
@@ -38,7 +51,7 @@ export class PiChatClient {
 
   constructor(
     private readonly audit?: AuditLog,
-    client?: PiSdkClient,
+    client?: PiClientLike,
     sessionStoragePath: string | null = "state/pi-sessions.json",
     options: {
       cwd?: string;
@@ -142,7 +155,7 @@ export class PiChatClient {
         provider: "pi",
         contextWindow: model.contextWindow,
         available: true,
-        reasoningOptions: model.reasoning ? DEFAULT_REASONING_OPTIONS.map((option) => option.id) : undefined,
+        reasoningOptions: model.reasoning ? PI_REASONING_OPTION_IDS : undefined,
         defaultReasoningEffort: model.reasoning ? "medium" : undefined
       }))
     };
@@ -153,7 +166,7 @@ export class PiChatClient {
     return {
       sessions,
       defaults: {
-        thinkingLevels: DEFAULT_REASONING_OPTIONS.map((option) => option.id)
+        thinkingLevels: PI_REASONING_OPTION_IDS
       }
     };
   }
@@ -364,6 +377,12 @@ export class PiChatClient {
   ): Promise<AgentSessionRuntime> {
     const existing = this.runtimes.get(session.key);
     if (existing) {
+      if (options.model) {
+        await existing.session.setModel(this.client.findModel(options.model) ?? existing.session.model as PiModel);
+      }
+      if (options.thinkingLevel) {
+        existing.session.setThinkingLevel(this.client.normalizeThinkingLevel(options.thinkingLevel));
+      }
       return existing;
     }
     const sessionPath = sessionPathForSession(session);
