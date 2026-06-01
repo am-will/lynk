@@ -314,7 +314,7 @@ Reasoning stream deltas are temporary UI blocks. Android renders them while a ru
 }
 ```
 
-Structured chat failures use `chat.error`. `message` is the user-readable fallback, while optional `code` and detail fields drive client UI flows without parsing text. For example, Codex missing workspace prompts use `code: "codex.workspace_not_found"` and `workspacePath`:
+Structured chat failures use `chat.error`. `message` is the user-readable fallback, while optional `code` and detail fields drive client UI flows without parsing text. Missing workspace prompts use `code: "codex.workspace_not_found"`, `code: "opencode.workspace_not_found"`, or `code: "pi.workspace_not_found"` with `workspacePath`:
 
 ```json
 {

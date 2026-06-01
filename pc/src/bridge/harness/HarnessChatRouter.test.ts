@@ -144,13 +144,14 @@ test("harness router lets explicit non-default session keys choose the harness",
 });
 
 test("harness router forwards workspace options only to workspace-aware harnesses", async () => {
-  const { router, openclaw, hermes, codex, opencode } = createRouter();
+  const { router, openclaw, hermes, codex, opencode, pi } = createRouter();
   const workspacePath = "/Users/am.will/Applications/cryptoclub";
 
   await router.createSession({ model: "gpt-5.5", workspacePath, createWorkspaceIfMissing: true });
   await router.createSession({ model: "hermes:gpt-5.5", workspacePath, createWorkspaceIfMissing: true });
   await router.createSession({ model: "codex:gpt-5.5", workspacePath, createWorkspaceIfMissing: true });
   await router.createSession({ model: "opencode:openai/gpt-5.5", workspacePath, createWorkspaceIfMissing: true });
+  await router.createSession({ model: "pi:anthropic/claude-sonnet-4-5", workspacePath, createWorkspaceIfMissing: true });
 
   assert.equal(openclaw.created[0]?.workspacePath, undefined);
   assert.equal(openclaw.created[0]?.createWorkspaceIfMissing, undefined);
@@ -160,6 +161,8 @@ test("harness router forwards workspace options only to workspace-aware harnesse
   assert.equal(codex.created[0]?.createWorkspaceIfMissing, true);
   assert.equal(opencode.created[0]?.workspacePath, workspacePath);
   assert.equal(opencode.created[0]?.createWorkspaceIfMissing, true);
+  assert.equal(pi.created[0]?.workspacePath, workspacePath);
+  assert.equal(pi.created[0]?.createWorkspaceIfMissing, true);
 });
 
 test("harness router scopes session lists to the active harness", async () => {

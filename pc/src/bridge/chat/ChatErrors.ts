@@ -2,6 +2,7 @@ import type { ChatErrorMessage } from "../../protocol/messages.js";
 
 export const CODEX_WORKSPACE_NOT_FOUND_CODE = "codex.workspace_not_found";
 export const OPENCODE_WORKSPACE_NOT_FOUND_CODE = "opencode.workspace_not_found";
+export const PI_WORKSPACE_NOT_FOUND_CODE = "pi.workspace_not_found";
 
 export class ChatClientError extends Error {
   readonly code: string;

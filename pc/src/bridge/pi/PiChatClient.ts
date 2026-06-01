@@ -14,6 +14,7 @@ import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from ".
 import { DEFAULT_REASONING_OPTIONS } from "../chat/ModelCatalog.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "../harness/InMemoryHarnessSessionStore.js";
 import { PiSdkClient, piModelId, type PiModel } from "./PiSdkClient.js";
+import { preparePiWorkspace } from "./PiWorkspace.js";
 
 interface ActiveRun {
   sessionKey: string;
@@ -157,8 +158,8 @@ export class PiChatClient {
     };
   }
 
-  async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string }): Promise<unknown> {
-    const cwd = options.workspacePath?.trim() || this.client.defaultCwd();
+  async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string; createWorkspaceIfMissing?: boolean }): Promise<unknown> {
+    const cwd = preparePiWorkspace(options.workspacePath, options.createWorkspaceIfMissing === true) ?? this.client.defaultCwd();
     const runtime = await this.client.createRuntime({
       cwd,
       model: options.model,

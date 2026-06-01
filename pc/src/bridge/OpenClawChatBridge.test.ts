@@ -317,7 +317,7 @@ test("OpenCode sends refresh sessions immediately after first user message", asy
   assert.equal(sessions?.sessions[0]?.workspacePath, "/Users/example/Applications");
 });
 
-test("new chat workspace options are forwarded only for Codex", async () => {
+test("new chat workspace options are forwarded only for workspace-aware harnesses", async () => {
   const { bridge, client } = createHarness();
   const workspacePath = "/Users/am.will/Applications/cryptoclub";
 
@@ -331,6 +331,20 @@ test("new chat workspace options are forwarded only for Codex", async () => {
   await bridge.newSession({
     type: "chat.new_session",
     deviceId: "pixel",
+    model: "opencode:openai/gpt-5.5",
+    workspacePath,
+    createWorkspaceIfMissing: true
+  });
+  await bridge.newSession({
+    type: "chat.new_session",
+    deviceId: "pixel",
+    model: "pi:anthropic/claude-sonnet-4-5",
+    workspacePath,
+    createWorkspaceIfMissing: true
+  });
+  await bridge.newSession({
+    type: "chat.new_session",
+    deviceId: "pixel",
     model: "hermes:gpt-5.5",
     workspacePath,
     createWorkspaceIfMissing: true
@@ -338,8 +352,12 @@ test("new chat workspace options are forwarded only for Codex", async () => {
 
   assert.equal(client.created[0]?.workspacePath, workspacePath);
   assert.equal(client.created[0]?.createWorkspaceIfMissing, true);
-  assert.equal(client.created[1]?.workspacePath, undefined);
-  assert.equal(client.created[1]?.createWorkspaceIfMissing, undefined);
+  assert.equal(client.created[1]?.workspacePath, workspacePath);
+  assert.equal(client.created[1]?.createWorkspaceIfMissing, true);
+  assert.equal(client.created[2]?.workspacePath, workspacePath);
+  assert.equal(client.created[2]?.createWorkspaceIfMissing, true);
+  assert.equal(client.created[3]?.workspacePath, undefined);
+  assert.equal(client.created[3]?.createWorkspaceIfMissing, undefined);
 });
 
 test("Codex new chats reuse the active session workspace when no workspace is supplied", async () => {
@@ -409,6 +427,14 @@ test("backend readiness reports configured harnesses only when live models exist
         state: "missing_config",
         message: "OpenCode is not configured on the PC bridge.",
         action: "Install OpenCode CLI or configure OPENCODE_SERVER_URL, then run host integration refresh."
+      },
+      pi: {
+        ok: false,
+        configured: true,
+        label: "Pi",
+        modelCount: 0,
+        state: "no_models",
+        message: "Pi is configured on the PC bridge, but no live models are available yet."
       }
     }
   });
