@@ -1,5 +1,5 @@
 import type { ChatAttachment } from "../protocol/messages.js";
-import { HermesApiClient, type HermesRunStatus, type HermesSseEvent } from "./HermesApiClient.js";
+import type { HermesRunsApi, HermesRunStatus, HermesSseEvent } from "./HermesApiClient.js";
 
 export interface HermesActiveRun {
   runId: string;
@@ -20,7 +20,7 @@ export interface HermesRunDriverResult {
 
 export class HermesRunDriver {
   constructor(
-    private readonly api: HermesApiClient,
+    private readonly api: HermesRunsApi,
     private readonly runTimeoutMs: number
   ) {}
 
