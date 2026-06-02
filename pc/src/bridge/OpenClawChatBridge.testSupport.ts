@@ -39,6 +39,7 @@ export class FakeGatewayClient {
   readonly created: Array<{ key?: string; label?: string; model?: string; workspacePath?: string; createWorkspaceIfMissing?: boolean }> = [];
   readonly patched: Array<{ sessionKey: string; patch: Record<string, unknown> }> = [];
   readonly aborted: Array<{ sessionKey: string; runId?: string }> = [];
+  readonly permissionReplies: Array<{ sessionKey: string; permissionId: string; response: "once" | "always" | "reject" }> = [];
   sessions: Array<Record<string, unknown>> = [];
   models: Array<Record<string, unknown>> = [];
   commands: Array<Record<string, unknown>> = [];
@@ -102,6 +103,11 @@ export class FakeGatewayClient {
 
   async effectiveTools(): Promise<unknown> {
     return { groups: [] };
+  }
+
+  async respondToPermission(options: { sessionKey: string; permissionId: string; response: "once" | "always" | "reject" }): Promise<unknown> {
+    this.permissionReplies.push(options);
+    return { ok: true };
   }
 
   async health(): Promise<unknown> {

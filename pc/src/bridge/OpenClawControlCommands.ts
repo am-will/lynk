@@ -3,6 +3,7 @@ import type {
   ChatNewSessionMessage,
   ChatSendMessage
 } from "../protocol/messages.js";
+import { parseHarnessPermissionReply } from "./harness/HarnessControlActions.js";
 import type { DeviceChatState } from "./OpenClawChatTypes.js";
 
 interface ControlCommandRouterOptions {
@@ -74,15 +75,14 @@ export class OpenClawControlCommandRouter {
       return;
     }
 
-    if (name === "opencode.permission") {
-      const permissionId = typeof message.args.permissionId === "string" ? message.args.permissionId.trim() : "";
-      const response = typeof message.args.response === "string" ? message.args.response.trim().toLowerCase() : "";
-      if (!permissionId || !isPermissionResponse(response)) {
-        this.options.sendState(message.deviceId, "Invalid OpenCode permission reply.");
+    const permissionReply = parseHarnessPermissionReply(name, message.args);
+    if (permissionReply) {
+      if (!permissionReply.permissionId) {
+        this.options.sendState(message.deviceId, permissionReply.invalidStatus);
         return;
       }
-      await this.options.respondToPermission(state.sessionKey, permissionId, response);
-      this.options.sendState(message.deviceId, `OpenCode permission ${response === "reject" ? "rejected" : "approved"}.`);
+      await this.options.respondToPermission(state.sessionKey, permissionReply.permissionId, permissionReply.response);
+      this.options.sendState(message.deviceId, permissionReply.successStatus);
       return;
     }
 
@@ -221,9 +221,6 @@ export class OpenClawControlCommandRouter {
   }
 }
 
-function isPermissionResponse(value: string): value is "once" | "always" | "reject" {
-  return value === "once" || value === "always" || value === "reject";
-}
 
 function parseDeliveryOverride(name: string | undefined, rawText: string): { delivery: "queue" | "steer"; text: string } | undefined {
   const delivery = name === "queue" || name === "steer" ? name : undefined;

@@ -292,6 +292,48 @@ test("Hermes fast mode control command patches session instead of sending slash 
   assert.equal(chatMessages.filter((message) => message.type === "chat.state").at(-1)?.status, "Fast mode enabled");
 });
 
+test("harness permission action commands route through selected session harness", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+  await bridge.selectSession({
+    type: "chat.select_session",
+    deviceId: "pixel",
+    sessionKey: "opencode:ses_1"
+  });
+
+  await bridge.controlCommand({
+    type: "chat.control_command",
+    deviceId: "pixel",
+    command: "opencode.permission",
+    args: { permissionId: "perm_1", response: "once" }
+  });
+
+  assert.deepEqual(client.permissionReplies, [{
+    sessionKey: "opencode:ses_1",
+    permissionId: "perm_1",
+    response: "once"
+  }]);
+  assert.equal(chatMessages.filter((message) => message.type === "chat.state").at(-1)?.status, "OpenCode permission approved.");
+});
+
+test("harness permission action commands reject invalid replies before routing", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+  await bridge.selectSession({
+    type: "chat.select_session",
+    deviceId: "pixel",
+    sessionKey: "opencode:ses_1"
+  });
+
+  await bridge.controlCommand({
+    type: "chat.control_command",
+    deviceId: "pixel",
+    command: "opencode.permission",
+    args: { permissionId: "perm_1", response: "forever" }
+  });
+
+  assert.deepEqual(client.permissionReplies, []);
+  assert.equal(chatMessages.filter((message) => message.type === "chat.state").at(-1)?.status, "Invalid OpenCode permission reply.");
+});
+
 test("chat send forwards attachments to the gateway client", async () => {
   const { bridge, client } = createHarness();
   const attachment: ChatAttachment = {
