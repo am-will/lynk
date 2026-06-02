@@ -51,6 +51,8 @@ interface RequestResult<T> {
   response?: Response;
 }
 
+type UnsafeOpenCodeSdkRequest = any;
+
 interface OpenCodeDirectoryQuery {
   directory?: string;
 }
@@ -155,6 +157,10 @@ function unwrap<T>(result: RequestResult<T>): T {
     throw new Error(`OpenCode request returned no data${result.response ? ` (${result.response.status})` : ""}`);
   }
   return result.data;
+}
+
+function sdkRequest(value: unknown): UnsafeOpenCodeSdkRequest {
+  return value;
 }
 
 function promptParts(text: string, attachments: ChatAttachment[] | undefined): unknown[] {
@@ -266,7 +272,7 @@ export class OpenCodeServerClient {
     };
     return unwrap(await client.session.create({
       query: query(options.directory ?? this.cwd),
-      body: body as any
+      body: sdkRequest(body)
     }) as RequestResult<unknown>);
   }
 
@@ -297,7 +303,7 @@ export class OpenCodeServerClient {
     return unwrap(await client.session.promptAsync({
       path: { id: options.sessionId },
       query: query(options.directory),
-      body: body as any
+      body: sdkRequest(body)
     }) as RequestResult<unknown>);
   }
 
@@ -307,7 +313,7 @@ export class OpenCodeServerClient {
     return unwrap(await client.session.prompt({
       path: { id: options.sessionId },
       query: query(options.directory),
-      body: body as any
+      body: sdkRequest(body)
     }) as RequestResult<unknown>);
   }
 
@@ -322,7 +328,7 @@ export class OpenCodeServerClient {
     return unwrap(await client.session.command({
       path: { id: options.sessionId },
       query: query(options.directory),
-      body: body as any
+      body: sdkRequest(body)
     }) as RequestResult<unknown>);
   }
 
@@ -341,18 +347,18 @@ export class OpenCodeServerClient {
 
   async listToolIds(directory?: string): Promise<unknown> {
     const client = await this.ensureStarted();
-    return unwrap(await client.tool.ids({ query: query(directory) } as any) as RequestResult<unknown>);
+    return unwrap(await client.tool.ids(sdkRequest({ query: query(directory) })) as RequestResult<unknown>);
   }
 
   async listTools(options: { directory?: string; providerID: string; modelID: string }): Promise<unknown> {
     const client = await this.ensureStarted();
-    return unwrap(await client.tool.list({
+    return unwrap(await client.tool.list(sdkRequest({
       query: {
         ...query(options.directory),
         provider: options.providerID,
         model: options.modelID
       }
-    } as any) as RequestResult<unknown>);
+    })) as RequestResult<unknown>);
   }
 
   async respondToPermission(options: { sessionId: string; permissionId: string; directory?: string; response: "once" | "always" | "reject" }): Promise<unknown> {
@@ -367,12 +373,12 @@ export class OpenCodeServerClient {
 
   async subscribe(directory?: string, options: { signal?: AbortSignal; onEvent?: (event: OpenCodeStreamEvent) => void } = {}): Promise<AsyncGenerator<unknown>> {
     const client = await this.ensureStarted();
-    const result = await client.event.subscribe({
+    const result = await client.event.subscribe(sdkRequest({
       query: query(directory),
       signal: options.signal,
       sseMaxRetryAttempts: 0,
       onSseEvent: options.onEvent
-    } as any);
+    }));
     return result.stream as AsyncGenerator<unknown>;
   }
 
