@@ -4,6 +4,11 @@ import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import type { ChatModelOption, ChatReasoningOption } from "../protocol/messages.js";
 import {
+  parsePositiveInt,
+  readHermesConfigSummary,
+  unquoteYamlScalar
+} from "../hermes/HermesConfigReader.js";
+import {
   defaultReasoningForProvider,
   hermesCodexOauthContextWindow,
   reasoningOptionsForProvider
@@ -50,13 +55,6 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 const CODEX_OAUTH_URL_FRAGMENT = "chatgpt.com/backend-api/codex";
 
-interface HermesConfigSummary {
-  modelProvider?: string;
-  modelDefault?: string;
-  modelContextLength?: number;
-  providers: Map<string, Array<{ id: string; contextWindow?: number }>>;
-}
-
 interface HermesContextLengthCacheEntry {
   model: string;
   endpoint: string;
@@ -65,7 +63,7 @@ interface HermesContextLengthCacheEntry {
 
 export function discoverHermesModels(defaultModel: string): ChatModelOption[] {
   const home = process.env.HERMES_HOME?.trim() || join(homedir(), ".hermes");
-  const config = readHermesConfigSummary(join(home, "config.yaml"));
+  const config = readHermesConfigSummary();
   const contextCache = readHermesContextLengthCache(join(home, "context_length_cache.yaml"));
   const providerIds = new Set<string>();
   const models: ChatModelOption[] = [];
@@ -80,7 +78,7 @@ export function discoverHermesModels(defaultModel: string): ChatModelOption[] {
 
   const catalog = loadHermesProviderCatalog(home, [...providerIds]);
   for (const provider of providerIds) {
-    const configured = config.providers.get(provider) ?? [];
+    const configured = config.providers.get(provider)?.models ?? [];
     const catalogModels = catalog.get(provider) ?? FALLBACK_PROVIDER_MODELS[provider] ?? [];
     const ids = uniqueStrings([
       ...configured.map((model) => model.id),
@@ -116,7 +114,7 @@ export function discoverHermesModels(defaultModel: string): ChatModelOption[] {
 function addConfiguredModel(
   models: ChatModelOption[],
   providerIds: Set<string>,
-  config: HermesConfigSummary,
+  config: ReturnType<typeof readHermesConfigSummary>,
   defaultModel: string,
   contextCache: HermesContextLengthCacheEntry[]
 ): void {
@@ -138,70 +136,6 @@ function addConfiguredModel(
   });
 }
 
-function readHermesConfigSummary(path: string): HermesConfigSummary {
-  if (!existsSync(path)) {
-    return { providers: new Map() };
-  }
-  const lines = readFileSync(path, "utf8").split(/\r?\n/);
-  const summary: HermesConfigSummary = { providers: new Map() };
-  let section: string | undefined;
-  let provider: string | undefined;
-  let inProviderModels = false;
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-    const indent = leadingSpaces(line);
-    if (indent === 0) {
-      section = trimmed.replace(/:.*/, "");
-      provider = undefined;
-      inProviderModels = false;
-      continue;
-    }
-    if (section === "model" && indent === 2) {
-      const [key, value] = yamlPair(trimmed);
-      if (key === "provider") {
-        summary.modelProvider = value;
-      } else if (key === "default" || key === "model") {
-        summary.modelDefault = value;
-      } else if (key === "context_length") {
-        summary.modelContextLength = positiveInt(value);
-      }
-      continue;
-    }
-    if (section === "providers") {
-      if (indent === 2 && trimmed.endsWith(":")) {
-        provider = trimmed.slice(0, -1).trim();
-        if (provider) {
-          summary.providers.set(provider, summary.providers.get(provider) ?? []);
-        }
-        inProviderModels = false;
-        continue;
-      }
-      if (indent === 4 && trimmed === "models:") {
-        inProviderModels = true;
-        continue;
-      }
-      if (provider && inProviderModels && indent === 6 && trimmed.endsWith(":")) {
-        const modelId = unquote(trimmed.slice(0, -1).trim());
-        const models = summary.providers.get(provider) ?? [];
-        models.push({ id: modelId });
-        summary.providers.set(provider, models);
-        continue;
-      }
-      if (provider && inProviderModels && indent === 8 && trimmed.startsWith("context_length:")) {
-        const models = summary.providers.get(provider);
-        const last = models?.[models.length - 1];
-        if (last) {
-          last.contextWindow = positiveInt(trimmed.slice("context_length:".length).trim());
-        }
-      }
-    }
-  }
-  return summary;
-}
-
 function readHermesContextLengthCache(path: string): HermesContextLengthCacheEntry[] {
   if (!existsSync(path)) {
     return [];
@@ -218,13 +152,13 @@ function readHermesContextLengthCache(path: string): HermesContextLengthCacheEnt
         if (separator <= 0) {
           return undefined;
         }
-        const contextWindow = positiveInt(match[2]);
+        const contextWindow = parsePositiveInt(match[2]);
         if (!contextWindow) {
           return undefined;
         }
         return {
-          model: unquote(match[1].slice(0, separator).trim()),
-          endpoint: unquote(match[1].slice(separator + 1).trim()).replace(/\/+$/, ""),
+          model: unquoteYamlScalar(match[1].slice(0, separator).trim()),
+          endpoint: unquoteYamlScalar(match[1].slice(separator + 1).trim()).replace(/\/+$/, ""),
           contextWindow
         };
       })
@@ -413,27 +347,6 @@ function uniqueStrings(values: string[]): string[] {
 
 function objectKeys(value: unknown): string[] {
   return value && typeof value === "object" ? Object.keys(value as Record<string, unknown>) : [];
-}
-
-function yamlPair(line: string): [string, string] {
-  const separator = line.indexOf(":");
-  if (separator === -1) {
-    return [line, ""];
-  }
-  return [line.slice(0, separator).trim(), unquote(line.slice(separator + 1).trim())];
-}
-
-function unquote(value: string): string {
-  return value.replace(/^['"]|['"]$/g, "");
-}
-
-function positiveInt(value: string): number | undefined {
-  const parsed = Number.parseInt(value.replace(/[,_]/g, ""), 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-}
-
-function leadingSpaces(value: string): number {
-  return value.length - value.trimStart().length;
 }
 
 function titleCase(value: string): string {

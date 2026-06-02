@@ -7,18 +7,25 @@ import { discoverHermesModels } from "./HermesModelDiscovery.js";
 
 function withHermesHome(files: Record<string, string>, run: () => void): void {
   const previousHome = process.env.HERMES_HOME;
+  const previousConfigPath = process.env.HERMES_CONFIG_PATH;
   const home = mkdtempSync(join(tmpdir(), "open-claw-hermes-"));
   try {
     for (const [name, content] of Object.entries(files)) {
       writeFileSync(join(home, name), content);
     }
     process.env.HERMES_HOME = home;
+    delete process.env.HERMES_CONFIG_PATH;
     run();
   } finally {
     if (previousHome === undefined) {
       delete process.env.HERMES_HOME;
     } else {
       process.env.HERMES_HOME = previousHome;
+    }
+    if (previousConfigPath === undefined) {
+      delete process.env.HERMES_CONFIG_PATH;
+    } else {
+      process.env.HERMES_CONFIG_PATH = previousConfigPath;
     }
     rmSync(home, { recursive: true, force: true });
   }

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
-import { HermesConfigRunsClient } from "./HermesConfigRunsClient.js";
+import { createHermesConfigRunsClient, HermesConfigRunsClient } from "./HermesConfigRunsClient.js";
 import type { FetchLike, HermesSseEvent } from "./HermesApiClient.js";
 import { HermesRunDriver } from "./HermesRunDriver.js";
 
@@ -18,6 +21,24 @@ function sseResponse(chunks: unknown[]): Response {
     status: 200,
     headers: { "Content-Type": "text/event-stream" }
   });
+}
+
+async function withHermesConfigPath<T>(configYaml: string, run: () => Promise<T>): Promise<T> {
+  const previousConfigPath = process.env.HERMES_CONFIG_PATH;
+  const dir = mkdtempSync(join(tmpdir(), "lynk-hermes-config-"));
+  const configPath = join(dir, "profile-config.yaml");
+  writeFileSync(configPath, configYaml);
+  try {
+    process.env.HERMES_CONFIG_PATH = configPath;
+    return await run();
+  } finally {
+    if (previousConfigPath === undefined) {
+      delete process.env.HERMES_CONFIG_PATH;
+    } else {
+      process.env.HERMES_CONFIG_PATH = previousConfigPath;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 test("Hermes config runs client streams OpenAI-compatible deltas", async () => {
@@ -112,4 +133,31 @@ test("Hermes run driver maps config adapter deltas into accumulated output", asy
 
   assert.deepEqual(deltas, ["first", " second"]);
   assert.equal(result.finalText, "first second");
+});
+
+test("Hermes config runs client reads HERMES_CONFIG_PATH profiles", async () => {
+  const requestedUrls: string[] = [];
+  await withHermesConfigPath([
+    "model:",
+    "  provider: profile-minimax",
+    "  default: Profile-M2",
+    "providers:",
+    "  profile-minimax:",
+    "    api_mode: chat_completions",
+    "    base_url: http://127.0.0.1:8999/v1"
+  ].join("\n"), async () => {
+    const fetchFn: FetchLike = async (input) => {
+      requestedUrls.push(String(input));
+      return new Response(JSON.stringify({ data: [{ id: "Profile-M2" }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    };
+    const client = createHermesConfigRunsClient("fallback-model", fetchFn);
+
+    assert.ok(client);
+    assert.equal((await client.health() as { provider?: string; model?: string }).provider, "profile-minimax");
+  });
+
+  assert.deepEqual(requestedUrls, ["http://127.0.0.1:8999/v1/models"]);
 });

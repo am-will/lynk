@@ -105,18 +105,25 @@ class FakeHermesApiClient {
 
 async function withHermesHome<T>(files: Record<string, string>, run: () => Promise<T>): Promise<T> {
   const previousHome = process.env.HERMES_HOME;
+  const previousConfigPath = process.env.HERMES_CONFIG_PATH;
   const home = mkdtempSync(join(tmpdir(), "lynk-hermes-client-"));
   try {
     for (const [name, content] of Object.entries(files)) {
       writeFileSync(join(home, name), content);
     }
     process.env.HERMES_HOME = home;
+    delete process.env.HERMES_CONFIG_PATH;
     return await run();
   } finally {
     if (previousHome === undefined) {
       delete process.env.HERMES_HOME;
     } else {
       process.env.HERMES_HOME = previousHome;
+    }
+    if (previousConfigPath === undefined) {
+      delete process.env.HERMES_CONFIG_PATH;
+    } else {
+      process.env.HERMES_CONFIG_PATH = previousConfigPath;
     }
     rmSync(home, { recursive: true, force: true });
   }

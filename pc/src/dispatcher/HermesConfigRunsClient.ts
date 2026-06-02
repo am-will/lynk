@@ -1,7 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { readHermesConfigSummary, type HermesConfigSummary } from "../hermes/HermesConfigReader.js";
 import type { ChatAttachment } from "../protocol/messages.js";
 import type {
   FetchLike,
@@ -38,8 +36,7 @@ const DEFAULT_HEADERS = {
 const PROVIDER_PROBE_TIMEOUT_MS = 10_000;
 
 export function createHermesConfigRunsClient(defaultModel: string, fetchFn: FetchLike = fetch): HermesConfigRunsClient | undefined {
-  const home = process.env.HERMES_HOME?.trim() || join(homedir(), ".hermes");
-  const provider = readHermesConfigProvider(join(home, "config.yaml"), defaultModel);
+  const provider = readHermesConfigProvider(readHermesConfigSummary(), defaultModel);
   return provider ? new HermesConfigRunsClient(provider, fetchFn) : undefined;
 }
 
@@ -276,77 +273,25 @@ export class HermesConfigRunsClient implements HermesRunTransport {
   }
 }
 
-function readHermesConfigProvider(path: string, defaultModel: string): HermesConfigProvider | undefined {
-  if (!existsSync(path)) {
-    return undefined;
-  }
-  const lines = readFileSync(path, "utf8").split(/\r?\n/);
-  const model: Partial<HermesConfigProvider> = {};
-  const providers = new Map<string, Partial<HermesConfigProvider> & { apiMode?: string; defaultModel?: string }>();
-  let section: string | undefined;
-  let provider: string | undefined;
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-    const indent = leadingSpaces(line);
-    if (indent === 0) {
-      section = trimmed.replace(/:.*/, "");
-      provider = undefined;
-      continue;
-    }
-    if (section === "model" && indent === 2) {
-      const [key, value] = yamlPair(trimmed);
-      if (key === "provider") {
-        model.provider = value;
-      } else if (key === "default" || key === "model") {
-        model.model = value;
-      } else if (key === "base_url") {
-        model.baseUrl = value;
-      } else if (key === "api_key") {
-        model.apiKey = resolveConfigValue(value);
-      } else if (key === "context_length") {
-        model.contextWindow = positiveInt(value);
-      }
-      continue;
-    }
-    if (section === "providers") {
-      if (indent === 2 && trimmed.endsWith(":")) {
-        provider = unquote(trimmed.slice(0, -1).trim());
-        providers.set(provider, providers.get(provider) ?? { provider });
-        continue;
-      }
-      if (provider && indent === 4) {
-        const [key, value] = yamlPair(trimmed);
-        const entry = providers.get(provider) ?? { provider };
-        if (key === "base_url") {
-          entry.baseUrl = value;
-        } else if (key === "api_key") {
-          entry.apiKey = resolveConfigValue(value);
-        } else if (key === "api_mode") {
-          entry.apiMode = value;
-        } else if (key === "default_model") {
-          entry.defaultModel = value;
-        }
-        providers.set(provider, entry);
-      }
-    }
-  }
-
-  const providerId = model.provider?.trim();
-  const providerConfig = providerId ? providers.get(providerId) : undefined;
+function readHermesConfigProvider(config: HermesConfigSummary, defaultModel: string): HermesConfigProvider | undefined {
+  const providerId = config.modelProvider?.trim();
+  const providerConfig = providerId ? config.providers.get(providerId) : undefined;
   const apiMode = providerConfig?.apiMode?.trim();
-  const baseUrl = providerConfig?.baseUrl ?? model.baseUrl;
+  const baseUrl = providerConfig?.baseUrl ?? config.modelBaseUrl;
   if (!providerId || !baseUrl || (apiMode && apiMode !== "chat_completions")) {
     return undefined;
   }
+  const model = config.modelDefault?.trim()
+    || providerConfig?.defaultModel?.trim()
+    || providerConfig?.models[0]?.id
+    || defaultModel;
+  const configuredModelContext = providerConfig?.models.find((entry) => entry.id === model)?.contextWindow;
   return {
     provider: providerId,
-    model: model.model?.trim() || providerConfig?.defaultModel?.trim() || defaultModel,
+    model,
     baseUrl,
-    apiKey: providerConfig?.apiKey ?? model.apiKey,
-    contextWindow: model.contextWindow
+    apiKey: providerConfig?.apiKey ?? config.modelApiKey,
+    contextWindow: config.modelContextLength ?? configuredModelContext
   };
 }
 
@@ -381,34 +326,4 @@ function userContent(input: string, attachments: ChatAttachment[] | undefined): 
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
-}
-
-function yamlPair(line: string): [string, string] {
-  const separator = line.indexOf(":");
-  if (separator === -1) {
-    return [line, ""];
-  }
-  return [line.slice(0, separator).trim(), unquote(line.slice(separator + 1).trim())];
-}
-
-function resolveConfigValue(value: string): string | undefined {
-  const trimmed = unquote(value).trim();
-  const envMatch = trimmed.match(/^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/);
-  if (envMatch) {
-    return process.env[envMatch[1]]?.trim() || undefined;
-  }
-  return trimmed || undefined;
-}
-
-function unquote(value: string): string {
-  return value.replace(/^['"]|['"]$/g, "");
-}
-
-function leadingSpaces(line: string): number {
-  return line.length - line.trimStart().length;
-}
-
-function positiveInt(value: string): number | undefined {
-  const parsed = Number.parseInt(value.replaceAll("_", ""), 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
