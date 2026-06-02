@@ -25,160 +25,121 @@ export interface OpenCodeRunEventResult {
 
 type EmitGatewayEvent = (event: string, payload: unknown) => void;
 
+type ParsedOpenCodeEvent =
+  | { kind: "text_delta"; sessionId?: string; delta: string; partId?: string; source: "part" | "next" }
+  | { kind: "text_final"; sessionId?: string; text: string }
+  | { kind: "reasoning_delta"; sessionId?: string; delta: string }
+  | { kind: "part_updated"; sessionId?: string; part?: Record<string, unknown> }
+  | { kind: "permission_requested"; sessionId?: string; permission: Record<string, unknown> }
+  | { kind: "permission_replied"; sessionId?: string; permissionId?: string; summary?: string; raw: unknown }
+  | { kind: "next_tool"; sessionId?: string; type: string; properties: Record<string, unknown>; raw: unknown }
+  | { kind: "command_executed"; sessionId?: string; properties: Record<string, unknown>; payload?: Record<string, unknown>; raw: unknown }
+  | { kind: "session_diff"; sessionId?: string; properties: Record<string, unknown>; payload?: Record<string, unknown>; raw: unknown }
+  | { kind: "run_error"; sessionId?: string; error: string }
+  | { kind: "usage"; sessionId?: string; usage: Record<string, unknown> }
+  | { kind: "idle"; sessionId?: string }
+  | { kind: "unknown"; sessionId?: string };
+
 export class OpenCodeEventNormalizer {
   private readonly partTypes = new Map<string, string>();
 
   constructor(private readonly emit: EmitGatewayEvent) {}
 
   handle(session: HarnessStoredSession, runId: string, event: unknown): OpenCodeRunEventResult | undefined {
-    const type = eventType(event);
-    const properties = eventProperties(event) ?? {};
-    const eventSessionId = sessionIdFromEvent(event);
-    if (eventSessionId && eventSessionId !== session.sessionId) {
+    const parsed = parseOpenCodeEvent(event);
+    if (parsed.sessionId && parsed.sessionId !== session.sessionId) {
       return undefined;
     }
 
-    if (type === "message.part.delta") {
-      const delta = stringField(properties, "delta") ?? "";
-      if (!delta) {
+    switch (parsed.kind) {
+      case "text_delta": {
+        const partType = parsed.partId ? this.partTypes.get(`${session.sessionId}:${parsed.partId}`) : undefined;
+        if (parsed.source === "part" && partType === "reasoning") {
+          this.emitReasoningDelta(session, runId, parsed.delta);
+          return undefined;
+        }
+        this.emit("chat", { sessionKey: session.key, runId, state: "delta", delta: parsed.delta, replace: false });
+        return { textDelta: parsed.delta };
+      }
+      case "text_final":
+        this.emit("chat", { sessionKey: session.key, runId, state: "delta", delta: parsed.text, replace: true });
+        return { textFinal: parsed.text };
+      case "reasoning_delta":
+        if (parsed.delta) {
+          this.emitReasoningDelta(session, runId, parsed.delta);
+        }
         return undefined;
-      }
-      const partId = stringField(properties, "partID") ?? stringField(properties, "partId");
-      const partType = partId ? this.partTypes.get(`${session.sessionId}:${partId}`) : undefined;
-      if (partType === "reasoning") {
-        this.emit("agent", {
-          sessionKey: session.key,
-          runId,
-          type: "reasoning.delta",
-          data: { delta, state: "reasoning" }
-        });
+      case "part_updated":
+        return this.handlePartUpdated(session, runId, parsed.part);
+      case "permission_requested":
+        this.emitToolEvent(this.permissionToolEvent(session, runId, parsed.permission));
         return undefined;
-      }
-      this.emit("chat", { sessionKey: session.key, runId, state: "delta", delta, replace: false });
-      return { textDelta: delta };
-    }
-
-    if (type === "session.next.text.delta") {
-      const delta = stringField(properties, "delta") ?? "";
-      if (!delta) {
+      case "permission_replied":
+        if (parsed.permissionId) {
+          this.emitToolEvent({
+            type: "chat.tool_event",
+            sessionKey: session.key,
+            runId,
+            eventId: `opencode_permission_${parsed.permissionId}`,
+            toolName: "permission",
+            title: "OpenCode permission answered",
+            status: "completed",
+            summary: parsed.summary ?? null,
+            raw: parsed.raw
+          });
+        }
         return undefined;
-      }
-      this.emit("chat", { sessionKey: session.key, runId, state: "delta", delta, replace: false });
-      return { textDelta: delta };
-    }
-
-    if (type === "session.next.text.ended") {
-      const text = stringField(properties, "text") ?? "";
-      this.emit("chat", { sessionKey: session.key, runId, state: "delta", delta: text, replace: true });
-      return { textFinal: text };
-    }
-
-    if (type === "session.next.reasoning.delta") {
-      const delta = stringField(properties, "delta") ?? "";
-      if (delta) {
-        this.emit("agent", {
-          sessionKey: session.key,
-          runId,
-          type: "reasoning.delta",
-          data: { delta, state: "reasoning" }
-        });
-      }
-      return undefined;
-    }
-
-    if (type === "message.part.updated") {
-      return this.handlePartUpdated(session, runId, asRecord(properties.part));
-    }
-
-    if (
-      type === "permission.asked" ||
-      type === "permission.updated"
-    ) {
-      const permission = type === "permission.updated" ? properties : asRecord(properties) ?? {};
-      this.emitToolEvent(this.permissionToolEvent(session, runId, permission));
-      return undefined;
-    }
-
-    if (type === "permission.replied") {
-      const permissionId = stringField(properties, "permissionID") ?? stringField(properties, "requestID");
-      if (permissionId) {
+      case "next_tool":
+        this.emitToolEvent(this.nextToolEvent(session, runId, parsed.raw, parsed.type, parsed.properties));
+        return undefined;
+      case "command_executed":
         this.emitToolEvent({
           type: "chat.tool_event",
           sessionKey: session.key,
           runId,
-          eventId: `opencode_permission_${permissionId}`,
-          toolName: "permission",
-          title: "OpenCode permission answered",
+          eventId: `opencode_command_${stringField(parsed.properties, "messageID") ?? stringField(parsed.payload, "id") ?? randomUUID()}`,
+          toolName: "command",
+          title: `OpenCode command: ${stringField(parsed.properties, "name") ?? "command"}`,
           status: "completed",
-          summary: stringField(properties, "response") ?? stringField(properties, "reply") ?? null,
-          raw: event
+          args: stringField(parsed.properties, "arguments") ?? null,
+          raw: parsed.raw
         });
+        return undefined;
+      case "session_diff":
+        this.emitToolEvent({
+          type: "chat.tool_event",
+          sessionKey: session.key,
+          runId,
+          eventId: `opencode_diff_${stringField(parsed.payload, "id") ?? randomUUID()}`,
+          toolName: "patch",
+          title: "OpenCode patch updated",
+          status: "info",
+          output: parsed.properties.diff ?? null,
+          raw: parsed.raw
+        });
+        return undefined;
+      case "run_error":
+        return { done: true, error: parsed.error };
+      case "usage":
+        return { usage: parsed.usage };
+      case "idle":
+        return { done: true };
+      case "unknown":
+        return undefined;
+      default: {
+        const exhaustive: never = parsed;
+        return exhaustive;
       }
-      return undefined;
     }
+  }
 
-    if (type.startsWith("session.next.tool.")) {
-      this.emitToolEvent(this.nextToolEvent(session, runId, event, type, properties));
-      return undefined;
-    }
-
-    if (type === "command.executed") {
-      this.emitToolEvent({
-        type: "chat.tool_event",
-        sessionKey: session.key,
-        runId,
-        eventId: `opencode_command_${stringField(properties, "messageID") ?? stringField(asRecord(eventPayload(event)), "id") ?? randomUUID()}`,
-        toolName: "command",
-        title: `OpenCode command: ${stringField(properties, "name") ?? "command"}`,
-        status: "completed",
-        args: stringField(properties, "arguments") ?? null,
-        raw: event
-      });
-      return undefined;
-    }
-
-    if (type === "session.diff") {
-      this.emitToolEvent({
-        type: "chat.tool_event",
-        sessionKey: session.key,
-        runId,
-        eventId: `opencode_diff_${stringField(asRecord(eventPayload(event)), "id") ?? randomUUID()}`,
-        toolName: "patch",
-        title: "OpenCode patch updated",
-        status: "info",
-        output: properties.diff ?? null,
-        raw: event
-      });
-      return undefined;
-    }
-
-    if (type === "session.error" || type === "session.next.step.failed") {
-      const message = errorText(properties.error) ?? "OpenCode run failed";
-      return { done: true, error: message };
-    }
-
-    if (type === "session.next.step.ended") {
-      const tokens = asRecord(properties.tokens);
-      const cache = asRecord(tokens?.cache);
-      return {
-        usage: {
-          inputTokens: numberField(tokens, "input"),
-          outputTokens: numberField(tokens, "output"),
-          reasoningTokens: numberField(tokens, "reasoning"),
-          totalTokens: numberField(tokens, "total") ??
-            [numberField(tokens, "input"), numberField(tokens, "output"), numberField(tokens, "reasoning"), numberField(cache, "read"), numberField(cache, "write")]
-              .filter((value): value is number => value !== undefined)
-              .reduce((sum, value) => sum + value, 0),
-          estimatedCostUsd: numberField(properties, "cost")
-        }
-      };
-    }
-
-    if (type === "session.idle") {
-      return { done: true };
-    }
-
-    return undefined;
+  private emitReasoningDelta(session: HarnessStoredSession, runId: string, delta: string, replace?: boolean): void {
+    this.emit("agent", {
+      sessionKey: session.key,
+      runId,
+      type: "reasoning.delta",
+      data: { delta, state: "reasoning", ...(replace ? { replace: true } : {}) }
+    });
   }
 
   private handlePartUpdated(session: HarnessStoredSession, runId: string, part: Record<string, unknown> | undefined): OpenCodeRunEventResult | undefined {
@@ -198,12 +159,7 @@ export class OpenCodeEventNormalizer {
     if (type === "reasoning") {
       const delta = stringField(part, "text") ?? "";
       if (delta) {
-        this.emit("agent", {
-          sessionKey: session.key,
-          runId,
-          type: "reasoning.delta",
-          data: { delta, state: "reasoning", replace: true }
-        });
+        this.emitReasoningDelta(session, runId, delta, true);
       }
       return undefined;
     }
@@ -324,4 +280,88 @@ export class OpenCodeEventNormalizer {
   private emitToolEvent(message: Omit<ChatToolEventMessage, "deviceId">): void {
     this.emit("agent", message);
   }
+}
+
+function parseOpenCodeEvent(event: unknown): ParsedOpenCodeEvent {
+  const type = eventType(event);
+  const properties = eventProperties(event) ?? {};
+  const sessionId = sessionIdFromEvent(event);
+  if (type === "message.part.delta") {
+    const delta = stringField(properties, "delta") ?? "";
+    return delta
+      ? {
+        kind: "text_delta",
+        sessionId,
+        delta,
+        partId: stringField(properties, "partID") ?? stringField(properties, "partId"),
+        source: "part"
+      }
+      : { kind: "unknown", sessionId };
+  }
+  if (type === "session.next.text.delta") {
+    const delta = stringField(properties, "delta") ?? "";
+    return delta ? { kind: "text_delta", sessionId, delta, source: "next" } : { kind: "unknown", sessionId };
+  }
+  if (type === "session.next.text.ended") {
+    return { kind: "text_final", sessionId, text: stringField(properties, "text") ?? "" };
+  }
+  if (type === "session.next.reasoning.delta") {
+    return { kind: "reasoning_delta", sessionId, delta: stringField(properties, "delta") ?? "" };
+  }
+  if (type === "message.part.updated") {
+    return { kind: "part_updated", sessionId, part: asRecord(properties.part) };
+  }
+  if (type === "permission.asked" || type === "permission.updated") {
+    return {
+      kind: "permission_requested",
+      sessionId,
+      permission: type === "permission.updated" ? properties : asRecord(properties) ?? {}
+    };
+  }
+  if (type === "permission.replied") {
+    return {
+      kind: "permission_replied",
+      sessionId,
+      permissionId: stringField(properties, "permissionID") ?? stringField(properties, "requestID"),
+      summary: stringField(properties, "response") ?? stringField(properties, "reply"),
+      raw: event
+    };
+  }
+  if (type.startsWith("session.next.tool.")) {
+    return { kind: "next_tool", sessionId, type, properties, raw: event };
+  }
+  if (type === "command.executed") {
+    return { kind: "command_executed", sessionId, properties, payload: asRecord(eventPayload(event)), raw: event };
+  }
+  if (type === "session.diff") {
+    return { kind: "session_diff", sessionId, properties, payload: asRecord(eventPayload(event)), raw: event };
+  }
+  if (type === "session.error" || type === "session.next.step.failed") {
+    return { kind: "run_error", sessionId, error: errorText(properties.error) ?? "OpenCode run failed" };
+  }
+  if (type === "session.next.step.ended") {
+    const tokens = asRecord(properties.tokens);
+    const cache = asRecord(tokens?.cache);
+    const inputTokens = numberField(tokens, "input");
+    const outputTokens = numberField(tokens, "output");
+    const reasoningTokens = numberField(tokens, "reasoning");
+    return {
+      kind: "usage",
+      sessionId,
+      usage: {
+        inputTokens,
+        outputTokens,
+        reasoningTokens,
+        totalTokens: numberField(tokens, "total") ??
+          [inputTokens, outputTokens, reasoningTokens, numberField(cache, "read"), numberField(cache, "write")]
+            .filter((value): value is number => value !== undefined)
+            .reduce((sum, value) => sum + value, 0),
+        estimatedCostUsd: numberField(properties, "cost")
+      }
+    };
+  }
+  if (type === "session.idle") {
+    return { kind: "idle", sessionId };
+  }
+  return { kind: "unknown", sessionId };
 }
