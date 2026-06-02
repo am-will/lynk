@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { resolveCommand } from "../host/CommandDiscovery.js";
 import { loadOrCreateHostBridgeConfig } from "../host/HostConfigStore.js";
+import { isPiSdkInstalled } from "../host/PiInstallation.js";
 
 export interface BridgeConfig {
   host: string;
@@ -145,6 +146,6 @@ export function getBridgeConfig(): BridgeConfig {
     piAgentDir: process.env.PI_AGENT_DIR?.trim() || host.piAgentDir?.trim() || undefined,
     piDefaultModel: process.env.PI_DEFAULT_MODEL?.trim() || host.piDefaultModel?.trim() || undefined,
     piRunTimeoutMs: readPositiveInt("PI_RUN_TIMEOUT_SECONDS", host.piRunTimeoutSeconds ?? 600) * 1000,
-    piConfigured: true
+    piConfigured: isPiSdkInstalled()
   };
 }

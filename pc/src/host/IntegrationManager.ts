@@ -6,6 +6,7 @@ import { resolveCommand, resolveExecutable } from "./CommandDiscovery.js";
 import { discoverEndpoints } from "./EndpointDiscovery.js";
 import { resolveHermesConfigPath } from "./HermesConfigPath.js";
 import { loadOrCreateHostBridgeConfig, writeHostBridgeConfig } from "./HostConfigStore.js";
+import { isPiSdkInstalled, piSdkPackagePath } from "./PiInstallation.js";
 
 export interface IntegrationStatus {
   id: "openclaw" | "hermes" | "codex" | "opencode" | "pi" | "tailscale" | "adb";
@@ -58,8 +59,8 @@ export async function detectIntegrations(): Promise<IntegrationStatus[]> {
   const codex = resolveCommand(process.env.CODEX_APP_SERVER_COMMAND ?? hostConfig.codexAppServerCommand ?? "codex app-server --listen stdio://");
   const opencodeServerUrl = process.env.OPENCODE_SERVER_URL?.trim() || hostConfig.opencodeServerUrl?.trim();
   const opencode = resolveCommand(process.env.OPENCODE_SERVER_COMMAND ?? hostConfig.opencodeServerCommand ?? "opencode serve --hostname 127.0.0.1 --port 4096");
-  const piPackagePath = resolve(pcRoot, "node_modules", "@earendil-works", "pi-coding-agent", "package.json");
-  const piInstalled = existsSync(piPackagePath);
+  const piPackagePath = piSdkPackagePath(pcRoot);
+  const piInstalled = isPiSdkInstalled(pcRoot);
   const tailscale = await discoverEndpoints({ port: hostConfig.phoneAgentPort ?? 8788, includeUsb: false });
   const adb = resolveExecutable(process.env.ADB?.trim() || "adb");
   const hermesApiKey = process.env.HERMES_API_KEY?.trim() || hostConfig.hermesApiKey?.trim();
