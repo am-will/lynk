@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { HermesApiClient } from "../dispatcher/HermesApiClient.js";
+import { HermesRunDriver } from "../dispatcher/HermesRunDriver.js";
 import type { ChatAttachment } from "../protocol/messages.js";
 import type { BridgeConfig } from "./config.js";
 import { HermesChatClient } from "./HermesChatClient.js";
@@ -570,14 +571,32 @@ test("Hermes baselines sessions that appear after an empty initial list", async 
 test("Hermes chat steering uses the active run driver", async () => {
   const api = new FakeHermesApiClient();
   const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
-  (client as unknown as { activeRuns: Map<string, { sessionKey: string; active: { runId: string; sessionId: string; controller: AbortController }; mode: "api" }> }).activeRuns.set("run_1", {
+  (client as unknown as {
+    activeRuns: Map<string, {
+      sessionKey: string;
+      active: { runId: string; sessionId: string; controller: AbortController };
+      mode: "api";
+      transport: {
+        mode: "api";
+        driver: HermesRunDriver;
+        supportsSteering: boolean;
+        health(): Promise<unknown>;
+      };
+    }>;
+  }).activeRuns.set("run_1", {
     sessionKey: "hermes:chat",
     active: {
       runId: "run_1",
       sessionId: "session_1",
       controller: new AbortController()
     },
-    mode: "api"
+    mode: "api",
+    transport: {
+      mode: "api",
+      driver: new HermesRunDriver(api as unknown as HermesApiClient, config.hermesRunTimeoutMs),
+      supportsSteering: true,
+      health: () => api.health()
+    }
   });
 
   await client.steerChat({

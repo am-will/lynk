@@ -25,7 +25,7 @@ interface ActiveChatRun {
   sessionKey: string;
   active: HermesActiveRun;
   mode: "api" | "local-stream" | "cli";
-  driver?: HermesRunDriver;
+  transport?: HermesChatRunTransport;
 }
 
 interface RemoteSessionObservation {
@@ -33,10 +33,11 @@ interface RemoteSessionObservation {
   latestRunId?: string;
 }
 
-interface SelectedRunsDriver {
+interface HermesChatRunTransport {
   mode: "api" | "local-stream";
-  transport: HermesRunTransport;
   driver: HermesRunDriver;
+  supportsSteering: boolean;
+  health(): Promise<unknown>;
 }
 
 const execFileAsync = promisify(execFile);
@@ -97,10 +98,8 @@ function firstNumberField(value: unknown, keys: string[]): number | null {
 }
 
 export class HermesChatClient {
-  private readonly api?: HermesRunsApi;
-  private readonly driver?: HermesRunDriver;
-  private readonly localConfigTransport?: HermesRunTransport;
-  private readonly localConfigDriver?: HermesRunDriver;
+  private readonly metadataApi?: HermesRunsApi;
+  private readonly runTransports: HermesChatRunTransport[] = [];
   private readonly cli: CommandResolution;
   private readonly sessions: InMemoryHarnessSessionStore;
   private readonly handlers = new Set<GatewayEventHandler>();
@@ -118,18 +117,18 @@ export class HermesChatClient {
       throw new Error("Hermes requires either HERMES_API_KEY for the runs API or a hermes CLI on PATH.");
     }
     if (api || config.hermesApiKey) {
-      this.api = api ?? new HermesApiClient({
+      this.metadataApi = api ?? new HermesApiClient({
         apiBaseUrl: config.hermesApiBaseUrl,
         apiKey: config.hermesApiKey ?? "",
         model: config.hermesModel,
         runTimeoutMs: config.hermesRunTimeoutMs
       });
-      this.driver = new HermesRunDriver(this.api, config.hermesRunTimeoutMs);
+      this.runTransports.push(this.createRunTransport("api", this.metadataApi, true));
     }
     if (!api && config.hermesApiKey) {
-      this.localConfigTransport = createHermesConfigRunsClient(config.hermesModel);
-      if (this.localConfigTransport) {
-        this.localConfigDriver = new HermesRunDriver(this.localConfigTransport, config.hermesRunTimeoutMs);
+      const localConfigTransport = createHermesConfigRunsClient(config.hermesModel);
+      if (localConfigTransport) {
+        this.runTransports.push(this.createRunTransport("local-stream", localConfigTransport, false));
       }
     }
     this.sessions = new InMemoryHarnessSessionStore("hermes", {
@@ -192,7 +191,7 @@ export class HermesChatClient {
       sessionKey: session.key,
       active,
       mode: selectedDriver.mode,
-      driver: selectedDriver.driver
+      transport: selectedDriver
     });
     void this.processRun(session.key, active, selectedDriver.driver);
     return { runId, sessionKey: session.key };
@@ -204,14 +203,13 @@ export class HermesChatClient {
     }
     const active = this.activeRuns.get(runId);
     if (active) {
-      const driver = active.driver ?? (active.mode === "api" ? this.driver : undefined);
-      if (driver) {
-        await driver.stopRun(active.active);
+      if (active.transport) {
+        await active.transport.driver.stopRun(active.active);
       } else {
         active.active.controller.abort();
       }
     } else {
-      await this.api?.stopRun(runId);
+      await this.metadataApi?.stopRun(runId);
     }
     this.emit("agent", {
       type: "run.cancelled",
@@ -235,16 +233,15 @@ export class HermesChatClient {
     if (!active) {
       throw new Error("No active Hermes run to steer");
     }
-    const driver = active.driver ?? (active.mode === "api" ? this.driver : undefined);
-    if (active.mode === "cli" || !driver) {
+    if (active.mode === "cli" || !active.transport) {
       throw new Error("Hermes CLI fallback does not support active-turn steering.");
     }
-    if (active.mode === "local-stream") {
+    if (!active.transport.supportsSteering) {
       throw new Error("Hermes local streaming adapter does not support active-turn steering.");
     }
     const session = this.sessions.ensureSession(active.sessionKey, options.sessionId);
     this.sessions.appendUserMessage(session, options.message, options.idempotencyKey, options.attachments);
-    await driver.steerRun(
+    await active.transport.driver.steerRun(
       active.active,
       options.message,
       options.attachments,
@@ -328,24 +325,14 @@ export class HermesChatClient {
   }
 
   async health(): Promise<unknown> {
-    if (this.api) {
+    for (const transport of this.runTransports) {
       try {
-        const health = await this.api.health();
+        const health = await transport.health();
         if (isHealthyHermesResponse(health)) {
-          return { ...asRecord(health), ok: true, mode: "api" };
+          return { ...asRecord(health), ok: true, mode: transport.mode };
         }
       } catch {
-        // Fall through to CLI mode if Hermes itself is installed but no Lynk runs API is serving.
-      }
-    }
-    if (this.localConfigTransport) {
-      try {
-        const health = await this.localConfigTransport.health();
-        if (isHealthyHermesResponse(health)) {
-          return { ...asRecord(health), ok: true, mode: "local-stream" };
-        }
-      } catch {
-        // Fall through to CLI mode if the configured local provider is not reachable.
+        // Try the next configured transport before falling back to CLI mode.
       }
     }
     if (this.cli.available) {
@@ -542,32 +529,31 @@ export class HermesChatClient {
     }
   }
 
-  private async selectRunsDriver(): Promise<SelectedRunsDriver | undefined> {
-    if (this.api && this.driver) {
+  private createRunTransport(mode: "api" | "local-stream", transport: HermesRunTransport, supportsSteering: boolean): HermesChatRunTransport {
+    return {
+      mode,
+      driver: new HermesRunDriver(transport, this.config.hermesRunTimeoutMs),
+      supportsSteering,
+      health: () => transport.health()
+    };
+  }
+
+  private async selectRunsDriver(): Promise<HermesChatRunTransport | undefined> {
+    for (const transport of this.runTransports) {
       try {
-        const health = await this.api.health();
+        const health = await transport.health();
         if (isHealthyHermesResponse(health)) {
-          return { mode: "api", transport: this.api, driver: this.driver };
+          return transport;
         }
       } catch {
-        // Try the Hermes config-backed streaming adapter next.
-      }
-    }
-    if (this.localConfigTransport && this.localConfigDriver) {
-      try {
-        const health = await this.localConfigTransport.health();
-        if (isHealthyHermesResponse(health)) {
-          return { mode: "local-stream", transport: this.localConfigTransport, driver: this.localConfigDriver };
-        }
-      } catch {
-        return undefined;
+        // Try the next configured transport.
       }
     }
     return undefined;
   }
 
   private async selectMetadataApi(): Promise<HermesMetadataApi | undefined> {
-    return this.api;
+    return this.metadataApi;
   }
 
   private handleRunEvent(session: HarnessStoredSession, runId: string, event: HermesRunDriverEvent): void {
