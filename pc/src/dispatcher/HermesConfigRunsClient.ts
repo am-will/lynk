@@ -7,7 +7,7 @@ import type {
   FetchLike,
   HermesRunCreateOptions,
   HermesRunCreateResult,
-  HermesRunsApi,
+  HermesRunTransport,
   HermesRunStatus,
   HermesSseEvent
 } from "./HermesApiClient.js";
@@ -43,7 +43,7 @@ export function createHermesConfigRunsClient(defaultModel: string, fetchFn: Fetc
   return provider ? new HermesConfigRunsClient(provider, fetchFn) : undefined;
 }
 
-export class HermesConfigRunsClient implements HermesRunsApi {
+export class HermesConfigRunsClient implements HermesRunTransport {
   private readonly runs = new Map<string, StoredRun>();
 
   constructor(
@@ -81,52 +81,6 @@ export class HermesConfigRunsClient implements HermesRunsApi {
         error: run.error,
         usage: run.usage
       }
-    };
-  }
-
-  async listModels(): Promise<unknown> {
-    try {
-      const response = await this.fetchWithTimeout(this.url("/models"), {
-        method: "GET",
-        headers: this.headers()
-      }, PROVIDER_PROBE_TIMEOUT_MS);
-      if (response.ok) {
-        return await response.json();
-      }
-    } catch {
-      // Fall back to the configured model below.
-    }
-    return {
-      data: [{
-        id: this.provider.model,
-        provider: this.provider.provider,
-        context_window: this.provider.contextWindow
-      }]
-    };
-  }
-
-  async listSkills(): Promise<unknown> {
-    return { data: [] };
-  }
-
-  async listToolsets(): Promise<unknown> {
-    return { data: [] };
-  }
-
-  async listSessions(): Promise<unknown> {
-    return { sessions: [] };
-  }
-
-  async listSessionMessages(_sessionId: string): Promise<unknown> {
-    return { messages: [] };
-  }
-
-  async capabilities(): Promise<unknown> {
-    return {
-      streaming: true,
-      source: "hermes-config-openai-compatible",
-      model: this.provider.model,
-      provider: this.provider.provider
     };
   }
 

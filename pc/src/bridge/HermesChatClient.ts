@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { HermesApiClient, type HermesRunsApi } from "../dispatcher/HermesApiClient.js";
+import { HermesApiClient, type HermesMetadataApi, type HermesRunsApi, type HermesRunTransport } from "../dispatcher/HermesApiClient.js";
 import { createHermesConfigRunsClient } from "../dispatcher/HermesConfigRunsClient.js";
 import { HermesRunDriver, type HermesActiveRun, type HermesRunDriverEvent } from "../dispatcher/HermesRunDriver.js";
 import type { ChatAttachment, ChatHistoryMessage, ChatSessionSummary } from "../protocol/messages.js";
@@ -35,7 +35,7 @@ interface RemoteSessionObservation {
 
 interface SelectedRunsDriver {
   mode: "api" | "local-stream";
-  api: HermesRunsApi;
+  transport: HermesRunTransport;
   driver: HermesRunDriver;
 }
 
@@ -99,7 +99,7 @@ function firstNumberField(value: unknown, keys: string[]): number | null {
 export class HermesChatClient {
   private readonly api?: HermesRunsApi;
   private readonly driver?: HermesRunDriver;
-  private readonly localConfigApi?: HermesRunsApi;
+  private readonly localConfigTransport?: HermesRunTransport;
   private readonly localConfigDriver?: HermesRunDriver;
   private readonly cli: CommandResolution;
   private readonly sessions: InMemoryHarnessSessionStore;
@@ -127,9 +127,9 @@ export class HermesChatClient {
       this.driver = new HermesRunDriver(this.api, config.hermesRunTimeoutMs);
     }
     if (!api && config.hermesApiKey) {
-      this.localConfigApi = createHermesConfigRunsClient(config.hermesModel);
-      if (this.localConfigApi) {
-        this.localConfigDriver = new HermesRunDriver(this.localConfigApi, config.hermesRunTimeoutMs);
+      this.localConfigTransport = createHermesConfigRunsClient(config.hermesModel);
+      if (this.localConfigTransport) {
+        this.localConfigDriver = new HermesRunDriver(this.localConfigTransport, config.hermesRunTimeoutMs);
       }
     }
     this.sessions = new InMemoryHarnessSessionStore("hermes", {
@@ -338,9 +338,9 @@ export class HermesChatClient {
         // Fall through to CLI mode if Hermes itself is installed but no Lynk runs API is serving.
       }
     }
-    if (this.localConfigApi) {
+    if (this.localConfigTransport) {
       try {
-        const health = await this.localConfigApi.health();
+        const health = await this.localConfigTransport.health();
         if (isHealthyHermesResponse(health)) {
           return { ...asRecord(health), ok: true, mode: "local-stream" };
         }
@@ -547,17 +547,17 @@ export class HermesChatClient {
       try {
         const health = await this.api.health();
         if (isHealthyHermesResponse(health)) {
-          return { mode: "api", api: this.api, driver: this.driver };
+          return { mode: "api", transport: this.api, driver: this.driver };
         }
       } catch {
         // Try the Hermes config-backed streaming adapter next.
       }
     }
-    if (this.localConfigApi && this.localConfigDriver) {
+    if (this.localConfigTransport && this.localConfigDriver) {
       try {
-        const health = await this.localConfigApi.health();
+        const health = await this.localConfigTransport.health();
         if (isHealthyHermesResponse(health)) {
-          return { mode: "local-stream", api: this.localConfigApi, driver: this.localConfigDriver };
+          return { mode: "local-stream", transport: this.localConfigTransport, driver: this.localConfigDriver };
         }
       } catch {
         return undefined;
@@ -566,9 +566,8 @@ export class HermesChatClient {
     return undefined;
   }
 
-  private async selectMetadataApi(): Promise<HermesRunsApi | undefined> {
-    const selected = await this.selectRunsDriver();
-    return selected?.api ?? this.api ?? this.localConfigApi;
+  private async selectMetadataApi(): Promise<HermesMetadataApi | undefined> {
+    return this.api;
   }
 
   private handleRunEvent(session: HarnessStoredSession, runId: string, event: HermesRunDriverEvent): void {
