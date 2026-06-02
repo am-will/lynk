@@ -35,6 +35,7 @@ interface StoredRun {
 const DEFAULT_HEADERS = {
   "Content-Type": "application/json"
 };
+const PROVIDER_PROBE_TIMEOUT_MS = 10_000;
 
 export function createHermesConfigRunsClient(defaultModel: string, fetchFn: FetchLike = fetch): HermesConfigRunsClient | undefined {
   const home = process.env.HERMES_HOME?.trim() || join(homedir(), ".hermes");
@@ -85,10 +86,10 @@ export class HermesConfigRunsClient implements HermesRunsApi {
 
   async listModels(): Promise<unknown> {
     try {
-      const response = await this.fetchFn(this.url("/models"), {
+      const response = await this.fetchWithTimeout(this.url("/models"), {
         method: "GET",
         headers: this.headers()
-      });
+      }, PROVIDER_PROBE_TIMEOUT_MS);
       if (response.ok) {
         return await response.json();
       }
@@ -130,10 +131,10 @@ export class HermesConfigRunsClient implements HermesRunsApi {
   }
 
   async health(): Promise<unknown> {
-    const response = await this.fetchFn(this.url("/models"), {
+    const response = await this.fetchWithTimeout(this.url("/models"), {
       method: "GET",
       headers: this.headers()
-    });
+    }, PROVIDER_PROBE_TIMEOUT_MS);
     if (!response.ok) {
       const body = await response.text().catch(() => "");
       throw new Error(`Hermes local provider health failed: ${response.status} ${response.statusText}${body ? `: ${body}` : ""}`);
@@ -305,6 +306,19 @@ export class HermesConfigRunsClient implements HermesRunsApi {
 
   private url(path: string): string {
     return `${this.provider.baseUrl.replace(/\/+$/, "")}${path}`;
+  }
+
+  private async fetchWithTimeout(input: string, init: RequestInit, timeoutMs: number): Promise<Response> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await this.fetchFn(input, {
+        ...init,
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 

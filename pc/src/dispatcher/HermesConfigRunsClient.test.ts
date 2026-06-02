@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { HermesConfigRunsClient } from "./HermesConfigRunsClient.js";
 import type { FetchLike, HermesSseEvent } from "./HermesApiClient.js";
+import { HermesRunDriver } from "./HermesRunDriver.js";
 
 function sseResponse(chunks: unknown[]): Response {
   const encoder = new TextEncoder();
@@ -74,4 +75,41 @@ test("Hermes config runs client streams OpenAI-compatible deltas", async () => {
   assert.deepEqual(status.output, { text: "hello world" });
   const chatRequestBody = requests.find((request) => request.url.endsWith("/chat/completions"))?.body as Record<string, unknown> | undefined;
   assert.equal(chatRequestBody?.model, "MiniMax-M2.7");
+});
+
+test("Hermes run driver maps config adapter deltas into accumulated output", async () => {
+  const fetchFn: FetchLike = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/chat/completions")) {
+      return sseResponse([
+        { choices: [{ delta: { content: "first" } }] },
+        { choices: [{ delta: { content: " second" } }] }
+      ]);
+    }
+    return new Response(JSON.stringify({ data: [{ id: "MiniMax-M2.7" }] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
+  };
+  const client = new HermesConfigRunsClient({
+    provider: "local-minimax",
+    model: "MiniMax-M2.7",
+    baseUrl: "http://127.0.0.1:8009/v1"
+  }, fetchFn);
+  const driver = new HermesRunDriver(client, 10_000);
+  const active = await driver.createRun({
+    input: "Say two chunks",
+    sessionId: "session",
+    idempotencyKey: "run_driver"
+  });
+  const deltas: string[] = [];
+
+  const result = await driver.streamRun(active, (event) => {
+    if (event.type === "delta") {
+      deltas.push(event.delta);
+    }
+  });
+
+  assert.deepEqual(deltas, ["first", " second"]);
+  assert.equal(result.finalText, "first second");
 });

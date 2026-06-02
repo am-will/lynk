@@ -175,10 +175,12 @@ function eventToolName(event: HermesSseEvent): string | undefined {
 function eventDelta(event: HermesSseEvent): string | undefined {
   const record = asRecord(event.data);
   const nested = asRecord(record?.data) ?? record;
-  for (const key of ["delta", "text_delta", "output_text", "text"]) {
-    const value = nested?.[key];
-    if (typeof value === "string" && value.length > 0) {
-      return value;
+  for (const source of [nested, record]) {
+    for (const key of ["delta", "text_delta", "output_text", "text"]) {
+      const value = source?.[key];
+      if (typeof value === "string" && value.length > 0) {
+        return value;
+      }
     }
   }
   return undefined;
