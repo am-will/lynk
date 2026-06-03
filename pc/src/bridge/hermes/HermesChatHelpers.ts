@@ -211,6 +211,11 @@ export function hermesCliModelArgs(model: string | undefined): string[] {
     const modelId = trimmed.slice(separator + 1).trim();
     return provider && modelId ? ["--provider", provider, "--model", modelId] : ["--model", trimmed];
   }
+  const providerSeparator = trimmed.indexOf("/");
+  if (providerSeparator > 0) {
+    const provider = trimmed.slice(0, providerSeparator).trim();
+    return provider ? ["--provider", provider, "--model", trimmed] : ["--model", trimmed];
+  }
   return ["--model", trimmed];
 }
 
