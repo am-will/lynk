@@ -76,6 +76,10 @@ export function discoverHermesModels(defaultModel: string): ChatModelOption[] {
     providerIds.add(provider);
   }
 
+  const cachedCatalog = readHermesProviderModelsCache(join(home, "provider_models_cache.json"));
+  for (const provider of cachedCatalog.keys()) {
+    providerIds.add(provider);
+  }
   const authenticatedCatalog = loadHermesAuthenticatedProviderCatalog(home);
   for (const provider of authenticatedCatalog.keys()) {
     providerIds.add(provider);
@@ -87,6 +91,7 @@ export function discoverHermesModels(defaultModel: string): ChatModelOption[] {
   for (const provider of providerIds) {
     const configured = config.providers.get(provider)?.models ?? [];
     const catalogModels = authenticatedCatalog.get(provider)
+      ?? cachedCatalog.get(provider)
       ?? catalog.get(provider)
       ?? FALLBACK_PROVIDER_MODELS[provider]
       ?? [];
@@ -144,6 +149,32 @@ function addConfiguredModel(
     reasoningOptions: reasoningOptionsForHermesProvider(provider, model),
     defaultReasoningEffort: defaultReasoningForHermesProvider(provider, model)
   });
+}
+
+function readHermesProviderModelsCache(path: string): Map<string, string[]> {
+  if (!existsSync(path)) {
+    return new Map();
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    const cache = new Map<string, string[]>();
+    for (const [provider, value] of Object.entries(parsed)) {
+      const id = provider.trim();
+      if (!id) {
+        continue;
+      }
+      const record = value && typeof value === "object" ? value as Record<string, unknown> : {};
+      const models = Array.isArray(record.models)
+        ? record.models.filter((model): model is string => typeof model === "string" && model.trim().length > 0)
+        : [];
+      if (models.length > 0) {
+        cache.set(id, models);
+      }
+    }
+    return cache;
+  } catch {
+    return new Map();
+  }
 }
 
 function readHermesContextLengthCache(path: string): HermesContextLengthCacheEntry[] {

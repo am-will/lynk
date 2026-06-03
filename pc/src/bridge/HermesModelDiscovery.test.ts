@@ -108,3 +108,22 @@ test("Hermes model discovery includes authenticated picker providers", () => {
     assert.equal(models.find((model) => model.id === "gemini:gemini-3-pro-preview")?.label, "Google AI Studio / gemini-3-pro-preview");
   });
 });
+
+test("Hermes model discovery uses Hermes provider model cache", () => {
+  withHermesHome({
+    "config.yaml": configYaml,
+    "provider_models_cache.json": JSON.stringify({
+      gemini: {
+        at: 1780454854,
+        models: ["gemini-3-pro-preview", "gemini-3.5-flash"]
+      }
+    })
+  }, () => {
+    const models = discoverHermesModels("hermes-agent");
+
+    assert.deepEqual(
+      models.filter((model) => model.provider === "gemini").map((model) => model.id),
+      ["gemini:gemini-3-pro-preview", "gemini:gemini-3.5-flash"]
+    );
+  });
+});
