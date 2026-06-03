@@ -106,16 +106,26 @@ data class AgentConfig(
         const val HARNESS_PI = "pi"
         const val HARNESS_LOCAL = "local"
 
+        val HOST_HARNESSES = listOf(
+            HostHarnessDescriptor(HARNESS_OPENCLAW, "OpenClaw"),
+            HostHarnessDescriptor(HARNESS_HERMES, "Hermes"),
+            HostHarnessDescriptor(HARNESS_CODEX, "Codex", supportsWorkspace = true),
+            HostHarnessDescriptor(HARNESS_OPENCODE, "OpenCode", supportsWorkspace = true),
+            HostHarnessDescriptor(HARNESS_PI, "Pi", supportsWorkspace = true)
+        )
+
         fun isWorkspaceHarness(harnessId: String?): Boolean {
-            return when (harnessId?.lowercase()) {
-                HARNESS_CODEX,
-                HARNESS_OPENCODE,
-                HARNESS_PI -> true
-                else -> false
-            }
+            val normalized = harnessId?.lowercase() ?: return false
+            return HOST_HARNESSES.any { it.id == normalized && it.supportsWorkspace }
         }
     }
 }
+
+data class HostHarnessDescriptor(
+    val id: String,
+    val label: String,
+    val supportsWorkspace: Boolean = false
+)
 
 object AgentConfigStore {
     private const val KNOWN_WEAK_DEFAULT_TOKEN = "12345678"

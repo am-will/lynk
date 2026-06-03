@@ -1,4 +1,4 @@
-import type { HarnessId } from "./AgentHarness.js";
+import { harnessDescriptor, type HarnessId } from "./AgentHarness.js";
 import { ChatClientError } from "./chat/ChatErrors.js";
 
 export interface HarnessReadinessStatus {
@@ -33,22 +33,7 @@ export function harnessUnavailableError(harnessId: HarnessId, label: string, cau
 }
 
 export function readinessAction(harnessId: HarnessId): string {
-  switch (harnessId) {
-    case "openclaw":
-      return "Install and start OpenClaw Gateway, then run host integration refresh.";
-    case "hermes":
-      return "Set HERMES_API_KEY or configure Hermes in the host bridge config, then run host integration refresh.";
-    case "codex":
-      return "Install Codex CLI with app-server support, then run host integration refresh.";
-    case "opencode":
-      return "Install OpenCode CLI or configure OPENCODE_SERVER_URL, then run host integration refresh.";
-    case "pi":
-      return "Configure Pi credentials and available models in the Pi agent directory, then run host integration refresh.";
-    default: {
-      const exhaustive: never = harnessId;
-      return exhaustive;
-    }
-  }
+  return harnessDescriptor(harnessId).readinessAction;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -69,20 +54,5 @@ function errorDetail(error: unknown): string | undefined {
 }
 
 function harnessRecoveryAction(harnessId: HarnessId): string {
-  switch (harnessId) {
-    case "openclaw":
-      return "Start OpenClaw Gateway with `openclaw gateway start` or choose a healthy harness in the model picker.";
-    case "hermes":
-      return "Verify `HERMES_API_BASE_URL` points at a Lynk-compatible Hermes runs API and that `HERMES_API_KEY` is set.";
-    case "codex":
-      return "Verify the Codex app-server command and workspace are configured, then try again.";
-    case "opencode":
-      return "Verify the OpenCode server URL or serve command and workspace are configured, then try again.";
-    case "pi":
-      return "Verify Pi SDK credentials, model availability, and workspace configuration, then try again.";
-    default: {
-      const exhaustive: never = harnessId;
-      return exhaustive;
-    }
-  }
+  return harnessDescriptor(harnessId).recoveryAction;
 }

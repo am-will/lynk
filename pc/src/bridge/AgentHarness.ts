@@ -13,6 +13,16 @@ export interface HarnessInfo {
   supportsWorkspaces: boolean;
 }
 
+export interface HarnessDescriptor {
+  id: HarnessId;
+  label: string;
+  supportsWorkspaces: boolean;
+  enabled(config: Pick<BridgeConfig, "hermesApiKey" | "hermesConfigured" | "codexConfigured" | "opencodeConfigured" | "piConfigured">): boolean;
+  defaultSessionKey(config: Pick<BridgeConfig, "openClawChatAgentId" | "openClawChatSessionKey" | "hermesDefaultSessionId">, deviceId: string): string;
+  readinessAction: string;
+  recoveryAction: string;
+}
+
 export interface HarnessModelSelection {
   harnessId: HarnessId;
   modelId: string;
@@ -21,44 +31,79 @@ export interface HarnessModelSelection {
 
 export const DEFAULT_HARNESS_ID: HarnessId = "openclaw";
 
-const HARNESS_LABELS = {
-  openclaw: "OpenClaw",
-  hermes: "Hermes",
-  codex: "Codex",
-  opencode: "OpenCode",
-  pi: "Pi"
-} as const satisfies Record<HarnessId, string>;
+const HARNESS_DESCRIPTORS = {
+  openclaw: {
+    id: "openclaw",
+    label: "OpenClaw",
+    supportsWorkspaces: false,
+    enabled: () => true,
+    defaultSessionKey: (config, deviceId) => defaultSessionKeyForDevice(config, deviceId),
+    readinessAction: "Install and start OpenClaw Gateway, then run host integration refresh.",
+    recoveryAction: "Start OpenClaw Gateway with `openclaw gateway start` or choose a healthy harness in the model picker."
+  },
+  hermes: {
+    id: "hermes",
+    label: "Hermes",
+    supportsWorkspaces: false,
+    enabled: (config) => Boolean(config.hermesConfigured ?? config.hermesApiKey),
+    defaultSessionKey: (config, deviceId) => `hermes:${sanitizeSessionSegment(config.hermesDefaultSessionId)}-${sanitizeSessionSegment(deviceId)}`,
+    readinessAction: "Set HERMES_API_KEY or configure Hermes in the host bridge config, then run host integration refresh.",
+    recoveryAction: "Verify `HERMES_API_BASE_URL` points at a Lynk-compatible Hermes runs API and that `HERMES_API_KEY` is set."
+  },
+  codex: {
+    id: "codex",
+    label: "Codex",
+    supportsWorkspaces: true,
+    enabled: (config) => config.codexConfigured,
+    defaultSessionKey: (_config, deviceId) => `codex:${sanitizeSessionSegment(deviceId)}`,
+    readinessAction: "Install Codex CLI with app-server support, then run host integration refresh.",
+    recoveryAction: "Verify the Codex app-server command and workspace are configured, then try again."
+  },
+  opencode: {
+    id: "opencode",
+    label: "OpenCode",
+    supportsWorkspaces: true,
+    enabled: (config) => Boolean(config.opencodeConfigured),
+    defaultSessionKey: (_config, deviceId) => `opencode:${sanitizeSessionSegment(deviceId)}`,
+    readinessAction: "Install OpenCode CLI or configure OPENCODE_SERVER_URL, then run host integration refresh.",
+    recoveryAction: "Verify the OpenCode server URL or serve command and workspace are configured, then try again."
+  },
+  pi: {
+    id: "pi",
+    label: "Pi",
+    supportsWorkspaces: true,
+    enabled: (config) => Boolean(config.piConfigured),
+    defaultSessionKey: (_config, deviceId) => `pi:${sanitizeSessionSegment(deviceId)}`,
+    readinessAction: "Configure Pi credentials and available models in the Pi agent directory, then run host integration refresh.",
+    recoveryAction: "Verify Pi SDK credentials, model availability, and workspace configuration, then try again."
+  }
+} as const satisfies Record<HarnessId, HarnessDescriptor>;
 
 const HARNESS_PREFIXES = new Set<string>(HARNESS_IDS);
 
+export function harnessDescriptor(harnessId: HarnessId): HarnessDescriptor {
+  return HARNESS_DESCRIPTORS[harnessId];
+}
+
+export function harnessDescriptors(): HarnessDescriptor[] {
+  return HARNESS_IDS.map((id) => HARNESS_DESCRIPTORS[id]);
+}
+
 export function harnessLabel(harnessId: HarnessId): string {
-  return HARNESS_LABELS[harnessId];
+  return harnessDescriptor(harnessId).label;
 }
 
 export function harnessInfos(config: Pick<BridgeConfig, "hermesApiKey" | "hermesConfigured" | "codexConfigured" | "opencodeConfigured" | "piConfigured">): HarnessInfo[] {
-  return [
-    { id: "openclaw", label: harnessLabel("openclaw"), enabled: true, supportsWorkspaces: false },
-    { id: "hermes", label: harnessLabel("hermes"), enabled: Boolean(config.hermesConfigured ?? config.hermesApiKey), supportsWorkspaces: false },
-    { id: "codex", label: harnessLabel("codex"), enabled: config.codexConfigured, supportsWorkspaces: true },
-    { id: "opencode", label: harnessLabel("opencode"), enabled: Boolean(config.opencodeConfigured), supportsWorkspaces: true },
-    { id: "pi", label: harnessLabel("pi"), enabled: Boolean(config.piConfigured), supportsWorkspaces: true }
-  ];
+  return harnessDescriptors().map((descriptor) => ({
+    id: descriptor.id,
+    label: descriptor.label,
+    enabled: descriptor.enabled(config),
+    supportsWorkspaces: descriptor.supportsWorkspaces
+  }));
 }
 
 export function isWorkspaceAwareHarness(harnessId: HarnessId): boolean {
-  switch (harnessId) {
-    case "codex":
-    case "opencode":
-    case "pi":
-      return true;
-    case "openclaw":
-    case "hermes":
-      return false;
-    default: {
-      const exhaustive: never = harnessId;
-      return exhaustive;
-    }
-  }
+  return harnessDescriptor(harnessId).supportsWorkspaces;
 }
 
 export function encodeHarnessModel(harnessId: HarnessId, modelId: string): string {
@@ -107,22 +152,7 @@ export function defaultSessionKeyForHarness(
   config: Pick<BridgeConfig, "openClawChatAgentId" | "openClawChatSessionKey" | "hermesDefaultSessionId">,
   deviceId: string
 ): string {
-  switch (harnessId) {
-    case "openclaw":
-      return defaultSessionKeyForDevice(config, deviceId);
-    case "hermes":
-      return `hermes:${sanitizeSessionSegment(config.hermesDefaultSessionId)}-${sanitizeSessionSegment(deviceId)}`;
-    case "codex":
-      return `codex:${sanitizeSessionSegment(deviceId)}`;
-    case "opencode":
-      return `opencode:${sanitizeSessionSegment(deviceId)}`;
-    case "pi":
-      return `pi:${sanitizeSessionSegment(deviceId)}`;
-    default: {
-      const exhaustive: never = harnessId;
-      return exhaustive;
-    }
-  }
+  return harnessDescriptor(harnessId).defaultSessionKey(config, deviceId);
 }
 
 export interface RealtimeHarnessSessionKeys {

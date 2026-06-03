@@ -3,8 +3,9 @@ import {
   DEFAULT_HARNESS_ID,
   defaultSessionKeyForHarness,
   encodeHarnessModel,
+  harnessDescriptor,
+  harnessDescriptors,
   harnessForSessionKey,
-  harnessInfos,
   isWorkspaceAwareHarness,
   namespaceModelOption,
   namespaceSessionSummary,
@@ -58,6 +59,34 @@ const OPENCLAW_BRIDGE_COMMANDS: ChatCommandOption[] = [
   }
 ];
 
+type HarnessAdapterFactory = (config: BridgeConfig, audit?: AuditLog) => HarnessChatAdapter;
+
+const HARNESS_ADAPTER_FACTORIES = {
+  openclaw: (config) => new NormalizedHarnessAdapter("openclaw", new OpenClawGatewayChatClient(config), { supportsAttachments: true }),
+  hermes: (config) => new NormalizedHarnessAdapter("hermes", new HermesChatClient(config), { supportsAttachments: true }),
+  codex: (config, audit) => new NormalizedHarnessAdapter("codex", new CodexChatClient(audit, undefined, undefined, {
+    command: config.codexAppServerCommand,
+    cwd: config.codexAgentCwd,
+    approvalPolicy: config.codexAppServerApprovalPolicy,
+    sandbox: config.codexAppServerSandbox
+  }), { supportsAttachments: true }),
+  opencode: (config, audit) => new NormalizedHarnessAdapter("opencode", new OpenCodeChatClient(audit, undefined, undefined, {
+    serverUrl: config.opencodeServerUrl,
+    command: config.opencodeServerCommand,
+    cwd: config.opencodeAgentCwd,
+    username: config.opencodeServerUsername,
+    password: config.opencodeServerPassword,
+    defaultAgent: config.opencodeDefaultAgent,
+    timeoutMs: config.opencodeRunTimeoutMs
+  }), { supportsAttachments: true }),
+  pi: (config, audit) => new NormalizedHarnessAdapter("pi", new PiChatClient(audit, undefined, undefined, {
+    cwd: config.piAgentCwd,
+    agentDir: config.piAgentDir,
+    defaultModel: config.piDefaultModel,
+    timeoutMs: config.piRunTimeoutMs
+  }), { supportsAttachments: true })
+} as const satisfies Record<HarnessId, HarnessAdapterFactory>;
+
 export class HarnessChatRouter implements GatewayChatClient {
   private readonly adapters = new Map<HarnessId, HarnessChatAdapter>();
 
@@ -72,36 +101,10 @@ export class HarnessChatRouter implements GatewayChatClient {
       }
       return;
     }
-    this.adapters.set("openclaw", new NormalizedHarnessAdapter("openclaw", new OpenClawGatewayChatClient(config), { supportsAttachments: true }));
-    if (config.hermesConfigured ?? config.hermesApiKey) {
-      this.adapters.set("hermes", new NormalizedHarnessAdapter("hermes", new HermesChatClient(config), { supportsAttachments: true }));
-    }
-    if (config.codexConfigured) {
-      this.adapters.set("codex", new NormalizedHarnessAdapter("codex", new CodexChatClient(audit, undefined, undefined, {
-        command: config.codexAppServerCommand,
-        cwd: config.codexAgentCwd,
-        approvalPolicy: config.codexAppServerApprovalPolicy,
-        sandbox: config.codexAppServerSandbox
-      }), { supportsAttachments: true }));
-    }
-    if (config.opencodeConfigured) {
-      this.adapters.set("opencode", new NormalizedHarnessAdapter("opencode", new OpenCodeChatClient(audit, undefined, undefined, {
-        serverUrl: config.opencodeServerUrl,
-        command: config.opencodeServerCommand,
-        cwd: config.opencodeAgentCwd,
-        username: config.opencodeServerUsername,
-        password: config.opencodeServerPassword,
-        defaultAgent: config.opencodeDefaultAgent,
-        timeoutMs: config.opencodeRunTimeoutMs
-      }), { supportsAttachments: true }));
-    }
-    if (config.piConfigured) {
-      this.adapters.set("pi", new NormalizedHarnessAdapter("pi", new PiChatClient(audit, undefined, undefined, {
-        cwd: config.piAgentCwd,
-        agentDir: config.piAgentDir,
-        defaultModel: config.piDefaultModel,
-        timeoutMs: config.piRunTimeoutMs
-      }), { supportsAttachments: true }));
+    for (const descriptor of harnessDescriptors()) {
+      if (descriptor.enabled(config)) {
+        this.adapters.set(descriptor.id, HARNESS_ADAPTER_FACTORIES[descriptor.id](config, audit));
+      }
     }
   }
 
@@ -139,17 +142,17 @@ export class HarnessChatRouter implements GatewayChatClient {
 
   async listModels(): Promise<unknown> {
     const models = [];
-    for (const info of harnessInfos(this.config)) {
-      if (!info.enabled) {
+    for (const descriptor of harnessDescriptors()) {
+      if (!descriptor.enabled(this.config)) {
         continue;
       }
-      const adapter = this.adapters.get(info.id);
+      const adapter = this.adapters.get(descriptor.id);
       if (!adapter) {
         continue;
       }
       const harnessModels = await adapter.listModels().catch(() => []);
       for (const model of harnessModels) {
-        models.push(namespaceModelOption(model, info.id));
+        models.push(namespaceModelOption(model, descriptor.id));
       }
     }
     return { models };
@@ -292,7 +295,7 @@ export class HarnessChatRouter implements GatewayChatClient {
       ...created,
       ...(key ? { key } : {}),
       harnessId,
-      harnessLabel: harnessInfos(this.config).find((info) => info.id === harnessId)?.label
+      harnessLabel: harnessDescriptor(harnessId).label
     };
   }
 }

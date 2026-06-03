@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChatAttachment, ChatCommandOption, ChatModelOption, ChatSessionSummary } from "../../protocol/messages.js";
-import type { HarnessId } from "../AgentHarness.js";
+import { defaultSessionKeyForHarness, harnessDescriptors, harnessInfos, isWorkspaceAwareHarness, type HarnessId } from "../AgentHarness.js";
 import type { BridgeConfig } from "../config.js";
 import type { GatewayChatSendResult, GatewayEventHandler, HarnessCapabilities } from "../chat/ChatTransportTypes.js";
 import { HarnessChatRouter } from "./HarnessChatRouter.js";
@@ -126,6 +126,25 @@ test("harness router routes bare and namespaced model selections", async () => {
   assert.deepEqual(codex.created.map((entry) => entry.model), ["gpt-5.5"]);
   assert.deepEqual(opencode.created.map((entry) => entry.model), ["openai/gpt-5.5"]);
   assert.deepEqual(pi.created.map((entry) => entry.model), ["anthropic/claude-sonnet-4-5"]);
+});
+
+test("harness descriptors cover labels workspaces enabled state and default keys", () => {
+  assert.deepEqual(harnessDescriptors().map((descriptor) => descriptor.id), ["openclaw", "hermes", "codex", "opencode", "pi"]);
+  assert.deepEqual(
+    harnessInfos({ ...config, hermesApiKey: undefined, hermesConfigured: false, codexConfigured: false, opencodeConfigured: false, piConfigured: false })
+      .map((info) => [info.id, info.enabled, info.supportsWorkspaces]),
+    [
+      ["openclaw", true, false],
+      ["hermes", false, false],
+      ["codex", false, true],
+      ["opencode", false, true],
+      ["pi", false, true]
+    ]
+  );
+  assert.equal(isWorkspaceAwareHarness("codex"), true);
+  assert.equal(isWorkspaceAwareHarness("hermes"), false);
+  assert.equal(defaultSessionKeyForHarness("opencode", config, "Pixel 8"), "opencode:pixel-8");
+  assert.equal(defaultSessionKeyForHarness("pi", config, "Pixel 8"), "pi:pixel-8");
 });
 
 test("harness router lets explicit non-default session keys choose the harness", async () => {

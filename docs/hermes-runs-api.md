@@ -4,6 +4,7 @@ Lynk can use Hermes in two modes:
 
 - **Default setup**: if the `hermes` CLI is on `PATH`, Lynk can answer chat turns through `hermes -z` without any extra server.
 - **Runs API setup**: for richer session history, active-turn steering, SSE deltas, and adapter-controlled cancellation, point Lynk at a Hermes-compatible runs/SSE API.
+- **Local streaming adapter**: when `HERMES_API_KEY` is set but the configured runs API is not reachable, Lynk can read `~/.hermes/config.yaml` and stream directly from the configured OpenAI-compatible `chat_completions` provider, such as a local SGLang endpoint. This preserves `chat.delta` streaming for local Hermes model configs, but it does not provide remote session sync or active-turn steering.
 
 A generic OpenAI-compatible `/chat/completions` proxy is not the runs API. If you want Lynk to use an HTTP adapter instead of CLI fallback, expose the endpoints below.
 
@@ -43,7 +44,7 @@ For multi-provider Hermes deployments, return provider metadata from `/models`. 
 
 The bridge merges live `/models` results with local `~/.hermes/config.yaml` discovery. The API list determines what is available; local config only enriches context windows, reasoning options, and fallback entries.
 
-If `/health` is unreachable but the `hermes` CLI is installed, Lynk reports Hermes health as CLI fallback mode and uses local sessions. In that mode, active-turn steering and remote session sync are limited because the standard CLI does not expose Lynk's run lifecycle endpoints.
+If `/health` is unreachable, Lynk next tries the local streaming adapter when Hermes config has a `chat_completions` provider with a `base_url`. If that provider is unavailable but the `hermes` CLI is installed, Lynk reports Hermes health as CLI fallback mode and uses local sessions. In CLI mode, active-turn steering, SSE deltas, and remote session sync are limited because the standard CLI does not expose Lynk's run lifecycle endpoints.
 
 ## Local Config And Profiles
 

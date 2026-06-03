@@ -40,6 +40,25 @@ export interface HermesSseEvent {
 
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
+export interface HermesRunTransport {
+  createRun(options: HermesRunCreateOptions): Promise<HermesRunCreateResult>;
+  getRun(runId: string): Promise<HermesRunStatus>;
+  health(): Promise<unknown>;
+  streamRunEvents(runId: string, onEvent: (event: HermesSseEvent) => void, signal?: AbortSignal): Promise<void>;
+  stopRun(runId: string): Promise<void>;
+}
+
+export interface HermesMetadataApi {
+  listModels(): Promise<unknown>;
+  listSkills(): Promise<unknown>;
+  listToolsets(): Promise<unknown>;
+  listSessions(): Promise<unknown>;
+  listSessionMessages(sessionId: string): Promise<unknown>;
+  capabilities(): Promise<unknown>;
+}
+
+export interface HermesRunsApi extends HermesRunTransport, HermesMetadataApi {}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" ? value as Record<string, unknown> : undefined;
 }
@@ -92,7 +111,7 @@ export function parseSseEvents(text: string): HermesSseEvent[] {
     .filter((event): event is HermesSseEvent => Boolean(event));
 }
 
-export class HermesApiClient {
+export class HermesApiClient implements HermesRunsApi {
   private readonly apiBaseUrl: string;
   private readonly dashboardBaseUrl: string;
 
