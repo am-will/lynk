@@ -135,6 +135,21 @@ test("Hermes run driver maps config adapter deltas into accumulated output", asy
   assert.equal(result.finalText, "first second");
 });
 
+test("Hermes config runs client only supports its configured provider namespace", () => {
+  const client = new HermesConfigRunsClient({
+    provider: "local-minimax",
+    model: "MiniMax-M2.7",
+    baseUrl: "http://127.0.0.1:8009/v1"
+  });
+
+  assert.equal(client.supportsModel(undefined), true);
+  assert.equal(client.supportsModel("MiniMax-M2.7"), true);
+  assert.equal(client.supportsModel("local-minimax:MiniMax-M2.7"), true);
+  assert.equal(client.supportsModel("anthropic:claude-sonnet-4-6"), false);
+  assert.equal(client.supportsModel("anthropic:claude-opus-4-8"), false);
+  assert.equal(client.supportsModel("some-other-model"), false);
+});
+
 test("Hermes config runs client reads HERMES_CONFIG_PATH profiles", async () => {
   const requestedUrls: string[] = [];
   await withHermesConfigPath([

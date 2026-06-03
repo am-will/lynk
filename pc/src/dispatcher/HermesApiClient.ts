@@ -44,6 +44,7 @@ export interface HermesRunTransport {
   createRun(options: HermesRunCreateOptions): Promise<HermesRunCreateResult>;
   getRun(runId: string): Promise<HermesRunStatus>;
   health(): Promise<unknown>;
+  supportsModel?(model?: string): boolean;
   streamRunEvents(runId: string, onEvent: (event: HermesSseEvent) => void, signal?: AbortSignal): Promise<void>;
   stopRun(runId: string): Promise<void>;
 }

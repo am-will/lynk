@@ -100,6 +100,21 @@ export class HermesConfigRunsClient implements HermesRunTransport {
     };
   }
 
+  supportsModel(model: string | undefined): boolean {
+    const selected = model?.trim();
+    if (!selected) {
+      return true;
+    }
+    const prefix = `${this.provider.provider}:`;
+    if (selected.startsWith(prefix)) {
+      return true;
+    }
+    if (selected.includes(":")) {
+      return false;
+    }
+    return selected === this.provider.model;
+  }
+
   async streamRunEvents(runId: string, onEvent: (event: HermesSseEvent) => void, signal?: AbortSignal): Promise<void> {
     const run = this.requireRun(runId);
     const controller = new AbortController();

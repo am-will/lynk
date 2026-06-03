@@ -38,6 +38,7 @@ interface HermesChatRunTransport {
   driver: HermesRunDriver;
   supportsSteering: boolean;
   health(): Promise<unknown>;
+  supportsModel(model?: string): boolean;
 }
 
 const execFileAsync = promisify(execFile);
@@ -172,7 +173,7 @@ export class HermesChatClient {
     this.sessions.appendUserMessage(session, options.message, options.idempotencyKey, options.attachments);
     const instructions = hermesConversationInstructions(this.sessions.historyMessages(session).slice(0, -1));
 
-    const selectedDriver = await this.selectRunsDriver();
+    const selectedDriver = await this.selectRunsDriver(session.model);
     if (!selectedDriver) {
       return this.sendCliChat(session, options, instructions);
     }
@@ -534,12 +535,16 @@ export class HermesChatClient {
       mode,
       driver: new HermesRunDriver(transport, this.config.hermesRunTimeoutMs),
       supportsSteering,
-      health: () => transport.health()
+      health: () => transport.health(),
+      supportsModel: (model) => transport.supportsModel?.(model) ?? true
     };
   }
 
-  private async selectRunsDriver(): Promise<HermesChatRunTransport | undefined> {
+  private async selectRunsDriver(model?: string): Promise<HermesChatRunTransport | undefined> {
     for (const transport of this.runTransports) {
+      if (!transport.supportsModel(model)) {
+        continue;
+      }
       try {
         const health = await transport.health();
         if (isHealthyHermesResponse(health)) {
