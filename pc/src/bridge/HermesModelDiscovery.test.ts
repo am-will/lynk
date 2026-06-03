@@ -1,19 +1,26 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 import { discoverHermesModels } from "./HermesModelDiscovery.js";
 
 function withHermesHome(files: Record<string, string>, run: () => void): void {
   const previousHome = process.env.HERMES_HOME;
   const previousConfigPath = process.env.HERMES_CONFIG_PATH;
+  const previousPython = process.env.HERMES_PYTHON;
   const home = mkdtempSync(join(tmpdir(), "open-claw-hermes-"));
   try {
     for (const [name, content] of Object.entries(files)) {
-      writeFileSync(join(home, name), content);
+      const path = join(home, name);
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, content);
+      if (name.endsWith("/python")) {
+        chmodSync(path, 0o755);
+      }
     }
     process.env.HERMES_HOME = home;
+    process.env.HERMES_PYTHON = join(home, "hermes-agent", "venv", "bin", "python");
     delete process.env.HERMES_CONFIG_PATH;
     run();
   } finally {
@@ -26,6 +33,11 @@ function withHermesHome(files: Record<string, string>, run: () => void): void {
       delete process.env.HERMES_CONFIG_PATH;
     } else {
       process.env.HERMES_CONFIG_PATH = previousConfigPath;
+    }
+    if (previousPython === undefined) {
+      delete process.env.HERMES_PYTHON;
+    } else {
+      process.env.HERMES_PYTHON = previousPython;
     }
     rmSync(home, { recursive: true, force: true });
   }
@@ -74,5 +86,25 @@ test("Hermes model discovery falls back to known Codex OAuth context windows", (
 
     assert.equal(models.find((model) => model.id === "openai-codex:gpt-5.5")?.contextWindow, 272_000);
     assert.equal(models.find((model) => model.id === "openai-codex:gpt-5.3-codex-spark")?.contextWindow, 128_000);
+  });
+});
+
+test("Hermes model discovery includes authenticated picker providers", () => {
+  withHermesHome({
+    "config.yaml": configYaml,
+    "hermes-agent/venv/bin/python": [
+      "#!/bin/sh",
+      "cat <<'JSON'",
+      JSON.stringify({
+        anthropic: ["claude-sonnet-4-6"],
+        gemini: ["gemini-3-pro-preview"]
+      }),
+      "JSON"
+    ].join("\n")
+  }, () => {
+    const models = discoverHermesModels("hermes-agent");
+
+    assert.equal(models.find((model) => model.id === "anthropic:claude-sonnet-4-6")?.label, "Anthropic / claude-sonnet-4-6");
+    assert.equal(models.find((model) => model.id === "gemini:gemini-3-pro-preview")?.label, "Google AI Studio / gemini-3-pro-preview");
   });
 });

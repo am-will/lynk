@@ -76,10 +76,20 @@ export function discoverHermesModels(defaultModel: string): ChatModelOption[] {
     providerIds.add(provider);
   }
 
-  const catalog = loadHermesProviderCatalog(home, [...providerIds]);
+  const authenticatedCatalog = loadHermesAuthenticatedProviderCatalog(home);
+  for (const provider of authenticatedCatalog.keys()) {
+    providerIds.add(provider);
+  }
+  const catalog = loadHermesProviderCatalog(
+    home,
+    [...providerIds].filter((provider) => !authenticatedCatalog.has(provider))
+  );
   for (const provider of providerIds) {
     const configured = config.providers.get(provider)?.models ?? [];
-    const catalogModels = catalog.get(provider) ?? FALLBACK_PROVIDER_MODELS[provider] ?? [];
+    const catalogModels = authenticatedCatalog.get(provider)
+      ?? catalog.get(provider)
+      ?? FALLBACK_PROVIDER_MODELS[provider]
+      ?? [];
     const ids = uniqueStrings([
       ...configured.map((model) => model.id),
       ...catalogModels
@@ -184,6 +194,64 @@ function readCredentialPoolProviders(path: string): string[] {
   }
 }
 
+function loadHermesAuthenticatedProviderCatalog(home: string): Map<string, string[]> {
+  const hermesAgentDir = join(home, "hermes-agent");
+  if (!existsSync(hermesAgentDir)) {
+    return new Map();
+  }
+  const script = [
+    "import json, os",
+    "env_path=os.path.join(os.environ.get('HERMES_HOME', ''), '.env')",
+    "for line in (open(env_path, encoding='utf-8') if os.path.exists(env_path) else []):",
+    "    s=line.strip()",
+    "    if s and not s.startswith('#') and '=' in s:",
+    "        k,v=s.split('=',1); os.environ.setdefault(k, v.strip().strip('\\\"').strip(\"'\"))",
+    "try:",
+    "    from hermes_cli.config import load_config",
+    "    from hermes_cli.model_switch import list_authenticated_providers",
+    "    cfg=load_config()",
+    "    model=cfg.get('model') if isinstance(cfg.get('model'), dict) else {}",
+    "    out={}",
+    "    for provider in list_authenticated_providers(",
+    "        current_provider=str(model.get('provider') or ''),",
+    "        current_base_url=str(model.get('base_url') or ''),",
+    "        user_providers=cfg.get('providers') if isinstance(cfg.get('providers'), dict) else None,",
+    "        custom_providers=cfg.get('custom_providers') if isinstance(cfg.get('custom_providers'), list) else None,",
+    "        max_models=200,",
+    "        current_model=str(model.get('default') or model.get('model') or ''),",
+    "    ):",
+    "        slug=str(provider.get('slug') or '').strip()",
+    "        models=provider.get('models')",
+    "        if slug and isinstance(models, list):",
+    "            out[slug]=[model for model in models if isinstance(model, str) and model.strip()]",
+    "    print(json.dumps(out))",
+    "except Exception:",
+    "    print('{}')"
+  ].join("\n");
+  const result = spawnSync(hermesPythonExecutable(home), ["-c", script], {
+    cwd: hermesAgentDir,
+    env: {
+      ...process.env,
+      HERMES_HOME: home,
+      PYTHONPATH: hermesAgentDir
+    },
+    encoding: "utf8",
+    timeout: 15_000
+  });
+  if (result.status !== 0 || !result.stdout.trim()) {
+    return new Map();
+  }
+  try {
+    const parsed = JSON.parse(result.stdout) as Record<string, unknown>;
+    return new Map(Object.entries(parsed).map(([provider, value]) => [
+      provider,
+      Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : []
+    ]));
+  } catch {
+    return new Map();
+  }
+}
+
 function loadHermesProviderCatalog(home: string, providers: string[]): Map<string, string[]> {
   if (providers.length === 0) {
     return new Map();
@@ -230,6 +298,15 @@ function loadHermesProviderCatalog(home: string, providers: string[]): Map<strin
   } catch {
     return new Map();
   }
+}
+
+function hermesPythonExecutable(home: string): string {
+  const configured = process.env.HERMES_PYTHON?.trim();
+  if (configured) {
+    return configured;
+  }
+  const bundled = join(home, "hermes-agent", "venv", "bin", "python");
+  return existsSync(bundled) ? bundled : "python3";
 }
 
 function contextWindowForHermesModel(
