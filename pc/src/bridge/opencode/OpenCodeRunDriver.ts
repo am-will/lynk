@@ -1,5 +1,6 @@
 import type { AuditLog } from "../AuditLog.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "../harness/InMemoryHarnessSessionStore.js";
+import { HarnessRunLifecycle, type HarnessActiveRun } from "../harness/HarnessRunLifecycle.js";
 import type { ChatAttachment } from "../../protocol/messages.js";
 import { OpenCodeEventNormalizer, type OpenCodeRunEventResult } from "./OpenCodeEventNormalizer.js";
 import type { OpenCodeServerClient } from "./OpenCodeServerClient.js";
@@ -11,17 +12,11 @@ import {
   usageFromMessages
 } from "./OpenCodeNormalizers.js";
 
-interface ActiveRun {
-  sessionKey: string;
-  runId: string;
-  abortController?: AbortController;
-}
-
 type EmitGatewayEvent = (event: string, payload: unknown) => void;
 
 export class OpenCodeRunDriver {
   private readonly eventNormalizer: OpenCodeEventNormalizer;
-  private active?: ActiveRun;
+  private readonly runs: HarnessRunLifecycle<AbortController>;
 
   constructor(
     private readonly client: OpenCodeServerClient,
@@ -30,12 +25,14 @@ export class OpenCodeRunDriver {
     private readonly audit?: AuditLog
   ) {
     this.eventNormalizer = new OpenCodeEventNormalizer(emit);
+    this.runs = new HarnessRunLifecycle(sessions, {
+      concurrency: "single",
+      busyMessage: "An OpenCode task is already running"
+    });
   }
 
   assertIdle(): void {
-    if (this.active) {
-      throw new Error("An OpenCode task is already running");
-    }
+    this.runs.assertCanStart("");
   }
 
   startRun(
@@ -48,21 +45,22 @@ export class OpenCodeRunDriver {
     }
   ): void {
     this.assertIdle();
-    this.sessions.setActiveRun(session, options.runId);
-    this.active = { sessionKey: session.key, runId: options.runId };
-    void this.processRun(session, options.runId, options.text, options.model, options.attachments);
+    const abortController = new AbortController();
+    const active = this.runs.start(session, options.runId, abortController, () => abortController.abort());
+    void this.processRun(active, session, options.text, options.model, options.attachments);
   }
 
   async abort(runId?: string): Promise<unknown> {
-    if (!this.active || (runId && this.active.runId !== runId)) {
+    const active = this.runs.activeByRun(runId);
+    if (!active) {
       return {};
     }
-    const session = this.sessions.ensureSession(this.active.sessionKey);
-    this.active.abortController?.abort();
+    const session = this.sessions.ensureSession(active.sessionKey);
+    active.resource.abort();
     await this.client.abort(session.sessionId, directoryForSession(session));
     this.emit("chat", {
-      sessionKey: this.active.sessionKey,
-      runId: this.active.runId,
+      sessionKey: active.sessionKey,
+      runId: active.runId,
       state: "error",
       error: "OpenCode run stopped."
     });
@@ -70,13 +68,12 @@ export class OpenCodeRunDriver {
   }
 
   close(): void {
-    this.active?.abortController?.abort();
-    this.active = undefined;
+    this.runs.close();
   }
 
   private async processRun(
+    active: HarnessActiveRun<AbortController>,
     session: HarnessStoredSession,
-    runId: string,
     text: string,
     model: string | undefined,
     attachments: ChatAttachment[] | undefined
@@ -84,20 +81,17 @@ export class OpenCodeRunDriver {
     const directory = directoryForSession(session) ?? this.client.defaultDirectory();
     let lastText = "";
     let eventError: string | undefined;
-    const abortController = new AbortController();
-    if (this.active?.runId === runId) {
-      this.active.abortController = abortController;
-    }
+    const abortController = active.resource;
     try {
-      const eventStream = this.consumeEvents(session, runId, directory, abortController.signal, (result) => {
+      const eventStream = this.consumeEvents(session, active.runId, directory, abortController.signal, (result) => {
         if (result.textDelta !== undefined) {
           const nextText = result.textReplace ? result.textDelta : `${lastText}${result.textDelta}`;
           lastText = nextText;
-          this.sessions.upsertAssistantMessage(session, runId, lastText, { persist: false });
+          this.sessions.upsertAssistantMessage(session, active.runId, lastText, { persist: false });
         }
         if (result.textFinal !== undefined) {
           lastText = result.textFinal;
-          this.sessions.upsertAssistantMessage(session, runId, lastText, { persist: false });
+          this.sessions.upsertAssistantMessage(session, active.runId, lastText, { persist: false });
         }
         if (result.usage) {
           this.sessions.setUsage(session, result.usage);
@@ -124,8 +118,8 @@ export class OpenCodeRunDriver {
             const delta = nextText.startsWith(lastText) ? nextText.slice(lastText.length) : nextText;
             const replace = !nextText.startsWith(lastText);
             lastText = nextText;
-            this.sessions.upsertAssistantMessage(session, runId, lastText, { persist: false });
-            this.emit("chat", { sessionKey: session.key, runId, state: "delta", delta, replace });
+            this.sessions.upsertAssistantMessage(session, active.runId, lastText, { persist: false });
+            this.emit("chat", { sessionKey: session.key, runId: active.runId, state: "delta", delta, replace });
           }
           this.sessions.setUsage(session, usageFromMessages(messages));
         }
@@ -143,26 +137,22 @@ export class OpenCodeRunDriver {
       if (eventError) {
         throw new Error(eventError);
       }
-      this.sessions.upsertAssistantMessage(session, runId, lastText);
+      this.sessions.upsertAssistantMessage(session, active.runId, lastText);
       this.emit("chat", {
         sessionKey: session.key,
-        runId,
+        runId: active.runId,
         state: "final",
         message: lastText
       });
     } catch (error) {
       this.emit("chat", {
         sessionKey: session.key,
-        runId,
+        runId: active.runId,
         state: "error",
         error: error instanceof Error ? error.message : String(error)
       });
     } finally {
-      abortController.abort();
-      if (this.active?.runId === runId) {
-        this.active = undefined;
-      }
-      this.sessions.clearActiveRun(session, runId);
+      this.runs.clear(active);
     }
   }
 
