@@ -965,13 +965,17 @@ export class OpenClawChatBridge {
 
   private harnessIdFromModel(model: unknown): string {
     const record = model && typeof model === "object" ? model as Record<string, unknown> : undefined;
-    const harnessId = stringField(record, "harnessId") ?? stringField(record, "provider");
+    const harnessId = stringField(record, "harnessId");
     if (harnessId === "hermes" || harnessId === "codex" || harnessId === "opencode" || harnessId === "pi" || harnessId === "local") {
       return harnessId;
     }
     const id = stringField(record, "id") ?? "";
     const prefix = id.split(":", 1)[0]?.toLowerCase();
-    return prefix === "hermes" || prefix === "codex" || prefix === "opencode" || prefix === "pi" || prefix === "local" ? prefix : "openclaw";
+    if (prefix === "hermes" || prefix === "codex" || prefix === "opencode" || prefix === "pi" || prefix === "local") {
+      return prefix;
+    }
+    const provider = stringField(record, "provider");
+    return provider === "hermes" || provider === "codex" || provider === "opencode" || provider === "pi" || provider === "local" ? provider : "openclaw";
   }
 
   private sendReplyAvailable(

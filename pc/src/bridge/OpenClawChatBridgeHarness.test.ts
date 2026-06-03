@@ -174,6 +174,20 @@ test("backend readiness counts OpenCode models as OpenCode", async () => {
   assert.equal(readiness.harnesses.openclaw.modelCount, 0);
 });
 
+test("backend readiness counts provider-specific Hermes models as Hermes", async () => {
+  const { bridge, client } = createHarness({ hermesConfigured: true });
+  client.models = [
+    { id: "hermes:anthropic:claude-sonnet-4-6", harnessId: "hermes", provider: "anthropic" },
+    { id: "hermes:gemini:gemini-3-pro-preview", provider: "gemini" }
+  ];
+
+  const readiness = await bridge.backendReadiness();
+
+  assert.equal(readiness.harnesses.hermes.ok, true);
+  assert.equal(readiness.harnesses.hermes.modelCount, 2);
+  assert.equal(readiness.harnesses.openclaw.modelCount, 0);
+});
+
 test("open uses the selected session harness in loading status", async () => {
   const { bridge, chatMessages } = createHarness();
 
