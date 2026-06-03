@@ -92,6 +92,24 @@ class AgentConfigModeTest {
     }
 
     @Test
+    fun hostHarnessDescriptorsDefineSettingsOrderAndWorkspaceSupport() {
+        assertEquals(
+            listOf("openclaw", "hermes", "codex", "opencode", "pi"),
+            AgentConfig.HOST_HARNESSES.map { it.id }
+        )
+        assertEquals(
+            listOf("OpenClaw", "Hermes", "Codex", "OpenCode", "Pi"),
+            AgentConfig.HOST_HARNESSES.map { it.label }
+        )
+        assertFalse(AgentConfig.isWorkspaceHarness("openclaw"))
+        assertFalse(AgentConfig.isWorkspaceHarness("hermes"))
+        assertTrue(AgentConfig.isWorkspaceHarness("codex"))
+        assertTrue(AgentConfig.isWorkspaceHarness("opencode"))
+        assertTrue(AgentConfig.isWorkspaceHarness("pi"))
+        assertFalse(AgentConfig.isWorkspaceHarness("local"))
+    }
+
+    @Test
     fun harnessDefaultModelsAreBlankUntilConfigured() {
         val config = AgentConfig(
             hostUrl = "ws://127.0.0.1:8788/phone",

@@ -5,12 +5,14 @@ import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
 import android.view.View
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Spinner
 import dev.androidagent.AgentConfig
 import dev.androidagent.AgentConfigStore
 import dev.androidagent.CodexWorkspacePaths
+import dev.androidagent.HostHarnessDescriptor
 import dev.androidagent.LocalModelBackend
 import dev.androidagent.R
 import dev.androidagent.chat.ChatModelCatalog
@@ -36,20 +38,26 @@ object RuntimeSettingsScreen {
 
         root.addView(SettingsUi.toolbar(activity, "Harness", tokens, callbacks::onBack))
 
-        val openClaw = SettingsUi.harnessCheckBox(activity, "OpenClaw", config.openClawHarnessEnabled, "Enable OpenClaw harness", tokens, R.id.openclaw_harness_openclaw_checkbox)
-        val hermes = SettingsUi.harnessCheckBox(activity, "Hermes", config.hermesHarnessEnabled, "Enable Hermes harness", tokens, R.id.openclaw_harness_hermes_checkbox)
-        val codex = SettingsUi.harnessCheckBox(activity, "Codex", config.codexHarnessEnabled, "Enable Codex harness", tokens, R.id.openclaw_harness_codex_checkbox)
-        val opencode = SettingsUi.harnessCheckBox(activity, "OpenCode", config.opencodeHarnessEnabled, "Enable OpenCode harness", tokens, R.id.openclaw_harness_opencode_checkbox)
-        val pi = SettingsUi.harnessCheckBox(activity, "Pi", config.piHarnessEnabled, "Enable Pi harness", tokens, R.id.openclaw_harness_pi_checkbox)
+        val hostHarnessControls = AgentConfig.HOST_HARNESSES.map { descriptor ->
+            HostHarnessControl(
+                descriptor = descriptor,
+                checkBox = SettingsUi.harnessCheckBox(
+                    activity,
+                    descriptor.label,
+                    config.isModelHarnessEnabled(descriptor.id),
+                    "Enable ${descriptor.label} harness",
+                    tokens,
+                    descriptor.checkboxViewId()
+                )
+            )
+        }
         val local = SettingsUi.harnessCheckBox(activity, "Local LiteRT-LM (experimental)", config.experimentalLocalModelsEnabled, "Enable local harness", tokens, R.id.openclaw_harness_local_litert_checkbox)
 
         root.addView(SettingsUi.card(activity, tokens).apply {
             addView(SettingsUi.sectionHeader(activity, "Backends", "Disabled harnesses are hidden from the model picker.", tokens))
-            addView(openClaw, SettingsUi.stackedParams(activity, DesignTokens.Spacing.md))
-            addView(hermes, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
-            addView(codex, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
-            addView(opencode, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
-            addView(pi, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
+            hostHarnessControls.forEachIndexed { index, control ->
+                addView(control.checkBox, SettingsUi.stackedParams(activity, if (index == 0) DesignTokens.Spacing.md else DesignTokens.Spacing.sm))
+            }
             addView(local, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
         }, SettingsUi.stackedParams(activity))
 
@@ -119,11 +127,11 @@ object RuntimeSettingsScreen {
             AgentConfigStore.save(
                 activity,
                 AgentConfigStore.load(activity).copy(
-                    openClawHarnessEnabled = openClaw.isChecked,
-                    hermesHarnessEnabled = hermes.isChecked,
-                    codexHarnessEnabled = codex.isChecked,
-                    opencodeHarnessEnabled = opencode.isChecked,
-                    piHarnessEnabled = pi.isChecked,
+                    openClawHarnessEnabled = hostHarnessControls.isChecked(AgentConfig.HARNESS_OPENCLAW, config.openClawHarnessEnabled),
+                    hermesHarnessEnabled = hostHarnessControls.isChecked(AgentConfig.HARNESS_HERMES, config.hermesHarnessEnabled),
+                    codexHarnessEnabled = hostHarnessControls.isChecked(AgentConfig.HARNESS_CODEX, config.codexHarnessEnabled),
+                    opencodeHarnessEnabled = hostHarnessControls.isChecked(AgentConfig.HARNESS_OPENCODE, config.opencodeHarnessEnabled),
+                    piHarnessEnabled = hostHarnessControls.isChecked(AgentConfig.HARNESS_PI, config.piHarnessEnabled),
                     openClawDefaultModel = defaultModelControls.selectedModel(
                         AgentConfig.HARNESS_OPENCLAW,
                         config.openClawDefaultModel
@@ -158,7 +166,7 @@ object RuntimeSettingsScreen {
             callbacks.onSettingsChanged()
         }
 
-        listOf(openClaw, hermes, codex, opencode, pi, local, localDeveloperTools).forEach { checkBox ->
+        (hostHarnessControls.map { it.checkBox } + listOf(local, localDeveloperTools)).forEach { checkBox ->
             checkBox.setOnCheckedChangeListener { _, _ -> saveCurrent() }
         }
         defaultModelControls.forEach { control ->
@@ -178,6 +186,11 @@ object RuntimeSettingsScreen {
         val harnessId: String,
         val models: List<ChatModelOption>,
         val spinner: Spinner?
+    )
+
+    private data class HostHarnessControl(
+        val descriptor: HostHarnessDescriptor,
+        val checkBox: CheckBox
     )
 
     private data class WorkspaceControl(
@@ -216,26 +229,18 @@ object RuntimeSettingsScreen {
         }
     }
 
-    private fun workspaceSpecs(config: AgentConfig): List<WorkspaceSpec> = listOf(
-        WorkspaceSpec(
-            harnessId = AgentConfig.HARNESS_CODEX,
-            title = "Codex Default Workspace",
-            description = "New Codex chats start here when Codex is selected.",
-            path = config.codexWorkspacePath
-        ),
-        WorkspaceSpec(
-            harnessId = AgentConfig.HARNESS_OPENCODE,
-            title = "OpenCode Default Workspace",
-            description = "New OpenCode chats start here when OpenCode is selected.",
-            path = config.opencodeWorkspacePath
-        ),
-        WorkspaceSpec(
-            harnessId = AgentConfig.HARNESS_PI,
-            title = "Pi Default Workspace",
-            description = "New Pi chats start here when Pi is selected.",
-            path = config.piWorkspacePath
-        )
-    )
+    private fun workspaceSpecs(config: AgentConfig): List<WorkspaceSpec> {
+        return AgentConfig.HOST_HARNESSES
+            .filter { it.supportsWorkspace }
+            .map { descriptor ->
+                WorkspaceSpec(
+                    harnessId = descriptor.id,
+                    title = "${descriptor.label} Default Workspace",
+                    description = "New ${descriptor.label} chats start here when ${descriptor.label} is selected.",
+                    path = config.workspacePathForHarness(descriptor.id)
+                )
+            }
+    }
 
     private fun List<WorkspaceControl>.workspacePath(harnessId: String): String {
         return firstOrNull { it.harnessId == harnessId }
@@ -253,38 +258,14 @@ object RuntimeSettingsScreen {
         controls: MutableList<DefaultModelControl>
     ): Int {
         val snapshot = DiagnosticsBackendSnapshot.current()
-        val specs = listOf(
+        val specs = AgentConfig.HOST_HARNESSES.map { descriptor ->
             DefaultModelSpec(
-                harnessId = AgentConfig.HARNESS_OPENCLAW,
-                label = "OpenClaw default",
-                enabled = config.openClawHarnessEnabled,
-                viewId = R.id.openclaw_default_model_spinner
-            ),
-            DefaultModelSpec(
-                harnessId = AgentConfig.HARNESS_HERMES,
-                label = "Hermes default",
-                enabled = config.hermesHarnessEnabled,
-                viewId = R.id.openclaw_hermes_default_model_spinner
-            ),
-            DefaultModelSpec(
-                harnessId = AgentConfig.HARNESS_CODEX,
-                label = "Codex default",
-                enabled = config.codexHarnessEnabled,
-                viewId = R.id.openclaw_codex_default_model_spinner
-            ),
-            DefaultModelSpec(
-                harnessId = AgentConfig.HARNESS_OPENCODE,
-                label = "OpenCode default",
-                enabled = config.opencodeHarnessEnabled,
-                viewId = R.id.openclaw_opencode_default_model_spinner
-            ),
-            DefaultModelSpec(
-                harnessId = AgentConfig.HARNESS_PI,
-                label = "Pi default",
-                enabled = config.piHarnessEnabled,
-                viewId = R.id.openclaw_pi_default_model_spinner
+                harnessId = descriptor.id,
+                label = "${descriptor.label} default",
+                enabled = config.isModelHarnessEnabled(descriptor.id),
+                viewId = descriptor.defaultModelSpinnerViewId()
             )
-        )
+        }
         var visibleRows = 0
         specs.filter { it.enabled }.forEach { spec ->
             visibleRows += 1
@@ -345,6 +326,41 @@ object RuntimeSettingsScreen {
         return model.label.takeIf { it.isNotBlank() }
             ?: model.modelId?.takeIf { it.isNotBlank() }
             ?: model.id
+    }
+
+    private fun List<HostHarnessControl>.isChecked(harnessId: String, fallback: Boolean): Boolean {
+        return firstOrNull { it.descriptor.id == harnessId }?.checkBox?.isChecked ?: fallback
+    }
+
+    private fun AgentConfig.workspacePathForHarness(harnessId: String): String {
+        return when (harnessId) {
+            AgentConfig.HARNESS_CODEX -> codexWorkspacePath
+            AgentConfig.HARNESS_OPENCODE -> opencodeWorkspacePath
+            AgentConfig.HARNESS_PI -> piWorkspacePath
+            else -> ""
+        }
+    }
+
+    private fun HostHarnessDescriptor.checkboxViewId(): Int {
+        return when (id) {
+            AgentConfig.HARNESS_OPENCLAW -> R.id.openclaw_harness_openclaw_checkbox
+            AgentConfig.HARNESS_HERMES -> R.id.openclaw_harness_hermes_checkbox
+            AgentConfig.HARNESS_CODEX -> R.id.openclaw_harness_codex_checkbox
+            AgentConfig.HARNESS_OPENCODE -> R.id.openclaw_harness_opencode_checkbox
+            AgentConfig.HARNESS_PI -> R.id.openclaw_harness_pi_checkbox
+            else -> View.NO_ID
+        }
+    }
+
+    private fun HostHarnessDescriptor.defaultModelSpinnerViewId(): Int {
+        return when (id) {
+            AgentConfig.HARNESS_OPENCLAW -> R.id.openclaw_default_model_spinner
+            AgentConfig.HARNESS_HERMES -> R.id.openclaw_hermes_default_model_spinner
+            AgentConfig.HARNESS_CODEX -> R.id.openclaw_codex_default_model_spinner
+            AgentConfig.HARNESS_OPENCODE -> R.id.openclaw_opencode_default_model_spinner
+            AgentConfig.HARNESS_PI -> R.id.openclaw_pi_default_model_spinner
+            else -> View.NO_ID
+        }
     }
 
     private fun keepCodexHomePrefix(input: EditText) {
