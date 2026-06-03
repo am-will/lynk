@@ -218,7 +218,7 @@ export class HermesConfigRunsClient implements HermesRunTransport {
       if (delta) {
         run.output += delta;
         run.updatedAt = Date.now();
-        onEvent(this.event("message", { delta, run_id: this.runIdFor(run), data: parsed }, raw));
+        onEvent(this.event("message.delta", { delta, run_id: this.runIdFor(run), data: parsed }, raw));
       }
       const usage = (parsed as { usage?: unknown })?.usage;
       if (usage) {

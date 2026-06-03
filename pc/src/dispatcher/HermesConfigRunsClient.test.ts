@@ -91,7 +91,7 @@ test("Hermes config runs client streams OpenAI-compatible deltas", async () => {
   await client.streamRunEvents(created.runId, (event) => events.push(event));
   const status = await client.getRun(created.runId);
 
-  assert.deepEqual(events.filter((event) => event.event === "message").map((event) => (event.data as { delta: string }).delta), ["hello", " world"]);
+  assert.deepEqual(events.filter((event) => event.event === "message.delta").map((event) => (event.data as { delta: string }).delta), ["hello", " world"]);
   assert.equal(status.status, "completed");
   assert.deepEqual(status.output, { text: "hello world" });
   const chatRequestBody = requests.find((request) => request.url.endsWith("/chat/completions"))?.body as Record<string, unknown> | undefined;
@@ -133,6 +133,47 @@ test("Hermes run driver maps config adapter deltas into accumulated output", asy
 
   assert.deepEqual(deltas, ["first", " second"]);
   assert.equal(result.finalText, "first second");
+});
+
+test("Hermes run driver ignores non-message text events", async () => {
+  const runId = "run_reasoning";
+  const transport = {
+    async createRun() {
+      return { runId };
+    },
+    async getRun() {
+      return {
+        runId,
+        status: "completed",
+        output: { text: "Hello world" },
+        raw: {}
+      };
+    },
+    async health() {
+      return { ok: true };
+    },
+    async streamRunEvents(_runId: string, onEvent: (event: HermesSseEvent) => void) {
+      onEvent({ event: "message", data: { event: "message.delta", delta: "Hello" }, raw: "" });
+      onEvent({ event: "message", data: { event: "reasoning.available", text: "Hello world" }, raw: "" });
+      onEvent({ event: "message", data: { event: "message.delta", delta: " world" }, raw: "" });
+    },
+    async stopRun() {}
+  };
+  const driver = new HermesRunDriver(transport, 10_000);
+  const active = await driver.createRun({
+    input: "Say hello",
+    sessionId: "session"
+  });
+  const deltas: string[] = [];
+
+  const result = await driver.streamRun(active, (event) => {
+    if (event.type === "delta") {
+      deltas.push(event.delta);
+    }
+  });
+
+  assert.deepEqual(deltas, ["Hello", " world"]);
+  assert.equal(result.finalText, "Hello world");
 });
 
 test("Hermes config runs client only supports its configured provider namespace", () => {

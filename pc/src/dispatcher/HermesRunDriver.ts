@@ -175,6 +175,13 @@ function eventToolName(event: HermesSseEvent): string | undefined {
 function eventDelta(event: HermesSseEvent): string | undefined {
   const record = asRecord(event.data);
   const nested = asRecord(record?.data) ?? record;
+  const eventName = event.event.toLowerCase();
+  const nestedEventName = typeof nested?.event === "string" ? nested.event.toLowerCase() : "";
+  const recordEventName = typeof record?.event === "string" ? record.event.toLowerCase() : "";
+  const isMessageDelta = [eventName, nestedEventName, recordEventName].some((name) => name.includes("message.delta") || name.includes("output_text.delta"));
+  if (!isMessageDelta) {
+    return undefined;
+  }
   for (const source of [nested, record]) {
     for (const key of ["delta", "text_delta", "output_text", "text"]) {
       const value = source?.[key];
