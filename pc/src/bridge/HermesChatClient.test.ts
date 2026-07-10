@@ -35,7 +35,11 @@ const config: BridgeConfig = {
   codexConfigured: true,
   piAgentCwd: "/tmp",
   piRunTimeoutMs: 600_000,
-  piConfigured: true
+  piConfigured: true,
+  devinAcpCommand: "devin acp",
+  devinAgentCwd: "/tmp",
+  devinRunTimeoutMs: 600_000,
+  devinConfigured: false
 };
 
 class FakeHermesApiClient {

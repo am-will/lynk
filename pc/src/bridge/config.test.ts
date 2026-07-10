@@ -54,3 +54,27 @@ test("getBridgeConfig accepts a non-default token", () => {
   process.env.PHONE_AGENT_TOKEN = "strong-local-test-token";
   assert.equal(getBridgeConfig().token, "strong-local-test-token");
 });
+
+test("getBridgeConfig uses Devin defaults and env overrides", () => {
+  process.env.PHONE_AGENT_TOKEN = "strong-local-test-token";
+  const defaults = getBridgeConfig();
+  assert.equal(defaults.devinAcpCommand, "devin acp");
+  assert.equal(defaults.devinRunTimeoutMs, 600_000);
+
+  process.env.DEVIN_ACP_COMMAND = "/opt/devin/bin/devin acp";
+  process.env.DEVIN_AGENT_CWD = "/tmp/devin-cwd";
+  process.env.DEVIN_RUN_TIMEOUT_SECONDS = "300";
+  try {
+    const overridden = getBridgeConfig();
+    assert.equal(overridden.devinAcpCommand, "/opt/devin/bin/devin acp");
+    assert.equal(overridden.devinAgentCwd, "/tmp/devin-cwd");
+    assert.equal(overridden.devinRunTimeoutMs, 300_000);
+
+    process.env.DEVIN_RUN_TIMEOUT_SECONDS = "0";
+    assert.throws(() => getBridgeConfig(), /DEVIN_RUN_TIMEOUT_SECONDS must be a positive integer/);
+  } finally {
+    delete process.env.DEVIN_RUN_TIMEOUT_SECONDS;
+    delete process.env.DEVIN_AGENT_CWD;
+    delete process.env.DEVIN_ACP_COMMAND;
+  }
+});

@@ -3,7 +3,7 @@ import type { ChatModelOption, ChatSessionSummary } from "../protocol/messages.j
 import type { BridgeConfig } from "./config.js";
 import { defaultSessionKeyForDevice } from "./OpenClawChatTypes.js";
 
-export const HARNESS_IDS = ["openclaw", "hermes", "codex", "opencode", "pi"] as const;
+export const HARNESS_IDS = ["openclaw", "hermes", "codex", "opencode", "pi", "devin"] as const;
 export type HarnessId = typeof HARNESS_IDS[number];
 
 export interface HarnessInfo {
@@ -13,12 +13,16 @@ export interface HarnessInfo {
   supportsWorkspaces: boolean;
 }
 
+type HarnessEnabledConfig = Pick<BridgeConfig, "hermesApiKey" | "hermesConfigured" | "codexConfigured" | "opencodeConfigured" | "piConfigured" | "devinConfigured">;
+
+type DefaultSessionKeyConfig = Pick<BridgeConfig, "openClawChatAgentId" | "openClawChatSessionKey" | "hermesDefaultSessionId">;
+
 export interface HarnessDescriptor {
   id: HarnessId;
   label: string;
   supportsWorkspaces: boolean;
-  enabled(config: Pick<BridgeConfig, "hermesApiKey" | "hermesConfigured" | "codexConfigured" | "opencodeConfigured" | "piConfigured">): boolean;
-  defaultSessionKey(config: Pick<BridgeConfig, "openClawChatAgentId" | "openClawChatSessionKey" | "hermesDefaultSessionId">, deviceId: string): string;
+  enabled(config: HarnessEnabledConfig): boolean;
+  defaultSessionKey(config: DefaultSessionKeyConfig, deviceId: string): string;
   readinessAction: string;
   recoveryAction: string;
 }
@@ -76,6 +80,15 @@ const HARNESS_DESCRIPTORS = {
     defaultSessionKey: (_config, deviceId) => `pi:${sanitizeSessionSegment(deviceId)}`,
     readinessAction: "Configure Pi credentials and available models in the Pi agent directory, then run host integration refresh.",
     recoveryAction: "Verify Pi SDK credentials, model availability, and workspace configuration, then try again."
+  },
+  devin: {
+    id: "devin",
+    label: "Devin",
+    supportsWorkspaces: true,
+    enabled: (config) => Boolean(config.devinConfigured),
+    defaultSessionKey: (_config, deviceId) => `devin:${sanitizeSessionSegment(deviceId)}`,
+    readinessAction: "Install and authenticate the Devin CLI, then run host integration refresh.",
+    recoveryAction: "Verify `devin auth status` succeeds and the ACP command is configured, then try again."
   }
 } as const satisfies Record<HarnessId, HarnessDescriptor>;
 
@@ -93,7 +106,7 @@ export function harnessLabel(harnessId: HarnessId): string {
   return harnessDescriptor(harnessId).label;
 }
 
-export function harnessInfos(config: Pick<BridgeConfig, "hermesApiKey" | "hermesConfigured" | "codexConfigured" | "opencodeConfigured" | "piConfigured">): HarnessInfo[] {
+export function harnessInfos(config: HarnessEnabledConfig): HarnessInfo[] {
   return harnessDescriptors().map((descriptor) => ({
     id: descriptor.id,
     label: descriptor.label,
@@ -149,7 +162,7 @@ export function harnessForSessionKey(sessionKey: string | undefined | null): Har
 
 export function defaultSessionKeyForHarness(
   harnessId: HarnessId,
-  config: Pick<BridgeConfig, "openClawChatAgentId" | "openClawChatSessionKey" | "hermesDefaultSessionId">,
+  config: DefaultSessionKeyConfig,
   deviceId: string
 ): string {
   return harnessDescriptor(harnessId).defaultSessionKey(config, deviceId);

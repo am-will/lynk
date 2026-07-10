@@ -40,6 +40,44 @@ export function commandExecutable(command: string): string {
   return trimmed.split(/\s+/, 1)[0] ?? "";
 }
 
+export function commandArgs(command: string): string[] {
+  const trimmed = command.trim();
+  if (!trimmed) {
+    return [];
+  }
+  if (trimmed.startsWith("\"")) {
+    const end = trimmed.indexOf("\"", 1);
+    const rest = end > 1 ? trimmed.slice(end + 1) : "";
+    return rest.trim().split(/\s+/).filter(Boolean);
+  }
+  if (trimmed.startsWith("'")) {
+    const end = trimmed.indexOf("'", 1);
+    const rest = end > 1 ? trimmed.slice(end + 1) : "";
+    return rest.trim().split(/\s+/).filter(Boolean);
+  }
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  return parts.slice(1);
+}
+
+export function resolvedCommandWithArgs(command: string, resolvedExecutable: string): string {
+  const args = commandArgs(command);
+  const executable = quoteExecutableIfNeeded(resolvedExecutable);
+  return args.length > 0 ? `${executable} ${args.join(" ")}` : executable;
+}
+
+function quoteExecutableIfNeeded(executable: string): string {
+  if (!/[\s"']/.test(executable)) {
+    return executable;
+  }
+  if (!executable.includes("\"")) {
+    return `"${executable}"`;
+  }
+  if (!executable.includes("'")) {
+    return `'${executable}'`;
+  }
+  return `"${executable.replace(/"/g, "\\\"")}"`;
+}
+
 export function resolveExecutable(executable: string): string | undefined {
   if (!executable.trim()) {
     return undefined;
@@ -73,9 +111,16 @@ export function resolveExecutable(executable: string): string | undefined {
 }
 
 function bundledCommandFallbacks(executable: string): string[] {
-  if (executable !== "opencode") {
+  const home = process.env.HOME || process.env.USERPROFILE || homedir();
+  if (!home) {
     return [];
   }
-  const home = process.env.HOME || process.env.USERPROFILE || homedir();
-  return home ? [join(home, ".opencode", "bin", "opencode")] : [];
+  switch (executable) {
+    case "opencode":
+      return [join(home, ".opencode", "bin", "opencode")];
+    case "devin":
+      return [join(home, ".local", "bin", "devin")];
+    default:
+      return [];
+  }
 }

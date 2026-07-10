@@ -2,14 +2,15 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveCommand, resolveExecutable } from "./CommandDiscovery.js";
+import { resolveCommand, resolveExecutable, resolvedCommandWithArgs } from "./CommandDiscovery.js";
+import { probeDevinAuthStatus, type DevinAuthStatus } from "./DevinAuthProbe.js";
 import { discoverEndpoints } from "./EndpointDiscovery.js";
 import { resolveHermesConfigPath } from "./HermesConfigPath.js";
 import { loadOrCreateHostBridgeConfig, writeHostBridgeConfig } from "./HostConfigStore.js";
 import { isPiSdkInstalled, piSdkPackagePath } from "./PiInstallation.js";
 
 export interface IntegrationStatus {
-  id: "openclaw" | "hermes" | "codex" | "opencode" | "pi" | "tailscale" | "adb";
+  id: "openclaw" | "hermes" | "codex" | "opencode" | "pi" | "devin" | "tailscale" | "adb";
   label: string;
   installed: boolean;
   configured: boolean;
@@ -38,6 +39,11 @@ export async function refreshHostIntegrations(options: { configureMcp?: boolean 
     ...config.discoveredPaths,
     ...Object.fromEntries(integrations.flatMap((integration) => integration.path ? [[integration.id, integration.path]] : []))
   };
+  const devinCommand = process.env.DEVIN_ACP_COMMAND?.trim() || config.devinAcpCommand?.trim() || "devin acp";
+  const devinResolution = resolveCommand(devinCommand);
+  if (devinResolution.available && devinResolution.resolvedPath) {
+    config.devinAcpCommand = resolvedCommandWithArgs(devinCommand, devinResolution.resolvedPath);
+  }
   writeHostBridgeConfig(loaded.path, config);
   const changed = before !== JSON.stringify(config);
   const mcp = options.configureMcp === false
@@ -67,6 +73,11 @@ export async function detectIntegrations(): Promise<IntegrationStatus[]> {
   const hermesCli = resolveCommand(process.env.HERMES_COMMAND?.trim() || "hermes");
   const hermesConfigPath = resolveHermesConfigPath();
   const hermesConfigExists = existsSync(hermesConfigPath);
+  const devinCommand = process.env.DEVIN_ACP_COMMAND?.trim() || hostConfig.devinAcpCommand?.trim() || "devin acp";
+  const devinResolution = resolveCommand(devinCommand);
+  const devinAuth = devinResolution.available
+    ? await probeDevinAuthStatus({ command: devinCommand })
+    : { status: "not_installed" as DevinAuthStatus };
 
   return [
     {
@@ -122,6 +133,7 @@ export async function detectIntegrations(): Promise<IntegrationStatus[]> {
       path: piInstalled ? piPackagePath : undefined,
       message: piInstalled ? "Pi SDK package is installed." : "Pi SDK package was not found in bridge dependencies."
     },
+    buildDevinIntegrationStatus(devinResolution, devinAuth),
     {
       id: "tailscale",
       label: "Tailscale",
@@ -141,6 +153,38 @@ export async function detectIntegrations(): Promise<IntegrationStatus[]> {
       message: adb ? "ADB was found for USB reverse pairing." : "ADB was not found on PATH."
     }
   ];
+}
+
+export function buildDevinIntegrationStatus(
+  resolution: { available: boolean; resolvedPath?: string; command?: string },
+  auth: { status: DevinAuthStatus; path?: string }
+): IntegrationStatus {
+  return {
+    id: "devin",
+    label: "Devin",
+    installed: resolution.available,
+    configured: resolution.available,
+    ready: auth.status === "authenticated",
+    path: auth.path ?? resolution.resolvedPath,
+    message: devinAuthMessage(auth.status)
+  };
+}
+
+function devinAuthMessage(status: DevinAuthStatus): string {
+  switch (status) {
+    case "authenticated":
+      return "Devin CLI is installed and authenticated.";
+    case "not_authenticated":
+      return "Devin CLI is installed but not authenticated. Run `devin auth login` to enable Devin sessions.";
+    case "not_installed":
+      return "Devin CLI was not found on PATH.";
+    case "timeout":
+      return "Devin authentication check timed out.";
+    case "spawn_error":
+      return "Devin CLI was found but could not be launched for authentication check.";
+    default:
+      return "Devin authentication status is unknown.";
+  }
 }
 
 async function configureAvailableMcp(integrations: IntegrationStatus[]): Promise<Array<{ integration: string; ok: boolean; message: string }>> {

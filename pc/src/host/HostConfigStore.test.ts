@@ -16,9 +16,11 @@ test("new host bridge config defaults agent cwd to package root, not launcher cw
     assert.notEqual(config.codexAgentCwd, "/");
     assert.notEqual(config.opencodeAgentCwd, "/");
     assert.notEqual(config.piAgentCwd, "/");
+    assert.notEqual(config.devinAgentCwd, "/");
     assert.match(config.codexAgentCwd ?? "", /\/pc$/);
     assert.equal(config.opencodeAgentCwd, config.codexAgentCwd);
     assert.equal(config.piAgentCwd, config.codexAgentCwd);
+    assert.equal(config.devinAgentCwd, config.codexAgentCwd);
   } finally {
     process.chdir(originalCwd);
     await rm(dir, { recursive: true, force: true });

@@ -26,7 +26,8 @@ export async function buildDiagnosticsBundle(): Promise<Record<string, unknown>>
       bridgeUrl: bridgeConfig.bridgeUrl,
       codexConfigured: bridgeConfig.codexConfigured,
       opencodeConfigured: bridgeConfig.opencodeConfigured,
-      piConfigured: bridgeConfig.piConfigured
+      piConfigured: bridgeConfig.piConfigured,
+      devinConfigured: bridgeConfig.devinConfigured
     },
     discovery,
     integrations,

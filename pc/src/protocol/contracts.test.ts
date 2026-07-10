@@ -138,7 +138,7 @@ test("chat attachments enforce base64 and size limits", () => {
 });
 
 test("realtime start accepts selected chat backend model IDs", () => {
-  for (const model of ["gpt-5.5", "hermes:gpt-5.5", "codex:gpt-5.3-codex", "opencode:openai/gpt-5.5", "pi:anthropic/claude-sonnet-4-5", "local-litertlm"]) {
+  for (const model of ["gpt-5.5", "hermes:gpt-5.5", "codex:gpt-5.3-codex", "opencode:openai/gpt-5.5", "pi:anthropic/claude-sonnet-4-5", "devin:default", "local-litertlm"]) {
     assert.equal(realtimeStartMessageSchema.safeParse({
       type: "realtime.start",
       deviceId: "pixel",
@@ -153,6 +153,12 @@ test("realtime start accepts selected chat backend model IDs", () => {
     deviceId: "pixel",
     sdp: "v=0\r\n...",
     model: ""
+  }).success, false);
+  assert.equal(realtimeStartMessageSchema.safeParse({
+    type: "realtime.start",
+    deviceId: "pixel",
+    sdp: "v=0\r\n...",
+    model: "devin:"
   }).success, false);
   assert.equal(realtimeStartMessageSchema.safeParse({
     type: "realtime.start",

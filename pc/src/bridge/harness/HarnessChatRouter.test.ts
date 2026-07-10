@@ -32,7 +32,11 @@ const config: BridgeConfig = {
   codexConfigured: true,
   piAgentCwd: "/tmp",
   piRunTimeoutMs: 600_000,
-  piConfigured: true
+  piConfigured: true,
+  devinAcpCommand: "devin acp",
+  devinAgentCwd: "/tmp",
+  devinRunTimeoutMs: 600_000,
+  devinConfigured: false
 };
 
 class FakeAdapter implements HarnessChatAdapter {
@@ -108,43 +112,49 @@ function createRouter(overrides: Partial<BridgeConfig> = {}) {
   const codex = new FakeAdapter("codex");
   const opencode = new FakeAdapter("opencode");
   const pi = new FakeAdapter("pi");
-  const router = new HarnessChatRouter({ ...config, ...overrides }, undefined, [openclaw, hermes, codex, opencode, pi]);
-  return { router, openclaw, hermes, codex, opencode, pi };
+  const devin = new FakeAdapter("devin");
+  const router = new HarnessChatRouter({ ...config, ...overrides }, undefined, [openclaw, hermes, codex, opencode, pi, devin]);
+  return { router, openclaw, hermes, codex, opencode, pi, devin };
 }
 
 test("harness router routes bare and namespaced model selections", async () => {
-  const { router, openclaw, hermes, codex, opencode, pi } = createRouter();
+  const { router, openclaw, hermes, codex, opencode, pi, devin } = createRouter();
 
   await router.createSession({ model: "gpt-5.5" });
   await router.createSession({ model: "hermes:gpt-5.5" });
   await router.createSession({ model: "codex:gpt-5.5" });
   await router.createSession({ model: "opencode:openai/gpt-5.5" });
   await router.createSession({ model: "pi:anthropic/claude-sonnet-4-5" });
+  await router.createSession({ model: "devin:default" });
 
   assert.deepEqual(openclaw.created.map((entry) => entry.model), ["gpt-5.5"]);
   assert.deepEqual(hermes.created.map((entry) => entry.model), ["gpt-5.5"]);
   assert.deepEqual(codex.created.map((entry) => entry.model), ["gpt-5.5"]);
   assert.deepEqual(opencode.created.map((entry) => entry.model), ["openai/gpt-5.5"]);
   assert.deepEqual(pi.created.map((entry) => entry.model), ["anthropic/claude-sonnet-4-5"]);
+  assert.deepEqual(devin.created.map((entry) => entry.model), ["default"]);
 });
 
 test("harness descriptors cover labels workspaces enabled state and default keys", () => {
-  assert.deepEqual(harnessDescriptors().map((descriptor) => descriptor.id), ["openclaw", "hermes", "codex", "opencode", "pi"]);
+  assert.deepEqual(harnessDescriptors().map((descriptor) => descriptor.id), ["openclaw", "hermes", "codex", "opencode", "pi", "devin"]);
   assert.deepEqual(
-    harnessInfos({ ...config, hermesApiKey: undefined, hermesConfigured: false, codexConfigured: false, opencodeConfigured: false, piConfigured: false })
+    harnessInfos({ ...config, hermesApiKey: undefined, hermesConfigured: false, codexConfigured: false, opencodeConfigured: false, piConfigured: false, devinConfigured: false })
       .map((info) => [info.id, info.enabled, info.supportsWorkspaces]),
     [
       ["openclaw", true, false],
       ["hermes", false, false],
       ["codex", false, true],
       ["opencode", false, true],
-      ["pi", false, true]
+      ["pi", false, true],
+      ["devin", false, true]
     ]
   );
   assert.equal(isWorkspaceAwareHarness("codex"), true);
   assert.equal(isWorkspaceAwareHarness("hermes"), false);
+  assert.equal(isWorkspaceAwareHarness("devin"), true);
   assert.equal(defaultSessionKeyForHarness("opencode", config, "Pixel 8"), "opencode:pixel-8");
   assert.equal(defaultSessionKeyForHarness("pi", config, "Pixel 8"), "pi:pixel-8");
+  assert.equal(defaultSessionKeyForHarness("devin", config, "Pixel 8"), "devin:pixel-8");
 });
 
 test("harness router lets explicit non-default session keys choose the harness", async () => {
@@ -163,7 +173,7 @@ test("harness router lets explicit non-default session keys choose the harness",
 });
 
 test("harness router forwards workspace options only to workspace-aware harnesses", async () => {
-  const { router, openclaw, hermes, codex, opencode, pi } = createRouter();
+  const { router, openclaw, hermes, codex, opencode, pi, devin } = createRouter();
   const workspacePath = "/Users/am.will/Applications/cryptoclub";
 
   await router.createSession({ model: "gpt-5.5", workspacePath, createWorkspaceIfMissing: true });
@@ -171,6 +181,7 @@ test("harness router forwards workspace options only to workspace-aware harnesse
   await router.createSession({ model: "codex:gpt-5.5", workspacePath, createWorkspaceIfMissing: true });
   await router.createSession({ model: "opencode:openai/gpt-5.5", workspacePath, createWorkspaceIfMissing: true });
   await router.createSession({ model: "pi:anthropic/claude-sonnet-4-5", workspacePath, createWorkspaceIfMissing: true });
+  await router.createSession({ model: "devin:default", workspacePath, createWorkspaceIfMissing: true });
 
   assert.equal(openclaw.created[0]?.workspacePath, undefined);
   assert.equal(openclaw.created[0]?.createWorkspaceIfMissing, undefined);
@@ -182,6 +193,8 @@ test("harness router forwards workspace options only to workspace-aware harnesse
   assert.equal(opencode.created[0]?.createWorkspaceIfMissing, true);
   assert.equal(pi.created[0]?.workspacePath, workspacePath);
   assert.equal(pi.created[0]?.createWorkspaceIfMissing, true);
+  assert.equal(devin.created[0]?.workspacePath, workspacePath);
+  assert.equal(devin.created[0]?.createWorkspaceIfMissing, true);
 });
 
 test("harness router scopes session lists to the active harness", async () => {
@@ -282,4 +295,36 @@ test("harness router adds OpenClaw bridge commands only to OpenClaw command list
   );
   assert.equal(hermesPayload.commands.some((command) => command.name === "verbose"), false);
   assert.equal(hermesPayload.commands.some((command) => command.name === "reasoning"), false);
+});
+
+test("harness router routes explicit devin session keys and models", async () => {
+  const { router, openclaw, devin } = createRouter();
+
+  const created = await router.createSession({
+    key: "devin:phone-pixel-123",
+    model: "devin:default"
+  }) as HarnessCreatedSession;
+
+  assert.equal(openclaw.created.length, 0);
+  assert.equal(devin.created.length, 1);
+  assert.equal(devin.created[0]?.key, "devin:phone-pixel-123");
+  assert.equal(devin.created[0]?.model, "default");
+  assert.equal(created.key, "devin:phone-pixel-123");
+});
+
+test("production router does not crash when devin is configured but has no factory", async () => {
+  const router = new HarnessChatRouter({
+    ...config,
+    hermesApiKey: undefined,
+    hermesConfigured: false,
+    codexConfigured: false,
+    opencodeConfigured: false,
+    piConfigured: false,
+    devinConfigured: true
+  });
+
+  await assert.rejects(
+    router.sendChat({ sessionKey: "devin:chat", message: "Use Devin" }),
+    /devin harness is not configured/
+  );
 });

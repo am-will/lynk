@@ -46,6 +46,10 @@ export interface BridgeConfig {
   piDefaultModel?: string;
   piRunTimeoutMs: number;
   piConfigured: boolean;
+  devinAcpCommand: string;
+  devinAgentCwd: string;
+  devinRunTimeoutMs: number;
+  devinConfigured: boolean;
 }
 
 function readOpenClawConfig(): unknown {
@@ -146,6 +150,10 @@ export function getBridgeConfig(): BridgeConfig {
     piAgentDir: process.env.PI_AGENT_DIR?.trim() || host.piAgentDir?.trim() || undefined,
     piDefaultModel: process.env.PI_DEFAULT_MODEL?.trim() || host.piDefaultModel?.trim() || undefined,
     piRunTimeoutMs: readPositiveInt("PI_RUN_TIMEOUT_SECONDS", host.piRunTimeoutSeconds ?? 600) * 1000,
-    piConfigured: isPiSdkInstalled()
+    piConfigured: isPiSdkInstalled(),
+    devinAcpCommand: process.env.DEVIN_ACP_COMMAND?.trim() || host.devinAcpCommand?.trim() || "devin acp",
+    devinAgentCwd: process.env.DEVIN_AGENT_CWD?.trim() || host.devinAgentCwd?.trim() || process.cwd(),
+    devinRunTimeoutMs: readPositiveInt("DEVIN_RUN_TIMEOUT_SECONDS", host.devinRunTimeoutSeconds ?? 600) * 1000,
+    devinConfigured: resolveCommand(process.env.DEVIN_ACP_COMMAND?.trim() || host.devinAcpCommand?.trim() || "devin acp").available
   };
 }

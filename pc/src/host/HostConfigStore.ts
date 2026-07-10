@@ -41,6 +41,9 @@ export interface HostBridgeConfigFile {
   piAgentDir?: string;
   piDefaultModel?: string;
   piRunTimeoutSeconds?: number;
+  devinAcpCommand?: string;
+  devinAgentCwd?: string;
+  devinRunTimeoutSeconds?: number;
   discoveredPaths?: Record<string, string>;
 }
 
@@ -120,7 +123,10 @@ export function loadOrCreateHostBridgeConfig(path = defaultHostBridgeConfigPath(
     piAgentCwd: defaultAgentCwd,
     piAgentDir: "",
     piDefaultModel: "",
-    piRunTimeoutSeconds: 600
+    piRunTimeoutSeconds: 600,
+    devinAcpCommand: "devin acp",
+    devinAgentCwd: defaultAgentCwd,
+    devinRunTimeoutSeconds: 600
   };
   writeHostBridgeConfig(path, config);
   return { path, config, created: true };

@@ -787,13 +787,13 @@ The orchestrator updates this section after reviewing each subagent. Parallel su
 - 2026-07-10: Read root rules, mapped PC/Android harness architecture, read official Devin CLI and ACP SDK/schema documentation, and incorporated the user's live Devin 3000.1.27 capability/restart test.
 - 2026-07-10: Worktree baseline: `main` ahead of `origin/main` by five commits; pre-existing untracked `.devin/` preserved and excluded from staging.
 
-### Wave 1A — pending
+### Wave 1A — completed
 
-- Agent ID:
-- Files:
-- Tests:
-- Review/fixes:
-- Commit:
+- Agent ID: `f76b52f7` (SWE 1.7 Lightning).
+- Files: Added Devin harness identity/configuration, host command and auth discovery, safe diagnostics/readiness, model protocol validation, `devin.workspace_not_found`, and focused PC tests. New files: `pc/src/host/DevinAuthProbe.ts`, `pc/src/host/DevinAuthProbe.test.ts`, and `pc/src/host/IntegrationManager.test.ts`.
+- Tests: Independent orchestrator run passed `npm run check`, `npm run build`, and all 235 PC tests; `git diff --check` passed.
+- Review/fixes: Corrected quoting for discovered executable paths containing spaces; replaced unreliable child timeout-event handling with an explicit race-safe timer; kept installed Devin configured but not ready on auth timeout/spawn failure; replaced hardcoded host model classification with canonical `isHarnessId()`; added real timeout/exit and integration-status regressions.
+- Commit: `feat(devin): add harness identity and configuration`.
 
 ### Wave 1B — pending
 

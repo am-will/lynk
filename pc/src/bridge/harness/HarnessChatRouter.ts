@@ -61,7 +61,7 @@ const OPENCLAW_BRIDGE_COMMANDS: ChatCommandOption[] = [
 
 type HarnessAdapterFactory = (config: BridgeConfig, audit?: AuditLog) => HarnessChatAdapter;
 
-const HARNESS_ADAPTER_FACTORIES = {
+const HARNESS_ADAPTER_FACTORIES: Partial<Record<HarnessId, HarnessAdapterFactory>> = {
   openclaw: (config) => new NormalizedHarnessAdapter("openclaw", new OpenClawGatewayChatClient(config), { supportsAttachments: true }),
   hermes: (config) => new NormalizedHarnessAdapter("hermes", new HermesChatClient(config), { supportsAttachments: true }),
   codex: (config, audit) => new NormalizedHarnessAdapter("codex", new CodexChatClient(audit, undefined, undefined, {
@@ -85,7 +85,7 @@ const HARNESS_ADAPTER_FACTORIES = {
     defaultModel: config.piDefaultModel,
     timeoutMs: config.piRunTimeoutMs
   }), { supportsAttachments: true })
-} as const satisfies Record<HarnessId, HarnessAdapterFactory>;
+};
 
 export class HarnessChatRouter implements GatewayChatClient {
   private readonly adapters = new Map<HarnessId, HarnessChatAdapter>();
@@ -102,8 +102,12 @@ export class HarnessChatRouter implements GatewayChatClient {
       return;
     }
     for (const descriptor of harnessDescriptors()) {
-      if (descriptor.enabled(config)) {
-        this.adapters.set(descriptor.id, HARNESS_ADAPTER_FACTORIES[descriptor.id](config, audit));
+      if (!descriptor.enabled(config)) {
+        continue;
+      }
+      const factory = HARNESS_ADAPTER_FACTORIES[descriptor.id];
+      if (factory) {
+        this.adapters.set(descriptor.id, factory(config, audit));
       }
     }
   }

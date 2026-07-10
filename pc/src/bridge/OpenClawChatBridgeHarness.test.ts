@@ -155,6 +155,15 @@ test("backend readiness reports configured harnesses only when live models exist
         modelCount: 0,
         state: "no_models",
         message: "Pi is configured on the PC bridge, but no live models are available yet."
+      },
+      devin: {
+        ok: false,
+        configured: false,
+        label: "Devin",
+        modelCount: 0,
+        state: "missing_config",
+        message: "Devin is not configured on the PC bridge.",
+        action: "Install and authenticate the Devin CLI, then run host integration refresh."
       }
     }
   });
@@ -186,6 +195,31 @@ test("backend readiness counts provider-specific Hermes models as Hermes", async
   assert.equal(readiness.harnesses.hermes.ok, true);
   assert.equal(readiness.harnesses.hermes.modelCount, 2);
   assert.equal(readiness.harnesses.openclaw.modelCount, 0);
+});
+
+test("backend readiness counts Devin models as Devin", async () => {
+  const { bridge, client } = createHarness({ devinConfigured: true });
+  client.models = [
+    { id: "devin:default", harnessId: "devin", provider: "devin" }
+  ];
+
+  const readiness = await bridge.backendReadiness();
+
+  assert.equal(readiness.harnesses.devin.ok, true);
+  assert.equal(readiness.harnesses.devin.modelCount, 1);
+  assert.equal(readiness.harnesses.devin.state, "ready");
+  assert.equal(readiness.harnesses.openclaw.modelCount, 0);
+});
+
+test("backend readiness reports Devin missing config when not configured", async () => {
+  const { bridge } = createHarness({ devinConfigured: false });
+
+  const readiness = await bridge.backendReadiness();
+
+  assert.equal(readiness.harnesses.devin.ok, false);
+  assert.equal(readiness.harnesses.devin.configured, false);
+  assert.equal(readiness.harnesses.devin.state, "missing_config");
+  assert.equal(readiness.harnesses.devin.modelCount, 0);
 });
 
 test("open uses the selected session harness in loading status", async () => {
