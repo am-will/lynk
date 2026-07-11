@@ -312,7 +312,7 @@ test("harness router routes explicit devin session keys and models", async () =>
   assert.equal(created.key, "devin:phone-pixel-123");
 });
 
-test("production router does not crash when devin is configured but has no factory", async () => {
+test("production router instantiates the configured Devin adapter factory", async () => {
   const router = new HarnessChatRouter({
     ...config,
     hermesApiKey: undefined,
@@ -323,8 +323,7 @@ test("production router does not crash when devin is configured but has no facto
     devinConfigured: true
   });
 
-  await assert.rejects(
-    router.sendChat({ sessionKey: "devin:chat", message: "Use Devin" }),
-    /devin harness is not configured/
-  );
+  const health = await router.health() as { harnesses: Record<string, unknown> };
+  assert.ok("devin" in health.harnesses);
+  router.close();
 });

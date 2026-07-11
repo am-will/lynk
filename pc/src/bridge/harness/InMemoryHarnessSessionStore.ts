@@ -46,10 +46,22 @@ export class InMemoryHarnessSessionStore {
   }
 
   ensureSession(sessionKey: string, sessionId?: string): HarnessStoredSession {
+    const { session, created } = this.getOrAdd(sessionKey, sessionId);
+    if (created) {
+      this.persist();
+    }
+    return session;
+  }
+
+  requireSession(sessionKey: string): HarnessStoredSession | undefined {
+    return this.sessions.get(sessionKey.trim()) ?? undefined;
+  }
+
+  private getOrAdd(sessionKey: string, sessionId?: string): { session: HarnessStoredSession; created: boolean } {
     const key = sessionKey.trim() || `${this.harnessId}:${randomUUID()}`;
     const existing = this.sessions.get(key);
     if (existing) {
-      return existing;
+      return { session: existing, created: false };
     }
     const cleanSessionId = sanitizeSessionId(sessionId ?? key.replace(new RegExp(`^${this.harnessId}:`), ""));
     const created: HarnessStoredSession = {
@@ -63,8 +75,7 @@ export class InMemoryHarnessSessionStore {
       metadata: {}
     };
     this.sessions.set(key, created);
-    this.persist();
-    return created;
+    return { session: created, created: true };
   }
 
   history(sessionKey: string): HarnessChatHistory {
@@ -187,6 +198,21 @@ export class InMemoryHarnessSessionStore {
       ...metadata,
       [key]: value
     };
+    session.updatedAt = Date.now();
+    this.persist();
+  }
+
+  replaceHistory(sessionKey: string, messages: ChatHistoryMessage[]): void {
+    const { session } = this.getOrAdd(sessionKey);
+    session.messages = messages
+      .filter((message) => isStoredMessageRole(message.role) && typeof message.text === "string" && message.text.length > 0)
+      .map((message) => ({
+        id: message.id?.trim() || randomUUID(),
+        role: message.role as HarnessStoredMessage["role"],
+        text: message.text,
+        ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+        timestamp: message.timestamp ?? Date.now()
+      }));
     session.updatedAt = Date.now();
     this.persist();
   }

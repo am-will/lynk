@@ -5,11 +5,21 @@ import { agent, methods, PROTOCOL_VERSION, ndJsonStream, RequestError } from "@a
 import type {
   AgentConnection,
   AuthMethod,
+  CloseSessionRequest,
   InitializeRequest,
   InitializeResponse,
+  ListSessionsRequest,
   ListSessionsResponse,
+  LoadSessionRequest,
+  LoadSessionResponse,
+  NewSessionRequest,
+  NewSessionResponse,
+  PromptRequest,
+  PromptResponse,
   RequestPermissionRequest,
-  SessionNotification
+  SessionNotification,
+  SetSessionConfigOptionRequest,
+  SetSessionConfigOptionResponse
 } from "@agentclientprotocol/sdk";
 import { DevinAcpClient } from "./DevinAcpClient.js";
 import { DevinAcpError, type DevinAcpEvent, type DevinAcpProcess, type DevinAcpProcessExit, type DevinAcpProcessFactory } from "./DevinAcpTypes.js";
@@ -51,6 +61,7 @@ export interface FakeControls {
   agent: AgentConnection;
   pushStderr: (text: string) => void;
   pushStderrRaw: (text: string) => void;
+  pushReplay?: (notifications: SessionNotification[]) => void;
   exit: (code: number | null, signal?: NodeJS.Signals | null) => void;
 }
 
@@ -376,6 +387,155 @@ export function buildClient(
 
 export function processGlobal(): NodeJS.Process {
   return process;
+}
+
+export interface DevinSessionHandlers {
+  sessionNew?: (params: NewSessionRequest) => NewSessionResponse | Promise<NewSessionResponse>;
+  sessionList?: (params: ListSessionsRequest) => ListSessionsResponse | Promise<ListSessionsResponse>;
+  sessionLoad?: (params: LoadSessionRequest) => LoadSessionResponse | Promise<LoadSessionResponse>;
+  sessionSetConfigOption?: (
+    params: SetSessionConfigOptionRequest
+  ) => SetSessionConfigOptionResponse | Promise<SetSessionConfigOptionResponse>;
+  sessionClose?: (params: CloseSessionRequest) => void | Promise<void>;
+  sessionPrompt?: (params: PromptRequest) => PromptResponse | Promise<PromptResponse>;
+}
+
+export function createConfigurableDevinProcess(
+  options: {
+    capabilities?: InitializeResponse;
+    delayMs?: number;
+    initializeError?: Error;
+    handlers?: DevinSessionHandlers;
+  } = {}
+): FakeControls {
+  const capabilities = options.capabilities ?? devinCapabilities();
+  const abort = new AbortController();
+  const clientToAgent = new TransformStream<Uint8Array>();
+  const agentToClient = new TransformStream<Uint8Array>();
+  let stderrController: ReadableStreamDefaultController<Uint8Array>;
+  let resolveExit!: (value: DevinAcpProcessExit) => void;
+  let settled = false;
+
+  const stderrStream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      stderrController = controller;
+    }
+  });
+
+  const exited = new Promise<DevinAcpProcessExit>((resolve) => {
+    resolveExit = resolve;
+  });
+
+  const agentAppBuilder = agent({ name: "fake-devin-session" })
+    .onRequest(methods.agent.initialize, async () => {
+      await delay(options.delayMs ?? 0, abort.signal);
+      if (abort.signal.aborted) {
+        return capabilities;
+      }
+      if (options.initializeError) {
+        throw options.initializeError;
+      }
+      return capabilities;
+    })
+    .onRequest(methods.agent.session.new, async (ctx) => {
+      const handler = options.handlers?.sessionNew;
+      return handler ? await handler(ctx.params as NewSessionRequest) : { sessionId: "test-session-1" };
+    })
+    .onRequest(methods.agent.session.list, async (ctx) => {
+      const handler = options.handlers?.sessionList;
+      return handler ? await handler(ctx.params as ListSessionsRequest) : { sessions: [] };
+    })
+    .onRequest(methods.agent.session.load, async (ctx) => {
+      const handler = options.handlers?.sessionLoad;
+      return handler ? await handler(ctx.params as LoadSessionRequest) : {};
+    })
+    .onRequest(methods.agent.session.setConfigOption, async (ctx) => {
+      const handler = options.handlers?.sessionSetConfigOption;
+      return handler
+        ? await handler(ctx.params as SetSessionConfigOptionRequest)
+        : { configOptions: [] };
+    })
+    .onRequest(methods.agent.session.close, async (ctx) => {
+      const handler = options.handlers?.sessionClose;
+      if (handler) {
+        await handler(ctx.params as CloseSessionRequest);
+      }
+    })
+    .onRequest(methods.agent.session.prompt, async (ctx) => {
+      const handler = options.handlers?.sessionPrompt;
+      return handler ? await handler(ctx.params as PromptRequest) : { stopReason: "end_turn" };
+    });
+
+  const agentApp = agentAppBuilder.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable));
+
+  const finish = (code: number | null, signal?: NodeJS.Signals | null): void => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    try {
+      abort.abort();
+    } catch {
+      // ignore
+    }
+    try {
+      stderrController?.close();
+    } catch {
+      // ignore
+    }
+    try {
+      agentToClient.writable.getWriter().close().catch(() => {});
+    } catch {
+      // ignore
+    }
+    try {
+      agentApp.close();
+    } catch {
+      // ignore
+    }
+    resolveExit({ code, signal: signal ?? null });
+  };
+
+  const process: DevinAcpProcess = {
+    command: "devin acp",
+    executable: "/fake/devin",
+    args: ["acp"],
+    cwd: "/fake",
+    stdin: clientToAgent.writable,
+    stdout: agentToClient.readable,
+    stderr: stderrStream,
+    exited,
+    kill(signal?) {
+      finish(null, signal ?? null);
+    }
+  };
+
+  const pushStderrRaw = (text: string): void => {
+    try {
+      stderrController?.enqueue(new TextEncoder().encode(text));
+    } catch {
+      // ignore
+    }
+  };
+
+  const pushReplay = (notifications: SessionNotification[]): void => {
+    for (const notification of notifications) {
+      try {
+        agentApp.client.notify(methods.client.session.update, notification);
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  return {
+    process,
+    agent: agentApp,
+    pushStderr: (text: string) => pushStderrRaw(text + "\n"),
+    pushStderrRaw,
+    pushReplay,
+    exit: finish
+  };
 }
 
 export { RequestError, SessionNotification, RequestPermissionRequest };

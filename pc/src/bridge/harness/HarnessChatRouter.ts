@@ -1,4 +1,5 @@
 import type { AuditLog } from "../AuditLog.js";
+import { dirname, join } from "node:path";
 import {
   DEFAULT_HARNESS_ID,
   defaultSessionKeyForHarness,
@@ -18,6 +19,7 @@ import type { ChatCommandOption } from "../../protocol/messages.js";
 import { HermesChatClient } from "../HermesChatClient.js";
 import { OpenCodeChatClient } from "../opencode/OpenCodeChatClient.js";
 import { PiChatClient } from "../pi/PiChatClient.js";
+import { DevinSessionAdapter } from "../devin/DevinSessionAdapter.js";
 import type { GatewayChatClient } from "../OpenClawChatTypes.js";
 import { assertHarnessSupportsAttachments } from "../chat/ChatSendAttachments.js";
 import type {
@@ -84,7 +86,13 @@ const HARNESS_ADAPTER_FACTORIES: Partial<Record<HarnessId, HarnessAdapterFactory
     agentDir: config.piAgentDir,
     defaultModel: config.piDefaultModel,
     timeoutMs: config.piRunTimeoutMs
-  }), { supportsAttachments: true })
+  }), { supportsAttachments: true }),
+  devin: (config) => new DevinSessionAdapter({
+    command: config.devinAcpCommand,
+    cwd: config.devinAgentCwd,
+    runTimeoutMs: config.devinRunTimeoutMs,
+    storagePath: join(dirname(config.configPath), "devin-sessions.json")
+  })
 };
 
 export class HarnessChatRouter implements GatewayChatClient {
