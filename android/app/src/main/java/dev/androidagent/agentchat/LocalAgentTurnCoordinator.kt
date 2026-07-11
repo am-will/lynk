@@ -13,6 +13,7 @@ import dev.androidagent.localmodel.LocalChatMessage
 import dev.androidagent.localmodel.LocalModelRuntime
 import dev.androidagent.localmodel.LocalPhoneCommandOwner
 import dev.androidagent.localmodel.LocalToolRegistry
+import dev.androidagent.localmodel.TermuxCommandCancellationException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -32,7 +33,8 @@ class LocalAgentTurnCoordinator internal constructor(
     private val store: LocalChatSessionRepository,
     private val toolDescriptions: () -> JSONArray,
     private val runner: LocalTurnRunner,
-    private val cancelCommandOwner: (String) -> Unit = {}
+    private val cancelCommandOwner: (String) -> Unit = {},
+    private val closeTools: () -> Unit = {}
 ) {
     constructor(
         context: Context,
@@ -64,7 +66,8 @@ class LocalAgentTurnCoordinator internal constructor(
         dependencies.store,
         dependencies.tools::toolDescriptions,
         dependencies.runner,
-        dependencies.cancelCommandOwner
+        dependencies.cancelCommandOwner,
+        dependencies.closeTools
     )
     private var activeSessionKey: String = store.session(null).key
     private var generationSequence = 0L
@@ -130,12 +133,17 @@ class LocalAgentTurnCoordinator internal constructor(
             } catch (error: CancellationException) {
                 cancelCommandOwner(commandOwner)
                 val wasOwner = clearIfOwner(generation)
-                emit(LocalChatMessages.error(session.key, request.stoppedMessage, runId))
-                if (wasOwner) {
-                    emitStoppedState(session.key, request.stoppedMessage)
+                val stoppedMessage = if (error is TermuxCommandCancellationException && !error.terminationVerified) {
+                    "${request.stoppedMessage}. Termux process termination could not be verified; the command may still be running."
+                } else {
+                    request.stoppedMessage
                 }
-                emit(LocalChatMessages.replyAvailable(store.session(session.key), runId, "failed", request.stoppedMessage))
-                request.onCancelled(LocalTurnOutcome(session.key, runId, request.stoppedMessage))
+                emit(LocalChatMessages.error(session.key, stoppedMessage, runId))
+                if (wasOwner) {
+                    emitStoppedState(session.key, stoppedMessage)
+                }
+                emit(LocalChatMessages.replyAvailable(store.session(session.key), runId, "failed", stoppedMessage))
+                request.onCancelled(LocalTurnOutcome(session.key, runId, stoppedMessage))
                 throw error
             } catch (error: Throwable) {
                 val message = error.message ?: error.toString()
@@ -214,6 +222,7 @@ class LocalAgentTurnCoordinator internal constructor(
         sessionTransition?.cancel()
         sessionTransition = null
         detachAndCancelActive("Local chat route closed")
+        closeTools()
     }
 
     private fun refresh(sessionKey: String, status: String) {
@@ -304,7 +313,11 @@ class LocalAgentTurnCoordinator internal constructor(
                 store = LocalChatSessionStore(appContext),
                 tools = tools,
                 runner = LocalAgentController(runtime, tools, configProvider, emit),
-                cancelCommandOwner = tools::cancelApprovals
+                cancelCommandOwner = { owner ->
+                    tools.cancelApprovals(owner)
+                    tools.cancelTermux(owner)
+                },
+                closeTools = { tools.close() }
             )
         }
     }
@@ -325,7 +338,8 @@ private data class LocalTurnDependencies(
     val store: LocalChatSessionRepository,
     val tools: LocalToolRegistry,
     val runner: LocalTurnRunner,
-    val cancelCommandOwner: (String) -> Unit
+    val cancelCommandOwner: (String) -> Unit,
+    val closeTools: () -> Unit
 )
 
 data class LocalTurnRequest(
