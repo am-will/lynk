@@ -8,6 +8,7 @@ import type { ChatAttachment } from "../../protocol/messages.js";
 import { OpenCodeChatClient } from "./OpenCodeChatClient.js";
 import { normalizeOpenCodeModels } from "./OpenCodeNormalizers.js";
 import { OpenCodeServerClient, type OpenCodeSessionPromptOptions } from "./OpenCodeServerClient.js";
+import { AdapterFailure, isAdapterFailure } from "../harness/AdapterFailure.js";
 
 function opencodeEvent(type: string, properties: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -92,6 +93,7 @@ class FakeOpenCodeServerClient {
   commandsPayload: unknown = [{ name: "init", description: "Initialize project" }];
   toolsPayload: unknown = { bash: { name: "bash", description: "Run shell commands" } };
   messagesPayload: unknown = { messages: [] };
+  messagesError?: Error;
   statusPayload: unknown = {};
   statusPayloads: unknown[] = [];
   events: unknown[] = [];
@@ -136,7 +138,7 @@ class FakeOpenCodeServerClient {
   }
 
   async getSession(): Promise<unknown> {
-    throw new Error("missing session");
+    throw new AdapterFailure("not_found", "missing session");
   }
 
   async promptAsync(options: OpenCodeSessionPromptOptions): Promise<unknown> {
@@ -150,6 +152,7 @@ class FakeOpenCodeServerClient {
   }
 
   async messages(): Promise<unknown> {
+    if (this.messagesError) throw this.messagesError;
     if (this.aborted) {
       return { messages: [{ info: { role: "assistant" }, parts: [{ type: "text", text: "aborted" }] }] };
     }
@@ -187,6 +190,16 @@ class FakeOpenCodeServerClient {
 
   async close(): Promise<void> {}
 }
+
+test("OpenCode history preserves typed auth errors instead of treating them as missing", async () => {
+  const fake = new FakeOpenCodeServerClient();
+  fake.messagesError = new AdapterFailure("auth", "OpenCode credentials rejected");
+  const client = new OpenCodeChatClient(undefined, fake as never, null);
+
+  await assert.rejects(client.history("opencode:private"), (error) => isAdapterFailure(error, "auth"));
+  assert.equal(fake.created.length, 0);
+  client.close();
+});
 
 test("OpenCode model normalization namespaces provider/model ids", () => {
   const models = normalizeOpenCodeModels({

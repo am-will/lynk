@@ -49,6 +49,9 @@ export class FakeGatewayClient {
   commands: Array<Record<string, unknown>> = [];
   readonly duplicateLabels = new Set<string>();
   sendError?: Error;
+  patchError?: Error;
+  historyError?: Error;
+  createGate?: Promise<void>;
   sendGate?: Promise<void>;
   beforeSendResolve?: (
     result: { runId: string; sessionKey: string },
@@ -65,6 +68,7 @@ export class FakeGatewayClient {
   }
 
   async history(sessionKey: string): Promise<unknown> {
+    if (this.historyError) throw this.historyError;
     return { sessionId: `${sessionKey}:id`, messages: [] };
   }
 
@@ -100,6 +104,7 @@ export class FakeGatewayClient {
 
   async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string; createWorkspaceIfMissing?: boolean }): Promise<unknown> {
     this.created.push(options);
+    await this.createGate;
     if (options.label && this.duplicateLabels.has(options.label)) {
       throw new Error(`Session label "${options.label}" is already used`);
     }
@@ -108,6 +113,7 @@ export class FakeGatewayClient {
 
   async patchSession(sessionKey: string, patch: Record<string, unknown>): Promise<unknown> {
     this.patched.push({ sessionKey, patch });
+    if (this.patchError) throw this.patchError;
     return { ok: true };
   }
 

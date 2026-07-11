@@ -41,6 +41,36 @@ export function isAdapterFailure(error: unknown, code?: AdapterFailureCode): err
   return error instanceof AdapterFailure && (code === undefined || error.code === code);
 }
 
+export function translateAdapterError(
+  error: unknown,
+  options: { harnessId: string; operation: string; fallbackCode?: AdapterFailureCode }
+): AdapterFailure {
+  if (error instanceof AdapterFailure) return error;
+  const record = error && typeof error === "object" ? error as Record<string, unknown> : undefined;
+  const rawCode = record?.code;
+  const status = numberValue(record?.status)
+    ?? numberValue(record?.statusCode)
+    ?? numberValue((record?.response as Record<string, unknown> | undefined)?.status);
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  const code: AdapterFailureCode = status === 404 || rawCode === "not_found" || /\b(not found|does not exist|unknown session)\b/.test(normalized)
+    ? "not_found"
+    : status === 401 || status === 403 || /\b(unauthorized|forbidden|authentication failed|permission denied)\b/.test(normalized)
+      ? "auth"
+      : status === 408 || status === 504 || /\b(timed out|timeout)\b/.test(normalized)
+        ? "timeout"
+        : (error as { name?: unknown })?.name === "AbortError" || /\bcancelled\b/.test(normalized)
+          ? "cancelled"
+          : (status !== undefined && status >= 500) || /\b(econnrefused|econnreset|enotfound|socket hang up|unavailable)\b/.test(normalized)
+            ? "unavailable"
+            : options.fallbackCode ?? "protocol";
+  return new AdapterFailure(code, message, { cause: error, ...options });
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 export async function withAdapterDeadline<T>(
   operation: Promise<T> | (() => Promise<T>),
   options: { timeoutMs: number; harnessId?: string; operation?: string; signal?: AbortSignal }

@@ -144,12 +144,18 @@ export class HarnessDeviceStateStore extends DeviceChatStateStore {
   }
 
   applyModelSelection(deviceId: string, state: DeviceChatState, model: string | undefined): HarnessModelSelection | undefined {
+    const selection = this.stageModelSelection(deviceId, state, model);
+    if (!selection) return undefined;
+    this.setSelectedModel(state, selection.selectionId);
+    return selection;
+  }
+
+  stageModelSelection(deviceId: string, state: DeviceChatState, model: string | undefined): HarnessModelSelection | undefined {
     const selection = parseHarnessModel(model);
     if (!selection) {
       return undefined;
     }
     this.switchHarness(deviceId, state, selection.harnessId);
-    this.setSelectedModel(state, selection.selectionId);
     return selection;
   }
 

@@ -3,7 +3,7 @@ import type { ChatAttachment } from "../protocol/messages.js";
 import type { AuditLog } from "../bridge/AuditLog.js";
 import type { AgentClient, AgentRequestOptions, AgentRunResult, AgentStatusSink } from "./AgentClient.js";
 import { PHONE_AGENT_SYSTEM_PROMPT, buildPhoneAgentPrompt } from "./safetyPrompt.js";
-import { AdapterFailure } from "../bridge/harness/AdapterFailure.js";
+import { AdapterFailure, translateAdapterError } from "../bridge/harness/AdapterFailure.js";
 
 const DEFAULT_RPC_TIMEOUT_MS = 30_000;
 const MAX_RPC_LINE_BYTES = 1_048_576;
@@ -697,7 +697,11 @@ export class CodexAppServerClient implements AgentClient {
       clearTimeout(pending.timer);
       if (message.error) {
         this.audit?.record("codex_rpc_response", undefined, { id: message.id, error: message.error });
-        pending.reject(new Error(message.error.message ?? JSON.stringify(message.error)));
+        pending.reject(translateAdapterError(message.error, {
+          harnessId: "codex",
+          operation: pending.method,
+          fallbackCode: "rejected"
+        }));
       } else {
         this.audit?.record("codex_rpc_response", undefined, { id: message.id, result: message.result });
         pending.resolve(message.result);

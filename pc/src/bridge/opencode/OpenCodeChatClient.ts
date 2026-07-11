@@ -26,6 +26,7 @@ import {
   stringField,
   workspaceNameFromPath
 } from "./OpenCodeNormalizers.js";
+import { isAdapterFailure, translateAdapterError } from "../harness/AdapterFailure.js";
 
 const OPENCODE_SESSION_PREFIX = "opencode:";
 const OPENCODE_DEFAULT_MODEL = "anthropic/claude-sonnet-4-5";
@@ -83,8 +84,10 @@ export class OpenCodeChatClient {
         sessionId: session.sessionId,
         messages: messagesFromOpenCode(payload)
       };
-    } catch {
-      return this.sessions.history(sessionKey);
+    } catch (error) {
+      const failure = translateAdapterError(error, { harnessId: "opencode", operation: "history", fallbackCode: "unavailable" });
+      if (isAdapterFailure(failure, "not_found")) return this.sessions.history(sessionKey);
+      throw failure;
     }
   }
 
@@ -246,8 +249,9 @@ export class OpenCodeChatClient {
       this.sessions.setMetadata(session, OPENCODE_REMOTE_SESSION_KEY, true);
       this.sessions.setMetadata(session, OPENCODE_SESSION_DIRECTORY_KEY, directory);
       return;
-    } catch {
-      // Fall through and create the remote session.
+    } catch (error) {
+      const failure = translateAdapterError(error, { harnessId: "opencode", operation: "getSession", fallbackCode: "unavailable" });
+      if (!isAdapterFailure(failure, "not_found")) throw failure;
     }
     const created = asRecord(await this.client.createSession({
       directory,

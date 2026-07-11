@@ -23,6 +23,7 @@ import {
 } from "./PiHistoryNormalizer.js";
 import { PiSdkClient, piModelId, type PiModel, type PiThinkingLevel } from "./PiSdkClient.js";
 import { preparePiWorkspace } from "./PiWorkspace.js";
+import { AdapterFailure } from "../harness/AdapterFailure.js";
 
 interface PiRunResource {
   runtime: AgentSessionRuntime;
@@ -89,7 +90,10 @@ export class PiChatClient {
   async history(sessionKey: string): Promise<unknown> {
     const session = await this.resolveStoredSession(sessionKey);
     if (!session) {
-      throw new Error(`Pi session not found: ${sessionKey}`);
+      throw new AdapterFailure("not_found", `Pi session not found: ${sessionKey}`, {
+        harnessId: "pi",
+        operation: "history"
+      });
     }
     const sessionPath = sessionPathForSession(session);
     if (sessionPath) {
@@ -207,7 +211,6 @@ export class PiChatClient {
   }
 
   async patchSession(sessionKey: string, patch: Record<string, unknown>): Promise<unknown> {
-    this.sessions.patchSession(sessionKey, patch);
     const session = this.sessions.ensureSession(sessionKey);
     const runtime = this.runtimes.get(sessionKey);
     if (runtime && typeof patch.model === "string") {
@@ -216,6 +219,7 @@ export class PiChatClient {
     if (runtime && typeof patch.thinking === "string") {
       runtime.session.setThinkingLevel(this.client.normalizeThinkingLevel(patch.thinking));
     }
+    this.sessions.patchSession(sessionKey, patch);
     return { ok: true };
   }
 
