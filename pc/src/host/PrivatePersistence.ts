@@ -1,6 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import {
+  chmodSync,
+  closeSync,
+  copyFileSync,
+  existsSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  renameSync,
+  rmSync,
+  writeFileSync
+} from "node:fs";
+import {
   access,
   chmod,
   copyFile,
@@ -27,6 +39,38 @@ export interface JsonRecovery<T> {
   value: T;
   source: "primary" | "backup" | "fallback";
   quarantinedPath?: string;
+}
+
+export function atomicWritePrivateFileSync(
+  path: string,
+  data: string | Uint8Array,
+  options: Pick<AtomicWriteOptions, "maxBytes" | "keepBackup"> = {}
+): void {
+  const bytes = typeof data === "string" ? Buffer.byteLength(data) : data.byteLength;
+  const maxBytes = options.maxBytes ?? 16 * 1024 * 1024;
+  if (bytes > maxBytes) throw new Error(`Persistence payload exceeds ${maxBytes} bytes.`);
+  const directory = dirname(path);
+  mkdirSync(directory, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+  chmodPrivateSync(directory, PRIVATE_DIRECTORY_MODE);
+  const temporaryPath = join(directory, `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`);
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(temporaryPath, "wx", PRIVATE_FILE_MODE);
+    writeFileSync(descriptor, data);
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = undefined;
+    if (options.keepBackup !== false && existsSync(path)) {
+      copyFileSync(path, `${path}.bak`);
+      chmodPrivateSync(`${path}.bak`, PRIVATE_FILE_MODE);
+    }
+    renameSync(temporaryPath, path);
+    chmodPrivateSync(path, PRIVATE_FILE_MODE);
+  } catch (error) {
+    if (descriptor !== undefined) closeSync(descriptor);
+    rmSync(temporaryPath, { force: true });
+    throw error;
+  }
 }
 
 export async function ensurePrivateDirectory(path: string): Promise<void> {
@@ -206,4 +250,12 @@ function isMissing(error: unknown): boolean {
 
 function handleUnsupportedMode(error: unknown): void {
   if (process.platform !== "win32") throw error;
+}
+
+function chmodPrivateSync(path: string, mode: number): void {
+  try {
+    chmodSync(path, mode);
+  } catch (error) {
+    handleUnsupportedMode(error);
+  }
 }

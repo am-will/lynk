@@ -1,10 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { homedir, platform } from "node:os";
-import { fileURLToPath } from "node:url";
+import { existsSync, readFileSync, renameSync } from "node:fs";
+import { chmod, mkdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { homedir } from "node:os";
 import { z } from "zod";
+import { createHostPaths } from "./HostPaths.js";
+import { atomicWritePrivateFileSync } from "./PrivatePersistence.js";
 
 export interface HostBridgeConfigFile {
   schemaVersion: 1;
@@ -100,22 +101,15 @@ const hostBridgeConfigFileSchema = z.object({
 }).strict();
 
 const DEFAULT_CONFIG_FILE = "config.json";
-const hostScriptDir = dirname(fileURLToPath(import.meta.url));
-const defaultAgentCwd = resolve(hostScriptDir, "../..");
+const defaultPaths = createHostPaths();
+const defaultAgentCwd = defaultPaths.workspaceRoot ?? homedir();
 
 export function defaultHostBridgeConfigDir(): string {
   const explicit = process.env.PHONE_AGENT_CONFIG_DIR?.trim();
   if (explicit) {
     return explicit;
   }
-  switch (platform()) {
-    case "darwin":
-      return join(homedir(), "Library", "Application Support", "Android Agent Bridge");
-    case "win32":
-      return join(process.env.ProgramData?.trim() || join(homedir(), "AppData", "Roaming"), "AndroidAgentBridge");
-    default:
-      return join(process.env.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config"), "android-agent-bridge");
-  }
+  return createHostPaths().dataRoot;
 }
 
 export function defaultHostBridgeConfigPath(): string {
@@ -128,7 +122,14 @@ export function loadOrCreateHostBridgeConfig(path = defaultHostBridgeConfigPath(
     try {
       decoded = JSON.parse(readFileSync(path, "utf8"));
     } catch (error) {
-      throw new Error(`Host bridge config at ${path} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+      const backupPath = `${path}.bak`;
+      try {
+        decoded = JSON.parse(readFileSync(backupPath, "utf8"));
+        renameSync(path, `${path}.corrupt-${Date.now()}`);
+        atomicWritePrivateFileSync(path, `${JSON.stringify(decoded, null, 2)}\n`, { keepBackup: false });
+      } catch {
+        throw new Error(`Host bridge config at ${path} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
     const parsed = hostBridgeConfigFileSchema.safeParse(decoded);
     if (!parsed.success) {
@@ -184,8 +185,7 @@ export function loadOrCreateHostBridgeConfig(path = defaultHostBridgeConfigPath(
 }
 
 export function writeHostBridgeConfig(path: string, config: HostBridgeConfigFile): void {
-  mkdirSyncRecursive(dirname(path));
-  writeFileSync(path, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  atomicWritePrivateFileSync(path, `${JSON.stringify(config, null, 2)}\n`, { maxBytes: 1024 * 1024 });
 }
 
 export function redactedHostBridgeConfig(config: HostBridgeConfigFile): Record<string, unknown> {
@@ -202,12 +202,11 @@ export function redactedHostBridgeConfig(config: HostBridgeConfigFile): Record<s
 
 export async function ensureHostBridgeConfigDir(): Promise<string> {
   const dir = defaultHostBridgeConfigDir();
-  await mkdir(dir, { recursive: true });
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  await chmod(dir, 0o700).catch((error) => {
+    if (process.platform !== "win32") throw error;
+  });
   return dir;
-}
-
-function mkdirSyncRecursive(path: string): void {
-  mkdirSync(path, { recursive: true });
 }
 
 function redact(value: string | undefined): string | undefined {
