@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
   atomicWritePrivateFile,
   DebouncedAtomicJsonWriter,
+  enforcePrivateFileSync,
   migrateLegacyFile,
   readJsonWithRecovery
 } from "./PrivatePersistence.js";
@@ -78,6 +79,19 @@ test("oversized payloads are rejected before replacing durable state", async (t)
   await atomicWritePrivateFile(path, "safe");
   await assert.rejects(atomicWritePrivateFile(path, "too-large", { maxBytes: 4 }), /exceeds/u);
   assert.equal(await readFile(path, "utf8"), "safe");
+});
+
+test("existing sensitive files are tightened when adopted", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "lynk-permissions-"));
+  t.after(() => import("node:fs/promises").then(({ rm }) => rm(root, { recursive: true, force: true })));
+  const path = join(root, "nested", "state.json");
+  await import("node:fs/promises").then(({ mkdir }) => mkdir(join(root, "nested")));
+  await writeFile(path, "{}", { mode: 0o644 });
+  enforcePrivateFileSync(path);
+  if (process.platform !== "win32") {
+    assert.equal((await stat(join(root, "nested"))).mode & 0o777, 0o700);
+    assert.equal((await stat(path)).mode & 0o777, 0o600);
+  }
 });
 
 function isValueRecord(value: unknown): value is { value: number } {

@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { z } from "zod";
 import { createHostPaths } from "./HostPaths.js";
-import { atomicWritePrivateFileSync } from "./PrivatePersistence.js";
+import { atomicWritePrivateFileSync, enforcePrivateFileSync } from "./PrivatePersistence.js";
 
 export interface HostBridgeConfigFile {
   schemaVersion: 1;
@@ -118,6 +118,7 @@ export function defaultHostBridgeConfigPath(): string {
 
 export function loadOrCreateHostBridgeConfig(path = defaultHostBridgeConfigPath()): LoadedHostBridgeConfig {
   if (existsSync(path)) {
+    enforcePrivateFileSync(path);
     let decoded: unknown;
     try {
       decoded = JSON.parse(readFileSync(path, "utf8"));

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { chatAttachmentSchema, type ChatAttachment, type ChatHistoryMessage, type ChatSessionSummary } from "../../protocol/messages.js";
-import { DebouncedAtomicJsonWriter, migrateLegacyFileSync, readJsonWithRecoverySync } from "../../host/PrivatePersistence.js";
+import { DebouncedAtomicJsonWriter, enforcePrivateFileSync, migrateLegacyFileSync, readJsonWithRecoverySync } from "../../host/PrivatePersistence.js";
 import type { HarnessId } from "../AgentHarness.js";
 import type { HarnessChatHistory, HarnessCreatedSession } from "./HarnessChatAdapter.js";
 
@@ -281,6 +281,7 @@ export class InMemoryHarnessSessionStore {
     const path = this.options.storagePath;
     if (!path) return new Map();
     migrateLegacyFileSync(path, this.options.legacyStoragePaths ?? [], `${path}.migration-v1.json`, MAX_STORAGE_BYTES);
+    enforcePrivateFileSync(path);
     const recovered = readJsonWithRecoverySync<StoredSessionDocument>(
       path,
       () => ({ version: 1, harnessId: this.harnessId, sessions: [] }),

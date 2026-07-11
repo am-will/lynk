@@ -119,6 +119,13 @@ export function atomicWritePrivateFileSync(
   }
 }
 
+export function enforcePrivateFileSync(path: string): void {
+  const directory = dirname(path);
+  mkdirSync(directory, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+  chmodPrivateSync(directory, PRIVATE_DIRECTORY_MODE);
+  if (existsSync(path)) chmodPrivateSync(path, PRIVATE_FILE_MODE);
+}
+
 export async function ensurePrivateDirectory(path: string): Promise<void> {
   await mkdir(path, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
   await chmod(path, PRIVATE_DIRECTORY_MODE).catch(handleUnsupportedMode);

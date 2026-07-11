@@ -145,6 +145,9 @@ export class AuditLog {
       if ((expired || overCap) && (!preserveCurrent || file.path !== this.currentFilePath)) {
         await rm(file.path, { force: true });
       } else {
+        await chmod(file.path, 0o600).catch((error) => {
+          if (process.platform !== "win32") throw error;
+        });
         retainedBytes += file.info.size;
       }
     }
