@@ -58,6 +58,27 @@ test("overlapping starts resolving out of order publish only the latest owner", 
   assert.deepEqual(h.outbound.filter((message) => message.type === "realtime.sdp").map((message) => message.voiceSessionId), [VOICE_B]);
   assert.deepEqual(h.stopped.map((session) => session.callId), ["a"]);
   assert.deepEqual(h.cancelled, [VOICE_A]);
+  assert.deepEqual(h.detached, [VOICE_A]);
+});
+
+test("a third start invalidating cleanup prevents creation of the stale middle transport", async () => {
+  const h = harness();
+  const first = h.realtime.startRealtimeSession(startMessage(VOICE_A), "pixel");
+  const middle = h.realtime.startRealtimeSession(startMessage(VOICE_B), "pixel");
+  const latestId = "33333333-3333-4333-8333-333333333333";
+  const latest = h.realtime.startRealtimeSession(startMessage(latestId), "pixel");
+  await Promise.resolve();
+
+  assert.equal(h.starts.length, 2, "only the first and still-current third generations create transports");
+  h.starts[1]!.resolve({ answerSdp: "answer-latest", session: { deviceId: "pixel", callId: "latest" } });
+  await latest;
+  await middle;
+  h.starts[0]!.resolve({ answerSdp: "answer-a", session: { deviceId: "pixel", callId: "a" } });
+  await first;
+
+  assert.equal(h.realtime.owns("pixel", latestId), true);
+  assert.deepEqual(h.outbound.filter((message) => message.type === "realtime.sdp").map((message) => message.voiceSessionId), [latestId]);
+  assert.deepEqual(h.stopped.map((session) => session.callId), ["a"]);
 });
 
 test("late old start errors cannot clear or error a newer successful owner", async () => {

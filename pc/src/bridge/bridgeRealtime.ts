@@ -66,7 +66,10 @@ export class BridgeRealtime {
     const prior = this.realtimeSessions.get(message.deviceId);
     const owner: RealtimeOwner = { voiceSessionId: message.voiceSessionId, generation: ++this.nextGeneration };
     this.realtimeSessions.set(message.deviceId, owner);
-    if (prior) await this.deps.stopAgentWork(message.deviceId, prior.voiceSessionId, "Replaced by newer realtime.start");
+    if (prior) {
+      await this.deps.stopAgentWork(message.deviceId, prior.voiceSessionId, "Replaced by newer realtime.start");
+      this.deps.detachAgentWork(message.deviceId, prior.voiceSessionId);
+    }
     if (prior?.session) {
       await this.deps.realtimeClient.stop(prior.session);
       this.sendRealtime(message.deviceId, {
@@ -76,6 +79,7 @@ export class BridgeRealtime {
         reason: "Replaced by newer realtime.start"
       });
     }
+    if (!this.isOwner(message.deviceId, owner)) return;
 
     try {
       this.deps.audit.record("openai_realtime_starting", message.deviceId, {
