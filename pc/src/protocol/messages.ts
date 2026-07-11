@@ -133,6 +133,11 @@ export const registerMessageSchema = z.object({
   capabilities: z.array(z.string())
 });
 
+export const observedNodeTargetSchema = z.object({
+  observationId: z.string().uuid(),
+  nodeId: z.string().regex(/^n[1-9][0-9]*$/)
+});
+
 export const commandMessageSchema = z.object({
   id: z.string().min(1),
   type: z.literal("command"),
@@ -140,6 +145,16 @@ export const commandMessageSchema = z.object({
   command: phoneCommandSchema,
   args: z.record(z.string(), z.unknown()).default({}),
   approvalCapability: z.string().min(20).max(256).optional()
+}).superRefine((message, context) => {
+  if (message.command !== "tap_node" && message.command !== "long_press_node") return;
+  const result = observedNodeTargetSchema.safeParse(message.args);
+  if (!result.success) {
+    context.addIssue({
+      code: "custom",
+      path: ["args"],
+      message: "Node commands require observationId and nodeId from the same observation"
+    });
+  }
 });
 
 export const commandCancelMessageSchema = z.object({

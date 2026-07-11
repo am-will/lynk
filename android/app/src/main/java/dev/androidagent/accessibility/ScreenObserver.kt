@@ -11,16 +11,17 @@ import org.json.JSONObject
 
 @Suppress("DEPRECATION")
 class ScreenObserver {
-    private val nodesById = linkedMapOf<String, AccessibilityNodeInfo>()
+    private val nodes = ObservationNodeIndex<AccessibilityNodeInfo> { it.recycle() }
     var currentObservationId: String? = null
         private set
     private var currentObservation: JSONObject? = null
 
-    fun node(id: String): AccessibilityNodeInfo? = nodesById[id]
+    internal fun node(observationId: String, nodeId: String): ObservationNodeLookup<AccessibilityNodeInfo> =
+        nodes.lookup(observationId, nodeId)
 
     fun observe(service: PhoneAccessibilityService): JSONObject {
-        clearNodes()
         val observationId = java.util.UUID.randomUUID().toString()
+        nodes.begin(observationId)
         currentObservationId = observationId
         val root = service.rootInActiveWindow
         val nodes = JSONArray()
@@ -49,14 +50,13 @@ class ScreenObserver {
     fun observationSnapshot(): JSONObject? = currentObservation?.let { JSONObject(it.toString()) }
 
     fun clearNodes() {
-        nodesById.values.forEach { it.recycle() }
-        nodesById.clear()
+        nodes.clear()
         currentObservationId = null
         currentObservation = null
     }
 
     private fun walk(node: AccessibilityNodeInfo, out: JSONArray, summary: MutableList<String>, depth: Int) {
-        if (nodesById.size >= MAX_NODES || depth > MAX_DEPTH) {
+        if (nodes.size >= MAX_NODES || depth > MAX_DEPTH) {
             return
         }
         val text = node.text?.toString().orEmpty()
@@ -91,8 +91,8 @@ class ScreenObserver {
             node.isSelected ||
             node.isFocused
         if (!rect.isEmpty && includeNode) {
-            val id = "n${nodesById.size + 1}"
-            nodesById[id] = AccessibilityNodeInfo.obtain(node)
+            val id = "n${nodes.size + 1}"
+            nodes.put(id, AccessibilityNodeInfo.obtain(node))
             out.put(
                 JSONObject()
                     .put("id", id)

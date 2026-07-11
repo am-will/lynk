@@ -132,7 +132,8 @@ class AccessibilityCommandExecutor internal constructor(
             "tap_node" -> {
                 service ?: return accessibilityMissing()
                 withAgentChromeSuppressed {
-                    val node = requireNode(args.getString("nodeId"))
+                    val target = ObservedNodeTarget.parse(args)
+                    val node = requireNode(target.observationId, target.nodeId)
                     tapNode(service, node)
                     waitMs(180)
                     CommandResult(true, observer.observe(service))
@@ -157,7 +158,8 @@ class AccessibilityCommandExecutor internal constructor(
             "long_press_node" -> {
                 service ?: return accessibilityMissing()
                 withAgentChromeSuppressed {
-                    val node = requireNode(args.getString("nodeId"))
+                    val target = ObservedNodeTarget.parse(args)
+                    val node = requireNode(target.observationId, target.nodeId)
                     longPressNode(service, node)
                     waitMs(250)
                     CommandResult(true, observer.observe(service))
@@ -501,6 +503,11 @@ class AccessibilityCommandExecutor internal constructor(
             return CommandResult(false, observer.observationSnapshot(), "$targetCommand does not require an approval capability")
         }
         val targetArgs = args.optJSONObject("args") ?: JSONObject()
+        if (targetCommand == "tap_node" || targetCommand == "long_press_node") {
+            runCatching { ObservedNodeTarget.parse(targetArgs) }.getOrElse { error ->
+                return CommandResult(false, observer.observationSnapshot(), error.message ?: "Invalid observed node target")
+            }
+        }
         val action = PhoneActionDescriptor.create(targetCommand, targetArgs)
         val observation = observer.observationSnapshot() ?: service?.let { observer.observe(it) }
         val rationale = args.optString("message").takeIf { it.isNotBlank() }
@@ -564,9 +571,16 @@ class AccessibilityCommandExecutor internal constructor(
 
     private fun currentObservationOrNull(): JSONObject? = PhoneAccessibilityService.instance?.let { observer.observe(it) }
 
-    private fun requireNode(nodeId: String): AccessibilityNodeInfo {
-        return observer.node(nodeId)
-            ?: throw IllegalArgumentException("Node $nodeId is not present in the approved observation. Observe and request approval again.")
+    private fun requireNode(observationId: String, nodeId: String): AccessibilityNodeInfo {
+        return when (val lookup = observer.node(observationId, nodeId)) {
+            is ObservationNodeLookup.Found -> lookup.value
+            is ObservationNodeLookup.StaleObservation -> throw IllegalArgumentException(
+                "stale_observation: requested $observationId but current observation is ${lookup.currentObservationId ?: "none"}"
+            )
+            ObservationNodeLookup.UnknownNode -> throw IllegalArgumentException(
+                "unknown_node: $nodeId is not present in observation $observationId"
+            )
+        }
     }
 
     private fun currentApprovalContext(service: PhoneAccessibilityService?): ApprovalContext? {

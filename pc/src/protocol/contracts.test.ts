@@ -17,6 +17,7 @@ import {
   chatSendMessageSchema,
   phoneOutboundMessageSchema,
   commandMessageSchema,
+  observedNodeTargetSchema,
   resultMessageSchema,
   realtimeStartMessageSchema,
   realtimeToolCallMessageSchema,
@@ -282,7 +283,7 @@ test("command and result envelopes carry scoped approval capabilities", () => {
     type: "command",
     requestOwner: "host:mcp:test",
     command: "tap_node",
-    args: { nodeId: "n1" },
+    args: { observationId: "123e4567-e89b-12d3-a456-426614174000", nodeId: "n1" },
     approvalCapability: "abcdefghijklmnopqrstuvwxyz123456"
   };
   assert.equal(commandMessageSchema.safeParse(approvedCommand).success, true);
@@ -296,6 +297,19 @@ test("command and result envelopes carry scoped approval capabilities", () => {
     approvalExpiresAtMs: 2_000_000_000,
     approvedAction: "Tap observed node n1"
   }).success, true);
+});
+
+test("node commands require an explicit observation generation", () => {
+  const target = { observationId: "123e4567-e89b-12d3-a456-426614174000", nodeId: "n17" };
+  assert.equal(observedNodeTargetSchema.safeParse(target).success, true);
+  assert.equal(observedNodeTargetSchema.safeParse({ nodeId: "n17" }).success, false);
+  assert.equal(commandMessageSchema.safeParse({
+    id: "cmd_node",
+    type: "command",
+    requestOwner: "host:test",
+    command: "tap_node",
+    args: { nodeId: "n17" }
+  }).success, false);
 });
 
 test("outbound validation is disabled in production mode", () => {
