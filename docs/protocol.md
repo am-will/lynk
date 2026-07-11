@@ -442,6 +442,8 @@ Hermes-specific HTTP expectations are documented in `docs/hermes-runs-api.md`. T
 
 Realtime voice mode uses Android WebRTC for live audio and the PC bridge for OpenAI Realtime session creation. Android creates the WebRTC offer, sends it to the PC bridge, and the bridge posts it to OpenAI's `/v1/realtime/calls` endpoint. Android message names use dotted `realtime.*` types.
 
+Every inbound and outbound `realtime.*` message carries the same required UUID `voiceSessionId`. Android creates a fresh UUID before each start. The bridge uses the pair `(deviceId, voiceSessionId)` as the exact owner of the transport and delegated-task queue; Android ignores replies for any older ID. A replacement start invalidates the prior owner before asynchronous setup continues, so a late SDP, error, task result, or close cannot mutate the new call. This is a lockstep protocol requirement: missing or non-UUID IDs are rejected rather than assigned to whichever call happens to be current.
+
 Prefer `OPENAI_API_KEY` on the PC bridge. The bridge-owned key takes precedence and never crosses the phone transport. An Android override is included in `realtime.start` only over `wss://`; it is omitted on loopback, ADB, and cleartext Tailscale development links. The bridge defaults voice sessions to `gpt-realtime-2`; override with `OPENAI_REALTIME_MODEL` if needed.
 
 ### Start
@@ -452,6 +454,7 @@ Android sends:
 {
   "type": "realtime.start",
   "deviceId": "openclaw-agent",
+  "voiceSessionId": "3d594650-3436-4f71-8ec3-3ad304f12c83",
   "sdp": "v=0\r\n...",
   "model": "hermes:gpt-5.5",
   "reasoningEffort": "medium",
@@ -474,6 +477,7 @@ The bridge replies with the remote SDP answer:
 {
   "type": "realtime.sdp",
   "deviceId": "openclaw-agent",
+  "voiceSessionId": "3d594650-3436-4f71-8ec3-3ad304f12c83",
   "sdp": "v=0\r\n..."
 }
 ```
@@ -486,6 +490,7 @@ Transcript deltas and final transcript text both use `realtime.transcript_delta`
 {
   "type": "realtime.transcript_delta",
   "deviceId": "openclaw-agent",
+  "voiceSessionId": "3d594650-3436-4f71-8ec3-3ad304f12c83",
   "role": "assistant",
   "delta": "Open",
   "isFinal": false
@@ -496,6 +501,7 @@ Transcript deltas and final transcript text both use `realtime.transcript_delta`
 {
   "type": "realtime.transcript_delta",
   "deviceId": "openclaw-agent",
+  "voiceSessionId": "3d594650-3436-4f71-8ec3-3ad304f12c83",
   "role": "assistant",
   "delta": "",
   "text": "Opening Settings.",
@@ -509,6 +515,7 @@ Raw non-audio realtime items are forwarded for Android-side normalization or deb
 {
   "type": "realtime.item_added",
   "deviceId": "openclaw-agent",
+  "voiceSessionId": "3d594650-3436-4f71-8ec3-3ad304f12c83",
   "item": { "type": "message", "role": "assistant" }
 }
 ```
@@ -523,6 +530,7 @@ Use `delegate_agent_task` for general work that should happen in the currently s
 {
   "type": "realtime.tool_call",
   "deviceId": "openclaw-agent",
+  "voiceSessionId": "3d594650-3436-4f71-8ec3-3ad304f12c83",
   "callId": "call_general",
   "name": "delegate_agent_task",
   "model": "hermes:gpt-5.5",
@@ -542,6 +550,7 @@ Use `run_phone_task` for new actionable phone tasks:
 {
   "type": "realtime.tool_call",
   "deviceId": "openclaw-agent",
+  "voiceSessionId": "3d594650-3436-4f71-8ec3-3ad304f12c83",
   "callId": "call_abc",
   "itemId": "item_abc",
   "name": "run_phone_task",
@@ -564,6 +573,7 @@ Use `steer_phone_task` when the user corrects or adds information while a phone 
 {
   "type": "realtime.tool_call",
   "deviceId": "openclaw-agent",
+  "voiceSessionId": "3d594650-3436-4f71-8ec3-3ad304f12c83",
   "callId": "call_steer",
   "name": "steer_phone_task",
   "arguments": {
@@ -580,6 +590,7 @@ Use `stop_phone_task` when the user says to stop, pause, cancel, or leave the ph
 {
   "type": "realtime.tool_call",
   "deviceId": "openclaw-agent",
+  "voiceSessionId": "3d594650-3436-4f71-8ec3-3ad304f12c83",
   "callId": "call_stop",
   "name": "stop_phone_task",
   "arguments": {
@@ -596,6 +607,7 @@ Use `hang_up_realtime` when the user says to hang up, end the call, or stop list
 {
   "type": "realtime.tool_call",
   "deviceId": "openclaw-agent",
+  "voiceSessionId": "3d594650-3436-4f71-8ec3-3ad304f12c83",
   "callId": "call_hangup",
   "name": "hang_up_realtime",
   "arguments": {
@@ -611,6 +623,7 @@ Use `web_search` for current-information questions that do not require controlli
 {
   "type": "realtime.tool_call",
   "deviceId": "openclaw-agent",
+  "voiceSessionId": "3d594650-3436-4f71-8ec3-3ad304f12c83",
   "callId": "call_search",
   "name": "web_search",
   "arguments": {
@@ -625,6 +638,7 @@ Task status updates are sent whenever the active task or queue changes:
 {
   "type": "realtime.task_status",
   "deviceId": "openclaw-agent",
+  "voiceSessionId": "3d594650-3436-4f71-8ec3-3ad304f12c83",
   "running": true,
   "queued": 1,
   "currentTask": "Open Facebook messages",
@@ -639,6 +653,7 @@ When the task finishes, fails, times out, or is cancelled, the bridge sends a co
 {
   "type": "realtime.tool_result",
   "deviceId": "openclaw-agent",
+  "voiceSessionId": "3d594650-3436-4f71-8ec3-3ad304f12c83",
   "callId": "call_abc",
   "ok": true,
   "status": "completed",
@@ -654,6 +669,7 @@ Speech-start notifications are shown when the WebRTC data channel emits an OpenA
 {
   "type": "realtime.speech_started",
   "deviceId": "openclaw-agent",
+  "voiceSessionId": "3d594650-3436-4f71-8ec3-3ad304f12c83",
   "role": "user",
   "itemId": null
 }
@@ -678,6 +694,7 @@ Android sends:
 {
   "type": "realtime.stop",
   "deviceId": "openclaw-agent",
+  "voiceSessionId": "3d594650-3436-4f71-8ec3-3ad304f12c83",
   "reason": "User hung up"
 }
 ```
@@ -688,6 +705,7 @@ The bridge sends `realtime.error` if OpenAI rejects startup, stop, or a runtime 
 {
   "type": "realtime.error",
   "deviceId": "openclaw-agent",
+  "voiceSessionId": "3d594650-3436-4f71-8ec3-3ad304f12c83",
   "message": "OpenAI realtime call failed: 401 Unauthorized"
 }
 ```
@@ -698,6 +716,7 @@ The bridge sends `realtime.closed` when the realtime transport closes or the loc
 {
   "type": "realtime.closed",
   "deviceId": "openclaw-agent",
+  "voiceSessionId": "3d594650-3436-4f71-8ec3-3ad304f12c83",
   "reason": "User hung up"
 }
 ```
