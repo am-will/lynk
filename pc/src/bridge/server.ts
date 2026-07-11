@@ -11,6 +11,7 @@ import { createBridgeHttpHandler } from "./bridgeHttp.js";
 import { BridgeRealtime } from "./bridgeRealtime.js";
 import { createPhoneWebSocketServer } from "./phoneWebSocket.js";
 import { startAdbReverseMonitor } from "./AdbReverseMonitor.js";
+import { createPhoneUpgradeHandler } from "./webSocketUpgrade.js";
 
 const config = getBridgeConfig();
 const audit = new AuditLog();
@@ -69,14 +70,7 @@ const wss = createPhoneWebSocketServer({
   stopAgentWork
 });
 
-server.on("upgrade", (req, socket, head) => {
-  const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
-  if (url.pathname !== "/phone") {
-    socket.destroy();
-    return;
-  }
-  wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
-});
+server.on("upgrade", createPhoneUpgradeHandler(wss));
 
 server.listen(config.port, config.host, () => {
   console.log(`lynk bridge listening on ws://${config.host}:${config.port}/phone`);
