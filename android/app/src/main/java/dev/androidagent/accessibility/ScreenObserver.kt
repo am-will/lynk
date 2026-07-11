@@ -12,15 +12,21 @@ import org.json.JSONObject
 @Suppress("DEPRECATION")
 class ScreenObserver {
     private val nodesById = linkedMapOf<String, AccessibilityNodeInfo>()
+    var currentObservationId: String? = null
+        private set
+    private var currentObservation: JSONObject? = null
 
     fun node(id: String): AccessibilityNodeInfo? = nodesById[id]
 
     fun observe(service: PhoneAccessibilityService): JSONObject {
         clearNodes()
+        val observationId = java.util.UUID.randomUUID().toString()
+        currentObservationId = observationId
         val root = service.rootInActiveWindow
         val nodes = JSONArray()
         val summary = mutableListOf<String>()
         val packageName = root?.packageName?.toString().orEmpty()
+        val windowId = root?.windowId
         try {
             if (root != null) {
                 walk(root, nodes, summary, 0)
@@ -29,17 +35,24 @@ class ScreenObserver {
             root?.recycle()
         }
         return JSONObject()
+            .put("observationId", observationId)
             .put("deviceId", android.os.Build.MODEL)
             .put("package", packageName)
             .put("activity", service.lastActivityClassName ?: "")
+            .put("windowId", windowId ?: JSONObject.NULL)
             .put("display", displayJson(service))
             .put("screenSummary", summary.take(12).joinToString(" | "))
             .put("nodes", nodes)
+            .also { currentObservation = JSONObject(it.toString()) }
     }
+
+    fun observationSnapshot(): JSONObject? = currentObservation?.let { JSONObject(it.toString()) }
 
     fun clearNodes() {
         nodesById.values.forEach { it.recycle() }
         nodesById.clear()
+        currentObservationId = null
+        currentObservation = null
     }
 
     private fun walk(node: AccessibilityNodeInfo, out: JSONArray, summary: MutableList<String>, depth: Int) {

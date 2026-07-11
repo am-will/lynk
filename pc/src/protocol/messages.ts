@@ -28,6 +28,41 @@ export const PHONE_COMMANDS = [
 export const phoneCommandSchema = z.enum(PHONE_COMMANDS);
 export type PhoneCommand = z.infer<typeof phoneCommandSchema>;
 
+export const PHONE_COMMAND_RISKS = ["observe", "navigation", "sensitive", "approval"] as const;
+export type PhoneCommandRisk = typeof PHONE_COMMAND_RISKS[number];
+export const SENSITIVE_PHONE_COMMANDS = [
+  "tap_node",
+  "tap_xy",
+  "tap_normalized",
+  "long_press_node",
+  "type_text",
+  "submit_text",
+  "take_screenshot"
+] as const;
+
+export const PHONE_COMMAND_RISK = {
+  observe_screen: "observe",
+  open_app: "navigation",
+  tap_node: "sensitive",
+  tap_xy: "sensitive",
+  tap_normalized: "sensitive",
+  long_press_node: "sensitive",
+  type_text: "sensitive",
+  submit_text: "sensitive",
+  scroll: "navigation",
+  swipe: "navigation",
+  press_back: "navigation",
+  press_home: "navigation",
+  open_recents: "navigation",
+  take_screenshot: "sensitive",
+  ask_user_confirmation: "approval",
+  wait: "observe"
+} as const satisfies Record<PhoneCommand, PhoneCommandRisk>;
+
+export function phoneCommandRequiresApproval(command: PhoneCommand): boolean {
+  return PHONE_COMMAND_RISK[command] === "sensitive";
+}
+
 export const MCP_PHONE_TOOL_NAMES = {
   observe: "phone_observe",
   openApp: "phone_open_app",
@@ -101,8 +136,10 @@ export const registerMessageSchema = z.object({
 export const commandMessageSchema = z.object({
   id: z.string().min(1),
   type: z.literal("command"),
+  requestOwner: z.string().min(1).max(256),
   command: phoneCommandSchema,
-  args: z.record(z.string(), z.unknown()).default({})
+  args: z.record(z.string(), z.unknown()).default({}),
+  approvalCapability: z.string().min(20).max(256).optional()
 });
 
 export const resultMessageSchema = z.object({
@@ -118,7 +155,10 @@ export const resultMessageSchema = z.object({
     })
     .optional()
     .nullable(),
-  error: z.string().optional().nullable()
+  error: z.string().optional().nullable(),
+  approvalCapability: z.string().optional().nullable(),
+  approvalExpiresAtMs: z.number().int().positive().optional().nullable(),
+  approvedAction: z.string().optional().nullable()
 });
 
 export const selectedChatBackendModelSchema = z.string().min(1).refine((value) => {

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,15 +41,24 @@ export function bridgeAuthHeaders(token = phoneAgentToken()): Record<string, str
 }
 
 export class PhoneToolClient {
-  constructor(private readonly bridgeUrl = phoneAgentBridgeUrl()) {}
+  private readonly requestOwner: string;
 
-  async command(command: PhoneCommand, args: Record<string, unknown> = {}, timeoutMs = 30_000): Promise<PhoneCommandResult> {
+  constructor(private readonly bridgeUrl = phoneAgentBridgeUrl(), requestOwner = `mcp:${randomUUID()}`) {
+    this.requestOwner = requestOwner;
+  }
+
+  async command(
+    command: PhoneCommand,
+    args: Record<string, unknown> = {},
+    timeoutMs = 30_000,
+    approvalCapability?: string
+  ): Promise<PhoneCommandResult> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs + 5_000);
     const response = await fetch(`${this.bridgeUrl}/api/phone/default/command`, {
       method: "POST",
       headers: { "content-type": "application/json", ...bridgeAuthHeaders() },
-      body: JSON.stringify({ command, args, timeoutMs }),
+      body: JSON.stringify({ command, args, timeoutMs, requestOwner: this.requestOwner, approvalCapability }),
       signal: controller.signal
     }).finally(() => clearTimeout(timeout));
     try {

@@ -9,12 +9,15 @@ import {
   CHAT_SEND_DELIVERIES,
   MCP_PHONE_TOOL_NAME_BY_COMMAND,
   PHONE_COMMANDS,
+  PHONE_COMMAND_RISK,
   REASONING_EFFORTS,
   REALTIME_TOOL_NAMES,
   chatAttachmentSchema,
   chatHistoryMessageSchema,
   chatSendMessageSchema,
   phoneOutboundMessageSchema,
+  commandMessageSchema,
+  resultMessageSchema,
   realtimeStartMessageSchema,
   realtimeToolCallMessageSchema,
   validatePhoneOutboundMessage
@@ -34,6 +37,16 @@ test("Android command executor handles every protocol phone command", () => {
   const commandBlock = source.slice(start, end);
   const androidCommands = Array.from(commandBlock.matchAll(/^\s*"([^"]+)"\s*->/gm), (match) => match[1]).sort();
   assert.deepEqual(androidCommands, [...PHONE_COMMANDS].sort());
+});
+
+test("Android and TypeScript command risk classifications stay aligned", () => {
+  const source = readRepoFile("android/app/src/main/java/dev/androidagent/accessibility/PhoneCommandPolicy.kt");
+  const androidRisks = Object.fromEntries(Array.from(
+    source.matchAll(/"([^"]+)" to PhoneCommandRisk\.([A-Za-z]+)/g),
+    (match) => [match[1], match[2].toLowerCase()]
+  ));
+  assert.deepEqual(androidRisks, PHONE_COMMAND_RISK);
+  assert.deepEqual(Object.keys(PHONE_COMMAND_RISK).sort(), [...PHONE_COMMANDS].sort());
 });
 
 test("Android model and reasoning options match protocol enums", () => {
@@ -202,7 +215,7 @@ test("PC outbound phone messages have validating schemas for dev and tests", () 
   process.env.NODE_ENV = "test";
   delete process.env.PHONE_AGENT_VALIDATE_OUTBOUND;
   const outboundMessages = [
-    { id: "cmd_1", type: "command", command: "observe_screen", args: {} },
+    { id: "cmd_1", type: "command", requestOwner: "host:test", command: "observe_screen", args: {} },
     { type: "agent_status", deviceId: "pixel", status: "info", text: "Registered pixel" },
     { type: "realtime.sdp", deviceId: "pixel", sdp: "answer" },
     { type: "realtime.transcript_delta", deviceId: "pixel", role: "assistant", delta: "hi", isFinal: false },
@@ -260,6 +273,28 @@ test("PC outbound phone messages have validating schemas for dev and tests", () 
       process.env.PHONE_AGENT_VALIDATE_OUTBOUND = originalValidateOutbound;
     }
   }
+});
+
+test("command and result envelopes carry scoped approval capabilities", () => {
+  const approvedCommand = {
+    id: "cmd_approved",
+    type: "command",
+    requestOwner: "host:mcp:test",
+    command: "tap_node",
+    args: { nodeId: "n1" },
+    approvalCapability: "abcdefghijklmnopqrstuvwxyz123456"
+  };
+  assert.equal(commandMessageSchema.safeParse(approvedCommand).success, true);
+  assert.equal(commandMessageSchema.safeParse({ ...approvedCommand, requestOwner: "" }).success, false);
+  assert.equal(commandMessageSchema.safeParse({ ...approvedCommand, approvalCapability: "short" }).success, false);
+  assert.equal(resultMessageSchema.safeParse({
+    id: "cmd_approval",
+    type: "result",
+    ok: true,
+    approvalCapability: "abcdefghijklmnopqrstuvwxyz123456",
+    approvalExpiresAtMs: 2_000_000_000,
+    approvedAction: "Tap observed node n1"
+  }).success, true);
 });
 
 test("outbound validation is disabled in production mode", () => {

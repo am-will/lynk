@@ -7,5 +7,8 @@ data class CommandResult(
     val observation: JSONObject?,
     val error: String? = null,
     val screenshotBase64: String? = null,
-    val screenshot: JSONObject? = null
+    val screenshot: JSONObject? = null,
+    val approvalCapability: String? = null,
+    val approvalExpiresAtMs: Long? = null,
+    val approvedAction: String? = null
 )

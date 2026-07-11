@@ -28,20 +28,27 @@ import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
 
-class AccessibilityCommandExecutor(
+class AccessibilityCommandExecutor internal constructor(
     private val context: Context,
     private val overlayController: OverlayController?,
+    private val approvalCapabilities: ApprovalCapabilityStore = ApprovalCapabilityStore(),
     private val onPhoneControlCommandStarted: (String) -> Unit = {},
     private val onPhoneControlCommandFinished: (String) -> Unit = {}
 ) {
     private val scope = CoroutineScope(Dispatchers.Main)
     private val observer = ScreenObserver()
 
-    fun execute(command: String, args: JSONObject, callback: (CommandResult) -> Unit) {
+    fun execute(
+        command: String,
+        args: JSONObject,
+        requestOwner: String = LEGACY_REQUEST_OWNER,
+        approvalCapability: String? = null,
+        callback: (CommandResult) -> Unit
+    ) {
         scope.launch {
             onPhoneControlCommandStarted(command)
             val result = try {
-                runCatching { executeInternal(command, args) }
+                runCatching { executeInternal(command, args, requestOwner, approvalCapability) }
                     .getOrElse { CommandResult(false, currentObservationOrNull(), it.message ?: it.toString()) }
             } finally {
                 onPhoneControlCommandFinished(command)
@@ -50,8 +57,26 @@ class AccessibilityCommandExecutor(
         }
     }
 
-    private suspend fun executeInternal(command: String, args: JSONObject): CommandResult {
+    fun cancelApprovals(requestOwner: String) {
+        approvalCapabilities.cancelOwner(requestOwner)
+    }
+
+    fun cancelApprovalsForPrefix(prefix: String) {
+        approvalCapabilities.cancelOwnerPrefix(prefix)
+    }
+
+    fun clearApprovals() {
+        approvalCapabilities.clear()
+    }
+
+    private suspend fun executeInternal(
+        command: String,
+        args: JSONObject,
+        requestOwner: String,
+        approvalCapability: String?
+    ): CommandResult {
         val service = PhoneAccessibilityService.instance
+        authorizationFailure(command, args, requestOwner, approvalCapability, service)?.let { return it }
 
         return when (command) {
             "observe_screen" -> withAgentChromeSuppressed {
@@ -146,13 +171,32 @@ class AccessibilityCommandExecutor(
                     CommandResult(true, observer.observe(service))
                 }
             }
-            "ask_user_confirmation" -> askUserConfirmation(service, args)
+            "ask_user_confirmation" -> askUserConfirmation(service, args, requestOwner)
             "wait" -> {
                 waitMs(args.optLong("ms", 1000L))
                 CommandResult(true, service?.let { observer.observe(it) } ?: JSONObject().put("screenSummary", "Wait completed; accessibility service is not enabled"))
             }
             else -> CommandResult(false, service?.let { observer.observe(it) }, "Unknown command: $command")
         }
+    }
+
+    private fun authorizationFailure(
+        command: String,
+        args: JSONObject,
+        requestOwner: String,
+        approvalCapability: String?,
+        service: PhoneAccessibilityService?
+    ): CommandResult? {
+        if (!PhoneCommandPolicy.requiresApproval(command)) return null
+        val action = PhoneActionDescriptor.create(command, args)
+        val validation = approvalCapabilities.validateAndConsume(
+            token = approvalCapability,
+            ownerId = requestOwner,
+            action = action,
+            observationContext = currentApprovalContext(service)
+        )
+        val error = validation.denialMessage(action.summary) ?: return null
+        return CommandResult(false, observer.observationSnapshot(), error)
     }
 
     private fun openApp(args: JSONObject): String {
@@ -411,9 +455,26 @@ class AccessibilityCommandExecutor(
         }
     }
 
-    private suspend fun askUserConfirmation(service: PhoneAccessibilityService?, args: JSONObject): CommandResult {
+    private suspend fun askUserConfirmation(
+        service: PhoneAccessibilityService?,
+        args: JSONObject,
+        requestOwner: String
+    ): CommandResult {
+        val targetCommand = args.optString("command").takeIf { it.isNotBlank() }
+            ?: return CommandResult(false, observer.observationSnapshot(), "Confirmation requires the exact target command")
+        if (!PhoneCommandPolicy.requiresApproval(targetCommand)) {
+            return CommandResult(false, observer.observationSnapshot(), "$targetCommand does not require an approval capability")
+        }
+        val targetArgs = args.optJSONObject("args") ?: JSONObject()
+        val action = PhoneActionDescriptor.create(targetCommand, targetArgs)
+        val observation = observer.observationSnapshot() ?: service?.let { observer.observe(it) }
+        val rationale = args.optString("message").takeIf { it.isNotBlank() }
+        val preview = args.optString("preview").takeIf { it.isNotBlank() }
         val deferred = overlayController
-            ?.askConfirmation(args.getString("message"), args.optString("preview").takeIf { it.isNotBlank() })
+            ?.askConfirmation(
+                action.summary,
+                listOfNotNull(rationale, preview).joinToString("\n\n").takeIf { it.isNotBlank() }
+            )
         val confirmed = deferred?.let {
             val result = withTimeoutOrNull(CONFIRMATION_TIMEOUT_MS) { it.await() }
             if (result == null) {
@@ -421,10 +482,19 @@ class AccessibilityCommandExecutor(
             }
             result ?: false
         } ?: false
+        val capability = approvalCapabilities.issueIfApproved(
+            confirmed,
+            requestOwner,
+            action,
+            approvalContextFromObservation(observation)
+        )
+            ?: return CommandResult(false, observation, "User denied or cancelled the action")
         return CommandResult(
-            ok = confirmed,
-            observation = service?.let { observer.observe(it) },
-            error = if (confirmed) null else "User did not confirm"
+            ok = true,
+            observation = observation,
+            approvalCapability = capability.token,
+            approvalExpiresAtMs = capability.expiresAtMs,
+            approvedAction = action.summary
         )
     }
 
@@ -457,10 +527,33 @@ class AccessibilityCommandExecutor(
     private fun currentObservationOrNull(): JSONObject? = PhoneAccessibilityService.instance?.let { observer.observe(it) }
 
     private fun requireNode(nodeId: String): AccessibilityNodeInfo {
-        return observer.node(nodeId) ?: PhoneAccessibilityService.instance?.let {
-            observer.observe(it)
-            observer.node(nodeId)
-        } ?: throw IllegalArgumentException("Node $nodeId not found. Call observe_screen first.")
+        return observer.node(nodeId)
+            ?: throw IllegalArgumentException("Node $nodeId is not present in the approved observation. Observe and request approval again.")
+    }
+
+    private fun currentApprovalContext(service: PhoneAccessibilityService?): ApprovalContext? {
+        val observationId = observer.currentObservationId ?: return null
+        val root = service?.rootInActiveWindow
+        return try {
+            ApprovalContext(
+                observationId = observationId,
+                packageName = root?.packageName?.toString().orEmpty(),
+                activityName = service?.lastActivityClassName.orEmpty(),
+                windowId = root?.windowId
+            )
+        } finally {
+            root?.recycle()
+        }
+    }
+
+    private fun approvalContextFromObservation(observation: JSONObject?): ApprovalContext? {
+        val observationId = observation?.optString("observationId")?.takeIf { it.isNotBlank() } ?: return null
+        return ApprovalContext(
+            observationId = observationId,
+            packageName = observation.optString("package"),
+            activityName = observation.optString("activity"),
+            windowId = observation.optInt("windowId").takeIf { observation.has("windowId") && !observation.isNull("windowId") }
+        )
     }
 
     private suspend fun waitMs(ms: Long) {
@@ -469,6 +562,7 @@ class AccessibilityCommandExecutor(
 
     private companion object {
         private const val CONFIRMATION_TIMEOUT_MS = 120_000L
+        private const val LEGACY_REQUEST_OWNER = "legacy"
     }
 }
 

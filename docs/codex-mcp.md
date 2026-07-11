@@ -60,6 +60,7 @@ The server exposes:
 - `phone_open_app`
 - `phone_tap_node`
 - `phone_tap_xy`
+- `phone_tap_normalized`
 - `phone_long_press_node`
 - `phone_type_text`
 - `phone_submit_text`
@@ -71,3 +72,5 @@ The server exposes:
 - `phone_take_screenshot`
 - `phone_ask_user_confirmation`
 - `phone_wait`
+
+`phone_tap_*`, `phone_long_press_node`, `phone_type_text`, `phone_submit_text`, and `phone_take_screenshot` require an enforced Android approval. Call `phone_ask_user_confirmation` with the exact target command and arguments, then pass its returned `approvalCapability` to that unchanged target action. The capability expires after 60 seconds, is valid for one use by the same MCP client, and is invalidated if the observed screen changes.

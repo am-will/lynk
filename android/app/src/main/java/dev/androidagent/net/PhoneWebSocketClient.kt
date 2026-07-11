@@ -90,6 +90,7 @@ class PhoneWebSocketClient(
         socket = null
         cancelScheduledReconnect()
         cancelRegisterTimeout()
+        commandExecutor.cancelApprovalsForPrefix(HOST_OWNER_PREFIX)
         client.dispatcher.executorService.shutdown()
     }
 
@@ -372,6 +373,7 @@ class PhoneWebSocketClient(
         connected = false
         registered = false
         cancelRegisterTimeout()
+        commandExecutor.cancelApprovalsForPrefix(HOST_OWNER_PREFIX)
         val statusText = "WebSocket error: ${t.message}"
         onStatus(statusText, "error")
         onConnectionState(BridgeConnectionState(BridgeConnectionPhase.ERROR, statusText))
@@ -390,6 +392,7 @@ class PhoneWebSocketClient(
         connected = false
         registered = false
         cancelRegisterTimeout()
+        commandExecutor.cancelApprovalsForPrefix(HOST_OWNER_PREFIX)
         val (statusText, longBackoff) = when (code) {
             4001 -> {
                 "Bridge rejected token (4001 $reason). Update PHONE_AGENT_TOKEN on the PC or re-pair from app Settings." to true
@@ -524,14 +527,28 @@ class PhoneWebSocketClient(
             reportBridgeChatError("Bridge sent a malformed command message; ignored it.")
             return
         }
+        val requestOwner = message.optString("requestOwner").takeIf { it.startsWith(HOST_OWNER_PREFIX) }
+        if (requestOwner == null) {
+            webSocket.send(JSONObject()
+                .put("id", id)
+                .put("type", "result")
+                .put("ok", false)
+                .put("error", "authorization_wrong_owner: bridge command has no valid host request owner")
+                .toString())
+            return
+        }
         val args = message.optJSONObject("args") ?: JSONObject()
-        commandExecutor.execute(command, args) { result ->
+        val approvalCapability = message.optString("approvalCapability").takeIf { it.isNotBlank() }
+        commandExecutor.execute(command, args, requestOwner, approvalCapability) { result ->
             val response = JSONObject()
                 .put("id", id)
                 .put("type", "result")
                 .put("ok", result.ok)
                 .put("observation", result.observation)
                 .put("error", result.error)
+                .put("approvalCapability", result.approvalCapability)
+                .put("approvalExpiresAtMs", result.approvalExpiresAtMs)
+                .put("approvedAction", result.approvedAction)
             result.screenshotBase64?.let { response.put("screenshotBase64", it) }
             result.screenshot?.let { response.put("screenshot", it) }
             webSocket.send(response.toString())
@@ -554,6 +571,7 @@ class PhoneWebSocketClient(
 
     companion object {
         private const val TAG = "PhoneWebSocketClient"
+        private const val HOST_OWNER_PREFIX = "host:"
         private const val REGISTER_TIMEOUT_MS = 5_000L
         private const val TOKEN_REJECTED_BACKOFF_MS = 30_000L
     }

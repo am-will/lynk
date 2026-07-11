@@ -307,7 +307,8 @@ class LocalAgentController(
         Log.i(TAG, "local turn $runId executing tool=${call.name} args=${call.args}")
         val eventId = "local_tool_${UUID.randomUUID()}"
         emit(toolEvent(sessionKey, runId, eventId, call, "running", "Running ${call.name}", null, null))
-        val result = runCatching { tools.execute(call) }
+        val requestOwner = localRequestOwner(sessionKey, runId)
+        val result = runCatching { tools.execute(call, requestOwner) }
             .getOrElse { JSONObject().put("ok", false).put("error", it.message ?: it.toString()) }
         Log.i(TAG, "local turn $runId tool=${call.name} ok=${result.optBoolean("ok", false)} error=${result.optString("error")}")
         emit(toolEvent(
@@ -335,6 +336,8 @@ class LocalAgentController(
         return result
     }
 
+    private fun localRequestOwner(sessionKey: String, runId: String): String = "local:$sessionKey:$runId"
+
     private fun transcriptToolResult(call: LocalToolCall, result: JSONObject): String {
         return if (call.name == "local_read_skill") {
             result.toString().take(MAX_SKILL_RESULT_CHARS)
@@ -349,6 +352,11 @@ class LocalAgentController(
         val compact = JSONObject()
             .put("ok", result.optBoolean("ok", false))
             .put("error", result.optString("error").takeIf { it.isNotBlank() } ?: JSONObject.NULL)
+        result.optString("approvalCapability").takeIf { it.isNotBlank() }?.let { compact.put("approvalCapability", it) }
+        result.optString("approvedAction").takeIf { it.isNotBlank() }?.let { compact.put("approvedAction", it) }
+        if (result.has("approvalExpiresAtMs") && !result.isNull("approvalExpiresAtMs")) {
+            compact.put("approvalExpiresAtMs", result.optLong("approvalExpiresAtMs"))
+        }
         val observation = result.optJSONObject("observation")
         if (observation != null) {
             compact.put("observation", compactObservation(observation))

@@ -31,10 +31,30 @@ Registration permanently binds that socket to its `deviceId`. A second `register
 {
   "id": "cmd_123",
   "type": "command",
+  "requestOwner": "host:mcp:4ebf...",
   "command": "tap_node",
-  "args": { "nodeId": "n17" }
+  "args": { "nodeId": "n17" },
+  "approvalCapability": "<opaque single-use capability>"
 }
 ```
+
+Sensitive commands require a preceding `ask_user_confirmation` command from the same `requestOwner`:
+
+```json
+{
+  "id": "cmd_approval",
+  "type": "command",
+  "requestOwner": "host:mcp:4ebf...",
+  "command": "ask_user_confirmation",
+  "args": {
+    "command": "tap_node",
+    "args": { "nodeId": "n17" },
+    "message": "Open the selected item"
+  }
+}
+```
+
+An approved result contains `approvalCapability`, `approvalExpiresAtMs`, and `approvedAction`. The capability authorizes only the exact command/arguments and observation shown to the user, expires after 60 seconds, and is consumed once. It is transported as a command-envelope field, never inside the target command's `args`.
 
 Coordinate taps use full-screen pixels, including the status and navigation bars. When a caller chooses a point from a screenshot that may have been shown at a scaled size, prefer `tap_normalized`:
 
@@ -90,6 +110,8 @@ Coordinate taps use full-screen pixels, including the status and navigation bars
   "error": null
 }
 ```
+
+Authorization failures use stable prefixes including `authorization_required`, `authorization_expired`, `authorization_replayed`, `authorization_wrong_owner`, `authorization_wrong_action`, `authorization_context_changed`, and `authorization_cancelled`.
 
 Observation node IDs such as `n17` are ephemeral and only valid until the next observation. Prefer `viewIdResourceName`, visible `text`, or `contentDescription` as stable selectors when available. Android exports OpenAgent resource IDs for meaningful controls under `app.lynk:id/...`; decorative artwork is intentionally hidden from accessibility so the tree stays focused on actionable UI.
 
