@@ -13,10 +13,12 @@ data class BlobStoreLimits(
     val maxBlobCount: Int,
     val maxAggregateBytes: Long,
     val freeSpaceReserveBytes: Long,
-    val retentionMillis: Long
+    val retentionMillis: Long,
+    val minItemBytes: Long = 1L
 ) {
     init {
-        require(maxItemBytes > 0)
+        require(minItemBytes > 0)
+        require(maxItemBytes >= minItemBytes)
         require(maxBlobCount > 0)
         require(maxAggregateBytes >= maxItemBytes)
         require(freeSpaceReserveBytes >= 0)
@@ -98,7 +100,9 @@ class AppPrivateBlobStore(
                     throw IOException("${normalized.displayName} size changed while importing (declared $declared bytes, received $copiedBytes)")
                 }
             }
-            if (copiedBytes <= 0L) throw IOException("${normalized.displayName} is empty")
+            if (copiedBytes < limits.minItemBytes) {
+                throw IOException("${normalized.displayName} must be at least ${limits.minItemBytes} bytes")
+            }
             val blob = StoredBlob(
                 id = normalized.id,
                 displayName = normalized.displayName,
@@ -227,6 +231,9 @@ class AppPrivateBlobStore(
         val declared = request.declaredSizeBytes?.takeIf { it >= 0L }
         if (declared != null && declared > limits.maxItemBytes) {
             throw BlobLimitExceededException("$displayName exceeds the ${limits.maxItemBytes}-byte item limit")
+        }
+        if (declared != null && declared < limits.minItemBytes) {
+            throw IOException("$displayName must be at least ${limits.minItemBytes} bytes")
         }
         return request.copy(displayName = displayName, mimeType = mimeType, declaredSizeBytes = declared)
     }

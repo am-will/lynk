@@ -26,6 +26,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
 import dev.androidagent.avatar.AvatarLibrary
 import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.settings.SettingsHost
@@ -33,6 +34,9 @@ import dev.androidagent.settings.SettingsUi
 import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.ThemeTokens
 import dev.androidagent.ui.Typography
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 /**
  * Setup-only fallback when overlay permission is missing.
@@ -45,6 +49,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var setupBanner: TextView
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingLocalModelPathField: EditText? = null
+    private var localModelImportJob: Job? = null
     private var bridgeConnected = false
     private var settingsStatusPollScheduled = false
     private val settingsStatusPoll = object : Runnable {
@@ -60,13 +65,24 @@ class MainActivity : ComponentActivity() {
         runCatching {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        runCatching {
-            LocalModelStore.importModel(this, uri)
-        }.onSuccess { path ->
-            pendingLocalModelPathField?.setText(path)
-            setupBanner.text = "Imported local model."
-        }.onFailure { error ->
-            setupBanner.text = error.message ?: "Could not import local model."
+        localModelImportJob?.cancel()
+        setupBanner.text = "Importing local model..."
+        localModelImportJob = lifecycleScope.launch {
+            try {
+                var lastProgressMarker = -1L
+                val path = LocalModelStore.importModel(this@MainActivity, uri) { copied, total ->
+                    val marker = if (total != null && total > 0L) copied * 100L / total else copied / PROGRESS_STEP_BYTES
+                    if (marker == lastProgressMarker) return@importModel
+                    lastProgressMarker = marker
+                    mainHandler.post { setupBanner.text = modelImportProgress(copied, total) }
+                }
+                pendingLocalModelPathField?.setText(path)
+                setupBanner.text = "Imported local model."
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                setupBanner.text = error.message ?: "Could not import local model."
+            }
         }
     }
 
@@ -137,6 +153,15 @@ class MainActivity : ComponentActivity() {
     fun registerLocalModelImport(field: EditText) {
         pendingLocalModelPathField = field
         localModelPicker.launch(arrayOf("*/*"))
+    }
+
+    private fun modelImportProgress(copiedBytes: Long, totalBytes: Long?): String {
+        return if (totalBytes != null && totalBytes > 0L) {
+            val percent = (copiedBytes * 100L / totalBytes).coerceIn(0L, 100L)
+            "Importing local model... $percent%"
+        } else {
+            "Importing local model... ${copiedBytes / (1024 * 1024)} MB"
+        }
     }
 
     private fun buildSetupUi() {
@@ -315,6 +340,7 @@ class MainActivity : ComponentActivity() {
     private fun dp(value: Int): Int = DesignTokens.dp(this, value)
 
     companion object {
+        private const val PROGRESS_STEP_BYTES = 32L * 1024L * 1024L
         const val EXTRA_REQUEST_MIC_PERMISSION = "requestMicPermission"
         const val EXTRA_SHOW_SETTINGS = "showSettings"
         private const val REQUEST_MIC_PERMISSION = 20
