@@ -8,9 +8,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -33,6 +32,7 @@ class TermuxCommandRunner(private val context: Context) {
         }
 
         val executionId = nextExecutionId.incrementAndGet()
+        val execution = TermuxExecutionLifecycle(executionId.toString())
         val result = CompletableDeferred<TermuxCommandResult>()
         pendingResults[executionId] = result
 
@@ -57,20 +57,36 @@ class TermuxCommandRunner(private val context: Context) {
             .putExtra(EXTRA_COMMAND_DESCRIPTION, "Command requested by the local OpenAgent agent.")
 
         return try {
+            execution.markLaunchRequested()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(runIntent)
             } else {
                 context.startService(runIntent)
             }
-            val commandResult = withTimeout(timeoutMs) { result.await() }
-            commandResult.toJson(trimmed, workdir.ifBlank { TERMUX_HOME })
-        } catch (error: TimeoutCancellationException) {
-            setupError("Timed out waiting for Termux command output. Check Termux has allow-external-apps=true in ~/.termux/termux.properties and that Termux is allowed to run in the background.")
+            execution.markAwaitingResult()
+            when (val outcome = awaitTermuxResult(timeoutMs) { result.await() }) {
+                is TermuxAwaitOutcome.Completed -> {
+                    execution.settle(TermuxExecutionOutcome.Completed)
+                    outcome.value.toJson(trimmed, workdir.ifBlank { TERMUX_HOME })
+                }
+                TermuxAwaitOutcome.TimedOut -> {
+                    execution.requestCancellation(TermuxCancellationReason.TIMEOUT)
+                    execution.settle(TermuxExecutionOutcome.Cancelled(TermuxCancellationReason.TIMEOUT, killVerified = false))
+                    setupError("Timed out waiting for Termux command output. Cancellation of the external Termux process was not verified, so it may still be running.")
+                }
+            }
+        } catch (error: CancellationException) {
+            execution.requestCancellation(TermuxCancellationReason.COROUTINE_CANCELLED)
+            execution.settle(TermuxExecutionOutcome.Cancelled(TermuxCancellationReason.COROUTINE_CANCELLED, killVerified = false))
+            throw error
         } catch (error: SecurityException) {
+            execution.settle(TermuxExecutionOutcome.Failed(error.message ?: "RUN_COMMAND permission denied"))
             setupError("OpenAgent does not have Termux RUN_COMMAND permission. Grant it in Android Settings > Apps > OpenAgent > Permissions > Additional permissions.")
         } catch (error: IllegalStateException) {
+            execution.settle(TermuxExecutionOutcome.Failed(error.message ?: "Termux service start refused"))
             setupError("Android refused to start Termux. Open Termux once, disable battery restrictions if needed, and ensure allow-external-apps=true in ~/.termux/termux.properties.")
         } catch (error: Throwable) {
+            execution.settle(TermuxExecutionOutcome.Failed(error.message ?: error.toString()))
             JSONObject()
                 .put("ok", false)
                 .put("command", trimmed)
