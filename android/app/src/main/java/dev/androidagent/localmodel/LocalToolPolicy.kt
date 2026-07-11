@@ -35,6 +35,7 @@ internal object LocalToolPolicy {
     private val fileTarget = Regex("""\b(file|files|folder|directory|workspace|project|html|css|javascript|script|termux|terminal|shell)\b""")
 
     fun accessFor(userText: String): LocalToolAccess {
+        if (CONTROL_MARKERS.any(userText::contains)) return LocalToolAccess()
         val command = normalizeRequest(userText)
         if (command.isBlank()) return LocalToolAccess()
         if (Regex("""^(explain|describe|define|what|why|how)\b""").containsMatchIn(command)) return LocalToolAccess()
@@ -50,6 +51,10 @@ internal object LocalToolPolicy {
     private fun normalizeRequest(value: String): String = value
         .trim()
         .lowercase()
-        .removePrefix("please ")
-        .replace(Regex("^(can|could|would) you\\s+"), "")
+        .replace(Regex("^(?:(?:can|could|would|will)\\s+you\\s+)?(?:please\\s+)?"), "")
+        .replace(Regex("^(?:first|next|then)\\s*,?\\s+"), "")
+        .replace(Regex("^on\\s+(?:my|the)\\s+(?:phone|android)\\s*,?\\s+"), "")
+        .replace(Regex("^i\\s+(?:want|need)\\s+you\\s+to\\s+"), "")
+
+    private val CONTROL_MARKERS = listOf("<|lynk_control|>", "<|/lynk_control|>")
 }
