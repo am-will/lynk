@@ -76,7 +76,6 @@ class LocalAgentController(
             emit(reasoning(sessionKey, runId, if (round == 0) "Planning locally..." else "Continuing after tool result...", replace = round == 0))
             val prompt = LocalPromptBuilder.roundPrompt(transcript, latestScreenshotPath)
             Log.i(TAG, "local turn $runId prompt metrics round=${round + 1} systemChars=${systemPrompt.length} systemTokens=${LocalPromptBuilder.estimateTokenCount(systemPrompt)} promptChars=${prompt.length} promptTokens=${LocalPromptBuilder.estimateTokenCount(prompt)}")
-            var streamedDirectResponse = false
             val response = try {
                 withTimeout(MODEL_RESPONSE_TIMEOUT_MS) {
                     runtime.generate(
@@ -86,17 +85,7 @@ class LocalAgentController(
                             config = config,
                             imagePaths = latestScreenshotPath?.let(::listOf) ?: imagePaths.take(1)
                         ),
-                        onDelta = { delta ->
-                            if (!toolsAllowed && delta.isNotBlank()) {
-                                emitAssistantDelta(
-                                    sessionKey = sessionKey,
-                                    runId = runId,
-                                    text = delta,
-                                    replace = !streamedDirectResponse
-                                )
-                                streamedDirectResponse = true
-                            }
-                        },
+                        onDelta = {},
                         onStatus = { status ->
                             emit(state(sessionKey, runId, isRunning = true, status = status))
                         }
@@ -118,9 +107,25 @@ class LocalAgentController(
             }
             Log.i(TAG, "local turn $runId round=${round + 1} model response=${response.take(500)}")
 
-            val calls = LocalToolCallParser.parse(response)
+            val parsedOutput = LocalToolCallParser.parse(response)
+            if (parsedOutput is LocalModelOutput.InvalidControl) {
+                val safeMessage = "Local model emitted an invalid tool control frame; no tool was run."
+                if (toolsAllowed) {
+                    transcript.add("assistant control rejected: ${parsedOutput.error}")
+                    transcript.add("system: Emit exactly one valid Lynk control frame for a tool, or answer in plain text without control markers.")
+                    return@toolLoop
+                }
+                emitAssistant(sessionKey, runId, safeMessage)
+                return safeMessage
+            }
+            val calls = when (parsedOutput) {
+                is LocalModelOutput.ToolControl -> listOf(parsedOutput.call)
+                is LocalModelOutput.AssistantText -> emptyList()
+                is LocalModelOutput.InvalidControl -> error("handled above")
+            }
+            val assistantText = (parsedOutput as? LocalModelOutput.AssistantText)?.text ?: response
             if (calls.isEmpty()) {
-                val finalText = cleanFinalText(response.ifBlank { "I could not generate a response." })
+                val finalText = cleanFinalText(assistantText.ifBlank { "I could not generate a response." })
                 val shouldRetryPhoneTurn = phoneControlRequest && toolsAllowed &&
                     LocalPhoneControlTurnPolicy.shouldRetryNoToolResponse(
                         response = finalText,
@@ -149,11 +154,7 @@ class LocalAgentController(
                     .put("type", "chat.reasoning_clear")
                     .put("sessionKey", sessionKey)
                     .put("runId", runId))
-                if (streamedDirectResponse) {
-                    emitAssistantFinal(sessionKey, runId, finalText)
-                } else {
-                    emitAssistant(sessionKey, runId, finalText)
-                }
+                emitAssistant(sessionKey, runId, finalText)
                 return finalText
             }
             if (!toolsAllowed) {

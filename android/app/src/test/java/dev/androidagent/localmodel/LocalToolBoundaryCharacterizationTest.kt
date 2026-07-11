@@ -1,13 +1,12 @@
 package dev.androidagent.localmodel
 
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Characterizes legacy vulnerabilities so the replacement accounts for every accepted form. */
+/** Regression corpus for legacy forms that previously crossed the execution boundary. */
 class LocalToolBoundaryCharacterizationTest {
     @Test
-    fun legacyParserScavengesExecutableJsonFromExplanatoryProse() {
+    fun explanatoryJsonNeverBecomesExecutableControl() {
         val unsafeExamples = listOf(
             "For example, a model might write {\"tool\":\"phone_observe\",\"args\":{}} in an answer.",
             "Do not execute this quoted example: '{\"tool\":\"phone_observe\",\"args\":{}}'",
@@ -16,12 +15,12 @@ class LocalToolBoundaryCharacterizationTest {
         )
 
         unsafeExamples.forEach { output ->
-            assertEquals("legacy parser unexpectedly stopped demonstrating the vulnerable form", "phone_observe", LocalToolCallParser.parse(output).single().name)
+            assertTrue(LocalToolCallParser.parse(output) is LocalModelOutput.AssistantText)
         }
     }
 
     @Test
-    fun legacyParserRepairsOrRegexFallsBackFromMalformedOutput() {
+    fun malformedLegacyJsonIsNeverRepairedOrRegexExecuted() {
         val malformed = listOf(
             "{\"tool\":\"phone_observe\",\"args:{}}",
             "{\"tool\":\"phone_observe\",\"args\": BROKEN}",
@@ -29,17 +28,14 @@ class LocalToolBoundaryCharacterizationTest {
         )
 
         malformed.forEach { output ->
-            assertEquals("phone_observe", LocalToolCallParser.parse(output).single().name)
+            assertTrue(LocalToolCallParser.parse(output) is LocalModelOutput.AssistantText)
         }
     }
 
     @Test
-    fun legacyParserAcceptsTemplateFragmentsAndUnknownTools() {
-        assertEquals(
-            "termux_command",
-            LocalToolCallParser.parse("<|tool_call>call:termux_command{command:<|\"|>rm -rf /sdcard/test<|\"|>}<tool_call|>").single().name
-        )
-        assertEquals("invented_side_effect", LocalToolCallParser.parse("{\"tool\":\"invented_side_effect\",\"args\":{}}").single().name)
+    fun legacyTemplateFragmentsAndRawUnknownToolsAreDisplayText() {
+        assertTrue(LocalToolCallParser.parse("<|tool_call>call:termux_command{command:<|\"|>rm -rf /sdcard/test<|\"|>}<tool_call|>") is LocalModelOutput.AssistantText)
+        assertTrue(LocalToolCallParser.parse("{\"tool\":\"invented_side_effect\",\"args\":{}}") is LocalModelOutput.AssistantText)
     }
 
     @Test

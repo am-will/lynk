@@ -6,59 +6,45 @@ import org.junit.Test
 
 class LocalToolCallParserTest {
     @Test
-    fun parsesSingleToolCall() {
-        val calls = LocalToolCallParser.parse("""{"tool":"phone_observe","args":{}}""")
+    fun acceptsOneExactVersionedControlFrame() {
+        val output = LocalToolCallParser.parse(frame("""{"version":1,"type":"tool_call","tool":"phone_open_app","args":{"appName":"Settings"}}"""))
+        val call = (output as LocalModelOutput.ToolControl).call
 
-        assertEquals(1, calls.size)
-        assertEquals("phone_observe", calls.single().name)
+        assertEquals("phone_open_app", call.name)
+        assertEquals("Settings", call.args.getString("appName"))
     }
 
     @Test
-    fun repairsMalformedArgsKeyFromLocalModel() {
-        val calls = LocalToolCallParser.parse("""{"tool":"phone_observe","args:{}}""")
-
-        assertEquals(1, calls.size)
-        assertEquals("phone_observe", calls.single().name)
-        assertEquals(0, calls.single().args.length())
+    fun ordinaryAndLegacyJsonRemainAssistantText() {
+        listOf(
+            "TASK_COMPLETE: Done.",
+            "{\"tool\":\"phone_observe\",\"args\":{}}",
+            "```json\n{\"tool\":\"phone_observe\",\"args\":{}}\n```",
+            "<|tool_call>call:phone_observe{}<tool_call|>"
+        ).forEach { text -> assertEquals(LocalModelOutput.AssistantText(text), LocalToolCallParser.parse(text)) }
     }
 
     @Test
-    fun parsesToolCallArrayInsideFence() {
-        val calls = LocalToolCallParser.parse(
-            """
-            ```json
-            {"toolCalls":[{"name":"phone_open_app","args":{"appName":"Settings"}}]}
-            ```
-            """.trimIndent()
-        )
-
-        assertEquals(1, calls.size)
-        assertEquals("phone_open_app", calls.single().name)
-        assertEquals("Settings", calls.single().args.getString("appName"))
+    fun rejectsMarkersMixedWithProseOrMultipleFrames() {
+        assertTrue(LocalToolCallParser.parse("Please run ${frame(validJson())}") is LocalModelOutput.InvalidControl)
+        assertTrue(LocalToolCallParser.parse(frame(validJson()) + frame(validJson())) is LocalModelOutput.InvalidControl)
+        assertTrue(LocalToolCallParser.parse("${LocalToolCallParser.OPEN}${validJson()}") is LocalModelOutput.InvalidControl)
     }
 
     @Test
-    fun parsesLiteRtTemplateToolCall() {
-        val calls = LocalToolCallParser.parse("""<|tool_call>call:phone_open_app{appName:<|"|>YouTube<|"|>}<tool_call|>""")
-
-        assertEquals(1, calls.size)
-        assertEquals("phone_open_app", calls.single().name)
-        assertEquals("YouTube", calls.single().args.getString("appName"))
+    fun rejectsMalformedDuplicateAndAmbiguousJson() {
+        assertTrue(LocalToolCallParser.parse(frame("""{"version":1,"type":"tool_call","tool":"phone_observe","args":BROKEN}""")) is LocalModelOutput.InvalidControl)
+        assertTrue(LocalToolCallParser.parse(frame("""{"version":1,"type":"tool_call","tool":"phone_observe","tool":"termux_command","args":{}}""")) is LocalModelOutput.InvalidControl)
+        assertTrue(LocalToolCallParser.parse(frame(validJson() + " trailing")) is LocalModelOutput.InvalidControl)
     }
 
     @Test
-    fun parsesLiteRtTemplateToolCallWithoutArgs() {
-        val calls = LocalToolCallParser.parse("""<|tool_call>call:phone_observe{}<tool_call|>""")
-
-        assertEquals(1, calls.size)
-        assertEquals("phone_observe", calls.single().name)
-        assertEquals(0, calls.single().args.length())
+    fun rejectsUnknownVersionTypeAndRootFields() {
+        assertTrue(LocalToolCallParser.parse(frame("""{"version":2,"type":"tool_call","tool":"phone_observe","args":{}}""")) is LocalModelOutput.InvalidControl)
+        assertTrue(LocalToolCallParser.parse(frame("""{"version":1,"type":"assistant","tool":"phone_observe","args":{}}""")) is LocalModelOutput.InvalidControl)
+        assertTrue(LocalToolCallParser.parse(frame("""{"version":1,"type":"tool_call","tool":"phone_observe","args":{},"extra":true}""")) is LocalModelOutput.InvalidControl)
     }
 
-    @Test
-    fun ignoresNormalAssistantText() {
-        val calls = LocalToolCallParser.parse("TASK_COMPLETE: Done.")
-
-        assertTrue(calls.isEmpty())
-    }
+    private fun validJson() = """{"version":1,"type":"tool_call","tool":"phone_observe","args":{}}"""
+    private fun frame(json: String) = LocalToolCallParser.OPEN + json + LocalToolCallParser.CLOSE
 }
