@@ -50,5 +50,33 @@ class ApprovalCapabilityStoreTest {
         assertEquals(ApprovalValidation.Cancelled, store.validateAndConsume(cancelled.token, "session-a", action("n2"), null))
     }
 
+    @Test
+    fun everyDenialProducesStableMachineReadableReason() {
+        val reasons = listOf(
+            ApprovalValidation.Missing,
+            ApprovalValidation.Unknown,
+            ApprovalValidation.Expired,
+            ApprovalValidation.Replayed,
+            ApprovalValidation.Cancelled,
+            ApprovalValidation.WrongOwner,
+            ApprovalValidation.WrongAction,
+            ApprovalValidation.ChangedObservation
+        ).map { it.denialMessage("Tap observed node n1").orEmpty().substringBefore(':') }
+
+        assertEquals(
+            listOf(
+                "authorization_required",
+                "authorization_invalid",
+                "authorization_expired",
+                "authorization_replayed",
+                "authorization_cancelled",
+                "authorization_wrong_owner",
+                "authorization_wrong_action",
+                "authorization_context_changed"
+            ),
+            reasons
+        )
+    }
+
     private fun action(node: String) = PhoneActionDescriptor.create("tap_node", JSONObject().put("nodeId", node))
 }

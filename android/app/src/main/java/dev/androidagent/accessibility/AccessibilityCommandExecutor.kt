@@ -57,6 +57,14 @@ class AccessibilityCommandExecutor internal constructor(
         }
     }
 
+    fun cancelApprovals(requestOwner: String) {
+        approvalCapabilities.cancelOwner(requestOwner)
+    }
+
+    fun clearApprovals() {
+        approvalCapabilities.clear()
+    }
+
     private suspend fun executeInternal(
         command: String,
         args: JSONObject,
@@ -64,6 +72,7 @@ class AccessibilityCommandExecutor internal constructor(
         approvalCapability: String?
     ): CommandResult {
         val service = PhoneAccessibilityService.instance
+        authorizationFailure(command, args, requestOwner, approvalCapability)?.let { return it }
 
         return when (command) {
             "observe_screen" -> withAgentChromeSuppressed {
@@ -165,6 +174,24 @@ class AccessibilityCommandExecutor internal constructor(
             }
             else -> CommandResult(false, service?.let { observer.observe(it) }, "Unknown command: $command")
         }
+    }
+
+    private fun authorizationFailure(
+        command: String,
+        args: JSONObject,
+        requestOwner: String,
+        approvalCapability: String?
+    ): CommandResult? {
+        if (!PhoneCommandPolicy.requiresApproval(command)) return null
+        val action = PhoneActionDescriptor.create(command, args)
+        val validation = approvalCapabilities.validateAndConsume(
+            token = approvalCapability,
+            ownerId = requestOwner,
+            action = action,
+            observationId = observer.currentObservationId
+        )
+        val error = validation.denialMessage(action.summary) ?: return null
+        return CommandResult(false, observer.observationSnapshot(), error)
     }
 
     private fun openApp(args: JSONObject): String {

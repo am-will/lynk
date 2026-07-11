@@ -46,6 +46,18 @@ internal sealed interface ApprovalValidation {
     data object ChangedObservation : ApprovalValidation
 }
 
+internal fun ApprovalValidation.denialMessage(actionSummary: String): String? = when (this) {
+    is ApprovalValidation.Approved -> null
+    ApprovalValidation.Missing -> "authorization_required: request user approval for $actionSummary"
+    ApprovalValidation.Unknown -> "authorization_invalid: approval capability is unknown"
+    ApprovalValidation.Expired -> "authorization_expired: request user approval again"
+    ApprovalValidation.Replayed -> "authorization_replayed: approval capabilities are single-use"
+    ApprovalValidation.Cancelled -> "authorization_cancelled: the approval is no longer active"
+    ApprovalValidation.WrongOwner -> "authorization_wrong_owner: approval belongs to another request owner"
+    ApprovalValidation.WrongAction -> "authorization_wrong_action: command or arguments differ from the approved action"
+    ApprovalValidation.ChangedObservation -> "authorization_context_changed: the observed screen changed after approval"
+}
+
 internal class ApprovalCapabilityStore(
     private val nowMs: () -> Long = System::currentTimeMillis,
     private val tokenGenerator: () -> String = ::secureToken,
