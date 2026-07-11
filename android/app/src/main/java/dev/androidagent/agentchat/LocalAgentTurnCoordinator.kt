@@ -10,6 +10,7 @@ import dev.androidagent.localmodel.LocalAttachmentInputPreparer
 import dev.androidagent.localmodel.LocalAgentController
 import dev.androidagent.localmodel.LocalChatSessionStore
 import dev.androidagent.localmodel.LocalModelRuntime
+import dev.androidagent.localmodel.LocalPhoneCommandOwner
 import dev.androidagent.localmodel.LocalToolRegistry
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -33,6 +34,7 @@ class LocalAgentTurnCoordinator(
     private val localRuntime = runtime
     private var activeSessionKey: String = store.session(null).key
     private var activeRun: Job? = null
+    private var activeCommandOwner: String? = null
 
     fun open(sessionKey: String?): Boolean {
         activeSessionKey = store.session(sessionKey).key
@@ -66,6 +68,8 @@ class LocalAgentTurnCoordinator(
         }
 
         val runId = "${request.runIdPrefix}_${UUID.randomUUID()}"
+        val commandOwner = LocalPhoneCommandOwner.id(session.key, runId)
+        activeCommandOwner = commandOwner
         request.onAccepted(LocalTurnHandle(session.key, runId))
         activeRun = scope.launch {
             onStatus("Local model is working", "working")
@@ -79,12 +83,14 @@ class LocalAgentTurnCoordinator(
                 )
                 store.append(session.key, "assistant", finalText, "assistant_$runId")
                 activeRun = null
+                if (activeCommandOwner == commandOwner) activeCommandOwner = null
                 refresh(session.key, request.completedStatus)
                 emit(LocalChatMessages.replyAvailable(store.session(session.key), runId, "completed", finalText))
                 onStatus(request.completedStatus, "done")
                 request.onCompleted(LocalTurnOutcome(session.key, runId, finalText))
             } catch (error: CancellationException) {
                 activeRun = null
+                if (activeCommandOwner == commandOwner) activeCommandOwner = null
                 emit(LocalChatMessages.error(session.key, request.stoppedMessage, runId))
                 emit(LocalChatMessages.state(
                     config = configProvider(),
@@ -100,6 +106,7 @@ class LocalAgentTurnCoordinator(
             } catch (error: Throwable) {
                 val message = error.message ?: error.toString()
                 activeRun = null
+                if (activeCommandOwner == commandOwner) activeCommandOwner = null
                 emit(LocalChatMessages.error(session.key, message, runId))
                 emit(LocalChatMessages.state(
                     config = configProvider(),
@@ -118,6 +125,7 @@ class LocalAgentTurnCoordinator(
 
     fun stop(sessionKey: String? = null, reason: String = "Stopped local model turn") {
         val key = sessionKey ?: activeSessionKey
+        activeCommandOwner?.let(tools::cancelApprovals)
         activeRun?.cancel()
         activeRun = null
         emit(LocalChatMessages.state(
@@ -136,6 +144,7 @@ class LocalAgentTurnCoordinator(
     }
 
     fun newSession(label: String?) {
+        activeCommandOwner?.let(tools::cancelApprovals)
         activeRun?.cancel()
         activeRun = null
         val session = store.create(label)
@@ -173,6 +182,7 @@ class LocalAgentTurnCoordinator(
     }
 
     fun close() {
+        activeCommandOwner?.let(tools::cancelApprovals)
         activeRun?.cancel()
         activeRun = null
         localRuntime.close()

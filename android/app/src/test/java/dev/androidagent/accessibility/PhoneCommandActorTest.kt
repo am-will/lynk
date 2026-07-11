@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -113,6 +114,81 @@ class PhoneCommandActorTest {
         assertEquals(PhoneCommandActor.SERVICE_CLOSED, active.await().error)
         assertEquals(PhoneCommandActor.SERVICE_CLOSED, queued.await().error)
         assertEquals(PhoneCommandActor.SERVICE_CLOSED, actor.execute(invocation("future", "c")).error)
+    }
+
+    @Test
+    fun commandCanBeCancelledBeforeItStartsWithoutAffectingSameIdOwnedElsewhere() = runBlocking {
+        val blockerStarted = CompletableDeferred<Unit>()
+        val releaseBlocker = CompletableDeferred<Unit>()
+        val actor = PhoneCommandActor(Dispatchers.Default) { invocation ->
+            if (invocation.commandId == "blocker") {
+                blockerStarted.complete(Unit)
+                releaseBlocker.await()
+            }
+            CommandResult(true, null)
+        }
+        val blocker = async { actor.execute(invocation("blocker", "blocker-owner")) }
+        blockerStarted.await()
+        val cancelled = async(start = CoroutineStart.UNDISPATCHED) { actor.execute(invocation("shared-id", "owner-a")) }
+        val preserved = async(start = CoroutineStart.UNDISPATCHED) { actor.execute(invocation("shared-id", "owner-b")) }
+
+        actor.cancelCommand("shared-id", "owner-a")
+        assertEquals(PhoneCommandActor.COMMAND_CANCELLED, cancelled.await().error)
+        releaseBlocker.complete(Unit)
+        assertTrue(blocker.await().ok)
+        assertTrue(preserved.await().ok)
+        actor.close()
+    }
+
+    @Test
+    fun cancellationReachesAnActivelySuspendedCommand() = runBlocking {
+        val started = CompletableDeferred<Unit>()
+        val cancellationObserved = CompletableDeferred<Unit>()
+        val actor = PhoneCommandActor(Dispatchers.Default) {
+            suspendCancellableCoroutine<CommandResult> { continuation ->
+                continuation.invokeOnCancellation { cancellationObserved.complete(Unit) }
+                started.complete(Unit)
+            }
+        }
+        val active = async { actor.execute(invocation("gesture", "owner")) }
+        started.await()
+
+        actor.cancelCommand("gesture", "owner")
+
+        assertEquals(PhoneCommandActor.COMMAND_CANCELLED, active.await().error)
+        withTimeout(1_000) { cancellationObserved.await() }
+        actor.close()
+    }
+
+    @Test
+    fun ownerCancellationRevokesQueuedActionApproval() = runBlocking {
+        val now = 1_000L
+        val approvals = ApprovalCapabilityStore({ now }, { "approval-token-value" })
+        val action = PhoneActionDescriptor.create("type_text", JSONObject().put("text", "hello"))
+        val capability = approvals.issue("owner-a", action, null)
+        val blockerStarted = CompletableDeferred<Unit>()
+        val releaseBlocker = CompletableDeferred<Unit>()
+        val actor = PhoneCommandActor(Dispatchers.Default) { invocation ->
+            if (invocation.commandId == "blocker") {
+                blockerStarted.complete(Unit)
+                releaseBlocker.await()
+            }
+            CommandResult(true, null)
+        }
+        val blocker = async { actor.execute(invocation("blocker", "owner-b")) }
+        blockerStarted.await()
+        val sensitive = async(start = CoroutineStart.UNDISPATCHED) {
+            actor.execute(invocation("sensitive", "owner-a").copy(approvalCapability = capability.token))
+        }
+
+        actor.cancelOwner("owner-a")
+        approvals.cancelOwner("owner-a")
+
+        assertEquals(PhoneCommandActor.OWNER_CANCELLED, sensitive.await().error)
+        assertEquals(ApprovalValidation.Cancelled, approvals.validateAndConsume(capability.token, "owner-a", action, null))
+        releaseBlocker.complete(Unit)
+        assertTrue(blocker.await().ok)
+        actor.close()
     }
 
     private fun invocation(id: String, owner: String) = PhoneCommandInvocation(
