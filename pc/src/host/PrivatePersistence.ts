@@ -40,6 +40,11 @@ export interface AtomicWriteOptions {
   beforeRename?: (temporaryPath: string) => Promise<void> | void;
 }
 
+export interface AtomicWriteSyncOptions extends Pick<AtomicWriteOptions, "maxBytes" | "keepBackup"> {
+  /** Test seam; production uses an fsync of the destination's parent directory. */
+  directorySync?: (directory: string) => void;
+}
+
 export interface JsonRecovery<T> {
   value: T;
   source: "primary" | "backup" | "fallback";
@@ -93,7 +98,7 @@ export function migrateLegacyFileSync(
 export function atomicWritePrivateFileSync(
   path: string,
   data: string | Uint8Array,
-  options: Pick<AtomicWriteOptions, "maxBytes" | "keepBackup"> = {}
+  options: AtomicWriteSyncOptions = {}
 ): void {
   const bytes = typeof data === "string" ? Buffer.byteLength(data) : data.byteLength;
   const maxBytes = options.maxBytes ?? 16 * 1024 * 1024;
@@ -115,6 +120,7 @@ export function atomicWritePrivateFileSync(
     }
     renameSync(temporaryPath, path);
     chmodPrivateSync(path, PRIVATE_FILE_MODE);
+    (options.directorySync ?? syncDirectorySync)(directory);
   } catch (error) {
     if (descriptor !== undefined) closeSync(descriptor);
     rmSync(temporaryPath, { force: true });
@@ -318,6 +324,19 @@ async function syncDirectory(path: string): Promise<void> {
     await handle.sync();
   } finally {
     await handle.close();
+  }
+}
+
+function syncDirectorySync(path: string): void {
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(path, "r");
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = undefined;
+  } catch (error) {
+    if (descriptor !== undefined) closeSync(descriptor);
+    if (process.platform !== "win32") throw error;
   }
 }
 

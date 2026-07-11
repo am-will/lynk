@@ -1,16 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { chmod, lstat, lutimes, mkdtemp, readFile, readdir, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   atomicWritePrivateFile,
+  atomicWritePrivateFileSync,
   cleanupAtomicLeftovers,
   DebouncedAtomicJsonWriter,
   enforcePrivateFileSync,
   migrateLegacyFile,
   readJsonWithRecovery
 } from "./PrivatePersistence.js";
+
+test("sync atomic writes fsync the parent directory after rename", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "lynk-private-sync-durable-"));
+  t.after(() => import("node:fs/promises").then(({ rm }) => rm(root, { recursive: true, force: true })));
+  const path = join(root, "nested", "state.json");
+  let directorySyncs = 0;
+
+  atomicWritePrivateFileSync(path, "durable\n", {
+    keepBackup: false,
+    directorySync: (directory) => {
+      directorySyncs += 1;
+      assert.equal(directory, join(root, "nested"));
+      assert.equal(readFileSync(path, "utf8"), "durable\n");
+    }
+  });
+
+  assert.equal(directorySyncs, 1);
+});
 
 test("concurrent atomic writers never scavenge another writer's live temp", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "lynk-private-race-"));
