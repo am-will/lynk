@@ -4,6 +4,10 @@ Android connects outbound to the PC bridge at `/phone`. The bridge validates `to
 
 In **Local phone** mode, Android bypasses `/phone` for chat turns and generates the same `chat.*` event shapes in-process. The WebSocket protocol below still describes Host bridge mode and remains the compatibility contract for PC/OpenClaw sessions.
 
+The host bridge bounds WebSocket ingress before dispatch. An upgrade must use the origin-form `/phone` target with one valid `Host` header. At most 32 sockets are active at once, and each source address receives an upgrade burst of 12 with one slot restored every 5 seconds. A new socket must send a text registration frame of at most 16 KiB within 5 seconds. After registration, ordinary control frames are capped at 256 KiB and message bursts are rate limited; inline attachment turns retain a separate total frame allowance of about 67 MiB until the streaming attachment transport replaces inline base64. The bridge pings every 30 seconds and terminates a socket that does not answer the previous ping.
+
+Policy closes use `4002` for missing registration, `4008` for message rate exhaustion, `1003` for binary input, and `1009` for payload limits. Invalid credentials continue to use `4001`.
+
 ## Register
 
 ```json
