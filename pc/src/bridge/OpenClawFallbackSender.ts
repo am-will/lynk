@@ -26,15 +26,22 @@ interface FallbackSenderOptions {
 export class OpenClawFallbackSender {
   constructor(private readonly options: FallbackSenderOptions) {}
 
-  async send(message: ChatSendMessage, runId: string, taskKind: AgentTaskKind = "general"): Promise<void> {
+  async send(
+    message: ChatSendMessage,
+    runId: string,
+    taskKind: AgentTaskKind = "general",
+    context?: { sessionKey: string; sessionId: string | null }
+  ): Promise<void> {
     const state = this.options.states.stateFor(message.deviceId);
-    state.runId = runId;
-    this.options.states.trackPendingRun(state, runId, state.sessionKey, state.sessionId ?? null, taskKind);
+    const sessionKey = context?.sessionKey ?? state.sessionKey;
+    const sessionId = context?.sessionId ?? state.sessionId ?? null;
+    let emittedTerminal = false;
+    this.options.states.trackPendingRun(state, runId, sessionKey, sessionId, taskKind);
     this.options.sendChat(message.deviceId, {
       type: "chat.history",
       deviceId: message.deviceId,
-      sessionKey: state.sessionKey,
-      sessionId: state.sessionId,
+      sessionKey,
+      sessionId,
       messages: [
         {
           id: `user_${runId}`,
@@ -62,26 +69,35 @@ export class OpenClawFallbackSender {
       const finalMessage: ChatFinalMessage = {
         type: "chat.final",
         deviceId: message.deviceId,
-        sessionKey: state.sessionKey,
+        sessionKey,
         runId,
         text: result.finalMessage ?? "OpenClaw task completed."
       };
-      this.options.sendChat(message.deviceId, finalMessage);
-      this.options.sendReplyAvailable(message.deviceId, finalMessage, state.sessionKey, state.pendingRuns.get(runId));
+      if (!state.completedRunIds.has(runId)) {
+        state.completedRunIds.add(runId);
+        emittedTerminal = true;
+        this.options.sendChat(message.deviceId, finalMessage);
+        this.options.sendReplyAvailable(message.deviceId, finalMessage, sessionKey, state.pendingRuns.get(runId));
+      }
     } catch (error) {
       const errorMessage: ChatErrorMessage = {
         type: "chat.error",
         deviceId: message.deviceId,
-        sessionKey: state.sessionKey,
+        sessionKey,
         runId,
         message: error instanceof Error ? error.message : String(error)
       };
-      this.options.sendChat(message.deviceId, errorMessage);
-      this.options.sendReplyAvailable(message.deviceId, errorMessage, state.sessionKey, state.pendingRuns.get(runId));
+      if (!state.completedRunIds.has(runId)) {
+        state.completedRunIds.add(runId);
+        emittedTerminal = true;
+        this.options.sendChat(message.deviceId, errorMessage);
+        this.options.sendReplyAvailable(message.deviceId, errorMessage, sessionKey, state.pendingRuns.get(runId));
+      }
     } finally {
-      state.runId = null;
       state.pendingRuns.delete(runId);
-      this.options.sendState(message.deviceId, "OpenClaw finished");
+      if (emittedTerminal) {
+        this.options.sendState(message.deviceId, "OpenClaw finished");
+      }
     }
   }
 }

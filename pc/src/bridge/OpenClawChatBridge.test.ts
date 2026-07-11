@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChatAttachment } from "../protocol/messages.js";
 import { ChatClientError, CODEX_WORKSPACE_NOT_FOUND_CODE } from "./chat/ChatErrors.js";
-import { createHarness, defaultSessionKey, waitFor } from "./OpenClawChatBridge.testSupport.js";
+import { createHarness, defaultSessionKey, deferred, waitFor } from "./OpenClawChatBridge.testSupport.js";
 
 test("realtime requests start a fresh chat only outside the reuse window", async () => {
   const originalNow = Date.now;
@@ -371,6 +371,37 @@ test("gateway fallback preserves explicit phone task kind", async () => {
   assert.deepEqual((fallbackCalls[0] as unknown[])[1], { taskKind: "phone" });
 });
 
+test("stopping an active fallback run cancels its dispatcher and emits one terminal", async () => {
+  const { bridge, chatMessages, client, fallbackCalls, fallbackControl } = createHarness();
+  const fallbackGate = deferred();
+  fallbackControl.gate = fallbackGate.promise;
+  client.sendError = new Error("gateway unavailable");
+
+  const sending = bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Use fallback",
+    idempotencyKey: "fallback_run"
+  });
+  await waitFor(() => fallbackCalls.length === 1);
+  await bridge.stop({
+    type: "chat.stop",
+    deviceId: "pixel",
+    reason: "Stop fallback"
+  });
+
+  assert.deepEqual(fallbackControl.stops, ["Stop fallback"]);
+  assert.deepEqual(client.aborted, []);
+  fallbackGate.resolve();
+  await sending;
+
+  const terminals = chatMessages.filter((message) =>
+    (message.type === "chat.final" || message.type === "chat.error") && message.runId === "fallback_run"
+  );
+  assert.equal(terminals.length, 1);
+  assert.equal(terminals[0]?.type, "chat.error");
+});
+
 test("non-OpenClaw send failure emits chat error without gateway fallback", async () => {
   const { bridge, chatMessages, client, fallbackCalls } = createHarness();
   client.sendError = new Error("hermes unavailable");
@@ -426,6 +457,258 @@ test("default gateway chat sessions are scoped per device", async () => {
     defaultSessionKey("pixel"),
     defaultSessionKey("fold")
   ]);
+});
+
+test("simultaneous sends reserve one session before either crosses the harness boundary", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+  const sendGate = deferred();
+  client.sendGate = sendGate.promise;
+
+  const first = bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "First prompt",
+    idempotencyKey: "request_first"
+  });
+  await waitFor(() => client.sent.length === 1);
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Racing prompt",
+    idempotencyKey: "request_racing"
+  });
+
+  assert.equal(client.sent.length, 1);
+  assert.equal(
+    chatMessages.filter((message) => message.type === "chat.error" && message.runId === "request_racing").length,
+    1
+  );
+
+  sendGate.resolve();
+  await first;
+  client.emit({
+    event: "chat",
+    payload: {
+      sessionKey: defaultSessionKey("pixel"),
+      runId: "run_1",
+      state: "final",
+      message: "First finished"
+    }
+  });
+
+  assert.equal(
+    chatMessages.filter((message) => message.type === "chat.final" && message.runId === "run_1").length,
+    1
+  );
+});
+
+test("stop during harness admission settles the caller once and aborts the promoted run", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+  const sendGate = deferred();
+  client.sendGate = sendGate.promise;
+
+  const sending = bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Long start",
+    idempotencyKey: "request_stopped"
+  });
+  await waitFor(() => client.sent.length === 1);
+
+  await bridge.stop({
+    type: "chat.stop",
+    deviceId: "pixel",
+    reason: "Stopped during start"
+  });
+  assert.deepEqual(client.aborted, []);
+
+  sendGate.resolve();
+  await sending;
+  assert.deepEqual(client.aborted, [{
+    sessionKey: defaultSessionKey("pixel"),
+    runId: "run_1"
+  }]);
+
+  client.emit({
+    event: "chat",
+    payload: {
+      sessionKey: defaultSessionKey("pixel"),
+      runId: "run_1",
+      state: "final",
+      message: "Late terminal"
+    }
+  });
+
+  const terminals = chatMessages.filter((message) =>
+    (message.type === "chat.final" || message.type === "chat.error") && message.runId === "run_1"
+  );
+  assert.equal(terminals.length, 1);
+  assert.equal(terminals[0]?.type, "chat.error");
+  assert.match(terminals[0]?.type === "chat.error" ? terminals[0].message : "", /Stopped during start/);
+});
+
+test("harness rejection rolls admission back so the session can retry", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+  client.sendError = new Error("Hermes rejected the run");
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Rejected prompt",
+    model: "hermes:gpt-5.5",
+    idempotencyKey: "request_rejected"
+  });
+  client.sendError = undefined;
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Retry prompt",
+    idempotencyKey: "request_retry"
+  });
+
+  assert.equal(client.sent.length, 1);
+  assert.equal(client.sent[0]?.sessionKey, "hermes:hermes-agent-pixel");
+  assert.equal(
+    chatMessages.filter((message) => message.type === "chat.error" && message.runId === "request_rejected").length,
+    1
+  );
+
+  client.emit({
+    event: "chat",
+    payload: {
+      sessionKey: "hermes:hermes-agent-pixel",
+      runId: "run_1",
+      state: "final",
+      message: "Retry finished"
+    }
+  });
+  assert.equal(
+    chatMessages.filter((message) => message.type === "chat.final" && message.runId === "run_1").length,
+    1
+  );
+});
+
+test("terminal events racing send acknowledgement are forwarded exactly once", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+  client.beforeSendResolve = (result) => {
+    client.emit({
+      event: "chat",
+      payload: {
+        sessionKey: result.sessionKey,
+        runId: result.runId,
+        state: "final",
+        message: "Finished before acknowledgement"
+      }
+    });
+  };
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Very fast prompt"
+  });
+  client.beforeSendResolve = undefined;
+  client.emit({
+    event: "chat",
+    payload: {
+      sessionKey: defaultSessionKey("pixel"),
+      runId: "run_1",
+      state: "final",
+      message: "Duplicate terminal"
+    }
+  });
+
+  assert.equal(
+    chatMessages.filter((message) => message.type === "chat.final" && message.runId === "run_1").length,
+    1
+  );
+  const finalState = chatMessages.filter((message) => message.type === "chat.state").at(-1);
+  assert.equal(finalState?.runId, null);
+  assert.equal(finalState?.isRunning, false);
+});
+
+test("one device can own independent runs in separate sessions", async () => {
+  const { bridge, chatMessages, client } = createHarness();
+  const sendGate = deferred();
+  client.sendGate = sendGate.promise;
+  const sessionA = "agent:main:explicit:session-a";
+  const sessionB = "agent:main:explicit:session-b";
+
+  const first = bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    sessionKey: sessionA,
+    text: "Session A"
+  });
+  await waitFor(() => client.sent.length === 1);
+  const second = bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    sessionKey: sessionB,
+    text: "Session B"
+  });
+  await waitFor(() => client.sent.length === 2);
+
+  assert.deepEqual(client.sent.map((entry) => entry.sessionKey), [sessionA, sessionB]);
+  sendGate.resolve();
+  await Promise.all([first, second]);
+
+  client.emit({ event: "chat", payload: { sessionKey: sessionA, runId: "run_1", state: "final", message: "A done" } });
+  client.emit({ event: "chat", payload: { sessionKey: sessionB, runId: "run_2", state: "final", message: "B done" } });
+  assert.equal(
+    chatMessages.filter((message) => message.type === "chat.reply_available" && message.runId === "run_1").length,
+    1
+  );
+  assert.equal(
+    chatMessages.filter((message) => message.type === "chat.final" && message.runId === "run_2").length,
+    1
+  );
+});
+
+test("queue and steer retain their delivery semantics while a run is starting", async () => {
+  const { bridge, client } = createHarness();
+  const sendGate = deferred();
+  client.sendGate = sendGate.promise;
+
+  const first = bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Start slowly"
+  });
+  await waitFor(() => client.sent.length === 1);
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Next turn",
+    delivery: "queue"
+  });
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Use a narrower scope",
+    delivery: "steer"
+  });
+  assert.equal(client.sent.length, 1);
+  assert.equal(client.steered.length, 0);
+
+  sendGate.resolve();
+  await first;
+  await waitFor(() => client.steered.length === 1);
+  assert.equal(client.steered[0]?.runId, "run_1");
+  assert.equal(client.steered[0]?.message, "Use a narrower scope");
+
+  client.emit({
+    event: "chat",
+    payload: {
+      sessionKey: defaultSessionKey("pixel"),
+      runId: "run_1",
+      state: "final",
+      message: "First done"
+    }
+  });
+  await waitFor(() => client.sent.length === 2);
+  assert.equal(client.sent[1]?.message, "Next turn");
 });
 
 test("queued chat sends wait for the active run to finish", async () => {
