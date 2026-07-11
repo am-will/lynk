@@ -6,6 +6,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { randomUUID } from "node:crypto";
 import { isAbsolute, resolve } from "node:path";
+import { defaultWorkspaceRoot } from "../../host/HostPaths.js";
 import type {
   ChatCommandOption,
   ChatHistoryMessage,
@@ -549,7 +550,8 @@ function workspaceNameFromPath(workspacePath: string): string {
 
 function resolveAbsoluteCwd(cwd: string | undefined): string {
   const trimmed = cwd?.trim();
-  return trimmed ? (isAbsolute(trimmed) ? trimmed : resolve(process.cwd(), trimmed)) : process.cwd();
+  const workspaceRoot = defaultWorkspaceRoot();
+  return trimmed ? (isAbsolute(trimmed) ? trimmed : resolve(workspaceRoot, trimmed)) : workspaceRoot;
 }
 
 function stringPatch(patch: Record<string, unknown>, key: string): string | undefined {

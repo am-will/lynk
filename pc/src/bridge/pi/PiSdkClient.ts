@@ -12,6 +12,7 @@ import {
   type CreateAgentSessionRuntimeFactory
 } from "@earendil-works/pi-coding-agent";
 import type { AuditLog } from "../AuditLog.js";
+import { defaultWorkspaceRoot } from "../../host/HostPaths.js";
 
 export interface PiSdkClientOptions {
   cwd?: string;
@@ -45,7 +46,7 @@ export class PiSdkClient {
     private readonly audit?: AuditLog,
     options: PiSdkClientOptions = {}
   ) {
-    this.cwd = options.cwd?.trim() || process.env.PI_AGENT_CWD?.trim() || process.cwd();
+    this.cwd = options.cwd?.trim() || process.env.PI_AGENT_CWD?.trim() || defaultWorkspaceRoot();
     this.agentDir = options.agentDir?.trim() || process.env.PI_AGENT_DIR?.trim() || getAgentDir();
     this.defaultModel = options.defaultModel?.trim() || process.env.PI_DEFAULT_MODEL?.trim() || undefined;
     const envTimeoutMs = Number.parseInt(process.env.PI_RUN_TIMEOUT_SECONDS ?? "", 10);

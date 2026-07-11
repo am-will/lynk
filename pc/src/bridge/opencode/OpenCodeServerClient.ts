@@ -3,6 +3,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk";
 import type { ChatAttachment } from "../../protocol/messages.js";
 import type { AuditLog } from "../AuditLog.js";
+import { defaultWorkspaceRoot } from "../../host/HostPaths.js";
 
 export interface OpenCodeModelRef {
   providerID: string;
@@ -207,7 +208,7 @@ export class OpenCodeServerClient {
     options: OpenCodeServerClientOptions = {}
   ) {
     this.serverCommand = options.command?.trim() || process.env.OPENCODE_SERVER_COMMAND?.trim() || DEFAULT_OPENCODE_COMMAND;
-    this.cwd = options.cwd?.trim() || process.env.OPENCODE_AGENT_CWD?.trim() || process.cwd();
+    this.cwd = options.cwd?.trim() || process.env.OPENCODE_AGENT_CWD?.trim() || defaultWorkspaceRoot();
     const configuredServerUrl = options.serverUrl?.trim() || process.env.OPENCODE_SERVER_URL?.trim();
     this.serverUrl = (configuredServerUrl || serverUrlFromCommand(this.serverCommand)).replace(/\/+$/, "");
     this.manageServer = !configuredServerUrl;

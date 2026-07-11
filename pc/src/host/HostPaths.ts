@@ -54,6 +54,10 @@ export function hostPathsForConfigPath(configPath: string, installRoot?: string)
   return createHostPaths({ dataRoot: dirname(resolve(configPath)), installRoot });
 }
 
+export function defaultWorkspaceRoot(): string {
+  return createHostPaths().workspaceRoot ?? homedir();
+}
+
 export function ownedPath(root: string, ...segments: string[]): string {
   if (segments.length === 0 || segments.some((segment) => !segment || isAbsolute(segment))) {
     throw new Error("Owned path segments must be non-empty relative paths.");
