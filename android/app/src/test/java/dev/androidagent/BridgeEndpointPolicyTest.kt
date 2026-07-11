@@ -28,4 +28,11 @@ class BridgeEndpointPolicyTest {
         )
         assertNull(BridgeEndpointPolicy.normalize("ws://192.168.1.20:8788/phone", allowInsecureTrustedOverlay = true))
     }
+
+    @Test
+    fun providerKeysRequireTlsEvenForDevelopmentExceptions() {
+        assertEquals("phone-key", BridgeEndpointPolicy.providerKeyForBridge("wss://bridge.example/phone", " phone-key "))
+        assertNull(BridgeEndpointPolicy.providerKeyForBridge("ws://127.0.0.1:8788/phone", "phone-key"))
+        assertNull(BridgeEndpointPolicy.providerKeyForBridge("ws://100.88.12.34:8788/phone", "phone-key"))
+    }
 }

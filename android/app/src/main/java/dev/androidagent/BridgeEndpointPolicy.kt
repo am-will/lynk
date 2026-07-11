@@ -31,6 +31,9 @@ object BridgeEndpointPolicy {
     fun protectsProviderSecrets(raw: String): Boolean =
         normalize(raw)?.security == BridgeEndpointSecurity.Secure
 
+    fun providerKeyForBridge(raw: String, providerKey: String): String? =
+        providerKey.trim().takeIf { it.isNotEmpty() && protectsProviderSecrets(raw) }
+
     private fun isLoopback(host: String): Boolean =
         host == "localhost" || host == "::1" || Regex("^127(?:\\.\\d{1,3}){3}$").matches(host)
 

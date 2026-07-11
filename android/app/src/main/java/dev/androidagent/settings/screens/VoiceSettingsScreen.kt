@@ -49,7 +49,7 @@ object VoiceSettingsScreen {
         root.addView(SettingsUi.card(activity, tokens).apply {
             addView(SettingsUi.sectionHeader(activity, "Realtime voice", "Uses OpenAI Realtime via the PC bridge.", tokens))
             addView(SettingsUi.labeledField(activity, "OpenAI API key", openAiKeyInput, tokens, DesignTokens.Spacing.md))
-            addView(SettingsUi.body(activity, "Set a key from Android settings or PC OPENAI_API_KEY. Voice uses the selected chat backend for delegated work, including Local LiteRT-LM.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
+            addView(SettingsUi.body(activity, "Prefer PC OPENAI_API_KEY for bridge voice. An Android key is sent to the bridge only over wss and is also used directly over HTTPS for phone transcription. Voice uses the selected chat backend for delegated work, including Local LiteRT-LM.", tokens), SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
         }, SettingsUi.stackedParams(activity))
 
         root.addView(

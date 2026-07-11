@@ -220,7 +220,12 @@ class PhoneWebSocketClient(
             .put("systemPrompt", requestConfig.systemPrompt)
             .put("model", requestConfig.model)
             .put("reasoningEffort", requestConfig.reasoningEffort)
-        requestConfig.openAiApiKey.takeIf { it.isNotBlank() }?.let { message.put("openAiApiKey", it) }
+        BridgeEndpointPolicy.providerKeyForBridge(activeHostUrl(), requestConfig.openAiApiKey)?.let {
+            message.put("openAiApiKey", it)
+        }
+        if (requestConfig.openAiApiKey.isNotBlank() && !BridgeEndpointPolicy.protectsProviderSecrets(activeHostUrl())) {
+            onStatus("Android OpenAI key was not sent over the cleartext bridge connection. Configure OPENAI_API_KEY on the PC bridge or use wss.", "info")
+        }
         location?.let { message.put("location", it.toJson()) }
         val sent = sendJson(message)
         Log.i(TAG, "sendRealtimeStart sent=$sent sdpLength=${sdp.length}")
