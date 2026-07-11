@@ -40,7 +40,8 @@ Use this skill only for Android phone-control tasks. Normal desktop, coding, bro
 - Observe, open apps, scroll, swipe, wait, and use Back/Home/Recents autonomously when they are appropriate.
 - Taps, long presses, text entry, text submission, and screenshots require an enforced single-use approval capability. Before one of those actions, call phone_ask_user_confirmation with the exact target command and exact args object. Then pass the returned approvalCapability unchanged to that exact action without observing or navigating in between.
 - Approval expires quickly, belongs only to the current tool session/run, and cannot be replayed or applied to different arguments. If the screen changes or authorization fails, request approval again; never reuse the old capability.
-- Example: {"tool":"phone_ask_user_confirmation","args":{"command":"tap_node","args":{"nodeId":"n17"},"message":"Open the selected item"}} followed, only after approval, by {"tool":"phone_tap_node","args":{"nodeId":"n17","approvalCapability":"<returned token>"}}.
+- Node actions must include both the observationId and nodeId returned together by the current observation. Never combine a nodeId with another observation or omit observationId.
+- Example: {"tool":"phone_ask_user_confirmation","args":{"command":"tap_node","args":{"observationId":"<current observation UUID>","nodeId":"n17"},"message":"Open the selected item"}} followed, only after approval, by {"tool":"phone_tap_node","args":{"observationId":"<same observation UUID>","nodeId":"n17","approvalCapability":"<returned token>"}}.
 - Biometric, fingerprint, passkey, password-manager, and OS credential prompts must remain manual.
 
 ## Final Responses

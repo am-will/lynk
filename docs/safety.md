@@ -20,6 +20,8 @@ To authorize one action, call `phone_ask_user_confirmation` with its exact `comm
 
 Missing, denied, expired, replayed, cross-owner, changed-command/arguments, and changed-observation approvals fail closed with distinct `authorization_*` errors. Observing or navigating after approval changes the observation and requires a new approval. Bridge disconnect, service destruction, and request-owner cancellation revoke applicable capabilities. Capability tokens are not written to host audit records.
 
+All phone commands pass through one bounded serialized actor. A local stop, host task cancellation/timeout, bridge disconnect, or service shutdown cancels matching queued and active work and settles callers with `command_*` errors. Node actions additionally require the exact observation UUID and ordinal node ID returned together; stale generations are rejected instead of being refreshed into a different target.
+
 Observation, wait, opening apps, scrolling, swiping, Back, Home, and Recents remain available without approval because they are deliberately classified as reversible observation/navigation. Biometric, fingerprint, passkey, password-manager, and OS credential prompts remain manual and cannot be approved through this capability flow.
 
 Higher-level policy should still explain why an action is needed, especially for:
