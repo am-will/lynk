@@ -49,6 +49,11 @@ export class FakeGatewayClient {
   commands: Array<Record<string, unknown>> = [];
   readonly duplicateLabels = new Set<string>();
   sendError?: Error;
+  sendGate?: Promise<void>;
+  beforeSendResolve?: (
+    result: { runId: string; sessionKey: string },
+    options: { sessionKey: string; message: string; attachments?: ChatAttachment[]; thinking?: string; idempotencyKey?: string }
+  ) => void;
   healthResponse: unknown = { ok: true, eventLoop: { degraded: false } };
   private runCount = 0;
 
@@ -67,7 +72,10 @@ export class FakeGatewayClient {
     }
     this.runCount += 1;
     this.sent.push(options);
-    return { runId: `run_${this.runCount}`, sessionKey: options.sessionKey };
+    const result = { runId: `run_${this.runCount}`, sessionKey: options.sessionKey };
+    await this.sendGate;
+    this.beforeSendResolve?.(result, options);
+    return result;
   }
 
   async steerChat(options: { sessionKey: string; runId?: string; message: string; attachments?: ChatAttachment[]; thinking?: string; idempotencyKey?: string }): Promise<{ runId: string; sessionKey: string }> {
@@ -159,4 +167,18 @@ export async function waitFor(predicate: () => boolean): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 1));
   }
   assert.ok(predicate());
+}
+
+export function deferred<T = void>(): {
+  promise: Promise<T>;
+  resolve(value: T): void;
+  reject(error: unknown): void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
 }
