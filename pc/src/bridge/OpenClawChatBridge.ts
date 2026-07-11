@@ -252,8 +252,17 @@ export class OpenClawChatBridge {
       await this.steerChatMessage(message, state, requestText, idempotencyKey, taskKind, activeRunId);
       return;
     }
-    if (delivery === "steer" && admission.phase !== "idle") {
-      this.queueChatMessage(message, state, requestText, idempotencyKey, admission);
+    if (delivery === "steer" && admission.phase === "starting") {
+      this.queueChatMessage(message, state, requestText, idempotencyKey, admission, "steer");
+      return;
+    }
+    if (delivery === "steer" && admission.phase === "stopping") {
+      this.sendTerminalErrorOnce(
+        message.deviceId,
+        sessionKey,
+        idempotencyKey,
+        new Error("Cannot steer a run that is stopping.")
+      );
       return;
     }
 
@@ -276,7 +285,19 @@ export class OpenClawChatBridge {
 
     const healthError = await this.harnessHealthError(harnessId);
     if (healthError) {
+      const reservationState = this.states.stateForReservation(message.deviceId, reservation);
       this.states.rollbackRun(message.deviceId, state, reservation);
+      if (reservationState?.phase === "stopping") {
+        this.sendTerminalErrorOnce(
+          message.deviceId,
+          sessionKey,
+          idempotencyKey,
+          new ChatRunStartStoppedError(stopReasonForState(reservationState))
+        );
+        this.sendState(message.deviceId, "Stop requested");
+        this.drainQueuedSends(message.deviceId);
+        return;
+      }
       this.sendChat(message.deviceId, buildChatErrorMessage({
         deviceId: message.deviceId,
         sessionKey,
@@ -328,6 +349,7 @@ export class OpenClawChatBridge {
         this.drainQueuedSends(message.deviceId);
         return;
       }
+      this.drainPendingSteers(message.deviceId, result.sessionKey);
       const userMessage: ChatHistoryMessage = {
         id: `user_${result.runId}`,
         role: "user",
@@ -420,12 +442,13 @@ export class OpenClawChatBridge {
     state: DeviceChatState,
     requestText: string,
     idempotencyKey: string,
-    runState: HostChatRunState
+    runState: HostChatRunState,
+    delivery: "normal" | "steer" = "normal"
   ): void {
     state.queuedSends.push({
       ...message,
       idempotencyKey,
-      delivery: "normal"
+      delivery
     });
     this.audit?.record("chat_send_queued", message.deviceId, {
       sessionKey: state.sessionKey,
@@ -435,7 +458,26 @@ export class OpenClawChatBridge {
       length: requestText.length,
       attachments: message.attachments?.length ?? 0
     });
-    this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} queued message for next turn`);
+    this.sendState(
+      message.deviceId,
+      delivery === "steer"
+        ? `${harnessLabel(state.harnessId)} queued steering until the run starts`
+        : `${harnessLabel(state.harnessId)} queued message for next turn`
+    );
+  }
+
+  private drainPendingSteers(deviceId: string, sessionKey: string): void {
+    const state = this.stateFor(deviceId);
+    const pendingSteers = state.queuedSends.filter((message) =>
+      message.delivery === "steer" && (message.sessionKey ?? sessionKey) === sessionKey
+    );
+    if (pendingSteers.length === 0) {
+      return;
+    }
+    state.queuedSends = state.queuedSends.filter((message) => !pendingSteers.includes(message));
+    for (const message of pendingSteers) {
+      void this.send({ ...message, sessionKey, delivery: "steer" });
+    }
   }
 
   private async cancelPromotedRun(
@@ -583,6 +625,16 @@ export class OpenClawChatBridge {
     }
     const next = state.queuedSends.shift();
     if (!next) {
+      return;
+    }
+    if (next.delivery === "steer") {
+      this.sendTerminalErrorOnce(
+        deviceId,
+        next.sessionKey ?? state.sessionKey,
+        next.idempotencyKey ?? randomUUID(),
+        new Error("The active run finished before steering guidance could be applied.")
+      );
+      this.drainQueuedSends(deviceId);
       return;
     }
     state.drainingQueuedSends = true;
