@@ -1,7 +1,7 @@
 # Lynk Code Quality Remediation Plan
 
-**Generated:** 2026-07-11  
-**Complexity:** High  
+**Generated:** 2026-07-11
+**Complexity:** High
 **Execution model:** One autonomous subagent per issue, one isolated Git worktree per subagent, orchestrator-controlled integration.
 
 ## Objective
