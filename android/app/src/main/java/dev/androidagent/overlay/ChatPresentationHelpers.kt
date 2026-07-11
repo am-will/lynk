@@ -4,7 +4,7 @@ import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import dev.androidagent.AgentModelOptions
-import dev.androidagent.CodexWorkspacePaths
+import dev.androidagent.HostWorkspacePaths
 import dev.androidagent.R
 import dev.androidagent.chat.ChatHarnessModelGroup
 import dev.androidagent.chat.ChatModelCatalog
@@ -20,6 +20,7 @@ enum class ClientBrand {
     Codex,
     OpenCode,
     Pi,
+    Devin,
     Local
 }
 
@@ -194,6 +195,11 @@ object ChatPresentationHelpers {
                 title = "Pi",
                 logoRes = R.drawable.pi_agent_logo_plate
             )
+            ClientBrand.Devin -> ClientBrandPresentation(
+                brand = brand,
+                title = "Devin",
+                logoRes = R.drawable.ic_notification_bubble
+            )
             ClientBrand.Local -> ClientBrandPresentation(
                 brand = brand,
                 title = "LiteRT-LLM",
@@ -263,6 +269,7 @@ object ChatPresentationHelpers {
             "codex" -> ClientBrand.Codex
             "opencode" -> ClientBrand.OpenCode
             "pi" -> ClientBrand.Pi
+            "devin" -> ClientBrand.Devin
             "local" -> ClientBrand.Local
             else -> ClientBrand.OpenClaw
         }
@@ -317,7 +324,7 @@ object ChatPresentationHelpers {
     }
 
     fun sessionSourceSublabel(session: ChatSessionRow): String? {
-        val detail = session.workspacePath?.let(CodexWorkspacePaths::display)
+        val detail = session.workspacePath?.let(HostWorkspacePaths::display)
             ?: session.workspaceName?.takeIf { it.isNotBlank() }
             ?: session.preview?.lineSequence()?.firstOrNull { it.isNotBlank() }?.take(64)
             ?: session.source?.takeIf { it.isNotBlank() }
@@ -374,7 +381,7 @@ object ChatPresentationHelpers {
     }
 
     private fun replaceClientNames(text: String, replacement: String): String {
-        return Regex("\\b(local phone model|local model|litert-lm|litert-llm|openclaw|hermes|codex|opencode|pi|litert)\\b", RegexOption.IGNORE_CASE)
+        return Regex("\\b(local phone model|local model|litert-lm|litert-llm|openclaw|hermes|codex|opencode|pi|devin|litert)\\b", RegexOption.IGNORE_CASE)
             .replace(text, replacement)
     }
 }

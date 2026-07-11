@@ -704,6 +704,58 @@ class ChatStateReducerTest {
         assertEquals("hermes:gpt-5.5", unread?.source?.model)
     }
 
+    @Test
+    fun devinStateAndSessionInferHarnessFromPrefix() {
+        val state = ChatStateReducer.reduce(ChatState(
+            selectedModel = "gpt-5.5",
+            harnessId = "openclaw"
+        ), JSONObject()
+            .put("type", "chat.state")
+            .put("sessionKey", "devin:workspace")
+            .put("harnessId", "devin")
+            .put("harnessLabel", "Devin")
+            .put("model", "devin:anthropic/claude-3-7-sonnet-20250219"))
+
+        assertEquals("devin:anthropic/claude-3-7-sonnet-20250219", state.selectedModel)
+        assertEquals("devin", state.harnessId)
+        assertEquals("Devin", state.harnessLabel)
+
+        val sessions = ChatStateReducer.reduce(state, JSONObject()
+            .put("type", "chat.sessions")
+            .put("selectedSessionKey", "devin:workspace")
+            .put("sessions", JSONArray().put(JSONObject()
+                .put("key", "devin:workspace")
+                .put("harnessId", "devin")
+                .put("harnessLabel", "Devin")
+                .put("model", "devin:anthropic/claude-3-7-sonnet-20250219")
+                .put("workspacePath", "~/DevinWorkspace"))))
+
+        assertEquals("devin:workspace", sessions.sessionKey)
+        assertEquals("~/DevinWorkspace", sessions.sessions.single().workspacePath)
+    }
+
+    @Test
+    fun toolEventActionsPreserveOpaquePermissionArgs() {
+        val state = ChatStateReducer.reduce(ChatState(), JSONObject()
+            .put("type", "chat.tool_event")
+            .put("sessionKey", "devin:session")
+            .put("eventId", "perm1")
+            .put("toolName", "permission")
+            .put("title", "Permission request")
+            .put("actions", JSONArray().put(JSONObject()
+                .put("id", "allow")
+                .put("label", "Allow")
+                .put("command", "permission_reply")
+                .put("args", JSONObject()
+                    .put("permissionId", "devin:sandbox:write")
+                    .put("optionId", "allow")))))
+
+        val action = state.timeline.single().toolEvent?.actions?.single()
+        assertEquals("permission_reply", action?.command)
+        assertEquals("devin:sandbox:write", action?.args?.optString("permissionId"))
+        assertEquals("allow", action?.args?.optString("optionId"))
+    }
+
     private fun model(id: String, label: String, provider: String, harnessId: String): JSONObject {
         return JSONObject()
             .put("id", id)

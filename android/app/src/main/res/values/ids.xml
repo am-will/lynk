@@ -32,12 +32,14 @@
     <item name="openclaw_harness_codex_checkbox" type="id" />
     <item name="openclaw_harness_opencode_checkbox" type="id" />
     <item name="openclaw_harness_pi_checkbox" type="id" />
+    <item name="openclaw_harness_devin_checkbox" type="id" />
     <item name="openclaw_harness_local_litert_checkbox" type="id" />
     <item name="openclaw_default_model_spinner" type="id" />
     <item name="openclaw_hermes_default_model_spinner" type="id" />
     <item name="openclaw_codex_default_model_spinner" type="id" />
     <item name="openclaw_opencode_default_model_spinner" type="id" />
     <item name="openclaw_pi_default_model_spinner" type="id" />
+    <item name="openclaw_devin_default_model_spinner" type="id" />
     <item name="openclaw_animation_spinner" type="id" />
     <item name="openclaw_avatar_picker_button" type="id" />
     <item name="openclaw_avatar_row" type="id" />

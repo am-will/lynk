@@ -11,7 +11,7 @@ import android.widget.LinearLayout
 import android.widget.Spinner
 import dev.androidagent.AgentConfig
 import dev.androidagent.AgentConfigStore
-import dev.androidagent.CodexWorkspacePaths
+import dev.androidagent.HostWorkspacePaths
 import dev.androidagent.HostHarnessDescriptor
 import dev.androidagent.LocalModelBackend
 import dev.androidagent.R
@@ -132,6 +132,7 @@ object RuntimeSettingsScreen {
                     codexHarnessEnabled = hostHarnessControls.isChecked(AgentConfig.HARNESS_CODEX, config.codexHarnessEnabled),
                     opencodeHarnessEnabled = hostHarnessControls.isChecked(AgentConfig.HARNESS_OPENCODE, config.opencodeHarnessEnabled),
                     piHarnessEnabled = hostHarnessControls.isChecked(AgentConfig.HARNESS_PI, config.piHarnessEnabled),
+                    devinHarnessEnabled = hostHarnessControls.isChecked(AgentConfig.HARNESS_DEVIN, config.devinHarnessEnabled),
                     openClawDefaultModel = defaultModelControls.selectedModel(
                         AgentConfig.HARNESS_OPENCLAW,
                         config.openClawDefaultModel
@@ -152,15 +153,19 @@ object RuntimeSettingsScreen {
                         AgentConfig.HARNESS_PI,
                         config.piDefaultModel
                     ),
+                    devinDefaultModel = defaultModelControls.selectedModel(
+                        AgentConfig.HARNESS_DEVIN,
+                        config.devinDefaultModel
+                    ),
                     experimentalLocalModelsEnabled = local.isChecked,
                     localModelPath = localModelPathInput.text.toString().trim(),
                     localModelBackend = localBackends.getOrElse(localBackendSpinner.selectedItemPosition) { LocalModelBackend.Cpu },
                     localContextTokens = localContextInput.text.toString().toIntOrNull()?.coerceIn(512, 131_072)
                         ?: config.localContextTokens,
                     localDeveloperToolsEnabled = localDeveloperTools.isChecked,
-                    codexWorkspacePath = workspaceControls.workspacePath(AgentConfig.HARNESS_CODEX),
-                    opencodeWorkspacePath = workspaceControls.workspacePath(AgentConfig.HARNESS_OPENCODE),
-                    piWorkspacePath = workspaceControls.workspacePath(AgentConfig.HARNESS_PI)
+                    workspacePaths = workspaceControls.associate { control ->
+                        control.harnessId to workspaceControls.workspacePath(control.harnessId)
+                    }
                 )
             )
             callbacks.onSettingsChanged()
@@ -214,11 +219,11 @@ object RuntimeSettingsScreen {
             val input = SettingsUi.configField(
                 activity,
                 "Default workspace",
-                CodexWorkspacePaths.editorText(spec.path),
+                HostWorkspacePaths.editorText(spec.path),
                 tokens,
                 InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             ).apply {
-                keepCodexHomePrefix(this)
+                keepHomePrefix(this)
             }
             addView(SettingsUi.card(activity, tokens).apply {
                 addView(SettingsUi.sectionHeader(activity, spec.title, spec.description, tokens))
@@ -247,7 +252,7 @@ object RuntimeSettingsScreen {
             ?.input
             ?.text
             ?.toString()
-            ?.let(CodexWorkspacePaths::normalizeInput)
+            ?.let(HostWorkspacePaths::normalizeInput)
             .orEmpty()
     }
 
@@ -332,15 +337,6 @@ object RuntimeSettingsScreen {
         return firstOrNull { it.descriptor.id == harnessId }?.checkBox?.isChecked ?: fallback
     }
 
-    private fun AgentConfig.workspacePathForHarness(harnessId: String): String {
-        return when (harnessId) {
-            AgentConfig.HARNESS_CODEX -> codexWorkspacePath
-            AgentConfig.HARNESS_OPENCODE -> opencodeWorkspacePath
-            AgentConfig.HARNESS_PI -> piWorkspacePath
-            else -> ""
-        }
-    }
-
     private fun HostHarnessDescriptor.checkboxViewId(): Int {
         return when (id) {
             AgentConfig.HARNESS_OPENCLAW -> R.id.openclaw_harness_openclaw_checkbox
@@ -348,6 +344,7 @@ object RuntimeSettingsScreen {
             AgentConfig.HARNESS_CODEX -> R.id.openclaw_harness_codex_checkbox
             AgentConfig.HARNESS_OPENCODE -> R.id.openclaw_harness_opencode_checkbox
             AgentConfig.HARNESS_PI -> R.id.openclaw_harness_pi_checkbox
+            AgentConfig.HARNESS_DEVIN -> R.id.openclaw_harness_devin_checkbox
             else -> View.NO_ID
         }
     }
@@ -359,11 +356,12 @@ object RuntimeSettingsScreen {
             AgentConfig.HARNESS_CODEX -> R.id.openclaw_codex_default_model_spinner
             AgentConfig.HARNESS_OPENCODE -> R.id.openclaw_opencode_default_model_spinner
             AgentConfig.HARNESS_PI -> R.id.openclaw_pi_default_model_spinner
+            AgentConfig.HARNESS_DEVIN -> R.id.openclaw_devin_default_model_spinner
             else -> View.NO_ID
         }
     }
 
-    private fun keepCodexHomePrefix(input: EditText) {
+    private fun keepHomePrefix(input: EditText) {
         var correcting = false
         input.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -375,7 +373,7 @@ object RuntimeSettingsScreen {
                 if (text.isBlank()) return
                 if (text.startsWith("~/")) return
                 correcting = true
-                val normalized = CodexWorkspacePaths.display(text)
+                val normalized = HostWorkspacePaths.display(text)
                 val suffix = normalized.removePrefix("~").trimStart('/')
                 val next = if (suffix.isBlank()) "~/" else "~/$suffix"
                 input.setText(next)
@@ -384,7 +382,7 @@ object RuntimeSettingsScreen {
             }
         })
         if (input.text.isNotBlank() && !input.text.toString().startsWith("~/")) {
-            input.setText(CodexWorkspacePaths.display(input.text.toString()))
+            input.setText(HostWorkspacePaths.display(input.text.toString()))
             input.setSelection(input.text.length)
         }
     }

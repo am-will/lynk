@@ -139,6 +139,18 @@ class ChatPresentationHelpersTest {
                     available = true,
                     reasoningOptions = null,
                     defaultReasoningEffort = null
+                ),
+                ChatModelOption(
+                    id = "devin:anthropic/claude-3-7-sonnet-20250219",
+                    label = "Claude 3.7 Sonnet",
+                    provider = "devin",
+                    harnessId = "devin",
+                    harnessLabel = "Devin",
+                    modelId = "anthropic/claude-3-7-sonnet-20250219",
+                    contextWindow = null,
+                    available = true,
+                    reasoningOptions = null,
+                    defaultReasoningEffort = null
                 )
             ),
             localLiteRtAvailable = false
@@ -149,10 +161,12 @@ class ChatPresentationHelpersTest {
         assertEquals("Hermes", ChatPresentationHelpers.modelHarnessLabel(merged.first { it.id == "hermes:gpt-5.5" }))
         assertEquals("OpenCode", ChatPresentationHelpers.modelHarnessLabel(merged.first { it.id == "opencode:openai/gpt-5.5" }))
         assertEquals("Pi", ChatPresentationHelpers.modelHarnessLabel(merged.first { it.id == "pi:anthropic/claude-sonnet-4-5" }))
+        assertEquals("Devin", ChatPresentationHelpers.modelHarnessLabel(merged.first { it.id == "devin:anthropic/claude-3-7-sonnet-20250219" }))
         assertEquals("openclaw", ChatPresentationHelpers.modelHarnessId(merged.first { it.id == "gpt-5.5" }))
         assertEquals("hermes", ChatPresentationHelpers.modelHarnessId(merged.first { it.id == "hermes:gpt-5.5" }))
         assertEquals("pi", ChatPresentationHelpers.modelHarnessId(merged.first { it.id == "pi:anthropic/claude-sonnet-4-5" }))
-        assertEquals(listOf("openclaw", "hermes", "codex", "opencode", "pi", "local"), listOf("local", "pi", "opencode", "codex", "hermes", "openclaw").sortedBy(ChatPresentationHelpers::modelHarnessSortOrder))
+        assertEquals("devin", ChatPresentationHelpers.modelHarnessId(merged.first { it.id == "devin:anthropic/claude-3-7-sonnet-20250219" }))
+        assertEquals(listOf("openclaw", "hermes", "codex", "opencode", "pi", "devin", "local"), listOf("local", "devin", "pi", "opencode", "codex", "hermes", "openclaw").sortedBy(ChatPresentationHelpers::modelHarnessSortOrder))
     }
 
     @Test
@@ -335,6 +349,7 @@ class ChatPresentationHelpersTest {
             model("codex:gpt-5.3-codex", harnessId = "codex"),
             model("opencode:openai/gpt-5.5", harnessId = "opencode"),
             model("pi:anthropic/claude-sonnet-4-5", harnessId = "pi"),
+            model("devin:anthropic/claude-3-7-sonnet-20250219", harnessId = "devin"),
             model(AgentModelOptions.LOCAL_LITERT_MODEL_ID, harnessId = "local", provider = "android")
         )
 
@@ -362,6 +377,12 @@ class ChatPresentationHelpersTest {
             harnessId = "openclaw",
             localLiteRtAvailable = true
         )
+        val devin = ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = "devin:anthropic/claude-3-7-sonnet-20250219",
+            models = models,
+            harnessId = "openclaw",
+            localLiteRtAvailable = true
+        )
         val local = ChatPresentationHelpers.clientBrandPresentation(
             selectedModel = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
             models = models,
@@ -385,6 +406,10 @@ class ChatPresentationHelpersTest {
         assertEquals("Pi", pi.title)
         assertEquals(R.drawable.pi_agent_logo_plate, pi.logoRes)
         assertEquals(BrandTitleTreatment.PLAIN, pi.titleTreatment)
+        assertEquals(ClientBrand.Devin, devin.brand)
+        assertEquals("Devin", devin.title)
+        assertEquals(R.drawable.ic_notification_bubble, devin.logoRes)
+        assertEquals(BrandTitleTreatment.PLAIN, devin.titleTreatment)
         assertEquals(ClientBrand.Local, local.brand)
         assertEquals("LiteRT-LLM", local.title)
         assertEquals(R.drawable.huggingface_logo, local.logoRes)
@@ -394,6 +419,12 @@ class ChatPresentationHelpersTest {
     fun resolvesClientBrandFromModelPrefixAndHarnessFallback() {
         val prefixed = ChatPresentationHelpers.clientBrandPresentation(
             selectedModel = "hermes:qwen",
+            models = emptyList(),
+            harnessId = "openclaw",
+            localLiteRtAvailable = false
+        )
+        val devinPrefixed = ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = "devin:anthropic/claude-3-7-sonnet-20250219",
             models = emptyList(),
             harnessId = "openclaw",
             localLiteRtAvailable = false
@@ -412,6 +443,8 @@ class ChatPresentationHelpersTest {
         )
 
         assertEquals(ClientBrand.Hermes, prefixed.brand)
+        assertEquals(ClientBrand.Devin, devinPrefixed.brand)
+        assertEquals("Devin", devinPrefixed.title)
         assertEquals(ClientBrand.Pi, fallback.brand)
         assertEquals(ClientBrand.OpenClaw, default.brand)
         assertEquals("OpenClaw", default.title)
@@ -445,6 +478,12 @@ class ChatPresentationHelpersTest {
             harnessId = "openclaw",
             localLiteRtAvailable = false
         )
+        val devin = ChatPresentationHelpers.clientBrandPresentation(
+            selectedModel = "devin:anthropic/claude-3-7-sonnet-20250219",
+            models = emptyList(),
+            harnessId = "openclaw",
+            localLiteRtAvailable = false
+        )
 
         assertEquals("Message Hermes", hermes.copy.composerPlaceholder)
         assertEquals("Loading Hermes Chat", ChatPresentationHelpers.chatStatusText("Loading OpenClaw chat", isRunning = false, hermes))
@@ -456,6 +495,8 @@ class ChatPresentationHelpersTest {
         assertEquals("Stop OpenCode turn", opencode.copy.stopTurnDescription)
         assertEquals("Message Pi", pi.copy.composerPlaceholder)
         assertEquals("Pi is thinking", ChatPresentationHelpers.chatStatusText("OpenCode is reasoning", isRunning = true, pi))
+        assertEquals("Message Devin", devin.copy.composerPlaceholder)
+        assertEquals("Devin is thinking", ChatPresentationHelpers.chatStatusText("OpenClaw is responding", isRunning = true, devin))
     }
 
     @Test
@@ -525,7 +566,7 @@ class ChatPresentationHelpersTest {
 
     @Test
     fun codexSessionPickerGroupsWorkspacesAndQuickChats() {
-        val sections = CodexSessionPickerSections.build(
+        val sections = WorkspaceSessionPickerSections.build(
             sessions = listOf(
                 session(
                     key = "codex:workspace",
@@ -568,7 +609,7 @@ class ChatPresentationHelpersTest {
 
     @Test
     fun codexSessionPickerCollapsesWorkspaceRowsAndSortsByRecency() {
-        val sections = CodexSessionPickerSections.build(
+        val sections = WorkspaceSessionPickerSections.build(
             sessions = listOf(
                 session(
                     key = "codex:old",
@@ -616,7 +657,7 @@ class ChatPresentationHelpersTest {
 
     @Test
     fun codexSessionPickerHighlightsActiveDefaultWorkspace() {
-        val sections = CodexSessionPickerSections.build(
+        val sections = WorkspaceSessionPickerSections.build(
             sessions = listOf(
                 session(
                     key = "codex:workspace",
@@ -656,7 +697,7 @@ class ChatPresentationHelpersTest {
 
     @Test
     fun codexSessionPickerCollapsesAndExpandsQuickChats() {
-        val collapsed = CodexSessionPickerSections.build(
+        val collapsed = WorkspaceSessionPickerSections.build(
             sessions = listOf(
                 session(
                     key = "codex:quick-old",
@@ -685,7 +726,7 @@ class ChatPresentationHelpersTest {
             onToggleQuickChats = {},
             onSelectSession = {}
         )
-        val expanded = CodexSessionPickerSections.build(
+        val expanded = WorkspaceSessionPickerSections.build(
             sessions = listOf(
                 session(
                     key = "codex:quick-old",
@@ -728,7 +769,7 @@ class ChatPresentationHelpersTest {
 
     @Test
     fun opencodeSessionPickerGroupsWorkspacesAndQuickChats() {
-        val sections = CodexSessionPickerSections.build(
+        val sections = WorkspaceSessionPickerSections.build(
             sessions = listOf(
                 session(
                     key = "opencode:workspace",
@@ -767,6 +808,88 @@ class ChatPresentationHelpersTest {
         assertEquals("QuickChats", sections[1].rows[0].label)
         assertEquals("1 session", sections[1].rows[0].sublabel)
         assertEquals(1, sections[1].rows.size)
+    }
+
+    @Test
+    fun devinSessionPickerGroupsWorkspacesAndQuickChats() {
+        val sections = WorkspaceSessionPickerSections.build(
+            sessions = listOf(
+                session(
+                    key = "devin:workspace",
+                    harnessId = "devin",
+                    harnessLabel = "Devin",
+                    displayName = "Workspace chat",
+                    workspacePath = "/Users/example/DevinProjects/app",
+                    updatedAt = 200,
+                    model = "devin:anthropic/claude-3-7-sonnet-20250219"
+                ),
+                session(
+                    key = "devin:quick",
+                    harnessId = "devin",
+                    harnessLabel = "Devin",
+                    displayName = "Quick chat",
+                    preview = "quick question",
+                    updatedAt = 100,
+                    model = "devin:anthropic/claude-3-7-sonnet-20250219"
+                )
+            ),
+            selectedSessionKey = "devin:workspace",
+            expandedWorkspaceKeys = setOf("/Users/example/DevinProjects/app"),
+            expandedQuickChats = false,
+            unreadCountForSession = { key -> if (key == "devin:quick") 1 else 0 },
+            onToggleWorkspace = {},
+            onToggleQuickChats = {},
+            onSelectSession = {}
+        )
+
+        assertEquals(listOf(null, null), sections.map { it.title })
+        assertEquals("~/DevinProjects/app", sections[0].rows[0].label)
+        assertEquals("Active workspace, 1 session", sections[0].rows[0].sublabel)
+        assertTrue(sections[0].rows[0].emphasizeLabel)
+        assertEquals("Devin / ~/DevinProjects/app", sections[0].rows[1].sublabel)
+        assertTrue(sections[0].rows[1].selected)
+        assertEquals("QuickChats", sections[1].rows[0].label)
+        assertEquals("1 session", sections[1].rows[0].sublabel)
+        assertEquals(1, sections[1].rows.size)
+    }
+
+    @Test
+    fun workspaceSessionPickerScopesMixedSessionsToActiveHarness() {
+        val mixed = listOf(
+            session(key = "codex:one", harnessId = "codex", workspacePath = "~/Codex"),
+            session(key = "opencode:two", harnessId = "opencode", workspacePath = "~/OpenCode"),
+            session(key = "pi:three", harnessId = "pi", workspacePath = "~/Pi"),
+            session(key = "devin:four", harnessId = "devin", workspacePath = "~/Devin")
+        )
+
+        assertEquals(
+            listOf("devin:four"),
+            WorkspaceSessionPickerSections.forHarness(mixed, "devin").map { it.key }
+        )
+        assertEquals(
+            listOf("codex:one"),
+            WorkspaceSessionPickerSections.forHarness(mixed, "codex").map { it.key }
+        )
+        assertEquals(
+            listOf("opencode:two"),
+            WorkspaceSessionPickerSections.forHarness(mixed, "opencode").map { it.key }
+        )
+        assertEquals(
+            listOf("pi:three"),
+            WorkspaceSessionPickerSections.forHarness(mixed, "pi").map { it.key }
+        )
+    }
+
+    @Test
+    fun unavailableDevinModelDoesNotCreatePickerGroup() {
+        val groups = ChatPresentationHelpers.harnessModelGroups(
+            models = listOf(
+                model("gpt-5.5", harnessId = "openclaw"),
+                model("devin:default", harnessId = "devin").copy(available = false)
+            )
+        )
+
+        assertEquals(listOf("openclaw"), groups.map { it.id })
     }
 
     private fun session(

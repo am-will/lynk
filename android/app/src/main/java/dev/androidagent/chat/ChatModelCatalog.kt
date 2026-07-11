@@ -130,7 +130,8 @@ object ChatModelCatalog {
                 harness == AgentConfig.HARNESS_CODEX ||
                     harness == AgentConfig.HARNESS_HERMES ||
                     harness == AgentConfig.HARNESS_OPENCODE ||
-                    harness == AgentConfig.HARNESS_PI
+                    harness == AgentConfig.HARNESS_PI ||
+                    harness == AgentConfig.HARNESS_DEVIN
                 ) &&
             harnessFromModelPrefix(cleanModel) == null
         ) {
@@ -205,6 +206,7 @@ object ChatModelCatalog {
             AgentConfig.HARNESS_HERMES,
             AgentConfig.HARNESS_OPENCODE,
             AgentConfig.HARNESS_PI,
+            AgentConfig.HARNESS_DEVIN,
             AgentConfig.HARNESS_LOCAL -> prefix
             else -> AgentConfig.HARNESS_OPENCLAW
         }
@@ -218,6 +220,7 @@ object ChatModelCatalog {
             AgentConfig.HARNESS_HERMES,
             AgentConfig.HARNESS_OPENCODE,
             AgentConfig.HARNESS_PI,
+            AgentConfig.HARNESS_DEVIN,
             AgentConfig.HARNESS_LOCAL -> cleanHarnessId
             else -> null
         }
@@ -239,6 +242,7 @@ object ChatModelCatalog {
                 AgentConfig.HARNESS_CODEX -> "Codex"
                 AgentConfig.HARNESS_OPENCODE -> "OpenCode"
                 AgentConfig.HARNESS_PI -> "Pi"
+                AgentConfig.HARNESS_DEVIN -> "Devin"
                 AgentConfig.HARNESS_LOCAL -> "Local"
                 else -> model.provider?.takeIf { it.isNotBlank() } ?: "OpenClaw"
             }
@@ -251,6 +255,7 @@ object ChatModelCatalog {
                 "codex" -> AgentConfig.HARNESS_CODEX
                 "opencode" -> AgentConfig.HARNESS_OPENCODE
                 "pi" -> AgentConfig.HARNESS_PI
+                "devin" -> AgentConfig.HARNESS_DEVIN
                 "android" -> AgentConfig.HARNESS_LOCAL
                 else -> AgentConfig.HARNESS_OPENCLAW
             }
@@ -263,8 +268,9 @@ object ChatModelCatalog {
             AgentConfig.HARNESS_CODEX -> 2
             AgentConfig.HARNESS_OPENCODE -> 3
             AgentConfig.HARNESS_PI -> 4
-            AgentConfig.HARNESS_LOCAL -> 5
-            else -> 6
+            AgentConfig.HARNESS_DEVIN -> 5
+            AgentConfig.HARNESS_LOCAL -> 6
+            else -> 7
         }
     }
 
@@ -275,6 +281,7 @@ object ChatModelCatalog {
             AgentConfig.HARNESS_CODEX -> "Codex"
             AgentConfig.HARNESS_OPENCODE -> "OpenCode"
             AgentConfig.HARNESS_PI -> "Pi"
+            AgentConfig.HARNESS_DEVIN -> "Devin"
             AgentConfig.HARNESS_LOCAL -> "Local"
             else -> harnessId
         }
@@ -286,6 +293,7 @@ object ChatModelCatalog {
         AgentConfig.HARNESS_CODEX,
         AgentConfig.HARNESS_OPENCODE,
         AgentConfig.HARNESS_PI,
+        AgentConfig.HARNESS_DEVIN,
         AgentConfig.HARNESS_LOCAL
     )
 

@@ -1,11 +1,12 @@
 package dev.androidagent.overlay
 
-import dev.androidagent.CodexWorkspacePaths
+import dev.androidagent.HostWorkspacePaths
 import dev.androidagent.R
+import dev.androidagent.chat.ChatModelCatalog
 import dev.androidagent.chat.ChatSessionRow
 import dev.androidagent.ui.AnchoredPicker
 
-object CodexSessionPickerSections {
+object WorkspaceSessionPickerSections {
     const val QUICK_CHATS_ROW_ID = "quick-chats"
 
     fun build(
@@ -105,6 +106,15 @@ object CodexSessionPickerSections {
         return sections
     }
 
+    fun forHarness(sessions: List<ChatSessionRow>, harnessId: String?): List<ChatSessionRow> {
+        val activeHarness = ChatModelCatalog.normalizeHarnessId(harnessId) ?: return sessions
+        return sessions.filter { session ->
+            val sessionHarness = ChatModelCatalog.normalizeHarnessId(session.harnessId)
+                ?: ChatModelCatalog.harnessFromSessionKey(session.key)
+            sessionHarness == activeHarness
+        }
+    }
+
     fun workspaceCount(sessions: List<ChatSessionRow>): Int {
         return sessions
             .filter { !it.workspacePath.isNullOrBlank() || !it.workspaceName.isNullOrBlank() }
@@ -172,9 +182,9 @@ object CodexSessionPickerSections {
     ) {
         fun title(): String {
             val first = sessions.firstOrNull()
-            return first?.workspacePath?.let(CodexWorkspacePaths::display)
+            return first?.workspacePath?.let(HostWorkspacePaths::display)
                 ?: first?.workspaceName
-                ?: CodexWorkspacePaths.display(key)
+                ?: HostWorkspacePaths.display(key)
         }
     }
 
@@ -190,7 +200,7 @@ object CodexSessionPickerSections {
 
     private fun workspaceCandidates(path: String?): Set<String> {
         val trimmed = path?.trim()?.takeIf { it.isNotBlank() } ?: return emptySet()
-        return setOf(trimmed, CodexWorkspacePaths.display(trimmed))
+        return setOf(trimmed, HostWorkspacePaths.display(trimmed))
     }
 
     private fun workspaceSublabel(active: Boolean, sessionCount: Int): String {

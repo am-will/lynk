@@ -1,6 +1,11 @@
 package dev.androidagent
 
-object CodexWorkspacePaths {
+data class WorkspaceCreationConfirmation(
+    val message: String,
+    val path: String
+)
+
+object HostWorkspacePaths {
     private val macHomePrefix = Regex("^/Users/[^/]+(?=/|$)")
 
     fun hasDefault(path: String?): Boolean = !path?.trim().isNullOrBlank()
@@ -36,6 +41,17 @@ object CodexWorkspacePaths {
 
     fun normalizeRequiredHomeInput(path: String?): String {
         return requireHomePrefix(path)
+    }
+
+    fun creationConfirmation(harnessId: String, path: String): WorkspaceCreationConfirmation {
+        val label = AgentConfig.HOST_HARNESSES
+            .firstOrNull { it.id == harnessId.lowercase() }
+            ?.label
+            ?: harnessId
+        return WorkspaceCreationConfirmation(
+            message = "Folder not found for $label. Would you like to create it?",
+            path = path
+        )
     }
 
     fun requireHomePrefix(path: String?): String {

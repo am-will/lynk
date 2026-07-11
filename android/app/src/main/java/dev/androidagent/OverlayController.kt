@@ -55,7 +55,7 @@ import dev.androidagent.overlay.ChatPresentationHelpers
 import dev.androidagent.overlay.ChatTimelineBinder
 import dev.androidagent.overlay.ComposerAttachmentTray
 import dev.androidagent.overlay.ConfirmationOverlay
-import dev.androidagent.overlay.CodexSessionPickerSections
+import dev.androidagent.overlay.WorkspaceSessionPickerSections
 import dev.androidagent.overlay.HostConnectionCopy
 import dev.androidagent.overlay.HostConnectionIndicatorButton
 import dev.androidagent.overlay.HostConnectionPhase
@@ -115,12 +115,8 @@ class OverlayController(
     private val onCancelTranscription: () -> Unit,
     private val onSelectChatSession: (String) -> Unit = {},
     private val onNewChatSession: () -> Unit = {},
-    private val onGetCodexWorkspacePath: () -> String = { "" },
-    private val onSetCodexWorkspacePath: (String) -> Unit = {},
-    private val onGetOpenCodeWorkspacePath: () -> String = { "" },
-    private val onSetOpenCodeWorkspacePath: (String) -> Unit = {},
-    private val onGetPiWorkspacePath: () -> String = { "" },
-    private val onSetPiWorkspacePath: (String) -> Unit = {},
+    private val onGetWorkspacePath: (String) -> String = { "" },
+    private val onSetWorkspacePath: (String, String) -> Unit = { _, _ -> },
     private val onSetChatModel: (String) -> Unit = {},
     private val onSetChatHarness: (String) -> Unit = {},
     private val onSetChatReasoning: (String) -> Unit = {},
@@ -1731,9 +1727,10 @@ class OverlayController(
         if (!isWorkspaceHarness()) {
             return listOf(AnchoredPicker.Section(null, sessionPickerRows(limit = 30)))
         }
+        val sessions = workspaceSessionsForActiveHarness()
         syncExpandedSessionWorkspace()
-        return CodexSessionPickerSections.build(
-            sessions = lastChatState.sessions,
+        return WorkspaceSessionPickerSections.build(
+            sessions = sessions,
             selectedSessionKey = lastChatState.sessionKey,
             activeWorkspacePath = activeWorkspacePathForSessionPicker(),
             expandedWorkspaceKeys = expandedSessionWorkspaces,
@@ -1747,13 +1744,14 @@ class OverlayController(
     }
 
     private fun syncExpandedSessionWorkspace() {
-        val activeWorkspaceKey = CodexSessionPickerSections.activeWorkspaceKey(
-            sessions = lastChatState.sessions,
+        val sessions = workspaceSessionsForActiveHarness()
+        val activeWorkspaceKey = WorkspaceSessionPickerSections.activeWorkspaceKey(
+            sessions = sessions,
             selectedSessionKey = lastChatState.sessionKey,
             activeWorkspacePath = activeWorkspacePathForSessionPicker()
         )
         val activeGroupKey = activeWorkspaceKey?.let { "workspace:$it" }
-            ?: if (CodexSessionPickerSections.isQuickChatSession(lastChatState.sessions, lastChatState.sessionKey)) {
+            ?: if (WorkspaceSessionPickerSections.isQuickChatSession(sessions, lastChatState.sessionKey)) {
                 "quick-chats"
             } else {
                 null
@@ -1775,7 +1773,7 @@ class OverlayController(
         showSessionsMenu(
             anchorOverride = activeSessionsMenuAnchor ?: headerSessionAnchor ?: panelHost,
             replace = true,
-            revealRowId = CodexSessionPickerSections.workspaceRowId(workspaceKey),
+            revealRowId = WorkspaceSessionPickerSections.workspaceRowId(workspaceKey),
             revealRowVerticalBias = SESSION_TOGGLE_REVEAL_BIAS
         )
     }
@@ -1785,19 +1783,19 @@ class OverlayController(
         showSessionsMenu(
             anchorOverride = activeSessionsMenuAnchor ?: headerSessionAnchor ?: panelHost,
             replace = true,
-            revealRowId = CodexSessionPickerSections.QUICK_CHATS_ROW_ID,
+            revealRowId = WorkspaceSessionPickerSections.QUICK_CHATS_ROW_ID,
             revealRowVerticalBias = SESSION_TOGGLE_REVEAL_BIAS
         )
     }
 
     private fun activeWorkspacePathForSessionPicker(): String? {
-        return workspaceHarnessId()?.let(::workspacePathForHarness)?.takeIf(CodexWorkspacePaths::hasDefault)
+        return workspaceHarnessId()?.let(::workspacePathForHarness)?.takeIf(HostWorkspacePaths::hasDefault)
     }
 
     private fun workspaceHarnessId(): String? {
         val candidates = listOfNotNull(
-            lastChatState.harnessId?.takeIf { it.isNotBlank() },
             lastChatState.selectedModel?.takeIf { it.isNotBlank() }?.let(ChatModelCatalog::harnessForModel),
+            lastChatState.harnessId?.takeIf { it.isNotBlank() },
             ChatModelCatalog.harnessFromSessionKey(lastChatState.sessionKey)
         )
         return candidates.firstOrNull(AgentConfig::isWorkspaceHarness)
@@ -1805,6 +1803,10 @@ class OverlayController(
 
     private fun isWorkspaceHarness(): Boolean {
         return workspaceHarnessId() != null
+    }
+
+    private fun workspaceSessionsForActiveHarness(): List<ChatSessionRow> {
+        return WorkspaceSessionPickerSections.forHarness(lastChatState.sessions, workspaceHarnessId())
     }
 
     private fun startNewChatSession() {
@@ -1827,7 +1829,12 @@ class OverlayController(
         val modelOptions = availableModelOptions(config, localLiteRtAvailable)
         val harnessGroups = ChatPresentationHelpers.harnessModelGroups(modelOptions, config.enabledModelHarnessIds())
         val currentHarnessId = activeHarnessId(modelOptions, localLiteRtAvailable)
-        val sessions = lastChatState.sessions
+        val workspaceHarnessId = workspaceHarnessId()
+        val sessions = if (workspaceHarnessId == null) {
+            lastChatState.sessions
+        } else {
+            WorkspaceSessionPickerSections.forHarness(lastChatState.sessions, workspaceHarnessId)
+        }
         val localMode = isLocalChatMode()
         val commands = if (localMode) emptyList() else lastChatState.commands
 
@@ -1838,13 +1845,12 @@ class OverlayController(
             iconRes = R.drawable.ic_new_chat,
             onSelect = { startNewChatSession() }
         ))
-        val workspaceHarnessId = workspaceHarnessId()
         if (workspaceHarnessId != null) {
             sessionRows.add(hostWorkspaceMenuRow(workspaceHarnessId))
         }
         if (sessions.isNotEmpty()) {
             val sessionCount = sessions.size.coerceAtMost(30)
-            val workspaceCount = CodexSessionPickerSections.workspaceCount(sessions)
+            val workspaceCount = WorkspaceSessionPickerSections.workspaceCount(sessions)
             val workspaceHarnessLabel = workspaceHarnessId?.let(ChatPresentationHelpers::harnessLabel)
             sessionRows.add(AnchoredPicker.Row(
                 id = "chat:previous",
@@ -1959,9 +1965,9 @@ class OverlayController(
         path: String = workspacePathForHarness(harnessId)
     ): AnchoredPicker.Row {
         return AnchoredPicker.Row(
-            id = PLUS_ROW_CODEX_WORKSPACE,
+            id = PLUS_ROW_HOST_WORKSPACE,
             label = "Current Workspace",
-            sublabel = CodexWorkspacePaths.defaultWorkspaceLabel(path),
+            sublabel = HostWorkspacePaths.defaultWorkspaceLabel(path),
             iconRes = R.drawable.ic_file,
             dismissOnSelect = false,
             onSelect = { showHostWorkspaceDialog(harnessId) }
@@ -1985,19 +1991,11 @@ class OverlayController(
     }
 
     private fun workspacePathForHarness(harnessId: String): String {
-        return when (harnessId) {
-            AgentConfig.HARNESS_OPENCODE -> onGetOpenCodeWorkspacePath()
-            AgentConfig.HARNESS_PI -> onGetPiWorkspacePath()
-            else -> onGetCodexWorkspacePath()
-        }
+        return onGetWorkspacePath(harnessId)
     }
 
     private fun setWorkspacePathForHarness(harnessId: String, path: String) {
-        when (harnessId) {
-            AgentConfig.HARNESS_OPENCODE -> onSetOpenCodeWorkspacePath(path)
-            AgentConfig.HARNESS_PI -> onSetPiWorkspacePath(path)
-            else -> onSetCodexWorkspacePath(path)
-        }
+        onSetWorkspacePath(harnessId, path)
     }
 
     private fun showHostWorkspaceDialog(harnessId: String) {
@@ -2007,7 +2005,7 @@ class OverlayController(
         val editor = EditText(context).apply {
             setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            val workspaceText = CodexWorkspacePaths.requiredHomeEditorText(workspacePathForHarness(harnessId))
+            val workspaceText = HostWorkspacePaths.requiredHomeEditorText(workspacePathForHarness(harnessId))
             setText(workspaceText)
             setSelection(workspaceText.length)
             setTextColor(tokens.primaryText)
@@ -2034,10 +2032,10 @@ class OverlayController(
             .setTitle("Current Workspace")
             .setView(content)
             .setPositiveButton("Save") { _, _ ->
-                val path = CodexWorkspacePaths.normalizeRequiredHomeInput(editor.text?.toString())
+                val path = HostWorkspacePaths.normalizeRequiredHomeInput(editor.text?.toString())
                 setWorkspacePathForHarness(harnessId, path)
                 pathToRefreshAfterDismiss = path
-                setStatus("$harnessLabel workspace: ${CodexWorkspacePaths.defaultWorkspaceLabel(path)}")
+                setStatus("$harnessLabel workspace: ${HostWorkspacePaths.defaultWorkspaceLabel(path)}")
             }
             .setNegativeButton("Cancel", null)
             .create()
@@ -2080,7 +2078,7 @@ class OverlayController(
             override fun afterTextChanged(s: Editable?) {
                 if (correcting) return
                 val current = s?.toString().orEmpty()
-                val fixed = CodexWorkspacePaths.requireHomePrefix(current)
+                val fixed = HostWorkspacePaths.requireHomePrefix(current)
                 if (fixed != current) {
                     correcting = true
                     editor.setText(fixed)
@@ -3122,7 +3120,7 @@ class OverlayController(
         private const val PICKER_KEYBOARD_DISMISS_INITIAL_DELAY_MS = 80L
         private const val PICKER_KEYBOARD_DISMISS_POLL_MS = 40L
         private const val PICKER_KEYBOARD_DISMISS_TIMEOUT_MS = 420L
-        private const val PLUS_ROW_CODEX_WORKSPACE = "chat:codex-workspace"
+        private const val PLUS_ROW_HOST_WORKSPACE = "chat:host-workspace"
         private const val PLUS_ROW_FAST_MODE = "plus_fast_mode"
         private const val PLUS_ROW_TOOL_CALLS = "plus_tool_calls"
         private const val PLUS_ROW_ACTIVE_SEND_MODE = "plus_active_send_mode"

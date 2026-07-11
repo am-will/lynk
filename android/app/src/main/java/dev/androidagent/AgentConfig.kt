@@ -53,14 +53,14 @@ data class AgentConfig(
     val codexHarnessEnabled: Boolean = true,
     val opencodeHarnessEnabled: Boolean = true,
     val piHarnessEnabled: Boolean = true,
+    val devinHarnessEnabled: Boolean = true,
     val openClawDefaultModel: String = "",
     val hermesDefaultModel: String = "",
     val codexDefaultModel: String = "",
     val opencodeDefaultModel: String = "",
     val piDefaultModel: String = "",
-    val codexWorkspacePath: String = "",
-    val opencodeWorkspacePath: String = "",
-    val piWorkspacePath: String = "",
+    val devinDefaultModel: String = "",
+    val workspacePaths: Map<String, String> = emptyMap(),
     val activeSendMode: ChatActiveSendMode = ChatActiveSendMode.Steer,
     val petEnabled: Boolean = true
 ) {
@@ -71,6 +71,7 @@ data class AgentConfig(
         if (codexHarnessEnabled) ids.add(HARNESS_CODEX)
         if (opencodeHarnessEnabled) ids.add(HARNESS_OPENCODE)
         if (piHarnessEnabled) ids.add(HARNESS_PI)
+        if (devinHarnessEnabled) ids.add(HARNESS_DEVIN)
         if (experimentalLocalModelsEnabled) ids.add(HARNESS_LOCAL)
         return ids
     }
@@ -82,6 +83,7 @@ data class AgentConfig(
             HARNESS_CODEX -> codexHarnessEnabled
             HARNESS_OPENCODE -> opencodeHarnessEnabled
             HARNESS_PI -> piHarnessEnabled
+            HARNESS_DEVIN -> devinHarnessEnabled
             HARNESS_LOCAL -> experimentalLocalModelsEnabled
             else -> true
         }
@@ -94,8 +96,19 @@ data class AgentConfig(
             HARNESS_CODEX -> codexDefaultModel
             HARNESS_OPENCODE -> opencodeDefaultModel
             HARNESS_PI -> piDefaultModel
+            HARNESS_DEVIN -> devinDefaultModel
             else -> null
         }?.trim()?.takeIf { it.isNotBlank() }
+    }
+
+    fun workspacePathForHarness(harnessId: String?): String {
+        val normalized = harnessId?.lowercase()?.takeIf(::isWorkspaceHarness) ?: return ""
+        return workspacePaths[normalized].orEmpty()
+    }
+
+    fun withWorkspacePath(harnessId: String, path: String): AgentConfig {
+        val normalized = harnessId.lowercase().takeIf(::isWorkspaceHarness) ?: return this
+        return copy(workspacePaths = workspacePaths + (normalized to path))
     }
 
     companion object {
@@ -104,6 +117,7 @@ data class AgentConfig(
         const val HARNESS_CODEX = "codex"
         const val HARNESS_OPENCODE = "opencode"
         const val HARNESS_PI = "pi"
+        const val HARNESS_DEVIN = "devin"
         const val HARNESS_LOCAL = "local"
 
         val HOST_HARNESSES = listOf(
@@ -111,7 +125,8 @@ data class AgentConfig(
             HostHarnessDescriptor(HARNESS_HERMES, "Hermes"),
             HostHarnessDescriptor(HARNESS_CODEX, "Codex", supportsWorkspace = true),
             HostHarnessDescriptor(HARNESS_OPENCODE, "OpenCode", supportsWorkspace = true),
-            HostHarnessDescriptor(HARNESS_PI, "Pi", supportsWorkspace = true)
+            HostHarnessDescriptor(HARNESS_PI, "Pi", supportsWorkspace = true),
+            HostHarnessDescriptor(HARNESS_DEVIN, "Devin", supportsWorkspace = true)
         )
 
         fun isWorkspaceHarness(harnessId: String?): Boolean {
@@ -125,6 +140,18 @@ data class HostHarnessDescriptor(
     val id: String,
     val label: String,
     val supportsWorkspace: Boolean = false
+)
+
+internal fun migratedWorkspacePaths(
+    codex: String?,
+    openCode: String?,
+    pi: String?,
+    devin: String?
+): Map<String, String> = mapOf(
+    AgentConfig.HARNESS_CODEX to codex.orEmpty(),
+    AgentConfig.HARNESS_OPENCODE to openCode.orEmpty(),
+    AgentConfig.HARNESS_PI to pi.orEmpty(),
+    AgentConfig.HARNESS_DEVIN to devin.orEmpty()
 )
 
 object AgentConfigStore {
@@ -149,14 +176,17 @@ object AgentConfigStore {
     private const val CODEX_HARNESS_ENABLED = "codex_harness_enabled"
     private const val OPENCODE_HARNESS_ENABLED = "opencode_harness_enabled"
     private const val PI_HARNESS_ENABLED = "pi_harness_enabled"
+    private const val DEVIN_HARNESS_ENABLED = "devin_harness_enabled"
     private const val OPENCLAW_DEFAULT_MODEL = "openclaw_default_model"
     private const val HERMES_DEFAULT_MODEL = "hermes_default_model"
     private const val CODEX_DEFAULT_MODEL = "codex_default_model"
     private const val OPENCODE_DEFAULT_MODEL = "opencode_default_model"
     private const val PI_DEFAULT_MODEL = "pi_default_model"
+    private const val DEVIN_DEFAULT_MODEL = "devin_default_model"
     private const val CODEX_WORKSPACE_PATH = "codex_workspace_path"
     private const val OPENCODE_WORKSPACE_PATH = "opencode_workspace_path"
     private const val PI_WORKSPACE_PATH = "pi_workspace_path"
+    private const val DEVIN_WORKSPACE_PATH = "devin_workspace_path"
     private const val ACTIVE_SEND_MODE = "active_send_mode"
     private const val PET_ENABLED = "pet_enabled"
     private const val DEFAULT_LOCAL_CONTEXT_TOKENS = 4096
@@ -192,14 +222,19 @@ object AgentConfigStore {
             codexHarnessEnabled = prefs.getBoolean(CODEX_HARNESS_ENABLED, true),
             opencodeHarnessEnabled = prefs.getBoolean(OPENCODE_HARNESS_ENABLED, true),
             piHarnessEnabled = prefs.getBoolean(PI_HARNESS_ENABLED, true),
+            devinHarnessEnabled = prefs.getBoolean(DEVIN_HARNESS_ENABLED, true),
             openClawDefaultModel = prefs.getString(OPENCLAW_DEFAULT_MODEL, "") ?: "",
             hermesDefaultModel = prefs.getString(HERMES_DEFAULT_MODEL, "") ?: "",
             codexDefaultModel = prefs.getString(CODEX_DEFAULT_MODEL, "") ?: "",
             opencodeDefaultModel = prefs.getString(OPENCODE_DEFAULT_MODEL, "") ?: "",
             piDefaultModel = prefs.getString(PI_DEFAULT_MODEL, "") ?: "",
-            codexWorkspacePath = prefs.getString(CODEX_WORKSPACE_PATH, "") ?: "",
-            opencodeWorkspacePath = prefs.getString(OPENCODE_WORKSPACE_PATH, "") ?: "",
-            piWorkspacePath = prefs.getString(PI_WORKSPACE_PATH, "") ?: "",
+            devinDefaultModel = prefs.getString(DEVIN_DEFAULT_MODEL, "") ?: "",
+            workspacePaths = migratedWorkspacePaths(
+                codex = prefs.getString(CODEX_WORKSPACE_PATH, ""),
+                openCode = prefs.getString(OPENCODE_WORKSPACE_PATH, ""),
+                pi = prefs.getString(PI_WORKSPACE_PATH, ""),
+                devin = prefs.getString(DEVIN_WORKSPACE_PATH, "")
+            ),
             activeSendMode = ChatActiveSendMode.fromKey(prefs.getString(ACTIVE_SEND_MODE, ChatActiveSendMode.Steer.key)),
             petEnabled = prefs.getBoolean(PET_ENABLED, true)
         )
@@ -227,14 +262,18 @@ object AgentConfigStore {
             .putBoolean(CODEX_HARNESS_ENABLED, config.codexHarnessEnabled)
             .putBoolean(OPENCODE_HARNESS_ENABLED, config.opencodeHarnessEnabled)
             .putBoolean(PI_HARNESS_ENABLED, config.piHarnessEnabled)
+            .putBoolean(DEVIN_HARNESS_ENABLED, config.devinHarnessEnabled)
             .putString(OPENCLAW_DEFAULT_MODEL, config.openClawDefaultModel.trim())
             .putString(HERMES_DEFAULT_MODEL, config.hermesDefaultModel.trim())
             .putString(CODEX_DEFAULT_MODEL, config.codexDefaultModel.trim())
             .putString(OPENCODE_DEFAULT_MODEL, config.opencodeDefaultModel.trim())
             .putString(PI_DEFAULT_MODEL, config.piDefaultModel.trim())
-            .putString(CODEX_WORKSPACE_PATH, config.codexWorkspacePath.trim())
-            .putString(OPENCODE_WORKSPACE_PATH, config.opencodeWorkspacePath.trim())
-            .putString(PI_WORKSPACE_PATH, config.piWorkspacePath.trim())
+            .putString(DEVIN_DEFAULT_MODEL, config.devinDefaultModel.trim())
+            // Keep the shipped preference keys stable while the in-memory model is generic.
+            .putString(CODEX_WORKSPACE_PATH, config.workspacePathForHarness(AgentConfig.HARNESS_CODEX).trim())
+            .putString(OPENCODE_WORKSPACE_PATH, config.workspacePathForHarness(AgentConfig.HARNESS_OPENCODE).trim())
+            .putString(PI_WORKSPACE_PATH, config.workspacePathForHarness(AgentConfig.HARNESS_PI).trim())
+            .putString(DEVIN_WORKSPACE_PATH, config.workspacePathForHarness(AgentConfig.HARNESS_DEVIN).trim())
             .putString(ACTIVE_SEND_MODE, config.activeSendMode.key)
             .putBoolean(PET_ENABLED, config.petEnabled)
             .apply()
