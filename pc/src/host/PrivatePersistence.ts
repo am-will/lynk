@@ -8,8 +8,10 @@ import {
   fsyncSync,
   mkdirSync,
   openSync,
+  readFileSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync
 } from "node:fs";
 import {
@@ -39,6 +41,50 @@ export interface JsonRecovery<T> {
   value: T;
   source: "primary" | "backup" | "fallback";
   quarantinedPath?: string;
+}
+
+export function readJsonWithRecoverySync<T>(
+  path: string,
+  fallback: () => T,
+  validate: (value: unknown) => value is T,
+  maxBytes = 16 * 1024 * 1024
+): JsonRecovery<T> {
+  const primary = readBoundedJsonSync(path, validate, maxBytes);
+  if (primary.ok) return { value: primary.value, source: "primary" };
+  if (primary.missing) return { value: fallback(), source: "fallback" };
+  const quarantinedPath = `${path}.corrupt-${Date.now()}`;
+  try { renameSync(path, quarantinedPath); } catch { /* recovery remains best effort */ }
+  const backup = readBoundedJsonSync(`${path}.bak`, validate, maxBytes);
+  if (backup.ok) {
+    atomicWritePrivateFileSync(path, `${JSON.stringify(backup.value, null, 2)}\n`, { maxBytes, keepBackup: false });
+    return { value: backup.value, source: "backup", quarantinedPath };
+  }
+  return { value: fallback(), source: "fallback", quarantinedPath };
+}
+
+export function migrateLegacyFileSync(
+  destination: string,
+  legacyCandidates: readonly string[],
+  markerPath: string,
+  maxBytes = 16 * 1024 * 1024
+): { migrated: boolean; source?: string } {
+  if (existsSync(markerPath)) return { migrated: false };
+  if (existsSync(destination)) {
+    atomicWritePrivateFileSync(markerPath, `${JSON.stringify({ version: 1, state: "destination-present" })}\n`);
+    return { migrated: false };
+  }
+  for (const source of legacyCandidates) {
+    if (!existsSync(source)) continue;
+    const sourceStat = statSync(source);
+    if (!sourceStat.isFile() || sourceStat.size > maxBytes) continue;
+    const contents = readFileSync(source);
+    atomicWritePrivateFileSync(destination, contents, { maxBytes, keepBackup: false });
+    if (!readFileSync(destination).equals(contents)) throw new Error(`Legacy migration verification failed for ${source}.`);
+    atomicWritePrivateFileSync(markerPath, `${JSON.stringify({ version: 1, state: "copied", source, destination })}\n`);
+    return { migrated: true, source };
+  }
+  atomicWritePrivateFileSync(markerPath, `${JSON.stringify({ version: 1, state: "no-source" })}\n`);
+  return { migrated: false };
 }
 
 export function atomicWritePrivateFileSync(
@@ -139,6 +185,7 @@ export class DebouncedAtomicJsonWriter<T> {
   private pending?: T;
   private chain: Promise<void> = Promise.resolve();
   private closed = false;
+  private lastError?: unknown;
 
   constructor(
     private readonly path: string,
@@ -164,6 +211,11 @@ export class DebouncedAtomicJsonWriter<T> {
     }
     this.enqueuePending();
     await this.chain;
+    if (this.lastError) {
+      const error = this.lastError;
+      this.lastError = undefined;
+      throw error;
+    }
   }
 
   async close(): Promise<void> {
@@ -176,7 +228,10 @@ export class DebouncedAtomicJsonWriter<T> {
     if (value === undefined) return;
     this.pending = undefined;
     const encoded = `${JSON.stringify(value, null, 2)}\n`;
-    this.chain = this.chain.then(() => atomicWritePrivateFile(this.path, encoded, { maxBytes: this.maxBytes }));
+    this.chain = this.chain
+      .catch(() => undefined)
+      .then(() => atomicWritePrivateFile(this.path, encoded, { maxBytes: this.maxBytes }))
+      .catch((error) => { this.lastError = error; });
   }
 }
 
@@ -250,6 +305,21 @@ function isMissing(error: unknown): boolean {
 
 function handleUnsupportedMode(error: unknown): void {
   if (process.platform !== "win32") throw error;
+}
+
+function readBoundedJsonSync<T>(
+  path: string,
+  validate: (value: unknown) => value is T,
+  maxBytes: number
+): { ok: true; value: T } | { ok: false; missing?: boolean } {
+  try {
+    const info = statSync(path);
+    if (!info.isFile() || info.size > maxBytes) return { ok: false };
+    const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+    return validate(parsed) ? { ok: true, value: parsed } : { ok: false };
+  } catch (error) {
+    return isMissing(error) ? { ok: false, missing: true } : { ok: false };
+  }
 }
 
 function chmodPrivateSync(path: string, mode: number): void {

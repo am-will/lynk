@@ -1,5 +1,6 @@
 import type { AuditLog } from "../AuditLog.js";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { hostPathsForConfigPath, ownedPath } from "../../host/HostPaths.js";
 import {
   DEFAULT_HARNESS_ID,
   defaultSessionKeyForHarness,
@@ -65,14 +66,14 @@ type HarnessAdapterFactory = (config: BridgeConfig, audit?: AuditLog) => Harness
 
 const HARNESS_ADAPTER_FACTORIES: Partial<Record<HarnessId, HarnessAdapterFactory>> = {
   openclaw: (config) => new NormalizedHarnessAdapter("openclaw", new OpenClawGatewayChatClient(config), { supportsAttachments: true }),
-  hermes: (config) => new NormalizedHarnessAdapter("hermes", new HermesChatClient(config), { supportsAttachments: true }),
-  codex: (config, audit) => new NormalizedHarnessAdapter("codex", new CodexChatClient(audit, undefined, undefined, {
+  hermes: (config) => new NormalizedHarnessAdapter("hermes", new HermesChatClient(config, undefined, sessionPath(config, "hermes")), { supportsAttachments: true }),
+  codex: (config, audit) => new NormalizedHarnessAdapter("codex", new CodexChatClient(audit, undefined, sessionPath(config, "codex"), {
     command: config.codexAppServerCommand,
     cwd: config.codexAgentCwd,
     approvalPolicy: config.codexAppServerApprovalPolicy,
     sandbox: config.codexAppServerSandbox
   }), { supportsAttachments: true }),
-  opencode: (config, audit) => new NormalizedHarnessAdapter("opencode", new OpenCodeChatClient(audit, undefined, undefined, {
+  opencode: (config, audit) => new NormalizedHarnessAdapter("opencode", new OpenCodeChatClient(audit, undefined, sessionPath(config, "opencode"), {
     serverUrl: config.opencodeServerUrl,
     command: config.opencodeServerCommand,
     cwd: config.opencodeAgentCwd,
@@ -81,7 +82,7 @@ const HARNESS_ADAPTER_FACTORIES: Partial<Record<HarnessId, HarnessAdapterFactory
     defaultAgent: config.opencodeDefaultAgent,
     timeoutMs: config.opencodeRunTimeoutMs
   }), { supportsAttachments: true }),
-  pi: (config, audit) => new NormalizedHarnessAdapter("pi", new PiChatClient(audit, undefined, undefined, {
+  pi: (config, audit) => new NormalizedHarnessAdapter("pi", new PiChatClient(audit, undefined, sessionPath(config, "pi"), {
     cwd: config.piAgentCwd,
     agentDir: config.piAgentDir,
     defaultModel: config.piDefaultModel,
@@ -92,9 +93,14 @@ const HARNESS_ADAPTER_FACTORIES: Partial<Record<HarnessId, HarnessAdapterFactory
     cwd: config.devinAgentCwd,
     runTimeoutMs: config.devinRunTimeoutMs,
     permissionMode: config.devinPermissionMode,
-    storagePath: join(dirname(config.configPath), "devin-sessions.json")
+    storagePath: sessionPath(config, "devin"),
+    legacyStoragePaths: [join(hostPathsForConfigPath(config.configPath).dataRoot, "devin-sessions.json")]
   })
 };
+
+function sessionPath(config: BridgeConfig, harnessId: HarnessId): string {
+  return ownedPath(hostPathsForConfigPath(config.configPath).sessionsRoot, `${harnessId}-sessions.json`);
+}
 
 export class HarnessChatRouter implements GatewayChatClient {
   private readonly adapters = new Map<HarnessId, HarnessChatAdapter>();

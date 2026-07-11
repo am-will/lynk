@@ -30,7 +30,13 @@ export function createHostPaths(options: Partial<HostPathPlatform> = {}): HostPa
   const homeDir = options.homeDir ?? homedir();
   const env = options.env ?? process.env;
   const installRoot = resolve(options.installRoot ?? packagedInstallRoot);
-  const dataRoot = resolve(options.dataRoot ?? (env.PHONE_AGENT_DATA_DIR?.trim() || platformDataRoot(targetPlatform, homeDir, env)));
+  const explicitConfigPath = env.PHONE_AGENT_CONFIG_PATH?.trim();
+  const dataRoot = resolve(options.dataRoot ?? (
+    env.PHONE_AGENT_DATA_DIR?.trim()
+    || env.PHONE_AGENT_CONFIG_DIR?.trim()
+    || (explicitConfigPath ? dirname(explicitConfigPath) : undefined)
+    || platformDataRoot(targetPlatform, homeDir, env)
+  ));
   const workspace = options.workspaceRoot?.trim() || env.PHONE_AGENT_WORKSPACE_ROOT?.trim();
   return Object.freeze({
     installRoot,

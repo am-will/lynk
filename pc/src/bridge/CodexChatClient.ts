@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { createHostPaths, ownedPath } from "../host/HostPaths.js";
 import type { AuditLog } from "./AuditLog.js";
 import type { AgentRunResult, AgentStatusSink } from "../dispatcher/AgentClient.js";
 import { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js";
@@ -68,14 +69,15 @@ export class CodexChatClient {
   constructor(
     private readonly audit?: AuditLog,
     client?: CodexAppServerClient,
-    sessionStoragePath: string | null = join(process.cwd(), "state", "codex-sessions.json"),
+    sessionStoragePath: string | null = ownedPath(createHostPaths().sessionsRoot, "codex-sessions.json"),
     options: { command?: string; cwd?: string; approvalPolicy?: string; sandbox?: string } = {}
   ) {
     this.client = client ?? new CodexAppServerClient(audit, options.command, options.cwd, options.approvalPolicy, options.sandbox);
     this.sessions = new InMemoryHarnessSessionStore("codex", {
       defaultModel: "gpt-5.3-codex",
       modelProvider: "codex",
-      storagePath: sessionStoragePath ?? undefined
+      storagePath: sessionStoragePath ?? undefined,
+      legacyStoragePaths: [join(process.cwd(), "state", "codex-sessions.json")]
     });
   }
 
@@ -278,6 +280,7 @@ export class CodexChatClient {
   }
 
   close(): void {
+    void this.sessions.close().catch((error) => console.warn(`[codex] session persistence flush failed: ${String(error)}`));
     void this.client.close();
   }
 

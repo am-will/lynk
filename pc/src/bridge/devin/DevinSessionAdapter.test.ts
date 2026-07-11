@@ -392,6 +392,7 @@ describe("DevinSessionAdapter", () => {
       });
       const adapter = buildAdapter(controls, storagePath, dir);
       await adapter.createSession({ workspacePath: dir, model: "claude-sonnet" });
+      await adapter.flushPersistence();
       const persisted = JSON.parse(readFileSync(storagePath, "utf8")) as { sessions: Array<{ key: string; model: string; metadata: Record<string, unknown> }> };
       assert.equal(persisted.sessions.length, 1);
       assert.equal(persisted.sessions[0]?.key, "devin:p1");
@@ -416,6 +417,7 @@ describe("DevinSessionAdapter", () => {
       const first = buildAdapter(firstControls, storagePath);
       await first.createSession({ workspacePath: dirA, model: "claude-sonnet" });
       await first.createSession({ workspacePath: dirB });
+      await first.flushPersistence();
       first.close();
 
       const capsWithoutList = {
@@ -522,6 +524,7 @@ describe("DevinSessionAdapter", () => {
       await creator.createSession({});
       const creatorStore = (creator as unknown as { store: InMemoryHarnessSessionStore }).store;
       creatorStore.replaceHistory("devin:load-fail", [{ id: "keep", role: "user", text: "keep me", timestamp: 1 }]);
+      await creator.flushPersistence();
       creator.close();
 
       const loaderControls = createConfigurableDevinProcess({
@@ -598,6 +601,7 @@ describe("DevinSessionAdapter", () => {
       firstStore.replaceHistory("devin:reconstructed", [
         { id: "stale", role: "assistant", text: "stale local cache", timestamp: 1 }
       ]);
+      await first.flushPersistence();
       first.close();
 
       let secondControls: FakeControls;
@@ -688,6 +692,7 @@ describe("DevinSessionAdapter", () => {
       });
       const adapter = buildAdapter(controls, storagePath);
       await adapter.listSessions(10);
+      await adapter.flushPersistence();
       const persisted = JSON.parse(readFileSync(storagePath, "utf8")) as { sessions: Array<{ key: string; metadata: Record<string, unknown> }> };
       assert.ok(persisted.sessions.some((s) => s.key === "devin:remote-1" && s.metadata.workspacePath === "/tmp/remote"));
       cleanup();
@@ -1077,6 +1082,7 @@ describe("DevinSessionAdapter", () => {
       });
       await firstAdapter.sendChat({ sessionKey: "devin:quota-1", message: "try again", idempotencyKey: "recovered-run" });
       await waitFor(() => payloads(events).some((payload) => payload.state === "final"), "recovered final");
+      await firstAdapter.flushPersistence();
       firstAdapter.close();
 
       let reconnectControls: FakeControls;

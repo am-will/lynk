@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
 import { chatAttachmentSchema, type ChatAttachment, type ChatHistoryMessage, type ChatSessionSummary } from "../../protocol/messages.js";
+import { DebouncedAtomicJsonWriter, migrateLegacyFileSync, readJsonWithRecoverySync } from "../../host/PrivatePersistence.js";
 import type { HarnessId } from "../AgentHarness.js";
 import type { HarnessChatHistory, HarnessCreatedSession } from "./HarnessChatAdapter.js";
 
@@ -32,17 +31,22 @@ export interface InMemoryHarnessSessionStoreOptions {
   defaultModel: string;
   modelProvider: string;
   storagePath?: string;
+  legacyStoragePaths?: string[];
   persistEmptySessions?: boolean;
 }
 
 export class InMemoryHarnessSessionStore {
   private readonly sessions: Map<string, HarnessStoredSession>;
+  private readonly writer?: DebouncedAtomicJsonWriter<StoredSessionDocument>;
 
   constructor(
     private readonly harnessId: HarnessId,
     private readonly options: InMemoryHarnessSessionStoreOptions
   ) {
     this.sessions = this.loadSessions();
+    if (options.storagePath) {
+      this.writer = new DebouncedAtomicJsonWriter(options.storagePath, 25, MAX_STORAGE_BYTES);
+    }
   }
 
   ensureSession(sessionKey: string, sessionId?: string): HarnessStoredSession {
@@ -146,10 +150,11 @@ export class InMemoryHarnessSessionStore {
     session.messages.push({
       id: `user_${idempotencyKey ?? randomUUID()}`,
       role: "user",
-      text,
+      text: boundedText(text),
       ...(attachments?.length ? { attachments } : {}),
       timestamp: Date.now()
     });
+    this.trimSessionMessages(session);
     session.updatedAt = Date.now();
     this.persist();
   }
@@ -157,16 +162,17 @@ export class InMemoryHarnessSessionStore {
   appendSystemMessage(session: HarnessStoredSession, id: string, text: string): void {
     const existing = session.messages.find((message) => message.id === id);
     if (existing) {
-      existing.text = text;
+      existing.text = boundedText(text);
       existing.timestamp = Date.now();
     } else {
       session.messages.push({
         id,
         role: "system",
-        text,
+        text: boundedText(text),
         timestamp: Date.now()
       });
     }
+    this.trimSessionMessages(session);
     session.updatedAt = Date.now();
     this.persist();
   }
@@ -223,10 +229,11 @@ export class InMemoryHarnessSessionStore {
     const { session } = this.getOrAdd(sessionKey);
     session.messages = messages
       .filter((message) => isStoredMessageRole(message.role) && typeof message.text === "string" && message.text.length > 0)
+      .slice(-MAX_MESSAGES_PER_SESSION)
       .map((message) => ({
         id: message.id?.trim() || randomUUID(),
         role: message.role as HarnessStoredMessage["role"],
-        text: message.text,
+        text: boundedText(message.text),
         ...(message.attachments?.length ? { attachments: message.attachments } : {}),
         timestamp: message.timestamp ?? Date.now()
       }));
@@ -243,16 +250,17 @@ export class InMemoryHarnessSessionStore {
     const id = `assistant_${runId}`;
     const existing = session.messages.find((message) => message.id === id);
     if (existing) {
-      existing.text = text;
+      existing.text = boundedText(text);
       existing.timestamp = Date.now();
     } else {
       session.messages.push({
         id,
         role: "assistant",
-        text,
+        text: boundedText(text),
         timestamp: Date.now()
       });
     }
+    this.trimSessionMessages(session);
     session.updatedAt = Date.now();
     if (options.persist !== false) {
       this.persist();
@@ -271,39 +279,58 @@ export class InMemoryHarnessSessionStore {
 
   private loadSessions(): Map<string, HarnessStoredSession> {
     const path = this.options.storagePath;
-    if (!path || !existsSync(path)) {
-      return new Map();
-    }
-    try {
-      const parsed = JSON.parse(readFileSync(path, "utf8")) as unknown;
-      const records = Array.isArray(asRecord(parsed)?.sessions) ? asRecord(parsed)?.sessions as unknown[] : [];
-      const sessions = new Map<string, HarnessStoredSession>();
-      for (const record of records) {
-        const session = parseStoredSession(record, this.options.defaultModel);
-        if (session) {
-          sessions.set(session.key, session);
+    if (!path) return new Map();
+    migrateLegacyFileSync(path, this.options.legacyStoragePaths ?? [], `${path}.migration-v1.json`, MAX_STORAGE_BYTES);
+    const recovered = readJsonWithRecoverySync<StoredSessionDocument>(
+      path,
+      () => ({ version: 1, harnessId: this.harnessId, sessions: [] }),
+      isStoredSessionDocument,
+      MAX_STORAGE_BYTES
+    );
+    const sessions = new Map<string, HarnessStoredSession>();
+    for (const record of recovered.value.sessions.slice(-MAX_SESSIONS)) {
+      const session = parseStoredSession(record, this.options.defaultModel);
+      if (session) {
+        if (session.messages.length > MAX_MESSAGES_PER_SESSION) {
+          session.messages.splice(0, session.messages.length - MAX_MESSAGES_PER_SESSION);
         }
+        sessions.set(session.key, session);
       }
-      return sessions;
-    } catch {
-      return new Map();
     }
+    return sessions;
   }
 
   private persist(): void {
-    const path = this.options.storagePath;
-    if (!path) {
-      return;
-    }
+    if (!this.writer) return;
+    this.enforceBounds();
     const sessions = [...this.sessions.values()].filter((session) =>
       this.options.persistEmptySessions !== false || this.hasUserMessage(session)
     );
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify({
+    this.writer.schedule({
       version: 1,
       harnessId: this.harnessId,
       sessions
-    }, null, 2));
+    });
+  }
+
+  async flushPersistence(): Promise<void> {
+    await this.writer?.flush();
+  }
+
+  async close(): Promise<void> {
+    await this.writer?.close();
+  }
+
+  private enforceBounds(): void {
+    const ordered = [...this.sessions.values()].sort((left, right) => right.updatedAt - left.updatedAt);
+    for (const session of ordered) this.trimSessionMessages(session);
+    for (const session of ordered.slice(MAX_SESSIONS)) this.sessions.delete(session.key);
+  }
+
+  private trimSessionMessages(session: HarnessStoredSession): void {
+    if (session.messages.length > MAX_MESSAGES_PER_SESSION) {
+      session.messages.splice(0, session.messages.length - MAX_MESSAGES_PER_SESSION);
+    }
   }
 
   private toSummary(session: HarnessStoredSession): ChatSessionSummary {
@@ -324,6 +351,26 @@ export class InMemoryHarnessSessionStore {
       contextTokens: numberFromUsage(session.usage, "context_tokens", "contextTokens")
     };
   }
+}
+
+interface StoredSessionDocument {
+  version: 1;
+  harnessId: string;
+  sessions: unknown[];
+}
+
+const MAX_SESSIONS = 200;
+const MAX_MESSAGES_PER_SESSION = 500;
+const MAX_MESSAGE_CHARS = 200_000;
+const MAX_STORAGE_BYTES = 16 * 1024 * 1024;
+
+function boundedText(text: string): string {
+  return text.length <= MAX_MESSAGE_CHARS ? text : text.slice(0, MAX_MESSAGE_CHARS);
+}
+
+function isStoredSessionDocument(value: unknown): value is StoredSessionDocument {
+  const record = asRecord(value);
+  return record?.version === 1 && typeof record.harnessId === "string" && Array.isArray(record.sessions);
 }
 
 function sanitizeSessionId(value: string): string {

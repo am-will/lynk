@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
+import { createHostPaths, ownedPath } from "../../host/HostPaths.js";
 import type { AuditLog } from "../AuditLog.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "../harness/InMemoryHarnessSessionStore.js";
 import type { ChatAttachment } from "../../protocol/messages.js";
@@ -40,7 +42,7 @@ export class OpenCodeChatClient {
   constructor(
     private readonly audit?: AuditLog,
     client?: OpenCodeServerClient,
-    sessionStoragePath: string | null = "state/opencode-sessions.json",
+    sessionStoragePath: string | null = ownedPath(createHostPaths().sessionsRoot, "opencode-sessions.json"),
     options: {
       serverUrl?: string;
       command?: string;
@@ -57,6 +59,7 @@ export class OpenCodeChatClient {
       defaultModel: OPENCODE_DEFAULT_MODEL,
       modelProvider: "opencode",
       storagePath: sessionStoragePath ?? undefined,
+      legacyStoragePaths: [join(process.cwd(), "state", "opencode-sessions.json")],
       persistEmptySessions: false
     });
     this.sessionCatalog = new OpenCodeSessionCatalog(this.sessions, this.client, OPENCODE_DEFAULT_MODEL, options.storageDataDir);
@@ -227,6 +230,7 @@ export class OpenCodeChatClient {
 
   close(): void {
     this.runDriver.close();
+    void this.sessions.close().catch((error) => console.warn(`[opencode] session persistence flush failed: ${String(error)}`));
     void this.client.close();
   }
 

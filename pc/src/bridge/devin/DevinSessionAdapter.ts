@@ -53,6 +53,7 @@ export interface DevinSessionAdapterOptions {
   command?: string;
   cwd?: string;
   storagePath: string;
+  legacyStoragePaths?: string[];
   runTimeoutMs?: number;
   startupTimeoutMs?: number;
   requestTimeoutMs?: number;
@@ -95,6 +96,7 @@ export class DevinSessionAdapter implements HarnessChatAdapter {
       defaultModel: "default",
       modelProvider: "devin",
       storagePath: options.storagePath,
+      legacyStoragePaths: options.legacyStoragePaths,
       persistEmptySessions: true
     });
     this.catalog = new DevinSessionCatalog({
@@ -286,9 +288,16 @@ export class DevinSessionAdapter implements HarnessChatAdapter {
     return this.client.health();
   }
 
+  async flushPersistence(): Promise<void> {
+    await this.store.flushPersistence();
+  }
+
   close(): void {
     this.runDriver.close();
     this.client.setPermissionHandler(undefined);
+    void this.store.close().catch((error) => {
+      console.warn(`[devin] failed to flush session persistence during close: ${error instanceof Error ? error.message : String(error)}`);
+    });
     void this.client.close();
   }
 
