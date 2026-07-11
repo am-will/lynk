@@ -207,6 +207,50 @@ class AgentConfigModeTest {
     }
 
     @Test
+    fun workspaceUpdatesRemainIsolatedAcrossEveryPersistedHarness() {
+        val initialPaths = migratedWorkspacePaths(
+            codex = "~/Codex",
+            openCode = "~/OpenCode",
+            pi = "~/Pi",
+            devin = "~/Devin"
+        )
+        val config = AgentConfig(
+            hostUrl = "ws://127.0.0.1:8788/phone",
+            deviceId = "openclaw-agent",
+            token = "",
+            openAiApiKey = "",
+            systemPrompt = "prompt",
+            model = "gpt-5.5",
+            reasoningEffort = "medium",
+            workspacePaths = initialPaths
+        )
+
+        val updated = config.withWorkspacePath("DEVIN", "~/New Devin")
+
+        assertEquals("~/Codex", updated.workspacePathForHarness("codex"))
+        assertEquals("~/OpenCode", updated.workspacePathForHarness("opencode"))
+        assertEquals("~/Pi", updated.workspacePathForHarness("pi"))
+        assertEquals("~/New Devin", updated.workspacePathForHarness("devin"))
+        assertEquals(initialPaths, config.workspacePaths)
+    }
+
+    @Test
+    fun workspaceCreationCopyRemainsHarnessSpecificForAllWorkspaceHarnesses() {
+        val expectedLabels = mapOf(
+            "codex" to "Codex",
+            "opencode" to "OpenCode",
+            "pi" to "Pi",
+            "devin" to "Devin"
+        )
+
+        expectedLabels.forEach { (harnessId, label) ->
+            val confirmation = HostWorkspacePaths.creationConfirmation(harnessId, "~/$label Project")
+            assertEquals("Folder not found for $label. Would you like to create it?", confirmation.message)
+            assertEquals("~/$label Project", confirmation.path)
+        }
+    }
+
+    @Test
     fun workspaceCreationConfirmationUsesHarnessSpecificCopyAndExactPath() {
         val confirmation = HostWorkspacePaths.creationConfirmation(
             harnessId = AgentConfig.HARNESS_DEVIN,

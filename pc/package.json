@@ -24,6 +24,7 @@
     "build": "npm run clean && tsc -p tsconfig.build.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "test:devin:real": "node --import tsx --test src/bridge/devin/DevinRealAcceptance.test.ts",
     "bridge": "tsx --env-file-if-exists=.env.local src/bridge/server.ts",
     "bridge:dist": "node dist/bridge/server.js",
     "mcp": "tsx --env-file-if-exists=.env.local src/mcp/androidPhoneServer.ts",

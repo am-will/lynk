@@ -881,6 +881,52 @@ class ChatPresentationHelpersTest {
     }
 
     @Test
+    fun everyWorkspaceHarnessGroupsOnlyItsOwnSessionsByFolder() {
+        val harnesses = listOf(
+            "codex" to "Codex",
+            "opencode" to "OpenCode",
+            "pi" to "Pi",
+            "devin" to "Devin"
+        )
+        val mixedSessions = harnesses.flatMapIndexed { index, (harnessId, label) ->
+            listOf(
+                session(
+                    key = "$harnessId:workspace-a",
+                    harnessId = harnessId,
+                    harnessLabel = label,
+                    workspacePath = "/Users/example/$label/A",
+                    updatedAt = 200L + index
+                ),
+                session(
+                    key = "$harnessId:workspace-b",
+                    harnessId = harnessId,
+                    harnessLabel = label,
+                    workspacePath = "/Users/example/$label/B",
+                    updatedAt = 100L + index
+                )
+            )
+        }
+
+        harnesses.forEach { (harnessId, label) ->
+            val scoped = WorkspaceSessionPickerSections.forHarness(mixedSessions, harnessId)
+            val sections = WorkspaceSessionPickerSections.build(
+                sessions = scoped,
+                selectedSessionKey = "$harnessId:workspace-a",
+                expandedWorkspaceKeys = emptySet(),
+                expandedQuickChats = false,
+                unreadCountForSession = { 0 },
+                onToggleWorkspace = {},
+                onToggleQuickChats = {},
+                onSelectSession = {}
+            )
+
+            assertEquals(listOf("$harnessId:workspace-a", "$harnessId:workspace-b"), scoped.map { it.key })
+            assertEquals(listOf("~/$label/A", "~/$label/B"), sections.map { it.rows.single().label })
+            assertEquals("Active workspace, 1 session", sections.first().rows.single().sublabel)
+        }
+    }
+
+    @Test
     fun unavailableDevinModelDoesNotCreatePickerGroup() {
         val groups = ChatPresentationHelpers.harnessModelGroups(
             models = listOf(

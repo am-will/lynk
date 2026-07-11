@@ -756,6 +756,38 @@ class ChatStateReducerTest {
         assertEquals("allow", action?.args?.optString("optionId"))
     }
 
+    @Test
+    fun toolEventActionsPreserveEveryExactAcpPermissionOptionId() {
+        val firstOptionId = "allow_once:workspace/write-v2"
+        val secondOptionId = "reject_always:policy#locked"
+        val state = ChatStateReducer.reduce(ChatState(), JSONObject()
+            .put("type", "chat.tool_event")
+            .put("sessionKey", "devin:session")
+            .put("eventId", "permission-opaque")
+            .put("toolName", "permission")
+            .put("title", "Permission request")
+            .put("actions", JSONArray()
+                .put(JSONObject()
+                    .put("id", "first")
+                    .put("label", "Allow this write")
+                    .put("command", "permission_reply")
+                    .put("args", JSONObject()
+                        .put("permissionId", "permission:run/session")
+                        .put("optionId", firstOptionId)))
+                .put(JSONObject()
+                    .put("id", "second")
+                    .put("label", "Never allow")
+                    .put("command", "permission_reply")
+                    .put("args", JSONObject()
+                        .put("permissionId", "permission:run/session")
+                        .put("optionId", secondOptionId)))))
+
+        val actions = state.timeline.single().toolEvent?.actions.orEmpty()
+        assertEquals(listOf("first", "second"), actions.map { it.id })
+        assertEquals(listOf(firstOptionId, secondOptionId), actions.map { it.args.getString("optionId") })
+        assertEquals(listOf("permission_reply", "permission_reply"), actions.map { it.command })
+    }
+
     private fun model(id: String, label: String, provider: String, harnessId: String): JSONObject {
         return JSONObject()
             .put("id", id)
