@@ -181,8 +181,13 @@ test("bridge HTTP serves authenticated pairing payload", async () => {
     assert.equal(payload.product, "android-agent-bridge");
     assert.equal(payload.deviceId, "phone");
     assert.equal(payload.token, token);
-    assert.match(String(payload.deepLink), /^android-agent:\/\/pair\?/);
     assert.ok(Array.isArray(payload.endpoints));
+    if (payload.deepLink === null) {
+      assert.ok(Array.isArray(payload.warnings));
+      assert.match(String((payload.warnings as string[])[0]), /No usable phone endpoint/);
+    } else {
+      assert.match(String(payload.deepLink), /^android-agent:\/\/pair\?/);
+    }
   });
 });
 

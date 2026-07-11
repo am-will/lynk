@@ -10,7 +10,7 @@ if (!Number.isFinite(port) || port <= 0) {
 const endpoints = await discoverTailscaleEndpoints(port);
 const endpoint = endpoints[0];
 if (!endpoint) {
-  throw new Error("Unable to discover a Tailscale endpoint. Install Tailscale, log in, or use LAN pairing.");
+  throw new Error("No usable Tailscale endpoint is enabled. Configure a TLS-terminating URL with PHONE_AGENT_PAIRING_WSS_URLS, or explicitly set PHONE_AGENT_PAIRING_ALLOW_INSECURE_TAILSCALE=1 for trusted-overlay development.");
 }
 const wsUrl = endpoint.url;
 const healthUrl = endpoint.url.replace(/^ws:/, "http:").replace(/\/phone$/, "/health");

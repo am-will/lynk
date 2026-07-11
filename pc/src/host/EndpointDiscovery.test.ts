@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { discoverEndpoints, tailscaleEndpointsFromStatus } from "./EndpointDiscovery.js";
 
-test("Tailscale discovery includes MagicDNS and tailnet IP candidates", () => {
+test("Tailscale discovery does not synthesize TLS endpoints", () => {
   const endpoints = tailscaleEndpointsFromStatus({
     BackendState: "Running",
     Self: {
@@ -12,27 +12,7 @@ test("Tailscale discovery includes MagicDNS and tailnet IP candidates", () => {
     }
   }, 8788);
 
-  assert.deepEqual(endpoints.map((endpoint) => ({
-    label: endpoint.label,
-    host: endpoint.host,
-    source: endpoint.source,
-    url: endpoint.url
-  })), [{
-    label: "Tailscale MagicDNS",
-    host: "vps.tailnet.ts.net",
-    source: "MagicDNS",
-    url: "wss://vps.tailnet.ts.net:8788/phone"
-  }, {
-    label: "Tailscale IP",
-    host: "100.88.12.34",
-    source: "Tailscale IPv4",
-    url: "wss://100.88.12.34:8788/phone"
-  }, {
-    label: "Tailscale IP",
-    host: "fd7a:115c:a1e0::1234",
-    source: "Tailscale IPv6",
-    url: "wss://[fd7a:115c:a1e0::1234]:8788/phone"
-  }]);
+  assert.deepEqual(endpoints, []);
 });
 
 test("Tailscale discovery falls back to tailnet IP when MagicDNS is absent", () => {
@@ -44,7 +24,7 @@ test("Tailscale discovery falls back to tailnet IP when MagicDNS is absent", () 
     }
   }, 8788);
 
-  assert.equal(endpoints[0]?.url, "wss://100.88.12.34:8788/phone");
+  assert.equal(endpoints.length, 0);
 });
 
 test("Tailscale cleartext endpoints require an explicit trusted-overlay opt-in", () => {

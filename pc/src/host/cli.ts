@@ -12,6 +12,9 @@ switch (command) {
     {
       const payload = await createHostPairingPayload(getBridgeConfig());
       if (process.argv.includes("--qr")) {
+        if (!payload.deepLink) {
+          throw new Error(payload.warnings.join(" "));
+        }
         qrcode.generate(payload.deepLink, { small: true });
         console.log(payload.deepLink);
       } else {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildAndroidPairingDeepLink } from "./PairingPayload.js";
+import { buildAndroidPairingDeepLink, configuredSecureEndpoints } from "./PairingPayload.js";
 
 test("buildAndroidPairingDeepLink preserves ordered endpoint candidates", () => {
   const deepLink = buildAndroidPairingDeepLink({
@@ -44,4 +44,21 @@ test("buildAndroidPairingDeepLink requires complete freshness fields", () => {
     urls: ["wss://bridge.example/phone"],
     expiresAt: 2_000_000_300
   }), /both expiresAt and nonce/);
+});
+
+test("configured pairing endpoints are explicit secure URLs", () => {
+  assert.deepEqual(configuredSecureEndpoints("wss://bridge.example/phone, wss://backup.example:9443"), [{
+    kind: "configured",
+    label: "Configured secure endpoint",
+    url: "wss://bridge.example/phone",
+    host: "bridge.example",
+    source: "PHONE_AGENT_PAIRING_WSS_URLS"
+  }, {
+    kind: "configured",
+    label: "Configured secure endpoint 2",
+    url: "wss://backup.example:9443/phone",
+    host: "backup.example",
+    source: "PHONE_AGENT_PAIRING_WSS_URLS"
+  }]);
+  assert.throws(() => configuredSecureEndpoints("ws://192.168.1.20:8788/phone"), /require wss/);
 });

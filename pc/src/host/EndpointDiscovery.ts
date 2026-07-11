@@ -1,11 +1,10 @@
 import { execFile } from "node:child_process";
-import { networkInterfaces } from "node:os";
 import { promisify } from "node:util";
 import { resolveExecutable } from "./CommandDiscovery.js";
 
 const execFileAsync = promisify(execFile);
 
-export type EndpointKind = "usb" | "tailscale" | "lan" | "loopback";
+export type EndpointKind = "usb" | "tailscale" | "loopback" | "configured";
 
 export interface EndpointCandidate {
   kind: EndpointKind;
@@ -43,10 +42,6 @@ export async function discoverEndpoints(
   const tailscale = await discoverTailscale(options.port, options.allowInsecureTrustedOverlay === true);
   endpoints.push(...tailscale.endpoints);
 
-  for (const address of lanAddresses()) {
-    endpoints.push(endpoint("lan", `Local network (${address.interfaceName})`, address.address, options.port, address.family, "wss"));
-  }
-
   if (options.includeUsb === true) {
     endpoints.push(endpoint("usb", "USB reverse", "127.0.0.1", options.port, "adb reverse"));
   }
@@ -65,7 +60,7 @@ export async function discoverTailscaleEndpoint(port: number): Promise<EndpointC
 }
 
 export async function discoverTailscaleEndpoints(port: number): Promise<EndpointCandidate[]> {
-  const snapshot = await discoverTailscale(port, false);
+  const snapshot = await discoverTailscale(port, process.env.PHONE_AGENT_PAIRING_ALLOW_INSECURE_TAILSCALE === "1");
   return snapshot.endpoints;
 }
 
@@ -96,7 +91,9 @@ async function discoverTailscale(port: number, allowInsecureTrustedOverlay: bool
       const { stdout } = await execFileAsync(cli, ["ip", "-4"], { timeout: 5_000, maxBuffer: 1024 * 1024 });
       const host = stdout.split(/\s+/).find(Boolean);
       return {
-        endpoints: host ? [endpoint("tailscale", "Tailscale", host, port, "Tailscale IPv4", allowInsecureTrustedOverlay ? "ws" : "wss")] : [],
+        endpoints: host && allowInsecureTrustedOverlay
+          ? [endpoint("tailscale", "Tailscale", host, port, "Tailscale IPv4")]
+          : [],
         status: {
           installed: true,
           running: Boolean(host),
@@ -124,52 +121,28 @@ export function tailscaleEndpointsFromStatus(
   port: number,
   options: { allowInsecureTrustedOverlay?: boolean } = {}
 ): EndpointCandidate[] {
+  if (options.allowInsecureTrustedOverlay !== true) {
+    return [];
+  }
   const endpoints: EndpointCandidate[] = [];
   const dnsName = normalizeDnsName(status.Self?.DNSName);
   if (dnsName) {
-    endpoints.push(endpoint("tailscale", "Tailscale MagicDNS", dnsName, port, "MagicDNS", options.allowInsecureTrustedOverlay ? "ws" : "wss"));
+    endpoints.push(endpoint("tailscale", "Tailscale MagicDNS", dnsName, port, "MagicDNS"));
   }
   for (const ip of tailnetIps(status)) {
-    endpoints.push(endpoint("tailscale", "Tailscale IP", ip, port, ip.includes(":") ? "Tailscale IPv6" : "Tailscale IPv4", options.allowInsecureTrustedOverlay ? "ws" : "wss"));
+    endpoints.push(endpoint("tailscale", "Tailscale IP", ip, port, ip.includes(":") ? "Tailscale IPv6" : "Tailscale IPv4"));
   }
   return dedupeEndpoints(endpoints);
 }
 
-function endpoint(kind: EndpointKind, label: string, host: string, port: number, source: string, scheme: "ws" | "wss" = "ws"): EndpointCandidate {
+function endpoint(kind: EndpointKind, label: string, host: string, port: number, source: string): EndpointCandidate {
   return {
     kind,
     label,
     host,
     source,
-    url: `${scheme}://${formatUrlHost(host)}:${port}/phone`
+    url: `ws://${formatUrlHost(host)}:${port}/phone`
   };
-}
-
-function lanAddresses(): Array<{ interfaceName: string; address: string; family: string }> {
-  const result: Array<{ interfaceName: string; address: string; family: string }> = [];
-  for (const [interfaceName, addresses] of Object.entries(networkInterfaces())) {
-    for (const address of addresses ?? []) {
-      if (address.internal || address.family !== "IPv4") {
-        continue;
-      }
-      if (isIgnoredLanAddress(address.address, interfaceName)) {
-        continue;
-      }
-      result.push({ interfaceName, address: address.address, family: address.family });
-    }
-  }
-  return result;
-}
-
-function isIgnoredLanAddress(address: string, interfaceName: string): boolean {
-  const lowerName = interfaceName.toLowerCase();
-  return address.startsWith("169.254.")
-    || address.startsWith("172.17.")
-    || lowerName.includes("docker")
-    || lowerName.includes("bridge")
-    || lowerName.includes("vmnet")
-    || lowerName.includes("vbox")
-    || lowerName.includes("utun");
 }
 
 function dedupeEndpoints(endpoints: EndpointCandidate[]): EndpointCandidate[] {
