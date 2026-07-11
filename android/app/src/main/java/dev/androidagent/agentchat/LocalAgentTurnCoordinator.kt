@@ -8,6 +8,8 @@ import dev.androidagent.chat.StoredChatAttachment
 import dev.androidagent.localmodel.LocalAttachmentInputPreparer
 import dev.androidagent.localmodel.LocalAgentController
 import dev.androidagent.localmodel.LocalChatSessionStore
+import dev.androidagent.localmodel.LocalChatSessionRepository
+import dev.androidagent.localmodel.LocalChatMessage
 import dev.androidagent.localmodel.LocalModelRuntime
 import dev.androidagent.localmodel.LocalToolRegistry
 import kotlinx.coroutines.CancellationException
@@ -18,20 +20,49 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import org.json.JSONArray
 import java.util.UUID
 
-class LocalAgentTurnCoordinator(
-    context: Context,
+class LocalAgentTurnCoordinator internal constructor(
     private val scope: CoroutineScope,
-    commandExecutor: AccessibilityCommandExecutor,
     private val configProvider: () -> AgentConfig,
     private val onStatus: (String, String) -> Unit,
     private val onChatMessage: (JSONObject) -> Unit,
-    runtime: LocalModelRuntime
+    private val store: LocalChatSessionRepository,
+    private val toolDescriptions: () -> JSONArray,
+    private val runner: LocalTurnRunner
 ) {
-    private val store = LocalChatSessionStore(context.applicationContext)
-    private val tools = LocalToolRegistry(context.applicationContext, commandExecutor, configProvider)
-    private val controller = LocalAgentController(runtime, tools, configProvider, ::emit)
+    constructor(
+        context: Context,
+        scope: CoroutineScope,
+        commandExecutor: AccessibilityCommandExecutor,
+        configProvider: () -> AgentConfig,
+        onStatus: (String, String) -> Unit,
+        onChatMessage: (JSONObject) -> Unit,
+        runtime: LocalModelRuntime
+    ) : this(
+        scope = scope,
+        configProvider = configProvider,
+        onStatus = onStatus,
+        onChatMessage = onChatMessage,
+        dependencies = productionDependencies(context, commandExecutor, configProvider, onChatMessage, runtime)
+    )
+
+    private constructor(
+        scope: CoroutineScope,
+        configProvider: () -> AgentConfig,
+        onStatus: (String, String) -> Unit,
+        onChatMessage: (JSONObject) -> Unit,
+        dependencies: LocalTurnDependencies
+    ) : this(
+        scope,
+        configProvider,
+        onStatus,
+        onChatMessage,
+        dependencies.store,
+        dependencies.tools::toolDescriptions,
+        dependencies.runner
+    )
     private var activeSessionKey: String = store.session(null).key
     private var generationSequence = 0L
     private var activeTurn: ActiveTurn? = null
@@ -76,7 +107,7 @@ class LocalAgentTurnCoordinator(
         val job = scope.launch(start = CoroutineStart.LAZY) {
             onStatus("Local model is working", "working")
             try {
-                val finalText = controller.run(
+                val finalText = runner.run(
                     sessionKey = session.key,
                     runId = runId,
                     userText = preparedAttachments.promptText,
@@ -181,7 +212,7 @@ class LocalAgentTurnCoordinator(
     private fun refresh(sessionKey: String, status: String) {
         val session = store.session(sessionKey)
         val config = configProvider()
-        val toolDescriptions = tools.toolDescriptions()
+        val toolDescriptions = toolDescriptions()
         val toolDescriptionsJson = toolDescriptions.toString()
         emit(LocalChatMessages.models(config))
         emit(LocalChatMessages.tools(activeSessionKey, toolDescriptions))
@@ -248,7 +279,44 @@ class LocalAgentTurnCoordinator(
         val job: Job
     )
 
+    companion object {
+        private fun productionDependencies(
+            context: Context,
+            commandExecutor: AccessibilityCommandExecutor,
+            configProvider: () -> AgentConfig,
+            onChatMessage: (JSONObject) -> Unit,
+            runtime: LocalModelRuntime
+        ): LocalTurnDependencies {
+            val appContext = context.applicationContext
+            val tools = LocalToolRegistry(appContext, commandExecutor, configProvider)
+            val emit: (JSONObject) -> Unit = { message ->
+                onChatMessage(message.put("deviceId", configProvider().deviceId))
+            }
+            return LocalTurnDependencies(
+                store = LocalChatSessionStore(appContext),
+                tools = tools,
+                runner = LocalAgentController(runtime, tools, configProvider, emit)
+            )
+        }
+    }
+
 }
+
+interface LocalTurnRunner {
+    suspend fun run(
+        sessionKey: String,
+        runId: String,
+        userText: String,
+        history: List<LocalChatMessage>,
+        imagePaths: List<String> = emptyList()
+    ): String
+}
+
+private data class LocalTurnDependencies(
+    val store: LocalChatSessionRepository,
+    val tools: LocalToolRegistry,
+    val runner: LocalTurnRunner
+)
 
 data class LocalTurnRequest(
     val text: String,

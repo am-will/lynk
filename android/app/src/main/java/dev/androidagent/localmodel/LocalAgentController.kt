@@ -9,19 +9,20 @@ import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.UUID
+import dev.androidagent.agentchat.LocalTurnRunner
 
 class LocalAgentController(
     private val runtime: LocalModelRuntime,
     private val tools: LocalToolRegistry,
     private val configProvider: () -> AgentConfig,
     private val emit: (JSONObject) -> Unit
-) {
-    suspend fun run(
+) : LocalTurnRunner {
+    override suspend fun run(
         sessionKey: String,
         runId: String,
         userText: String,
         history: List<LocalChatMessage>,
-        imagePaths: List<String> = emptyList()
+        imagePaths: List<String>
     ): String {
         val transcript = history.takeLast(16).map { "${it.role}: ${it.text}" }.toMutableList()
         transcript.add("user: $userText")

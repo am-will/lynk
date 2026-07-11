@@ -4,7 +4,11 @@ import dev.androidagent.AgentConfig
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -13,7 +17,7 @@ import org.junit.Test
 
 class LocalModelEngineManagerTest {
     @Test
-    fun generationsAreSerializedAndReceiveMonotonicTokens() = runBlocking {
+    fun chatAndVoiceGenerationRequestsAreSerializedWithMonotonicTokens() = runBlocking {
         val runtime = ControlledRuntime()
         val manager = LocalModelEngineManager { runtime }
         val first = async { manager.generate(request("first"), {}, {}) }
@@ -33,7 +37,7 @@ class LocalModelEngineManagerTest {
     }
 
     @Test
-    fun resetCancelsAndJoinsBeforeReplacingRuntime() = runBlocking {
+    fun modelReimportOrRouteResetCancelsAndJoinsBeforeReplacingRuntime() = runBlocking {
         val runtimes = mutableListOf<ControlledRuntime>()
         val manager = LocalModelEngineManager {
             ControlledRuntime().also(runtimes::add)
@@ -64,6 +68,24 @@ class LocalModelEngineManagerTest {
         assertEquals(LocalModelEnginePhase.Closed, manager.snapshot().phase)
         val rejected = runCatching { manager.generate(request("late"), {}, {}) }
         assertTrue(rejected.exceptionOrNull() is IllegalStateException)
+    }
+
+    @Test
+    fun closeDuringIoGenerationWaitsForCancellationCleanupBeforeNativeDispose() = runBlocking {
+        val runtime = SlowIoRuntime()
+        val manager = LocalModelEngineManager { runtime }
+        val generation = launch { manager.generate(request("io"), {}, {}) }
+        runtime.started.await()
+        val closing = async { manager.closeAndJoin("route switched") }
+        runtime.cancelling.await()
+
+        assertFalse(closing.isCompleted)
+        assertFalse(runtime.closed)
+        runtime.releaseCleanup.complete(Unit)
+        closing.await()
+
+        assertTrue(generation.isCancelled)
+        assertTrue(runtime.closed)
     }
 
     private fun request(prompt: String) = LocalModelRequest(prompt, "system", config())
@@ -103,6 +125,34 @@ class LocalModelEngineManagerTest {
 
         override fun close() {
             check(concurrent == 0) { "runtime closed while generation was active" }
+            closed = true
+        }
+    }
+
+    private class SlowIoRuntime : LocalModelRuntime {
+        val started = CompletableDeferred<Unit>()
+        val cancelling = CompletableDeferred<Unit>()
+        val releaseCleanup = CompletableDeferred<Unit>()
+        var closed = false
+
+        override suspend fun generate(
+            request: LocalModelRequest,
+            onDelta: suspend (String) -> Unit,
+            onStatus: suspend (String) -> Unit
+        ): String = withContext(Dispatchers.IO) {
+            started.complete(Unit)
+            try {
+                awaitCancellation()
+            } finally {
+                withContext(NonCancellable) {
+                    cancelling.complete(Unit)
+                    releaseCleanup.await()
+                }
+            }
+        }
+
+        override fun close() {
+            check(cancelling.isCompleted && releaseCleanup.isCompleted)
             closed = true
         }
     }
