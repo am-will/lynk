@@ -82,6 +82,7 @@ class LocalAgentTurnCoordinator(
                     imagePaths = preparedAttachments.imagePaths
                 )
                 store.append(session.key, "assistant", finalText, "assistant_$runId")
+                tools.cancelApprovals(commandOwner)
                 activeRun = null
                 if (activeCommandOwner == commandOwner) activeCommandOwner = null
                 refresh(session.key, request.completedStatus)
@@ -89,6 +90,7 @@ class LocalAgentTurnCoordinator(
                 onStatus(request.completedStatus, "done")
                 request.onCompleted(LocalTurnOutcome(session.key, runId, finalText))
             } catch (error: CancellationException) {
+                tools.cancelApprovals(commandOwner)
                 activeRun = null
                 if (activeCommandOwner == commandOwner) activeCommandOwner = null
                 emit(LocalChatMessages.error(session.key, request.stoppedMessage, runId))
@@ -105,6 +107,7 @@ class LocalAgentTurnCoordinator(
                 throw error
             } catch (error: Throwable) {
                 val message = error.message ?: error.toString()
+                tools.cancelApprovals(commandOwner)
                 activeRun = null
                 if (activeCommandOwner == commandOwner) activeCommandOwner = null
                 emit(LocalChatMessages.error(session.key, message, runId))

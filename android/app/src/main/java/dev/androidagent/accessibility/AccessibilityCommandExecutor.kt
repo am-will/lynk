@@ -394,11 +394,11 @@ class AccessibilityCommandExecutor internal constructor(
             val ok = suspendCancellableCoroutine<Boolean> { continuation ->
                 service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
                     override fun onCompleted(gestureDescription: GestureDescription?) {
-                        continuation.resume(true)
+                        if (continuation.isActive) continuation.resume(true)
                     }
 
                     override fun onCancelled(gestureDescription: GestureDescription?) {
-                        continuation.resume(false)
+                        if (continuation.isActive) continuation.resume(false)
                     }
                 }, Handler(Looper.getMainLooper()))
             }
