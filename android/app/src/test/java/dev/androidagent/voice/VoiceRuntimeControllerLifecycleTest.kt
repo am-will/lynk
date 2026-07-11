@@ -44,6 +44,9 @@ class VoiceRuntimeControllerLifecycleTest {
         assertEquals(1, foregroundReleases)
         assertEquals(1, backendStops)
         assertEquals(VoiceRuntimeStatus.ERROR, states.last().status)
+        val terminalStateCount = states.size
+        controller.onRealtimeTranscriptDelta(JSONObject().put("delta", "late"))
+        assertEquals(terminalStateCount, states.size)
 
         controller.start()
         connectionCallbacks[0]("connected")

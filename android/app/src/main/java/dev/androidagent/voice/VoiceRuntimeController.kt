@@ -110,12 +110,24 @@ class VoiceRuntimeController internal constructor(
 
         val generation = lifecycle.begin() ?: return
         val config = configProvider()
-        val nextSession = sessionFactory(
-            { raw -> handleDataChannelEvent(generation, raw) },
-            { connectionState -> handleConnectionState(generation, connectionState) }
-        )
-        session = OwnedSession(generation, nextSession)
-        acquireForegroundLease()
+        val nextSession = runCatching {
+            sessionFactory(
+                { raw -> handleDataChannelEvent(generation, raw) },
+                { connectionState -> handleConnectionState(generation, connectionState) }
+            )
+        }.getOrElse { error ->
+            lifecycle.beginStop(generation)
+            lifecycle.finishStop(generation, error.message ?: error.toString())
+            updateState(VoiceRuntimeState(status = VoiceRuntimeStatus.ERROR, error = error.message ?: error.toString()))
+            return
+        }
+        val owner = OwnedSession(generation, nextSession)
+        session = owner
+        runCatching(acquireForegroundLease).onFailure { error ->
+            terminate(generation, sendBackendStop = false, failure = error.message ?: error.toString())
+            return
+        }
+        owner.foregroundLeaseAcquired = true
         transcriptNormalizer.reset()
         toolCallAccumulator.reset()
         toolOutputsSent.clear()
@@ -170,7 +182,9 @@ class VoiceRuntimeController internal constructor(
     }
 
     fun onRealtimeTranscriptDelta(payload: JSONObject) {
+        val generation = session?.generation ?: return
         scope.launch {
+            if (!lifecycle.owns(generation)) return@launch
             val transcript = transcriptNormalizer.applyEvent("realtime.transcript_delta", payload)
             updateState(
                 state.copy(
@@ -183,7 +197,9 @@ class VoiceRuntimeController internal constructor(
     }
 
     fun onRealtimeItemAdded(payload: JSONObject) {
+        val generation = session?.generation ?: return
         scope.launch {
+            if (!lifecycle.owns(generation)) return@launch
             val transcript = transcriptNormalizer.applyEvent("realtime.item_added", payload)
             updateState(
                 state.copy(
@@ -196,22 +212,31 @@ class VoiceRuntimeController internal constructor(
     }
 
     fun onRealtimeSpeechStarted(payload: JSONObject) {
+        val generation = session?.generation ?: return
         scope.launch {
+            if (!lifecycle.owns(generation)) return@launch
             val transcript = transcriptNormalizer.applyEvent("realtime.speech_started", payload)
             updateState(state.copy(status = VoiceRuntimeStatus.LISTENING, transcript = transcript.displayText, error = null))
         }
     }
 
     fun onRealtimeError(payload: JSONObject) {
+        val generation = session?.generation ?: return
         scope.launch {
-            showBackendError(payload.optString("message").ifBlank { payload.optString("error").ifBlank { "Realtime voice failed." } })
+            if (!lifecycle.owns(generation)) return@launch
+            showBackendError(
+                payload.optString("message").ifBlank { payload.optString("error").ifBlank { "Realtime voice failed." } },
+                generation
+            )
         }
     }
 
     fun onRealtimeClosed(payload: JSONObject) {
+        val generation = session?.generation ?: return
         scope.launch {
+            if (!lifecycle.owns(generation)) return@launch
             val reason = payload.optString("reason").ifBlank { "Realtime voice closed." }
-            session?.generation?.let { terminate(it, sendBackendStop = false, idleMessage = reason) }
+            terminate(generation, sendBackendStop = false, idleMessage = reason)
         }
     }
 
@@ -409,12 +434,13 @@ class VoiceRuntimeController internal constructor(
     ) {
         if (!lifecycle.beginStop(generation)) return
         val transcript = state.transcript
-        session?.takeIf { it.generation == generation }?.resource?.close()
+        val owner = session?.takeIf { it.generation == generation }
+        owner?.resource?.close()
         if (session?.generation == generation) session = null
         activeResponseId = null
         if (sendBackendStop) sendStop(reason)
         onSessionTerminated(reason)
-        releaseForegroundLease()
+        if (owner?.foregroundLeaseAcquired == true) releaseForegroundLease()
         lifecycle.finishStop(generation, failure)
         updateState(
             if (failure != null) VoiceRuntimeState(status = VoiceRuntimeStatus.ERROR, transcript = transcript, error = failure)
@@ -427,5 +453,9 @@ class VoiceRuntimeController internal constructor(
         onStateChanged(next)
     }
 
-    private data class OwnedSession(val generation: Long, val resource: RealtimeVoiceSession)
+    private data class OwnedSession(
+        val generation: Long,
+        val resource: RealtimeVoiceSession,
+        var foregroundLeaseAcquired: Boolean = false
+    )
 }
