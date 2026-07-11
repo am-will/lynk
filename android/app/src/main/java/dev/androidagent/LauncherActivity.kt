@@ -8,8 +8,6 @@ import androidx.activity.ComponentActivity
 class LauncherActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        PairingDeepLink.applyIntent(this, intent)
-
         if (Settings.canDrawOverlays(this)) {
             runCatching {
                 startService(

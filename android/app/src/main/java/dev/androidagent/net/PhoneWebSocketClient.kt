@@ -296,18 +296,28 @@ class PhoneWebSocketClient(
         if (message.optString("type").startsWith("realtime.")) {
             Log.i(TAG, "received ${message.optString("type")}")
         }
-        if (!registered && message.optString("type") == "agent_status") {
-            val statusText = message.optString("text")
-            if (statusText.startsWith("Registered ")) {
-                registered = true
-                connected = true
-                endpointIndex = endpointUrls().indexOf(activeHostUrl()).coerceAtLeast(0)
-                cancelRegisterTimeout()
-                sendChatOpen()
-                val connectedText = "Connected and registered as ${config.deviceId}"
-                onStatus(connectedText, "info")
-                onConnectionState(BridgeConnectionState(BridgeConnectionPhase.CONNECTED, connectedText))
-                return
+        if (!registered) {
+            when (val frame = PreRegistrationMessageGate.evaluate(message, config.deviceId)) {
+                is PreRegistrationFrame.Registered -> {
+                    registered = true
+                    connected = true
+                    endpointIndex = endpointUrls().indexOf(activeHostUrl()).coerceAtLeast(0)
+                    cancelRegisterTimeout()
+                    sendChatOpen()
+                    val connectedText = "Connected and registered as ${config.deviceId}"
+                    onStatus(connectedText, "info")
+                    onConnectionState(BridgeConnectionState(BridgeConnectionPhase.CONNECTED, connectedText))
+                    return
+                }
+                is PreRegistrationFrame.Status -> {
+                    onStatus(frame.text, frame.status)
+                    return
+                }
+                is PreRegistrationFrame.Rejected -> {
+                    Log.w(TAG, "Rejected ${frame.messageType} before registration")
+                    webSocket.close(1002, "message before registration")
+                    return
+                }
             }
         }
         when (message.optString("type")) {

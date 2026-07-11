@@ -12,8 +12,11 @@ The Host Bridge installer packages the PC bridge as a background companion for A
    lynk-bridge-host pairing --qr
    ```
 
-4. Scan the QR code with Android. The QR encodes an `android-agent://pair` deep link with the token, pairing ID, and ordered endpoint candidates.
-5. Android tries the saved endpoint candidates until one completes bridge registration.
+4. Scan the QR code with Android. The QR encodes an `android-agent://pair` deep link with the token, pairing ID, ordered endpoint candidates, a five-minute expiry, and a one-time nonce.
+5. Lynk shows the normalized endpoints and a warning if this would replace an existing pairing. Nothing is saved until the user explicitly approves.
+6. Android tries the approved endpoint candidates until one completes bridge registration.
+
+Legacy links without expiry and nonce still reach the confirmation screen for compatibility, but are clearly marked as legacy and always require explicit approval. A current link cannot be approved twice on the same phone.
 
 Manual URL/token entry remains available in Android settings as a fallback. On headless Linux or VPS hosts, prefer `lynk-bridge-host pairing` without `--qr`; see `docs/vps-headless-linux.md`.
 

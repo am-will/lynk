@@ -2,6 +2,21 @@
 
 Use a shared token for the prototype. The token is just a random secret that you generate locally; it does not come from Tailscale, OpenAI, or OpenClaw.
 
+## QR and deep-link approval
+
+The recommended host flow prints a QR code:
+
+```bash
+cd pc
+npm run host:pairing:qr
+```
+
+Current QR links expire after five minutes and include a one-time nonce. Scanning opens a Lynk confirmation screen; it does not change the saved bridge immediately. Verify every displayed endpoint and approve the replacement warning, if shown. The authentication token is deliberately hidden on this screen.
+
+Older `android-agent://pair` and `openclaw-agent://pair` links remain usable for compatibility, but Lynk labels them as legacy because they have no expiry or nonce. Only approve a legacy link if you generated it yourself and can verify its endpoint. Reopening a current link after approval is rejected as a replay.
+
+Cancelling or dismissing the confirmation leaves the existing pairing and running service unchanged. Approving a replacement stops an existing bridge service so the old trusted connection is not left active; restart Lynk when you are ready to connect with the new pairing.
+
 Generate one on the PC:
 
 ```bash
@@ -11,7 +26,7 @@ echo "$PHONE_AGENT_TOKEN"
 
 Paste that exact printed value into the Android **Auth token** field:
 
-1. Open the **OpenAgent** Android app.
+1. Open the **Lynk** Android app.
 2. Tap **Open Connection & Config**.
 3. In the **Connection & Config** dialog, find the **Bridge** section.
 4. Paste the value into **Auth token**.
