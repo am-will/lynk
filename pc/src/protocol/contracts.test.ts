@@ -16,6 +16,8 @@ import {
   chatHistoryMessageSchema,
   chatSendMessageSchema,
   phoneOutboundMessageSchema,
+  commandMessageSchema,
+  resultMessageSchema,
   realtimeStartMessageSchema,
   realtimeToolCallMessageSchema,
   validatePhoneOutboundMessage
@@ -271,6 +273,28 @@ test("PC outbound phone messages have validating schemas for dev and tests", () 
       process.env.PHONE_AGENT_VALIDATE_OUTBOUND = originalValidateOutbound;
     }
   }
+});
+
+test("command and result envelopes carry scoped approval capabilities", () => {
+  const approvedCommand = {
+    id: "cmd_approved",
+    type: "command",
+    requestOwner: "host:mcp:test",
+    command: "tap_node",
+    args: { nodeId: "n1" },
+    approvalCapability: "abcdefghijklmnopqrstuvwxyz123456"
+  };
+  assert.equal(commandMessageSchema.safeParse(approvedCommand).success, true);
+  assert.equal(commandMessageSchema.safeParse({ ...approvedCommand, requestOwner: "" }).success, false);
+  assert.equal(commandMessageSchema.safeParse({ ...approvedCommand, approvalCapability: "short" }).success, false);
+  assert.equal(resultMessageSchema.safeParse({
+    id: "cmd_approval",
+    type: "result",
+    ok: true,
+    approvalCapability: "abcdefghijklmnopqrstuvwxyz123456",
+    approvalExpiresAtMs: 2_000_000_000,
+    approvedAction: "Tap observed node n1"
+  }).success, true);
 });
 
 test("outbound validation is disabled in production mode", () => {

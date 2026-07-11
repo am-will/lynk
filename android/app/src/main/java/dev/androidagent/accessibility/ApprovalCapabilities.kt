@@ -83,6 +83,14 @@ internal class ApprovalCapabilityStore(
     }
 
     @Synchronized
+    fun issueIfApproved(
+        approved: Boolean,
+        ownerId: String,
+        action: PhoneActionDescriptor,
+        observationId: String?
+    ): ApprovalCapability? = if (approved) issue(ownerId, action, observationId) else null
+
+    @Synchronized
     fun validateAndConsume(
         token: String?,
         ownerId: String,

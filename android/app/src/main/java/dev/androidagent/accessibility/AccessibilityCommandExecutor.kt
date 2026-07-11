@@ -482,8 +482,8 @@ class AccessibilityCommandExecutor internal constructor(
             }
             result ?: false
         } ?: false
-        if (!confirmed) return CommandResult(false, observation, "User denied or cancelled the action")
-        val capability = approvalCapabilities.issue(requestOwner, action, observationId)
+        val capability = approvalCapabilities.issueIfApproved(confirmed, requestOwner, action, observationId)
+            ?: return CommandResult(false, observation, "User denied or cancelled the action")
         return CommandResult(
             ok = true,
             observation = observation,

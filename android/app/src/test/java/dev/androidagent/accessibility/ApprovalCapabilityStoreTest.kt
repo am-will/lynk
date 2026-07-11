@@ -26,8 +26,18 @@ class ApprovalCapabilityStoreTest {
 
         assertTrue(store.validateAndConsume(capability.token, "session-b", action, "observation-1") is ApprovalValidation.WrongOwner)
         assertTrue(store.validateAndConsume(capability.token, "session-a", action("n2"), "observation-1") is ApprovalValidation.WrongAction)
+        val wrongCommand = PhoneActionDescriptor.create("type_text", JSONObject().put("text", "n1"))
+        assertTrue(store.validateAndConsume(capability.token, "session-a", wrongCommand, "observation-1") is ApprovalValidation.WrongAction)
         assertTrue(store.validateAndConsume(capability.token, "session-a", action, "observation-1") is ApprovalValidation.Approved)
         assertEquals(ApprovalValidation.Replayed, store.validateAndConsume(capability.token, "session-a", action, "observation-1"))
+    }
+
+    @Test
+    fun missingCapabilityAndDeniedDecisionNeverAuthorize() {
+        val action = action("n1")
+        assertEquals(ApprovalValidation.Missing, store.validateAndConsume(null, "session-a", action, null))
+        assertEquals(null, store.issueIfApproved(false, "session-a", action, null))
+        assertEquals(ApprovalValidation.Unknown, store.validateAndConsume("never-issued", "session-a", action, null))
     }
 
     @Test

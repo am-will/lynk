@@ -516,7 +516,12 @@ class PhoneWebSocketClient(
         }
         val requestOwner = message.optString("requestOwner").takeIf { it.startsWith(HOST_OWNER_PREFIX) }
         if (requestOwner == null) {
-            reportBridgeChatError("Bridge sent a command without a valid request owner; ignored it.")
+            webSocket.send(JSONObject()
+                .put("id", id)
+                .put("type", "result")
+                .put("ok", false)
+                .put("error", "authorization_wrong_owner: bridge command has no valid host request owner")
+                .toString())
             return
         }
         val args = message.optJSONObject("args") ?: JSONObject()
