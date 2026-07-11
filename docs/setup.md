@@ -110,7 +110,7 @@ npm run phone:tailscale
 
 For normal use, configure a certificate-valid TLS endpoint and set `PHONE_AGENT_PAIRING_WSS_URLS`; the bridge does not fabricate WSS URLs for its plain listener. `PHONE_AGENT_PAIRING_ALLOW_INSECURE_TAILSCALE=1` is an explicit trusted-overlay development exception and disables Android provider-key forwarding. Do not expose OpenClaw Gateway, Hermes, Codex app-server, OpenCode server, Pi SDK internals, Devin ACP stdio, or other host-agent transports directly to the public internet.
 
-The realtime voice path is separate from the task dispatcher: Android starts the WebRTC call, the PC bridge creates the OpenAI Realtime session, and completed general realtime intents route to the currently selected backend. Host selections use the PC harness router; Local LiteRT-LM selections run delegated work on Android. Phone-control tool calls remain a separate phone-task path.
+The realtime voice path is separate from the task dispatcher: Android starts the WebRTC call, the PC bridge creates the OpenAI Realtime session, and completed general realtime intents route to the currently selected backend. Host selections use the PC harness router; Local LiteRT-LM selections run delegated work on Android. Phone-control tool calls remain a separate phone-task path. Realtime retries release their microphone, audio-focus, WebRTC, and foreground-service resources before a new generation starts. Composer transcription streams into app-private temporary PCM/WAV files and stops at hard byte, duration, initial-silence, or no-progress limits instead of retaining the whole recording in memory.
 
 ## Android
 
