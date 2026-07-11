@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { resolveCommand } from "../host/CommandDiscovery.js";
 import { loadOrCreateHostBridgeConfig } from "../host/HostConfigStore.js";
 import { isPiSdkInstalled } from "../host/PiInstallation.js";
+import { defaultWorkspaceRoot } from "../host/HostPaths.js";
 
 export interface BridgeConfig {
   host: string;
@@ -250,25 +251,25 @@ export function getBridgeConfig(): BridgeConfig {
     openAiWebSearchModel: process.env.OPENAI_WEB_SEARCH_MODEL ?? host.openAiWebSearchModel ?? "gpt-5.5",
     configPath: hostConfig.path,
     codexAppServerCommand,
-    codexAgentCwd: process.env.CODEX_AGENT_CWD ?? host.codexAgentCwd ?? process.cwd(),
+    codexAgentCwd: process.env.CODEX_AGENT_CWD ?? host.codexAgentCwd ?? defaultWorkspaceRoot(),
     codexAppServerApprovalPolicy: process.env.CODEX_APP_SERVER_APPROVAL_POLICY?.trim() || host.codexAppServerApprovalPolicy || "never",
     codexAppServerSandbox: process.env.CODEX_APP_SERVER_SANDBOX?.trim() || host.codexAppServerSandbox || "workspace-write",
     codexConfigured: codexResolution.available,
     opencodeServerUrl,
     opencodeServerCommand,
-    opencodeAgentCwd: process.env.OPENCODE_AGENT_CWD ?? host.opencodeAgentCwd ?? process.cwd(),
+    opencodeAgentCwd: process.env.OPENCODE_AGENT_CWD ?? host.opencodeAgentCwd ?? defaultWorkspaceRoot(),
     opencodeServerUsername: process.env.OPENCODE_SERVER_USERNAME?.trim() || host.opencodeServerUsername?.trim() || "opencode",
     opencodeServerPassword: process.env.OPENCODE_SERVER_PASSWORD?.trim() || host.opencodeServerPassword?.trim() || undefined,
     opencodeDefaultAgent: process.env.OPENCODE_DEFAULT_AGENT?.trim() || host.opencodeDefaultAgent?.trim() || undefined,
     opencodeRunTimeoutMs: readPositiveInt("OPENCODE_RUN_TIMEOUT_SECONDS", host.opencodeRunTimeoutSeconds ?? 600) * 1000,
     opencodeConfigured: Boolean(opencodeServerUrl) || opencodeResolution.available,
-    piAgentCwd: process.env.PI_AGENT_CWD ?? host.piAgentCwd ?? process.cwd(),
+    piAgentCwd: process.env.PI_AGENT_CWD ?? host.piAgentCwd ?? defaultWorkspaceRoot(),
     piAgentDir: process.env.PI_AGENT_DIR?.trim() || host.piAgentDir?.trim() || undefined,
     piDefaultModel: process.env.PI_DEFAULT_MODEL?.trim() || host.piDefaultModel?.trim() || undefined,
     piRunTimeoutMs: readPositiveInt("PI_RUN_TIMEOUT_SECONDS", host.piRunTimeoutSeconds ?? 600) * 1000,
     piConfigured: isPiSdkInstalled(),
     devinAcpCommand: process.env.DEVIN_ACP_COMMAND?.trim() || host.devinAcpCommand?.trim() || "devin acp",
-    devinAgentCwd: process.env.DEVIN_AGENT_CWD?.trim() || host.devinAgentCwd?.trim() || process.cwd(),
+    devinAgentCwd: process.env.DEVIN_AGENT_CWD?.trim() || host.devinAgentCwd?.trim() || defaultWorkspaceRoot(),
     devinRunTimeoutMs: readPositiveInt("DEVIN_RUN_TIMEOUT_SECONDS", host.devinRunTimeoutSeconds ?? 600) * 1000,
     devinPermissionMode: readDevinPermissionMode(process.env.DEVIN_PERMISSION_MODE?.trim() || host.devinPermissionMode),
     devinConfigured: resolveCommand(process.env.DEVIN_ACP_COMMAND?.trim() || host.devinAcpCommand?.trim() || "devin acp").available

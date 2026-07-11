@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import { createHostPaths, ownedPath } from "../host/HostPaths.js";
 import { promisify } from "node:util";
 import { HermesApiClient, type HermesMetadataApi, type HermesRunsApi, type HermesRunTransport } from "../dispatcher/HermesApiClient.js";
 import { createHermesConfigRunsClient } from "../dispatcher/HermesConfigRunsClient.js";
@@ -112,7 +113,7 @@ export class HermesChatClient {
   constructor(
     private readonly config: BridgeConfig,
     api?: HermesRunsApi,
-    sessionStoragePath: string | null = join(process.cwd(), "state", "hermes-sessions.json")
+    sessionStoragePath: string | null = ownedPath(createHostPaths().sessionsRoot, "hermes-sessions.json")
   ) {
     this.cli = resolveCommand(config.hermesCliCommand ?? process.env.HERMES_COMMAND ?? "hermes");
     if (!config.hermesApiKey && !this.cli.available) {
@@ -136,7 +137,8 @@ export class HermesChatClient {
     this.sessions = new InMemoryHarnessSessionStore("hermes", {
       defaultModel: config.hermesModel,
       modelProvider: "hermes",
-      storagePath: sessionStoragePath ?? undefined
+      storagePath: sessionStoragePath ?? undefined,
+      legacyStoragePaths: [join(process.cwd(), "state", "hermes-sessions.json")]
     });
   }
 
@@ -352,6 +354,11 @@ export class HermesChatClient {
       active.active.controller.abort();
     }
     this.activeRuns.clear();
+    void this.sessions.close().catch((error) => console.warn(`[hermes] session persistence flush failed: ${String(error)}`));
+  }
+
+  async flushPersistence(): Promise<void> {
+    await this.sessions.flushPersistence();
   }
 
   private activeRunFor(sessionKey: string, runId?: string): ActiveChatRun | undefined {

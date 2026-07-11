@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface, type Interface } from "node:readline";
 import type { ResolvedChatAttachment } from "../attachments/AttachmentTypes.js";
 import type { AuditLog } from "../bridge/AuditLog.js";
+import { defaultWorkspaceRoot } from "../host/HostPaths.js";
 import type { AgentClient, AgentRequestOptions, AgentRunResult, AgentStatusSink } from "./AgentClient.js";
 import { PHONE_AGENT_SYSTEM_PROMPT, buildPhoneAgentPrompt } from "./safetyPrompt.js";
 
@@ -246,7 +247,7 @@ export class CodexAppServerClient implements AgentClient {
   constructor(
     private readonly audit?: AuditLog,
     private readonly command = process.env.CODEX_APP_SERVER_COMMAND ?? "codex app-server --listen stdio://",
-    private readonly cwd = process.env.CODEX_AGENT_CWD ?? process.cwd(),
+    private readonly cwd = process.env.CODEX_AGENT_CWD ?? defaultWorkspaceRoot(),
     private readonly approvalPolicy = process.env.CODEX_APP_SERVER_APPROVAL_POLICY?.trim() || "never",
     private readonly sandbox = process.env.CODEX_APP_SERVER_SANDBOX?.trim() || "workspace-write"
   ) {}

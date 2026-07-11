@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { bridgeAuthHeaders, PhoneToolClient } from "./phoneToolClient.js";
+import { bridgeAuthHeaders, PhoneToolClient, screenshotDirectory } from "./phoneToolClient.js";
 
 test("bridgeAuthHeaders sends bearer auth for protected bridge APIs", () => {
   assert.deepEqual(bridgeAuthHeaders("local-token"), { authorization: "Bearer local-token" });
@@ -13,6 +13,22 @@ test("bridgeAuthHeaders requires a token", () => {
     () => bridgeAuthHeaders(""),
     /PHONE_AGENT_TOKEN is required/
   );
+});
+
+test("screenshots default to private host cache rather than cwd or install state", () => {
+  const previousDataRoot = process.env.PHONE_AGENT_DATA_DIR;
+  const previousScreenshotDir = process.env.PHONE_AGENT_SCREENSHOT_DIR;
+  try {
+    process.env.PHONE_AGENT_DATA_DIR = "/private/lynk-data";
+    delete process.env.PHONE_AGENT_SCREENSHOT_DIR;
+    assert.equal(screenshotDirectory(), "/private/lynk-data/cache/captures");
+    assert.notEqual(screenshotDirectory(), process.cwd());
+  } finally {
+    if (previousDataRoot === undefined) delete process.env.PHONE_AGENT_DATA_DIR;
+    else process.env.PHONE_AGENT_DATA_DIR = previousDataRoot;
+    if (previousScreenshotDir === undefined) delete process.env.PHONE_AGENT_SCREENSHOT_DIR;
+    else process.env.PHONE_AGENT_SCREENSHOT_DIR = previousScreenshotDir;
+  }
 });
 
 test("PhoneToolClient keeps capability scoped to its stable request owner", async () => {

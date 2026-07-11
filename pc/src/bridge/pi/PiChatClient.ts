@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
+import { createHostPaths, ownedPath } from "../../host/HostPaths.js";
 import { basename } from "node:path";
 import {
   SessionManager,
@@ -61,7 +63,7 @@ export class PiChatClient {
   constructor(
     private readonly audit?: AuditLog,
     client?: PiClientLike,
-    sessionStoragePath: string | null = "state/pi-sessions.json",
+    sessionStoragePath: string | null = ownedPath(createHostPaths().sessionsRoot, "pi-sessions.json"),
     options: {
       cwd?: string;
       agentDir?: string;
@@ -74,6 +76,7 @@ export class PiChatClient {
       defaultModel: options.defaultModel ?? process.env.PI_DEFAULT_MODEL?.trim() ?? PI_DEFAULT_MODEL,
       modelProvider: "pi",
       storagePath: sessionStoragePath ?? undefined,
+      legacyStoragePaths: [join(process.cwd(), "state", "pi-sessions.json")],
       persistEmptySessions: false
     });
     this.runs = new HarnessRunLifecycle(this.sessions, {
@@ -244,6 +247,11 @@ export class PiChatClient {
     }
     this.runtimes.clear();
     this.runs.close();
+    void this.sessions.close().catch((error) => console.warn(`[pi] session persistence flush failed: ${String(error)}`));
+  }
+
+  async flushPersistence(): Promise<void> {
+    await this.sessions.flushPersistence();
   }
 
   private async processRun(active: ActiveRun, message: string, attachments?: ResolvedChatAttachment[]): Promise<void> {

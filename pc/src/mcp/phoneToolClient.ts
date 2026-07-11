@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PhoneCommand, PhoneCommandResult } from "../protocol/messages.js";
+import { createHostPaths, ownedPath } from "../host/HostPaths.js";
 
 const pcRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -78,5 +79,5 @@ export class PhoneToolClient {
 }
 
 export function screenshotDirectory(): string {
-  return process.env.PHONE_AGENT_SCREENSHOT_DIR ?? join(process.cwd(), "..", "captures");
+  return process.env.PHONE_AGENT_SCREENSHOT_DIR?.trim() || ownedPath(createHostPaths().cacheRoot, "captures");
 }

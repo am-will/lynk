@@ -64,6 +64,7 @@ export interface HarnessChatAdapter {
   effectiveTools(sessionKey: string): Promise<ChatToolSummary[]>;
   respondToPermission?(options: HarnessPermissionReplyOptions): Promise<unknown>;
   health(): Promise<unknown>;
+  flushPersistence?(): Promise<void>;
   close(): void;
 }
 
@@ -82,6 +83,7 @@ interface RawHarnessClient {
   effectiveTools(sessionKey: string): Promise<unknown>;
   respondToPermission?(options: HarnessPermissionReplyOptions): Promise<unknown>;
   health(): Promise<unknown>;
+  flushPersistence?(): Promise<void>;
   close(): void;
 }
 
@@ -176,6 +178,10 @@ export class NormalizedHarnessAdapter implements HarnessChatAdapter {
 
   close(): void {
     this.client.close();
+  }
+
+  async flushPersistence(): Promise<void> {
+    await this.client.flushPersistence?.();
   }
 }
 

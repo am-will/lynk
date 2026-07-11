@@ -35,6 +35,7 @@ import {
   type DevinAcpState
 } from "./DevinAcpTypes.js";
 import { createDefaultDevinAcpProcessFactory } from "./DevinAcpProcess.js";
+import { defaultWorkspaceRoot } from "../../host/HostPaths.js";
 import {
   classifyAcpError,
   positiveMs,
@@ -74,7 +75,7 @@ export class DevinAcpClient {
 
   constructor(options: DevinAcpClientOptions = {}) {
     this.command = options.command?.trim() || "devin acp";
-    this.cwd = options.cwd?.trim() || process.cwd();
+    this.cwd = options.cwd?.trim() || defaultWorkspaceRoot();
     this.startupTimeoutMs = positiveMs(options.startupTimeoutMs, DEFAULT_STARTUP_TIMEOUT_MS);
     this.requestTimeoutMs = positiveMs(options.requestTimeoutMs, DEFAULT_REQUEST_TIMEOUT_MS);
     this.teardownGraceMs = positiveMs(options.teardownGraceMs, DEFAULT_TEARDOWN_GRACE_MS);

@@ -91,19 +91,20 @@ server.listen(config.port, config.host, () => {
   console.log(`HTTP API listening on ${config.bridgeUrl}`);
 });
 
-function shutdown(): void {
+async function shutdown(): Promise<void> {
   adbReverseMonitor.stop();
   server.close();
   wss.close();
-  chatBridge.close();
+  await chatBridge.close();
+  await audit.close();
 }
 
-process.once("SIGINT", () => {
-  shutdown();
+process.once("SIGINT", async () => {
+  await shutdown();
   process.exit(130);
 });
 
-process.once("SIGTERM", () => {
-  shutdown();
+process.once("SIGTERM", async () => {
+  await shutdown();
   process.exit(143);
 });

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { AuditLog } from "../bridge/AuditLog.js";
+import { defaultWorkspaceRoot } from "../host/HostPaths.js";
 import type { AgentClient, AgentRequestOptions, AgentRunResult, AgentStatusSink } from "./AgentClient.js";
 import { buildOpenClawPrompt } from "./openClawPrompt.js";
 
@@ -64,7 +65,7 @@ export function buildOpenClawCommandConfig(message: string, options: AgentReques
   return {
     command,
     args,
-    cwd: process.env.OPENCLAW_AGENT_CWD?.trim() || process.cwd()
+    cwd: process.env.OPENCLAW_AGENT_CWD?.trim() || defaultWorkspaceRoot()
   };
 }
 

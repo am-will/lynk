@@ -6,6 +6,7 @@ import type {
 } from "@agentclientprotocol/sdk";
 import { randomUUID } from "node:crypto";
 import { isAbsolute, resolve } from "node:path";
+import { defaultWorkspaceRoot } from "../../host/HostPaths.js";
 import type {
   ChatCommandOption,
   ChatHistoryMessage,
@@ -53,6 +54,7 @@ export interface DevinSessionAdapterOptions {
   command?: string;
   cwd?: string;
   storagePath: string;
+  legacyStoragePaths?: string[];
   runTimeoutMs?: number;
   startupTimeoutMs?: number;
   requestTimeoutMs?: number;
@@ -95,6 +97,7 @@ export class DevinSessionAdapter implements HarnessChatAdapter {
       defaultModel: "default",
       modelProvider: "devin",
       storagePath: options.storagePath,
+      legacyStoragePaths: options.legacyStoragePaths,
       persistEmptySessions: true
     });
     this.catalog = new DevinSessionCatalog({
@@ -286,9 +289,16 @@ export class DevinSessionAdapter implements HarnessChatAdapter {
     return this.client.health();
   }
 
+  async flushPersistence(): Promise<void> {
+    await this.store.flushPersistence();
+  }
+
   close(): void {
     this.runDriver.close();
     this.client.setPermissionHandler(undefined);
+    void this.store.close().catch((error) => {
+      console.warn(`[devin] failed to flush session persistence during close: ${error instanceof Error ? error.message : String(error)}`);
+    });
     void this.client.close();
   }
 
@@ -540,7 +550,8 @@ function workspaceNameFromPath(workspacePath: string): string {
 
 function resolveAbsoluteCwd(cwd: string | undefined): string {
   const trimmed = cwd?.trim();
-  return trimmed ? (isAbsolute(trimmed) ? trimmed : resolve(process.cwd(), trimmed)) : process.cwd();
+  const workspaceRoot = defaultWorkspaceRoot();
+  return trimmed ? (isAbsolute(trimmed) ? trimmed : resolve(workspaceRoot, trimmed)) : workspaceRoot;
 }
 
 function stringPatch(patch: Record<string, unknown>, key: string): string | undefined {

@@ -51,6 +51,7 @@ export interface GatewayChatClient {
   effectiveTools(sessionKey: string): Promise<unknown>;
   respondToPermission?(options: HarnessPermissionReplyOptions): Promise<unknown>;
   health(): Promise<unknown>;
+  flushPersistence?(): Promise<void>;
   close(): void;
 }
 
