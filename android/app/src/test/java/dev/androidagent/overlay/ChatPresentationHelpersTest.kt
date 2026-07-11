@@ -408,7 +408,7 @@ class ChatPresentationHelpersTest {
         assertEquals(BrandTitleTreatment.PLAIN, pi.titleTreatment)
         assertEquals(ClientBrand.Devin, devin.brand)
         assertEquals("Devin", devin.title)
-        assertEquals(R.drawable.ic_notification_bubble, devin.logoRes)
+        assertEquals(R.drawable.devin_wiskers, devin.logoRes)
         assertEquals(BrandTitleTreatment.PLAIN, devin.titleTreatment)
         assertEquals(ClientBrand.Local, local.brand)
         assertEquals("LiteRT-LLM", local.title)

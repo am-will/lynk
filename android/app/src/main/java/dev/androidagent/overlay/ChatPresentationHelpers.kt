@@ -3,6 +3,7 @@ package dev.androidagent.overlay
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
+import dev.androidagent.AgentConfig
 import dev.androidagent.AgentModelOptions
 import dev.androidagent.HostWorkspacePaths
 import dev.androidagent.R
@@ -198,7 +199,7 @@ object ChatPresentationHelpers {
             ClientBrand.Devin -> ClientBrandPresentation(
                 brand = brand,
                 title = "Devin",
-                logoRes = R.drawable.ic_notification_bubble
+                logoRes = R.drawable.devin_wiskers
             )
             ClientBrand.Local -> ClientBrandPresentation(
                 brand = brand,
@@ -206,6 +207,19 @@ object ChatPresentationHelpers {
                 logoRes = R.drawable.huggingface_logo,
                 copyName = "LiteRT"
             )
+        }
+    }
+
+    fun harnessLogoRes(harnessId: String?): Int? {
+        return when (ChatModelCatalog.normalizeHarnessId(harnessId)) {
+            AgentConfig.HARNESS_OPENCLAW -> R.drawable.openclaw_bubble_logo
+            AgentConfig.HARNESS_HERMES -> R.drawable.hermes_nous_logo
+            AgentConfig.HARNESS_CODEX -> R.drawable.codex_bubble_logo
+            AgentConfig.HARNESS_OPENCODE -> R.drawable.opencode_logo_plate
+            AgentConfig.HARNESS_PI -> R.drawable.pi_agent_logo_plate
+            AgentConfig.HARNESS_DEVIN -> R.drawable.devin_wiskers
+            AgentConfig.HARNESS_LOCAL -> R.drawable.huggingface_logo
+            else -> null
         }
     }
 

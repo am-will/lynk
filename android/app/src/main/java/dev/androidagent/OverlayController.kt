@@ -1516,6 +1516,8 @@ class OverlayController(
                 id = "model-harness:${group.id}",
                 label = group.label,
                 sublabel = if (isActiveHarness) "Active harness" else "${group.models.size} model${if (group.models.size == 1) "" else "s"}",
+                iconRes = ChatPresentationHelpers.harnessLogoRes(group.id),
+                tintIcon = ChatPresentationHelpers.harnessLogoRes(group.id) == null,
                 selected = false,
                 selectable = false,
                 emphasizeSublabel = isActiveHarness,
@@ -1542,7 +1544,8 @@ class OverlayController(
                         id = "model:${model.id}",
                         label = model.label,
                         sublabel = ChatPresentationHelpers.modelProviderSublabel(model, group.label),
-                        iconRes = R.drawable.ic_model,
+                        iconRes = ChatPresentationHelpers.harnessLogoRes(group.id) ?: R.drawable.ic_model,
+                        tintIcon = ChatPresentationHelpers.harnessLogoRes(group.id) == null,
                         selected = model.id == selectedId,
                         enabled = model.available != false,
                         onSelect = {
@@ -1871,6 +1874,7 @@ class OverlayController(
                 ?: ChatPresentationHelpers.harnessLabel(currentHarnessId)
             sessionRows.add(ChatPickerRows.harnessMenuRow(
                 state = lastChatState,
+                currentHarnessId = currentHarnessId,
                 currentHarnessLabel = currentHarnessLabel,
                 onSelect = { showHarnessChoices(anchorOverride = menuAnchor, replace = true) }
             ))

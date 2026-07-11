@@ -39,7 +39,8 @@ internal object ChatPickerRows {
                 id = "harness:${group.id}",
                 label = group.label,
                 sublabel = harnessSublabel(group.id == activeHarnessId, unreadCount),
-                iconRes = R.drawable.ic_model,
+                iconRes = ChatPresentationHelpers.harnessLogoRes(group.id) ?: R.drawable.ic_model,
+                tintIcon = ChatPresentationHelpers.harnessLogoRes(group.id) == null,
                 badgeCount = unreadCount,
                 selected = group.id == activeHarnessId,
                 onSelect = { onSelectHarness(group) }
@@ -49,6 +50,7 @@ internal object ChatPickerRows {
 
     fun harnessMenuRow(
         state: ChatState,
+        currentHarnessId: String,
         currentHarnessLabel: String,
         onSelect: () -> Unit
     ): AnchoredPicker.Row {
@@ -61,7 +63,8 @@ internal object ChatPickerRows {
             } else {
                 currentHarnessLabel
             },
-            iconRes = R.drawable.ic_model,
+            iconRes = ChatPresentationHelpers.harnessLogoRes(currentHarnessId) ?: R.drawable.ic_model,
+            tintIcon = ChatPresentationHelpers.harnessLogoRes(currentHarnessId) == null,
             badgeCount = unreadCount,
             dismissOnSelect = false,
             onSelect = onSelect

@@ -42,6 +42,7 @@ class AnchoredPicker(
         val label: String,
         val sublabel: String? = null,
         val iconRes: Int? = null,
+        val tintIcon: Boolean = true,
         val selected: Boolean = false,
         val selectable: Boolean = true,
         val emphasizeLabel: Boolean = false,
@@ -544,7 +545,9 @@ class AnchoredPicker(
                 hideFromAccessibility()
                 addView(ImageView(context).apply {
                     setImageResource(iconRes)
-                    setColorFilter(if (row.destructive) tokens.danger else tokens.secondaryText)
+                    if (row.tintIcon) {
+                        setColorFilter(if (row.destructive) tokens.danger else tokens.secondaryText)
+                    }
                     scaleType = ImageView.ScaleType.CENTER_INSIDE
                 }, FrameLayout.LayoutParams(dp(context, 20), dp(context, 20), Gravity.CENTER))
                 if (row.badgeCount > 0) {
