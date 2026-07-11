@@ -41,6 +41,7 @@ class VoiceRuntimeController internal constructor(
     @Suppress("UNUSED_PARAMETER") context: Context?,
     private val sendStart: (sdp: String, config: AgentConfig) -> Unit,
     private val sendStop: (reason: String) -> Unit,
+    private val onSessionTerminated: (reason: String) -> Unit,
     private val sendToolCall: (RealtimeToolCall) -> Unit = {},
     private val onStateChanged: (VoiceRuntimeState) -> Unit,
     private val micPermissionGranted: () -> Boolean,
@@ -59,6 +60,7 @@ class VoiceRuntimeController internal constructor(
         sendStart: (sdp: String, config: AgentConfig) -> Unit,
         sendStop: (reason: String) -> Unit,
         sendToolCall: (RealtimeToolCall) -> Unit = {},
+        onSessionTerminated: (reason: String) -> Unit = {},
         acquireForegroundLease: () -> Unit = {},
         releaseForegroundLease: () -> Unit = {},
         onStateChanged: (VoiceRuntimeState) -> Unit
@@ -66,6 +68,7 @@ class VoiceRuntimeController internal constructor(
         context = context,
         sendStart = sendStart,
         sendStop = sendStop,
+        onSessionTerminated = onSessionTerminated,
         sendToolCall = sendToolCall,
         onStateChanged = onStateChanged,
         micPermissionGranted = {
@@ -410,6 +413,7 @@ class VoiceRuntimeController internal constructor(
         if (session?.generation == generation) session = null
         activeResponseId = null
         if (sendBackendStop) sendStop(reason)
+        onSessionTerminated(reason)
         releaseForegroundLease()
         lifecycle.finishStop(generation, failure)
         updateState(

@@ -17,11 +17,13 @@ class VoiceRuntimeControllerLifecycleTest {
         var foregroundAcquires = 0
         var foregroundReleases = 0
         var backendStops = 0
+        var localStops = 0
 
         val controller = VoiceRuntimeController(
             context = null,
             sendStart = { _, _ -> },
             sendStop = { backendStops += 1 },
+            onSessionTerminated = { localStops += 1 },
             onStateChanged = states::add,
             micPermissionGranted = { true },
             configProvider = ::config,
@@ -53,6 +55,7 @@ class VoiceRuntimeControllerLifecycleTest {
 
         assertEquals(2, foregroundAcquires)
         assertEquals(2, foregroundReleases)
+        assertEquals(2, localStops)
         assertEquals(1, sessions[1].closeCount)
         assertEquals(VoiceRuntimeStatus.IDLE, states.last().status)
     }

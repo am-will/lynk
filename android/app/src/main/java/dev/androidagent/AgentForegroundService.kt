@@ -190,6 +190,7 @@ class AgentForegroundService : Service() {
             context = this,
             sendStart = { sdp, config -> realtimeVoiceCoordinator?.sendStart(sdp, config) },
             sendStop = { reason -> realtimeVoiceCoordinator?.sendStop(reason) },
+            onSessionTerminated = { reason -> realtimeVoiceCoordinator?.cancelLocalWork(reason) },
             sendToolCall = { call -> realtimeVoiceCoordinator?.handleToolCall(call) },
             acquireForegroundLease = ::promoteVoiceForegroundIfAllowed,
             releaseForegroundLease = ::restoreBaseForeground,

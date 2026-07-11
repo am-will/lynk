@@ -40,6 +40,9 @@ internal class RealtimeVoiceCoordinator(
 
     fun sendStop(reason: String) {
         webSocketClient()?.sendRealtimeStop(reason)
+    }
+
+    fun cancelLocalWork(reason: String) {
         localDelegate?.stopAndJoin(reason)
     }
 
