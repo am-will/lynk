@@ -191,6 +191,8 @@ class AgentForegroundService : Service() {
             sendStart = { sdp, config -> realtimeVoiceCoordinator?.sendStart(sdp, config) },
             sendStop = { reason -> realtimeVoiceCoordinator?.sendStop(reason) },
             sendToolCall = { call -> realtimeVoiceCoordinator?.handleToolCall(call) },
+            acquireForegroundLease = ::promoteVoiceForegroundIfAllowed,
+            releaseForegroundLease = ::restoreBaseForeground,
             onStateChanged = ::handleVoiceRuntimeStateChanged
         )
         registerCloseSystemDialogsReceiver()
@@ -440,7 +442,6 @@ class AgentForegroundService : Service() {
             return false
         }
         connectAgentClient(model)
-        promoteVoiceForegroundIfAllowed()
         activateRealtimeVoicePet()
         voiceRuntimeController?.start()
         return true

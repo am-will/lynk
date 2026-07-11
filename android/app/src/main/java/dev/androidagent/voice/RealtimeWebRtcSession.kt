@@ -28,11 +28,19 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
 
+internal interface RealtimeVoiceSession {
+    suspend fun createOffer(): String
+    suspend fun applyAnswer(answerSdp: String)
+    fun setMuted(muted: Boolean)
+    fun sendJsonEvent(event: JSONObject): Boolean
+    fun close()
+}
+
 class RealtimeWebRtcSession(
     private val context: Context,
     private val onDataChannelEvent: (String) -> Unit,
     private val onConnectionState: (String) -> Unit
-) {
+) : RealtimeVoiceSession {
     private val disposed = AtomicBoolean(false)
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private var previousMode: Int = AudioManager.MODE_NORMAL
@@ -46,7 +54,7 @@ class RealtimeWebRtcSession(
     private var eventsChannel: DataChannel? = null
     private val iceGatheringComplete = CompletableDeferred<Unit>()
 
-    suspend fun createOffer(): String = withContext(Dispatchers.Main) {
+    override suspend fun createOffer(): String = withContext(Dispatchers.Main) {
         val appContext = context.applicationContext
         ensureFactoryInitialized(appContext)
         acquireAudioFocus()
@@ -94,17 +102,17 @@ class RealtimeWebRtcSession(
         createdPeerConnection.localDescription?.description ?: offer.description
     }
 
-    suspend fun applyAnswer(answerSdp: String) = withContext(Dispatchers.Main) {
+    override suspend fun applyAnswer(answerSdp: String) = withContext(Dispatchers.Main) {
         val answer = SessionDescription(SessionDescription.Type.ANSWER, answerSdp)
         peerConnection?.awaitSetRemoteDescription(answer)
             ?: throw IllegalStateException("No active WebRTC peer connection")
     }
 
-    fun setMuted(muted: Boolean) {
+    override fun setMuted(muted: Boolean) {
         audioTrack?.setEnabled(!muted)
     }
 
-    fun sendJsonEvent(event: JSONObject): Boolean {
+    override fun sendJsonEvent(event: JSONObject): Boolean {
         val channel = eventsChannel ?: return false
         if (channel.state() != DataChannel.State.OPEN) {
             return false
@@ -113,7 +121,7 @@ class RealtimeWebRtcSession(
         return channel.send(DataChannel.Buffer(ByteBuffer.wrap(bytes), false))
     }
 
-    fun close() {
+    override fun close() {
         if (!disposed.compareAndSet(false, true)) {
             return
         }
