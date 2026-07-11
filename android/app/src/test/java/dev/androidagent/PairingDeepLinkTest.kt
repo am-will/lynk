@@ -26,7 +26,7 @@ class PairingDeepLinkTest {
     @Test
     fun acceptsLegacyLinkOnlyAsLegacyRequest() {
         val result = PairingDeepLink.parse(
-            "openclaw-agent://pair?url=${encode("ws://192.168.1.10:8788/phone")}&token=secret",
+            "openclaw-agent://pair?url=${encode("ws://127.0.0.1:8788/phone")}&token=secret",
             now
         ) as PairingParseResult.Valid
 
@@ -46,6 +46,18 @@ class PairingDeepLinkTest {
         assertInvalid("android-agent://pair?url=${encode("ws://bridge.example/admin")}&token=x")
         assertInvalid("android-agent://pair?url=${encode("ws://bridge.example/phone?next=evil")}&token=x")
         assertInvalid("android-agent://pair?url=${encode("ws://bridge.example/phone")}&deviceId=bad%20id&token=x")
+        assertInvalid("android-agent://pair?url=${encode("ws://192.168.1.10/phone")}&token=x")
+    }
+
+    @Test
+    fun acceptsExplicitTailscaleCleartextOnly() {
+        val result = PairingDeepLink.parse(
+            "android-agent://pair?url=${encode("ws://100.88.12.34:8788/phone")}&token=x&allowInsecureTrustedOverlay=1",
+            now
+        ) as PairingParseResult.Valid
+
+        assertTrue(result.request.allowInsecureTrustedOverlay)
+        assertInvalid("android-agent://pair?url=${encode("ws://192.168.1.10/phone")}&token=x&allowInsecureTrustedOverlay=1")
     }
 
     @Test

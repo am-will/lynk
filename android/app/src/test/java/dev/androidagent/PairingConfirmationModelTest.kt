@@ -35,6 +35,24 @@ class PairingConfirmationModelTest {
         assertTrue(model.message.contains("Legacy link"))
     }
 
+    @Test
+    fun insecureOverlayRequestGetsProminentWarning() {
+        val model = PairingConfirmationModel.create(
+            config(hostUrl = "ws://127.0.0.1/phone", token = ""),
+            PairingRequest(
+                listOf("ws://100.88.12.34:8788/phone"),
+                null,
+                "secret",
+                2_000_000_300,
+                "abcdefghijklmnop",
+                allowInsecureTrustedOverlay = true
+            )
+        )
+
+        assertTrue(model.message.contains("cleartext WebSocket"))
+        assertTrue(model.message.contains("Tailscale"))
+    }
+
     private fun config(hostUrl: String, token: String) = AgentConfig(
         hostUrl = hostUrl,
         deviceId = "pixel",

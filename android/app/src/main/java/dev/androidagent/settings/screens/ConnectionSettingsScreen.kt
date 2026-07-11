@@ -46,6 +46,7 @@ object ConnectionSettingsScreen {
                 AgentConfigStore.load(activity).copy(
                     hostUrl = hostInput.text.toString().trim(),
                     hostUrlCandidates = emptyList(),
+                    allowInsecureTrustedOverlay = false,
                     deviceId = deviceInput.text.toString().trim(),
                     token = tokenInput.text.toString().trim()
                 )

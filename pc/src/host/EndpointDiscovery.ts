@@ -36,15 +36,15 @@ export interface DiscoverySnapshot {
 }
 
 export async function discoverEndpoints(
-  options: { port: number; includeUsb?: boolean; includeLoopback?: boolean } = { port: 8788 }
+  options: { port: number; includeUsb?: boolean; includeLoopback?: boolean; allowInsecureTrustedOverlay?: boolean } = { port: 8788 }
 ): Promise<DiscoverySnapshot> {
   const endpoints: EndpointCandidate[] = [];
 
-  const tailscale = await discoverTailscale(options.port);
+  const tailscale = await discoverTailscale(options.port, options.allowInsecureTrustedOverlay === true);
   endpoints.push(...tailscale.endpoints);
 
   for (const address of lanAddresses()) {
-    endpoints.push(endpoint("lan", `Local network (${address.interfaceName})`, address.address, options.port, address.family));
+    endpoints.push(endpoint("lan", `Local network (${address.interfaceName})`, address.address, options.port, address.family, "wss"));
   }
 
   if (options.includeUsb === true) {
@@ -65,11 +65,11 @@ export async function discoverTailscaleEndpoint(port: number): Promise<EndpointC
 }
 
 export async function discoverTailscaleEndpoints(port: number): Promise<EndpointCandidate[]> {
-  const snapshot = await discoverTailscale(port);
+  const snapshot = await discoverTailscale(port, false);
   return snapshot.endpoints;
 }
 
-async function discoverTailscale(port: number): Promise<{ endpoints: EndpointCandidate[]; status: DiscoverySnapshot["tailscale"] }> {
+async function discoverTailscale(port: number, allowInsecureTrustedOverlay: boolean): Promise<{ endpoints: EndpointCandidate[]; status: DiscoverySnapshot["tailscale"] }> {
   const cli = process.env.TAILSCALE_CLI?.trim() || resolveExecutable("tailscale") || macTailscaleCli();
   if (!cli) {
     return { endpoints: [], status: { installed: false, running: false, online: null } };
@@ -78,7 +78,7 @@ async function discoverTailscale(port: number): Promise<{ endpoints: EndpointCan
   try {
     const { stdout } = await execFileAsync(cli, ["status", "--json"], { timeout: 5_000, maxBuffer: 1024 * 1024 });
     const status = JSON.parse(stdout) as TailscaleStatus;
-    const endpoints = tailscaleEndpointsFromStatus(status, port);
+    const endpoints = tailscaleEndpointsFromStatus(status, port, { allowInsecureTrustedOverlay });
     const running = status.BackendState === undefined || status.BackendState === "Running";
     const online = status.Self?.Online ?? null;
     return {
@@ -96,7 +96,7 @@ async function discoverTailscale(port: number): Promise<{ endpoints: EndpointCan
       const { stdout } = await execFileAsync(cli, ["ip", "-4"], { timeout: 5_000, maxBuffer: 1024 * 1024 });
       const host = stdout.split(/\s+/).find(Boolean);
       return {
-        endpoints: host ? [endpoint("tailscale", "Tailscale", host, port, "Tailscale IPv4")] : [],
+        endpoints: host ? [endpoint("tailscale", "Tailscale", host, port, "Tailscale IPv4", allowInsecureTrustedOverlay ? "ws" : "wss")] : [],
         status: {
           installed: true,
           running: Boolean(host),
@@ -119,25 +119,29 @@ async function discoverTailscale(port: number): Promise<{ endpoints: EndpointCan
   }
 }
 
-export function tailscaleEndpointsFromStatus(status: TailscaleStatus, port: number): EndpointCandidate[] {
+export function tailscaleEndpointsFromStatus(
+  status: TailscaleStatus,
+  port: number,
+  options: { allowInsecureTrustedOverlay?: boolean } = {}
+): EndpointCandidate[] {
   const endpoints: EndpointCandidate[] = [];
   const dnsName = normalizeDnsName(status.Self?.DNSName);
   if (dnsName) {
-    endpoints.push(endpoint("tailscale", "Tailscale MagicDNS", dnsName, port, "MagicDNS"));
+    endpoints.push(endpoint("tailscale", "Tailscale MagicDNS", dnsName, port, "MagicDNS", options.allowInsecureTrustedOverlay ? "ws" : "wss"));
   }
   for (const ip of tailnetIps(status)) {
-    endpoints.push(endpoint("tailscale", "Tailscale IP", ip, port, ip.includes(":") ? "Tailscale IPv6" : "Tailscale IPv4"));
+    endpoints.push(endpoint("tailscale", "Tailscale IP", ip, port, ip.includes(":") ? "Tailscale IPv6" : "Tailscale IPv4", options.allowInsecureTrustedOverlay ? "ws" : "wss"));
   }
   return dedupeEndpoints(endpoints);
 }
 
-function endpoint(kind: EndpointKind, label: string, host: string, port: number, source: string): EndpointCandidate {
+function endpoint(kind: EndpointKind, label: string, host: string, port: number, source: string, scheme: "ws" | "wss" = "ws"): EndpointCandidate {
   return {
     kind,
     label,
     host,
     source,
-    url: `ws://${formatUrlHost(host)}:${port}/phone`
+    url: `${scheme}://${formatUrlHost(host)}:${port}/phone`
   };
 }
 

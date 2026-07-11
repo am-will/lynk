@@ -9,7 +9,8 @@ data class PairingRequest(
     val deviceId: String?,
     val token: String,
     val expiresAtEpochSeconds: Long?,
-    val nonce: String?
+    val nonce: String?,
+    val allowInsecureTrustedOverlay: Boolean = false
 ) {
     val isLegacy: Boolean
         get() = expiresAtEpochSeconds == null || nonce == null
@@ -54,7 +55,15 @@ object PairingDeepLink {
         }.map(String::trim).filter(String::isNotEmpty).distinct()
         if (endpointValues.isEmpty()) return PairingParseResult.Invalid("Pairing link is missing a bridge URL.")
         if (endpointValues.size > MAX_ENDPOINTS) return PairingParseResult.Invalid("Pairing link has too many bridge URLs.")
-        val endpoints = endpointValues.map { normalizeEndpoint(it) ?: return PairingParseResult.Invalid("Pairing link contains an unsafe bridge URL.") }
+        val allowInsecureTrustedOverlay = when (parameters["allowInsecureTrustedOverlay"]?.singleOrNull()) {
+            null -> false
+            "1" -> true
+            else -> return PairingParseResult.Invalid("Pairing link contains an invalid insecure-overlay option.")
+        }
+        val endpoints = endpointValues.map {
+            BridgeEndpointPolicy.normalize(it, allowInsecureTrustedOverlay)?.url
+                ?: return PairingParseResult.Invalid("Network bridge URLs require wss. Cleartext ws is limited to loopback or an explicitly trusted Tailscale overlay.")
+        }
 
         val token = parameters["token"]?.singleOrNull()?.trim().orEmpty()
         if (token.isEmpty()) return PairingParseResult.Invalid("Pairing link is missing an authentication token.")
@@ -80,17 +89,7 @@ object PairingDeepLink {
         }
         if (nonce != null && !noncePattern.matches(nonce)) return PairingParseResult.Invalid("Pairing link has an invalid nonce.")
 
-        return PairingParseResult.Valid(PairingRequest(endpoints, deviceId, token, expiresAt, nonce))
-    }
-
-    private fun normalizeEndpoint(raw: String): String? {
-        val uri = runCatching { URI(raw) }.getOrNull() ?: return null
-        if (uri.scheme?.lowercase() !in setOf("ws", "wss")) return null
-        if (uri.host.isNullOrBlank() || uri.userInfo != null || uri.fragment != null || uri.query != null) return null
-        if (uri.port !in -1..65_535) return null
-        if (uri.path.isNullOrEmpty() || uri.path == "/") return URI(uri.scheme.lowercase(), null, uri.host.lowercase(), uri.port, "/phone", null, null).toString()
-        if (uri.path != "/phone") return null
-        return URI(uri.scheme.lowercase(), null, uri.host.lowercase(), uri.port, "/phone", null, null).toString()
+        return PairingParseResult.Valid(PairingRequest(endpoints, deviceId, token, expiresAt, nonce, allowInsecureTrustedOverlay))
     }
 
     private fun parseQuery(rawQuery: String?): Map<String, List<String>>? {

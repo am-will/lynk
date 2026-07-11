@@ -1,6 +1,7 @@
 package dev.androidagent.net
 
 import dev.androidagent.AgentConfig
+import dev.androidagent.BridgeEndpointPolicy
 import dev.androidagent.AgentLocation
 import dev.androidagent.accessibility.AccessibilityCommandExecutor
 import okhttp3.OkHttpClient
@@ -66,7 +67,14 @@ class PhoneWebSocketClient(
         manuallyClosed = false
         connected = false
         registered = false
-        val hostUrl = activeHostUrl()
+        val requestedHostUrl = activeHostUrl()
+        val hostUrl = BridgeEndpointPolicy.normalize(requestedHostUrl, config.allowInsecureTrustedOverlay)?.url
+        if (hostUrl == null) {
+            val statusText = "Blocked insecure bridge endpoint $requestedHostUrl. Network bridges require wss; ws is limited to loopback/ADB or an explicitly approved Tailscale development endpoint."
+            onStatus(statusText, "error")
+            onConnectionState(BridgeConnectionState(BridgeConnectionPhase.ERROR, statusText))
+            return
+        }
         val request = Request.Builder().url(hostUrl).build()
         socket = client.newWebSocket(request, this)
         val statusText = "Connecting to $hostUrl"

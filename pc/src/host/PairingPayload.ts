@@ -1,6 +1,7 @@
 import type { BridgeConfig } from "../bridge/config.js";
 import { discoverEndpoints, type EndpointCandidate } from "./EndpointDiscovery.js";
 import { randomBytes } from "node:crypto";
+import { normalizeBridgeEndpoint } from "./BridgeEndpointPolicy.js";
 
 export interface HostPairingPayload {
   version: 1;
@@ -12,10 +13,12 @@ export interface HostPairingPayload {
 }
 
 export async function createHostPairingPayload(config: Pick<BridgeConfig, "defaultDeviceId" | "port" | "token">): Promise<HostPairingPayload> {
+  const allowInsecureTrustedOverlay = process.env.PHONE_AGENT_PAIRING_ALLOW_INSECURE_TAILSCALE === "1";
   const discovery = await discoverEndpoints({
     port: config.port,
     includeUsb: process.env.PHONE_AGENT_PAIRING_INCLUDE_USB === "1",
-    includeLoopback: process.env.PHONE_AGENT_PAIRING_INCLUDE_LOOPBACK === "1"
+    includeLoopback: process.env.PHONE_AGENT_PAIRING_INCLUDE_LOOPBACK === "1",
+    allowInsecureTrustedOverlay
   });
   const endpoints = discovery.endpoints;
   return {
@@ -28,6 +31,7 @@ export async function createHostPairingPayload(config: Pick<BridgeConfig, "defau
       deviceId: config.defaultDeviceId,
       token: config.token,
       urls: endpoints.map((endpoint) => endpoint.url),
+      allowInsecureTrustedOverlay,
       expiresAt: Math.floor(Date.now() / 1_000) + 5 * 60,
       nonce: randomBytes(18).toString("base64url")
     })
@@ -40,9 +44,12 @@ export function buildAndroidPairingDeepLink(options: {
   urls: string[];
   expiresAt?: number;
   nonce?: string;
+  allowInsecureTrustedOverlay?: boolean;
 }): string {
   const params = new URLSearchParams();
-  const urls = uniqueStrings(options.urls);
+  const urls = uniqueStrings(options.urls).map((url) => normalizeBridgeEndpoint(url, {
+    allowInsecureTrustedOverlay: options.allowInsecureTrustedOverlay
+  }).url);
   if (urls[0]) {
     params.set("url", urls[0]);
   }
@@ -51,6 +58,9 @@ export function buildAndroidPairingDeepLink(options: {
   }
   params.set("deviceId", options.deviceId);
   params.set("token", options.token);
+  if (options.allowInsecureTrustedOverlay === true) {
+    params.set("allowInsecureTrustedOverlay", "1");
+  }
   if ((options.expiresAt === undefined) !== (options.nonce === undefined)) {
     throw new Error("Pairing links must provide both expiresAt and nonce");
   }

@@ -38,6 +38,7 @@ data class AgentConfig(
     val hostUrlCandidates: List<String> = emptyList(),
     val deviceId: String,
     val token: String,
+    val allowInsecureTrustedOverlay: Boolean = false,
     val openAiApiKey: String,
     val systemPrompt: String,
     val model: String,
@@ -161,6 +162,7 @@ object AgentConfigStore {
     private const val HOST_URL_CANDIDATES = "host_url_candidates"
     private const val DEVICE_ID = "device_id"
     private const val TOKEN = "token"
+    private const val ALLOW_INSECURE_TRUSTED_OVERLAY = "allow_insecure_trusted_overlay"
     private const val OPENAI_API_KEY = "openai_api_key"
     private const val SYSTEM_PROMPT = "system_prompt"
     private const val MODEL = "model"
@@ -203,6 +205,7 @@ object AgentConfigStore {
                 .orEmpty(),
             deviceId = prefs.getString(DEVICE_ID, "openclaw-agent") ?: "openclaw-agent",
             token = sanitizedToken(prefs.getString(TOKEN, "")),
+            allowInsecureTrustedOverlay = prefs.getBoolean(ALLOW_INSECURE_TRUSTED_OVERLAY, false),
             openAiApiKey = prefs.getString(OPENAI_API_KEY, "") ?: "",
             systemPrompt = prefs.getString(SYSTEM_PROMPT, "") ?: "",
             model = prefs.getString(MODEL, "gpt-5.5") ?: "gpt-5.5",
@@ -247,6 +250,7 @@ object AgentConfigStore {
             .putString(HOST_URL_CANDIDATES, config.hostUrlCandidates.map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n"))
             .putString(DEVICE_ID, config.deviceId)
             .putString(TOKEN, config.token)
+            .putBoolean(ALLOW_INSECURE_TRUSTED_OVERLAY, config.allowInsecureTrustedOverlay)
             .putString(OPENAI_API_KEY, config.openAiApiKey)
             .putString(SYSTEM_PROMPT, config.systemPrompt)
             .putString(MODEL, config.model)
