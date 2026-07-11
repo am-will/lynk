@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -61,12 +61,24 @@ test("Pi chat adapter streams text, reasoning, tools, final usage, and steer", a
   const created = await client.createSession({ model: "anthropic/claude-sonnet-4-5" }) as { key: string };
   const events: Array<{ event: string; payload: Record<string, unknown> }> = [];
   client.addEventListener((event) => events.push(event as { event: string; payload: Record<string, unknown> }));
+  const attachmentRoot = mkdtempSync(join(tmpdir(), "lynk-pi-attachment-"));
+  const localPath = join(attachmentRoot, "payload.blob");
+  writeFileSync(localPath, "hello");
 
   const result = await client.sendChat({
     sessionKey: created.key,
     message: "build it",
     thinking: "high",
-    idempotencyKey: "run-1"
+    idempotencyKey: "run-1",
+    attachments: [{
+      id: "blob_attachment-1",
+      kind: "image",
+      displayName: "photo.png",
+      mimeType: "image/png",
+      sizeBytes: 5,
+      sha256: "a".repeat(64),
+      localPath
+    }]
   });
   assert.equal(result.runId, "run-1");
   await client.steerChat({ sessionKey: created.key, runId: "run-1", message: "prefer tests" });
@@ -74,6 +86,7 @@ test("Pi chat adapter streams text, reasoning, tools, final usage, and steer", a
   await waitFor(() => events.some((event) => event.payload.state === "final"));
 
   assert.equal(fake.session.promptCalls[0]?.message, "build it");
+  assert.deepEqual(fake.session.promptCalls[0]?.images, [{ type: "image", data: "aGVsbG8=", mimeType: "image/png" }]);
   assert.equal(fake.session.thinkingLevels.at(-1), "high");
   assert.deepEqual(fake.session.steerCalls, ["prefer tests"]);
   assert.ok(events.some((event) => event.event === "chat" && event.payload.state === "delta" && event.payload.delta === "hello "));
@@ -83,6 +96,7 @@ test("Pi chat adapter streams text, reasoning, tools, final usage, and steer", a
   assert.equal(final?.message, "done");
   assert.deepEqual(final?.usage, { inputTokens: 3, outputTokens: 5, totalTokens: 8 });
   client.close();
+  rmSync(attachmentRoot, { recursive: true, force: true });
 });
 
 test("Pi chat adapter canonicalizes implicit session keys before sending", async () => {

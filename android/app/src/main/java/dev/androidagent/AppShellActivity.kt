@@ -30,6 +30,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
 import dev.androidagent.chat.ChatAttachmentKind
 import dev.androidagent.chat.ChatAttachmentStore
 import dev.androidagent.localmodel.LocalModelStore
@@ -43,6 +44,9 @@ import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
 import dev.androidagent.ui.ThemeTokens
 import android.widget.ImageView
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 class AppShellActivity : ComponentActivity() {
 
@@ -58,6 +62,7 @@ class AppShellActivity : ComponentActivity() {
     private lateinit var settingsHost: SettingsHost
     private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingLocalModelPathField: EditText? = null
+    private var localModelImportJob: Job? = null
     private var selectedTab = ShellTab.Chat
     private var bridgeConnected = false
     private var chatHost: FrameLayout? = null
@@ -95,13 +100,31 @@ class AppShellActivity : ComponentActivity() {
         runCatching {
             contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        runCatching {
-            LocalModelStore.importModel(this, uri)
-        }.onSuccess { path ->
-            pendingLocalModelPathField?.setText(path)
-            DiagnosticsEventLog.append(DiagnosticsEventLevel.Success, "Imported local model")
-        }.onFailure { error ->
-            DiagnosticsEventLog.append(DiagnosticsEventLevel.Error, error.message ?: "Import failed")
+        localModelImportJob?.cancel()
+        DiagnosticsEventLog.append(DiagnosticsEventLevel.Info, "Importing local model")
+        localModelImportJob = lifecycleScope.launch {
+            try {
+                var lastProgressMarker = -1L
+                val path = LocalModelStore.importModel(this@AppShellActivity, uri) { copied, total ->
+                    val marker = if (total != null && total > 0L) copied * 4L / total else copied / MODEL_PROGRESS_STEP_BYTES
+                    if (marker == lastProgressMarker) return@importModel
+                    lastProgressMarker = marker
+                    mainHandler.post {
+                        val label = if (total != null && total > 0L) {
+                            "${(copied * 100L / total).coerceIn(0L, 100L)}%"
+                        } else {
+                            "${copied / (1024 * 1024)} MB"
+                        }
+                        DiagnosticsEventLog.append(DiagnosticsEventLevel.Info, "Importing local model: $label")
+                    }
+                }
+                pendingLocalModelPathField?.setText(path)
+                DiagnosticsEventLog.append(DiagnosticsEventLevel.Success, "Imported local model")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                DiagnosticsEventLog.append(DiagnosticsEventLevel.Error, error.message ?: "Import failed")
+            }
         }
     }
 
@@ -456,16 +479,20 @@ class AppShellActivity : ComponentActivity() {
             DiagnosticsEventLog.append(DiagnosticsEventLevel.Info, "Attachment picker cancelled")
             return
         }
-        runCatching {
-            ChatAttachmentStore(this).importUri(uri, kind)
-        }.onSuccess { attachment ->
-            val intent = Intent(this, AgentForegroundService::class.java)
-                .setAction(AgentForegroundService.ACTION_ADD_CHAT_ATTACHMENT)
-                .putExtra(AgentForegroundService.EXTRA_CHAT_ATTACHMENT_JSON, attachment.toStoredJson().toString())
-            runCatching { startService(intent) }
-            DiagnosticsEventLog.append(DiagnosticsEventLevel.Success, "Attached ${attachment.displayName}")
-        }.onFailure { error ->
-            DiagnosticsEventLog.append(DiagnosticsEventLevel.Error, error.message ?: "Could not attach file")
+        lifecycleScope.launch {
+            DiagnosticsEventLog.append(DiagnosticsEventLevel.Info, "Importing selected attachment")
+            try {
+                val attachment = ChatAttachmentStore(this@AppShellActivity).importUri(uri, kind)
+                val intent = Intent(this@AppShellActivity, AgentForegroundService::class.java)
+                    .setAction(AgentForegroundService.ACTION_ADD_CHAT_ATTACHMENT)
+                    .putExtra(AgentForegroundService.EXTRA_CHAT_ATTACHMENT_JSON, attachment.toStoredJson().toString())
+                runCatching { startService(intent) }
+                DiagnosticsEventLog.append(DiagnosticsEventLevel.Success, "Attached ${attachment.displayName}")
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                DiagnosticsEventLog.append(DiagnosticsEventLevel.Error, error.message ?: "Could not attach file")
+            }
         }
     }
 
@@ -636,6 +663,7 @@ class AppShellActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val MODEL_PROGRESS_STEP_BYTES = 256L * 1024L * 1024L
         const val EXTRA_SHOW_SETTINGS = "showSettings"
         const val EXTRA_INITIAL_TAB = "initialTab"
         const val EXTRA_OPEN_CHAT = "openChat"

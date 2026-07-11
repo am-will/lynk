@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { InMemoryHarnessSessionStore } from "./InMemoryHarnessSessionStore.js";
+import type { ResolvedChatAttachment } from "../../attachments/AttachmentTypes.js";
 
 describe("InMemoryHarnessSessionStore", () => {
   function createStore(persistEmpty = true): { store: InMemoryHarnessSessionStore; storagePath: string; cleanup: () => void } {
@@ -81,6 +82,36 @@ describe("InMemoryHarnessSessionStore", () => {
     assert.equal(reloadedSession.sessionId, "session-id");
     assert.equal(reloadedSession.metadata?.workspacePath, "/tmp/ws");
     assert.equal(reloaded.history("devin:meta").messages[0]?.text, "hi");
+    cleanup();
+  });
+
+  it("persists attachment metadata without runtime paths or inline payloads", () => {
+    const { store, storagePath, cleanup } = createStore();
+    const session = store.ensureSession("devin:attachments");
+    const attachment: ResolvedChatAttachment = {
+      id: "blob_attachment-1",
+      kind: "image",
+      displayName: "photo.png",
+      mimeType: "image/png",
+      sizeBytes: 5,
+      sha256: "a".repeat(64),
+      localPath: "/private/host/blob"
+    };
+    store.appendUserMessage(session, "inspect", "run-1", [attachment]);
+
+    const persistedText = readFileSync(storagePath, "utf8");
+    const history = store.history("devin:attachments");
+
+    assert.equal(persistedText.includes("localPath"), false);
+    assert.equal(persistedText.includes("contentBase64"), false);
+    assert.equal(persistedText.includes("/private/host/blob"), false);
+    assert.deepEqual(history.messages[0]?.attachments, [{
+      id: "blob_attachment-1",
+      kind: "image",
+      displayName: "photo.png",
+      mimeType: "image/png",
+      sizeBytes: 5
+    }]);
     cleanup();
   });
 });

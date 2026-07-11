@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import type { HermesApiClient } from "../dispatcher/HermesApiClient.js";
 import { HermesRunDriver } from "../dispatcher/HermesRunDriver.js";
-import type { ChatAttachment } from "../protocol/messages.js";
+import type { ResolvedChatAttachment } from "../attachments/AttachmentTypes.js";
 import type { BridgeConfig } from "./config.js";
 import { HermesChatClient } from "./HermesChatClient.js";
 import type { GatewayEvent } from "./chat/ChatTransportTypes.js";
@@ -43,7 +43,7 @@ const config: BridgeConfig = {
 };
 
 class FakeHermesApiClient {
-  readonly createdRuns: Array<{ input: string; sessionId: string; instructions?: string; idempotencyKey?: string; attachments?: ChatAttachment[]; serviceTier?: "priority" | null }> = [];
+  readonly createdRuns: Array<{ input: string; sessionId: string; instructions?: string; idempotencyKey?: string; attachments?: ResolvedChatAttachment[]; serviceTier?: "priority" | null }> = [];
   sessionsPayload: unknown = {
     sessions: [{
       session_id: "20260521_211022_1f4f0b",
@@ -101,7 +101,7 @@ class FakeHermesApiClient {
 
   async stopRun(): Promise<void> {}
 
-  async createRun(options: { input: string; sessionId: string; instructions?: string; idempotencyKey?: string; attachments?: ChatAttachment[]; serviceTier?: "priority" | null }): Promise<{ runId: string; sessionId: string }> {
+  async createRun(options: { input: string; sessionId: string; instructions?: string; idempotencyKey?: string; attachments?: ResolvedChatAttachment[]; serviceTier?: "priority" | null }): Promise<{ runId: string; sessionId: string }> {
     this.createdRuns.push(options);
     return { runId: `steer_${this.createdRuns.length}`, sessionId: options.sessionId };
   }
@@ -391,13 +391,14 @@ test("Hermes history keeps local messages missing from remote history", async ()
 test("Hermes forwards chat attachments to run creation", async () => {
   const api = new FakeHermesApiClient();
   const client = new HermesChatClient(config, api as unknown as HermesApiClient, null);
-  const attachment: ChatAttachment = {
-    id: "att_1",
+  const attachment: ResolvedChatAttachment = {
+    id: "blob_attachment-1",
     kind: "image",
     displayName: "photo.png",
     mimeType: "image/png",
     sizeBytes: 5,
-    contentBase64: "aGVsbG8="
+    sha256: "a".repeat(64),
+    localPath: "/private/blob"
   };
 
   await client.sendChat({

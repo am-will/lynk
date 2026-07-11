@@ -4,10 +4,12 @@ import test from "node:test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 
 import { createBridgeHttpHandler } from "./bridgeHttp.js";
 import { getPetSpritesheet, spritesheetEtag } from "./PetCatalog.js";
 import type { PhoneCommandRequest } from "../protocol/messages.js";
+import { HostBlobStore } from "./blob/HostBlobStore.js";
 
 const token = "test-token";
 
@@ -65,7 +67,11 @@ class FakeChatBridge {
 }
 
 async function withHttpServer<T>(
-  options: { petsDir?: string; stopAgentWork?: (deviceId: string, reason: string) => Promise<void> },
+  options: {
+    petsDir?: string;
+    blobs?: HostBlobStore;
+    stopAgentWork?: (deviceId: string, reason: string) => Promise<void>;
+  },
   fn: (baseUrl: string, fakes: { hub: FakeHub; audit: FakeAudit; dispatcher: FakeDispatcher }) => Promise<T>
 ): Promise<T> {
   const hub = new FakeHub();
@@ -79,7 +85,8 @@ async function withHttpServer<T>(
     dispatcher: dispatcher as never,
     chatBridge: chatBridge as never,
     stopAgentWork: options.stopAgentWork ?? (async () => {}),
-    petsDir: options.petsDir
+    petsDir: options.petsDir,
+    blobs: options.blobs
   });
   const server = createServer((req, res) => {
     handler(req, res);
@@ -189,6 +196,67 @@ test("bridge HTTP serves authenticated pairing payload", async () => {
       assert.match(String(payload.deepLink), /^android-agent:\/\/pair\?/);
     }
   });
+});
+
+test("bridge HTTP streams authenticated device/session-owned blobs", async () => {
+  const root = await mkdtemp(join(tmpdir(), "lynk-http-blobs-"));
+  const blobs = new HostBlobStore(root, {
+    maxItemBytes: 64,
+    maxAggregateBytes: 256,
+    freeSpaceReserveBytes: 0,
+    usableSpaceBytes: () => Number.MAX_SAFE_INTEGER
+  });
+  const bytes = Buffer.from("owned attachment");
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const query = new URLSearchParams({
+    displayName: "note.txt",
+    mimeType: "text/plain",
+    kind: "file",
+    sha256
+  });
+  try {
+    await withHttpServer({ blobs }, async (baseUrl) => {
+      const unauthenticated = await fetch(`${baseUrl}/api/blobs/blob_http-owned?${query}`, {
+        method: "PUT",
+        body: bytes
+      });
+      assert.equal(unauthenticated.status, 401);
+
+      const upload = await fetch(`${baseUrl}/api/blobs/blob_http-owned?${query}`, {
+        method: "PUT",
+        headers: {
+          ...authHeaders(),
+          "x-lynk-device-id": "phone",
+          "x-lynk-session-key": "codex:session"
+        },
+        body: bytes
+      });
+      assert.equal(upload.status, 201);
+      assert.equal((await upload.json() as { blob: { sha256: string } }).blob.sha256, sha256);
+
+      const wrongOwner = await fetch(`${baseUrl}/api/blobs/blob_http-owned`, {
+        headers: {
+          ...authHeaders(),
+          "x-lynk-device-id": "phone",
+          "x-lynk-session-key": "codex:other"
+        }
+      });
+      assert.equal(wrongOwner.status, 404);
+
+      const download = await fetch(`${baseUrl}/api/blobs/blob_http-owned`, {
+        headers: {
+          ...authHeaders(),
+          "x-lynk-device-id": "phone",
+          "x-lynk-session-key": "codex:session"
+        }
+      });
+      assert.equal(download.status, 200);
+      assert.equal(Buffer.from(await download.arrayBuffer()).toString("utf8"), bytes.toString("utf8"));
+      assert.equal(download.headers.get("x-lynk-blob-sha256"), sha256);
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("bridge HTTP validates user requests and dispatches valid text", async () => {

@@ -95,16 +95,19 @@ test("Codex app-server includes image attachments in turn input", async () => {
   process.env.CODEX_FAKE_LOG = logPath;
   const client = new CodexAppServerClient(undefined, `"${process.execPath}" "${scriptPath}"`, dir);
   try {
+    const imagePath = join(dir, "screenshot.png");
+    await writeFile(imagePath, "hello");
     await client.submitUserRequest("Review this", sink, {
       model: "gpt-5.3-codex",
       useSessionInstructions: true,
       attachments: [{
-        id: "att_1",
+        id: "blob_attachment-1",
         kind: "image",
         displayName: "screenshot.png",
         mimeType: "image/png",
         sizeBytes: 5,
-        contentBase64: "aGVsbG8="
+        sha256: "a".repeat(64),
+        localPath: imagePath
       }]
     });
 
@@ -114,7 +117,7 @@ test("Codex app-server includes image attachments in turn input", async () => {
       .map((line) => JSON.parse(line) as { method: string; params?: Record<string, unknown> });
     assert.deepEqual(methods[2]?.params?.input, [
       { type: "text", text: "Review this" },
-      { type: "image", url: "data:image/png;base64,aGVsbG8=" }
+      { type: "localImage", path: imagePath }
     ]);
   } finally {
     await client.close();

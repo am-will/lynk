@@ -54,7 +54,7 @@ The bridge exposes:
 
 - `ws://0.0.0.0:8788/phone` for Android
 - `http://127.0.0.1:8788/health` for local status
-- protected `http://127.0.0.1:8788/api/*` routes for phones, audit, pets, harness diagnostics, agent control, and command dispatch. Call these with `Authorization: Bearer $PHONE_AGENT_TOKEN` or `X-Phone-Agent-Token: $PHONE_AGENT_TOKEN`.
+- protected `http://127.0.0.1:8788/api/*` routes for phones, audit, pets, harness diagnostics, agent control, command dispatch, and streamed attachment blobs. Call these with `Authorization: Bearer $PHONE_AGENT_TOKEN` or `X-Phone-Agent-Token: $PHONE_AGENT_TOKEN`. Blob routes additionally require the Android device id and target chat session headers; see `docs/protocol.md`.
 
 The generated host configuration uses a 64-character random token. Manual tokens must contain 32 to 256 printable, non-whitespace characters with at least 8 distinct characters. The bridge also rejects malformed persisted configuration, partial or out-of-range ports, wrong URL schemes, and credentials embedded in endpoint URLs. `PHONE_AGENT_ALLOW_UNSAFE_DEVELOPMENT=1` bypasses only token-strength checks and is intended solely for an isolated development bridge; never use it on LAN or Tailscale listeners.
 
@@ -126,6 +126,8 @@ Open `android/` in Android Studio or run Gradle from that directory. Install the
 While OpenAgent is running, tap the bubble to open a large chat modal. The modal loads Gateway session history, streams active replies, shows model/reasoning/session controls behind the `+` button, and keeps phone-control tool activity collapsed until expanded. The foreground notification includes a **Stop Turn** action for active chat, dispatcher, and realtime voice work, including moments when the floating bubble is temporarily hidden during taps, swipes, or screenshots.
 
 The model picker controls the active harness. Host models use the PC bridge and may include OpenClaw, Hermes, Codex, OpenCode, Pi, and Devin entries. Use **Models & Harness** to toggle which harness sections appear in the picker, and use **System Prompt** to edit the default prompt. **Local LiteRT-LLM** appears when its harness toggle is on and a `.litertlm` file is installed; local phone mode stores its chat sessions under the app's private storage and emits the same `chat.*` timeline events as Host mode. It can call Android accessibility tools directly and can read/search/write files in its app-private local workspace when local developer tools are enabled. Termux command execution is reserved for a dedicated helper and reports a configuration error until that helper exists.
+
+Chat attachments and `.litertlm` imports stream into app-private temporary files on background I/O workers, then publish atomically after size and checksum validation. Chat attachments are limited to 50 MiB each, eight / 100 MiB per message, and 32 / 256 MiB in the Android attachment store. Local models must be `.litertlm`, range from 1 MiB to 4 GiB, and are limited to three / 8 GiB; the previously working model is not replaced until the new import is complete. Both stores preserve a free-space reserve and clean abandoned partial files at startup.
 
 For adb installs, build `android/app/build/outputs/apk/debug/app-debug.apk` and run:
 

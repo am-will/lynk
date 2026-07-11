@@ -86,6 +86,9 @@ import { normalizeChatSendContent } from "./chat/ChatSendAttachments.js";
 import { OpenClawRealtimeSessions } from "./OpenClawRealtimeSessions.js";
 import { OpenClawRunWaiters } from "./OpenClawRunWaiters.js";
 import { PhoneHub } from "./PhoneHub.js";
+import type { HostBlobStore } from "./blob/HostBlobStore.js";
+import { attachmentMetadata } from "../attachments/AttachmentCompatibility.js";
+import { resolveHostChatAttachments } from "./chat/HostChatAttachments.js";
 
 interface RealtimeChatOptions {
   taskKind: AgentTaskKind;
@@ -122,7 +125,8 @@ export class OpenClawChatBridge {
     private readonly hub: PhoneHub,
     private readonly dispatcher: Pick<Dispatcher, "handleUserRequest" | "stopActiveTurn">,
     private readonly audit?: AuditLog,
-    client?: GatewayChatClient
+    client?: GatewayChatClient,
+    private readonly blobs?: Pick<HostBlobStore, "resolve">
   ) {
     this.client = client ?? new HarnessChatRouter(config, audit);
     this.states = new HarnessDeviceStateStore(config);
@@ -321,11 +325,16 @@ export class OpenClawChatBridge {
       if (!this.states.canEnterHarness(message.deviceId, reservation)) {
         throw new ChatRunStartStoppedError(stopReasonForReservation(this.states.stateForReservation(message.deviceId, reservation)));
       }
+      const resolvedAttachments = resolveHostChatAttachments(
+        this.blobs,
+        { deviceId: message.deviceId, sessionKey: reservation.sessionKey },
+        attachments
+      );
       const result = await this.client.sendChat({
         sessionKey: reservation.sessionKey,
         sessionId: sessionId ?? undefined,
         message: messageForGateway(requestText, taskKind),
-        attachments,
+        attachments: resolvedAttachments,
         thinking: reasoningEffort,
         idempotencyKey
       });
@@ -358,7 +367,7 @@ export class OpenClawChatBridge {
         id: `user_${result.runId}`,
         role: "user",
         text: requestText,
-        ...(attachments.length ? { attachments } : {}),
+        ...(attachments.length ? { attachments: attachments.map(attachmentMetadata) } : {}),
         timestamp: Date.now()
       };
       this.states.trackPendingRun(
@@ -595,9 +604,14 @@ export class OpenClawChatBridge {
     taskKind: AgentTaskKind,
     activeRunId: string
   ): Promise<void> {
-    const attachments = message.attachments ?? [];
+    const attachmentReferences = message.attachments ?? [];
     const sessionKey = state.sessionKey;
     try {
+      const attachments = resolveHostChatAttachments(
+        this.blobs,
+        { deviceId: message.deviceId, sessionKey },
+        attachmentReferences
+      );
       state.reasoningEffort = normalizeThinkingLevel(message.reasoningEffort, state.reasoningEffort);
       if (this.client.steerChat) {
         await this.client.steerChat({
@@ -623,7 +637,7 @@ export class OpenClawChatBridge {
         sessionKey,
         runId: activeRunId,
         length: text.length,
-        attachments: attachments.length
+        attachments: attachmentReferences.length
       });
       this.sendState(message.deviceId, `Steered ${harnessLabel(state.harnessId)}`);
     } catch (error) {

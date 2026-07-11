@@ -1,7 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk";
-import type { ChatAttachment } from "../../protocol/messages.js";
+import type { ResolvedChatAttachment } from "../../attachments/AttachmentTypes.js";
+import { inlineCompatibilityAttachments } from "../../attachments/AttachmentCompatibility.js";
 import type { AuditLog } from "../AuditLog.js";
 
 export interface OpenCodeModelRef {
@@ -24,7 +25,7 @@ export interface OpenCodeSessionPromptOptions {
   sessionId: string;
   directory?: string;
   text: string;
-  attachments?: ChatAttachment[];
+  attachments?: ResolvedChatAttachment[];
   model?: OpenCodeModelRef;
   agent?: string;
   system?: string;
@@ -163,12 +164,9 @@ function sdkRequest(value: unknown): UnsafeOpenCodeSdkRequest {
   return value;
 }
 
-function promptParts(text: string, attachments: ChatAttachment[] | undefined): unknown[] {
+export function buildOpenCodePromptParts(text: string, attachments: ResolvedChatAttachment[] | undefined): unknown[] {
   const parts: unknown[] = [{ type: "text", text }];
-  for (const attachment of attachments ?? []) {
-    if (!attachment.contentBase64) {
-      continue;
-    }
+  for (const attachment of inlineCompatibilityAttachments(attachments)) {
     parts.push({
       type: "file",
       mime: attachment.mimeType,
@@ -185,7 +183,7 @@ function promptBody(options: OpenCodeSessionPromptOptions, defaultAgent: string 
     ...(options.model ? { model: { providerID: options.model.providerID, modelID: options.model.modelID, ...(options.model.variant ? { variant: options.model.variant } : {}) } } : {}),
     ...(options.agent ?? defaultAgent ? { agent: options.agent ?? defaultAgent } : {}),
     ...(options.system ? { system: options.system } : {}),
-    parts: promptParts(options.text, options.attachments)
+    parts: buildOpenCodePromptParts(options.text, options.attachments)
   };
 }
 

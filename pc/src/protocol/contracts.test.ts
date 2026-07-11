@@ -6,6 +6,8 @@ import test from "node:test";
 import {
   AGENT_MODEL_IDS,
   CHAT_ATTACHMENT_MAX_BYTES,
+  CHAT_ATTACHMENT_MAX_COUNT,
+  CHAT_ATTACHMENT_MAX_MESSAGE_BYTES,
   CHAT_SEND_DELIVERIES,
   MCP_PHONE_TOOL_NAME_BY_COMMAND,
   PHONE_COMMANDS,
@@ -13,6 +15,7 @@ import {
   REASONING_EFFORTS,
   REALTIME_TOOL_NAMES,
   chatAttachmentSchema,
+  chatAttachmentReferenceSchema,
   chatHistoryMessageSchema,
   chatSendMessageSchema,
   phoneOutboundMessageSchema,
@@ -104,51 +107,81 @@ test("chat send delivery accepts normal queue and steer modes", () => {
   }).success, false);
 });
 
-test("chat send accepts inline file attachments", () => {
-  const attachment = {
-    id: "att_1",
+test("chat send accepts owned blob references and history keeps metadata only", () => {
+  const metadata = {
+    id: "blob_attachment-1",
     kind: "image",
     displayName: "photo.png",
     mimeType: "image/png",
-    sizeBytes: 12,
-    contentBase64: "aGVsbG8="
+    sizeBytes: 12
   };
+  const attachment = { ...metadata, sha256: "a".repeat(64) };
 
-  assert.equal(chatAttachmentSchema.safeParse(attachment).success, true);
+  assert.equal(chatAttachmentSchema.safeParse(metadata).success, true);
+  assert.equal(chatAttachmentReferenceSchema.safeParse(attachment).success, true);
   const parsed = chatSendMessageSchema.parse({
     type: "chat.send",
     deviceId: "pixel",
+    sessionKey: "codex:session",
     text: "",
     attachments: [attachment]
   });
   assert.equal(parsed.text, "");
   assert.deepEqual(parsed.attachments, [attachment]);
-  assert.equal(chatHistoryMessageSchema.safeParse({
+  const history = chatHistoryMessageSchema.parse({
     role: "user",
     text: "",
     attachments: [attachment]
-  }).success, true);
+  });
+  assert.deepEqual(history.attachments, [metadata]);
 });
 
-test("chat attachments enforce base64 and size limits", () => {
+test("chat attachments reject inline payloads and enforce item, count, and aggregate limits", () => {
   const oversizedAttachment = {
-    id: "att_large",
+    id: "blob_attachment-large",
     kind: "file",
     displayName: "large.bin",
     mimeType: "application/octet-stream",
-    sizeBytes: CHAT_ATTACHMENT_MAX_BYTES + 1
+    sizeBytes: CHAT_ATTACHMENT_MAX_BYTES + 1,
+    sha256: "a".repeat(64)
   };
-  const invalidContentAttachment = {
-    id: "att_invalid",
+  const inlineAttachment = {
+    id: "blob_attachment-inline",
     kind: "file",
     displayName: "data.bin",
     mimeType: "application/octet-stream",
     sizeBytes: 12,
-    contentBase64: "not valid base64?"
+    sha256: "a".repeat(64),
+    contentBase64: "aGVsbG8="
   };
 
-  assert.equal(chatAttachmentSchema.safeParse(oversizedAttachment).success, false);
-  assert.equal(chatAttachmentSchema.safeParse(invalidContentAttachment).success, false);
+  assert.equal(chatAttachmentReferenceSchema.safeParse(oversizedAttachment).success, false);
+  assert.equal(chatAttachmentReferenceSchema.safeParse(inlineAttachment).success, false);
+  const message = (attachments: unknown[]) => ({
+    type: "chat.send",
+    deviceId: "pixel",
+    sessionKey: "codex:session",
+    text: "inspect",
+    attachments
+  });
+  const small = {
+    id: inlineAttachment.id,
+    kind: inlineAttachment.kind,
+    displayName: inlineAttachment.displayName,
+    mimeType: inlineAttachment.mimeType,
+    sizeBytes: 1,
+    sha256: inlineAttachment.sha256
+  };
+  assert.equal(chatSendMessageSchema.safeParse(message(Array.from({ length: CHAT_ATTACHMENT_MAX_COUNT + 1 }, (_, index) => ({
+    ...small,
+    id: `blob_attachment-${index}`
+  })))).success, false);
+  const aggregateChunk = Math.floor(CHAT_ATTACHMENT_MAX_MESSAGE_BYTES / 3) + 1;
+  assert.equal(chatSendMessageSchema.safeParse(message([
+    { ...small, id: "blob_attachment-total1", sizeBytes: aggregateChunk },
+    { ...small, id: "blob_attachment-total2", sizeBytes: aggregateChunk },
+    { ...small, id: "blob_attachment-total3", sizeBytes: aggregateChunk }
+  ])).success, false);
 });
 
 test("realtime start accepts selected chat backend model IDs", () => {

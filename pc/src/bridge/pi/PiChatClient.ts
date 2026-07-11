@@ -7,7 +7,8 @@ import {
   type SessionInfo
 } from "@earendil-works/pi-coding-agent";
 import type { AuditLog } from "../AuditLog.js";
-import type { ChatAttachment } from "../../protocol/messages.js";
+import type { ResolvedChatAttachment } from "../../attachments/AttachmentTypes.js";
+import { inlineCompatibilityAttachment } from "../../attachments/AttachmentCompatibility.js";
 import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "../chat/ChatTransportTypes.js";
 import { DEFAULT_REASONING_OPTIONS } from "../chat/ModelCatalog.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "../harness/InMemoryHarnessSessionStore.js";
@@ -107,7 +108,7 @@ export class PiChatClient {
     sessionKey: string;
     sessionId?: string;
     message: string;
-    attachments?: ChatAttachment[];
+    attachments?: ResolvedChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
@@ -136,7 +137,7 @@ export class PiChatClient {
     sessionKey: string;
     runId?: string;
     message: string;
-    attachments?: ChatAttachment[];
+    attachments?: ResolvedChatAttachment[];
   }): Promise<GatewayChatSendResult> {
     const active = this.activeFor(options.sessionKey, options.runId);
     if (!active) {
@@ -245,7 +246,7 @@ export class PiChatClient {
     this.runs.close();
   }
 
-  private async processRun(active: ActiveRun, message: string, attachments?: ChatAttachment[]): Promise<void> {
+  private async processRun(active: ActiveRun, message: string, attachments?: ResolvedChatAttachment[]): Promise<void> {
     try {
       await this.client.runWithTimeout(
         "Pi run",
@@ -523,12 +524,13 @@ function workspaceNameFromPath(path: string | null | undefined): string | null {
   return path ? basename(path) || path : null;
 }
 
-function imageAttachments(attachments: ChatAttachment[] | undefined): Array<{ type: "image"; data: string; mimeType: string }> {
+function imageAttachments(attachments: ResolvedChatAttachment[] | undefined): Array<{ type: "image"; data: string; mimeType: string }> {
   return (attachments ?? [])
-    .filter((attachment) => attachment.kind === "image" && Boolean(attachment.contentBase64))
+    .filter((attachment) => attachment.kind === "image")
+    .map(inlineCompatibilityAttachment)
     .map((attachment) => ({
       type: "image" as const,
-      data: attachment.contentBase64 ?? "",
+      data: attachment.contentBase64,
       mimeType: attachment.mimeType
     }));
 }

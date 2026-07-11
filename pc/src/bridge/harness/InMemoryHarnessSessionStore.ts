@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import { chatAttachmentSchema, type ChatAttachment, type ChatHistoryMessage, type ChatSessionSummary } from "../../protocol/messages.js";
 import type { HarnessId } from "../AgentHarness.js";
 import type { HarnessChatHistory, HarnessCreatedSession } from "./HarnessChatAdapter.js";
+import { attachmentMetadata } from "../../attachments/AttachmentCompatibility.js";
 
 export interface HarnessStoredMessage {
   id: string;
@@ -147,7 +148,7 @@ export class InMemoryHarnessSessionStore {
       id: `user_${idempotencyKey ?? randomUUID()}`,
       role: "user",
       text,
-      ...(attachments?.length ? { attachments } : {}),
+      ...(attachments?.length ? { attachments: attachments.map(attachmentMetadata) } : {}),
       timestamp: Date.now()
     });
     session.updatedAt = Date.now();
@@ -227,7 +228,7 @@ export class InMemoryHarnessSessionStore {
         id: message.id?.trim() || randomUUID(),
         role: message.role as HarnessStoredMessage["role"],
         text: message.text,
-        ...(message.attachments?.length ? { attachments: message.attachments } : {}),
+        ...(message.attachments?.length ? { attachments: message.attachments.map(attachmentMetadata) } : {}),
         timestamp: message.timestamp ?? Date.now()
       }));
     session.updatedAt = Date.now();

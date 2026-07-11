@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AuditLog } from "../AuditLog.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "../harness/InMemoryHarnessSessionStore.js";
-import type { ChatAttachment } from "../../protocol/messages.js";
+import type { ResolvedChatAttachment } from "../../attachments/AttachmentTypes.js";
 import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler, HarnessPermissionReplyOptions } from "../chat/ChatTransportTypes.js";
 import { DEFAULT_REASONING_OPTIONS } from "../chat/ModelCatalog.js";
 import { OpenCodeServerClient } from "./OpenCodeServerClient.js";
@@ -86,7 +86,7 @@ export class OpenCodeChatClient {
     sessionKey: string;
     sessionId?: string;
     message: string;
-    attachments?: ChatAttachment[];
+    attachments?: ResolvedChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {

@@ -1,4 +1,4 @@
-import type { ChatAttachment } from "../../protocol/messages.js";
+import type { ResolvedChatAttachment } from "../../attachments/AttachmentTypes.js";
 import type { HarnessId } from "../AgentHarness.js";
 
 export interface GatewayEvent {
@@ -22,7 +22,7 @@ export interface HarnessChatSendOptions {
   sessionKey: string;
   sessionId?: string;
   message: string;
-  attachments?: ChatAttachment[];
+  attachments?: ResolvedChatAttachment[];
   thinking?: string;
   idempotencyKey?: string;
 }

@@ -5,7 +5,8 @@ import { promisify } from "node:util";
 import { HermesApiClient, type HermesMetadataApi, type HermesRunsApi, type HermesRunTransport } from "../dispatcher/HermesApiClient.js";
 import { createHermesConfigRunsClient } from "../dispatcher/HermesConfigRunsClient.js";
 import { HermesRunDriver, type HermesActiveRun, type HermesRunDriverEvent } from "../dispatcher/HermesRunDriver.js";
-import type { ChatAttachment, ChatHistoryMessage, ChatSessionSummary } from "../protocol/messages.js";
+import type { ChatHistoryMessage, ChatSessionSummary } from "../protocol/messages.js";
+import type { ResolvedChatAttachment } from "../attachments/AttachmentTypes.js";
 import { resolveCommand, type CommandResolution } from "../host/CommandDiscovery.js";
 import type { BridgeConfig } from "./config.js";
 import { discoverHermesModels } from "./HermesModelDiscovery.js";
@@ -164,7 +165,7 @@ export class HermesChatClient {
     sessionKey: string;
     sessionId?: string;
     message: string;
-    attachments?: ChatAttachment[];
+    attachments?: ResolvedChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
@@ -226,7 +227,7 @@ export class HermesChatClient {
     sessionId?: string;
     runId?: string;
     message: string;
-    attachments?: ChatAttachment[];
+    attachments?: ResolvedChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
@@ -460,7 +461,7 @@ export class HermesChatClient {
       sessionKey: string;
       sessionId?: string;
       message: string;
-      attachments?: ChatAttachment[];
+      attachments?: ResolvedChatAttachment[];
       thinking?: string;
       idempotencyKey?: string;
     },

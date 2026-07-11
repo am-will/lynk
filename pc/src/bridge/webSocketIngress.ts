@@ -1,11 +1,9 @@
 import { WebSocket as WebSocketState, type WebSocket } from "ws";
-import { CHAT_ATTACHMENT_MAX_BYTES } from "../protocol/messages.js";
-
 export const PHONE_WEBSOCKET_REGISTRATION_TIMEOUT_MS = 5_000;
 export const PHONE_WEBSOCKET_HEARTBEAT_INTERVAL_MS = 30_000;
 export const PHONE_WEBSOCKET_REGISTRATION_MAX_BYTES = 16 * 1024;
 export const PHONE_WEBSOCKET_CONTROL_FRAME_MAX_BYTES = 256 * 1024;
-export const PHONE_WEBSOCKET_MAX_PAYLOAD_BYTES = Math.ceil(CHAT_ATTACHMENT_MAX_BYTES / 3) * 4 + (256 * 1024);
+export const PHONE_WEBSOCKET_MAX_PAYLOAD_BYTES = PHONE_WEBSOCKET_CONTROL_FRAME_MAX_BYTES;
 export const PHONE_WEBSOCKET_MAX_CONNECTIONS = 32;
 
 export interface PhoneWebSocketIngressOptions {

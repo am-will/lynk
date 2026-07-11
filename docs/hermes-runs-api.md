@@ -27,7 +27,7 @@ Set `HERMES_API_BASE_URL` to the API root, usually `http://127.0.0.1:8642/v1`, a
 }
 ```
 
-`attachments` uses Lynk's `ChatAttachment` shape from `docs/protocol.md`. `service_tier` is omitted unless fast mode is enabled; the only value Lynk currently sends is `"priority"`.
+`attachments` is a backend-compatibility array. Each entry contains `id`, `kind`, `displayName`, `mimeType`, `sizeBytes`, and `contentBase64`. The bridge creates this object only after resolving an authenticated blob reference and caps each converted attachment at 8 MiB. This payload-bearing shape is never accepted from Android and is never written to bridge session history. `service_tier` is omitted unless fast mode is enabled; the only value Lynk currently sends is `"priority"`.
 
 - `GET /runs/{run_id}` returns run status for diagnostics and recovery.
 - `GET /runs/{run_id}/events` streams Server-Sent Events. Lynk accepts JSON event payloads for text deltas, final output, errors, cancellation, and tool events.

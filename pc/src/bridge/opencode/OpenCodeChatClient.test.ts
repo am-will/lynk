@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import type { ChatAttachment } from "../../protocol/messages.js";
+import type { ResolvedChatAttachment } from "../../attachments/AttachmentTypes.js";
 import { OpenCodeChatClient } from "./OpenCodeChatClient.js";
 import { normalizeOpenCodeModels } from "./OpenCodeNormalizers.js";
-import { OpenCodeServerClient, type OpenCodeSessionPromptOptions } from "./OpenCodeServerClient.js";
+import { buildOpenCodePromptParts, OpenCodeServerClient, type OpenCodeSessionPromptOptions } from "./OpenCodeServerClient.js";
 
 function opencodeEvent(type: string, properties: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -29,6 +29,28 @@ test("OpenCode managed server spawn failures report unhealthy instead of crashin
 
   assert.equal(health.ok, false);
   assert.match(String(health.error), /failed to start|ENOENT|missing-opencode-binary-for-test/);
+});
+
+test("OpenCode attachment parts materialize without exposing host paths", () => {
+  const root = mkdtempSync(join(tmpdir(), "lynk-opencode-attachment-"));
+  const localPath = join(root, "payload.blob");
+  writeFileSync(localPath, "lynk");
+  try {
+    const parts = buildOpenCodePromptParts("inspect", [{
+      id: "blob_attachment-1",
+      kind: "file",
+      displayName: "note.txt",
+      mimeType: "text/plain",
+      sizeBytes: 4,
+      sha256: "a".repeat(64),
+      localPath
+    }]);
+    const serialized = JSON.stringify(parts);
+    assert.equal(serialized.includes(localPath), false);
+    assert.equal(serialized.includes("data:text/plain;base64,bHluaw=="), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 async function* streamEvents(events: unknown[]): AsyncGenerator<unknown> {
@@ -344,13 +366,14 @@ test("OpenCode prompts stream deltas, reasoning, tools, permissions, usage, and 
       message: "Reply with lynk",
       idempotencyKey: "run_1",
       attachments: [{
-        id: "att_1",
+        id: "blob_attachment-1",
         kind: "file",
         displayName: "note.txt",
         mimeType: "text/plain",
         sizeBytes: 4,
-        contentBase64: "bHluaw=="
-      } satisfies ChatAttachment]
+        sha256: "a".repeat(64),
+        localPath: "/private/blob"
+      } satisfies ResolvedChatAttachment]
     });
     await waitFor(() => events.some((event) => event.payload.state === "final") && events.some((event) => event.payload.eventId === "opencode_permission_perm_1"));
 

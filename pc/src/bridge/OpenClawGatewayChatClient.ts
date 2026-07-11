@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
-import type { ChatAttachment } from "../protocol/messages.js";
+import type { ResolvedChatAttachment } from "../attachments/AttachmentTypes.js";
+import { inlineCompatibilityAttachments } from "../attachments/AttachmentCompatibility.js";
 import type { BridgeConfig } from "./config.js";
 import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "./chat/ChatTransportTypes.js";
 import { asRecord, stringField } from "./chat/ChatNormalizers.js";
@@ -31,6 +32,26 @@ interface PendingRequest {
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
 
+interface OpenClawChatSendOptions {
+  sessionKey: string;
+  sessionId?: string;
+  message: string;
+  attachments?: ResolvedChatAttachment[];
+  thinking?: string;
+  idempotencyKey?: string;
+}
+
+export function buildOpenClawChatSendParams(options: OpenClawChatSendOptions, idempotencyKey: string): Record<string, unknown> {
+  return {
+    sessionKey: options.sessionKey,
+    ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+    message: options.message,
+    ...(options.attachments?.length ? { attachments: inlineCompatibilityAttachments(options.attachments) } : {}),
+    ...(options.thinking ? { thinking: options.thinking } : {}),
+    idempotencyKey
+  };
+}
+
 export class OpenClawGatewayChatClient {
   private socket?: WebSocket;
   private connectPromise?: Promise<void>;
@@ -49,23 +70,9 @@ export class OpenClawGatewayChatClient {
     return await this.request("chat.history", { sessionKey, limit: 100, maxChars: 12_000 });
   }
 
-  async sendChat(options: {
-    sessionKey: string;
-    sessionId?: string;
-    message: string;
-    attachments?: ChatAttachment[];
-    thinking?: string;
-    idempotencyKey?: string;
-  }): Promise<GatewayChatSendResult> {
+  async sendChat(options: OpenClawChatSendOptions): Promise<GatewayChatSendResult> {
     const idempotencyKey = options.idempotencyKey ?? randomUUID();
-    const payload = await this.request("chat.send", {
-      sessionKey: options.sessionKey,
-      ...(options.sessionId ? { sessionId: options.sessionId } : {}),
-      message: options.message,
-      ...(options.attachments?.length ? { attachments: options.attachments } : {}),
-      ...(options.thinking ? { thinking: options.thinking } : {}),
-      idempotencyKey
-    });
+    const payload = await this.request("chat.send", buildOpenClawChatSendParams(options, idempotencyKey));
     const record = asRecord(payload);
     return {
       runId: stringField(record, "runId") ?? idempotencyKey,
@@ -78,7 +85,7 @@ export class OpenClawGatewayChatClient {
     sessionId?: string;
     runId?: string;
     message: string;
-    attachments?: ChatAttachment[];
+    attachments?: ResolvedChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {

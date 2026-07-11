@@ -2,13 +2,13 @@ import type { ChatAttachment } from "../../protocol/messages.js";
 import type { HarnessId } from "../AgentHarness.js";
 import { HarnessAttachmentUnsupportedError, type HarnessCapabilities } from "./ChatTransportTypes.js";
 
-export function normalizeChatSendContent(text: string, attachments: ChatAttachment[] | undefined): {
+export function normalizeChatSendContent<Attachment extends ChatAttachment>(text: string, attachments: Attachment[] | undefined): {
   text: string;
-  attachments: ChatAttachment[];
+  attachments: Attachment[];
   requestText: string;
 } {
   const normalizedText = text.trim();
-  const normalizedAttachments = attachments ?? [];
+  const normalizedAttachments = attachments ?? [] as Attachment[];
   return {
     text: normalizedText,
     attachments: normalizedAttachments,

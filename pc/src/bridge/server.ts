@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { dirname, join } from "node:path";
 import { AuditLog } from "./AuditLog.js";
 import { Dispatcher } from "../dispatcher/dispatcher.js";
 import { OpenClawChatBridge } from "./OpenClawChatBridge.js";
@@ -12,12 +13,14 @@ import { BridgeRealtime } from "./bridgeRealtime.js";
 import { createPhoneWebSocketServer } from "./phoneWebSocket.js";
 import { startAdbReverseMonitor } from "./AdbReverseMonitor.js";
 import { createPhoneUpgradeHandler } from "./webSocketUpgrade.js";
+import { HostBlobStore } from "./blob/HostBlobStore.js";
 
 const config = getBridgeConfig();
 const audit = new AuditLog();
 const hub = new PhoneHub(config.defaultDeviceId, audit);
 const dispatcher = new Dispatcher(hub, audit);
-const chatBridge = new OpenClawChatBridge(config, hub, dispatcher, audit);
+const blobs = new HostBlobStore(join(dirname(config.configPath), "blobs"));
+const chatBridge = new OpenClawChatBridge(config, hub, dispatcher, audit, undefined, blobs);
 const realtimeClient = new OpenAiRealtimeClient(config);
 const webSearchClient = new OpenAiWebSearchClient(config);
 const adbReverseMonitor = startAdbReverseMonitor({ port: config.port });
@@ -52,6 +55,7 @@ const handleHttp = createBridgeHttpHandler({
   audit,
   dispatcher,
   chatBridge,
+  blobs,
   stopAgentWork
 });
 

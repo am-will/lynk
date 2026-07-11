@@ -98,6 +98,43 @@ test("Hermes config runs client streams OpenAI-compatible deltas", async () => {
   assert.equal(chatRequestBody?.model, "MiniMax-M2.7");
 });
 
+test("Hermes config materializes image attachments only at provider request time", async () => {
+  const root = mkdtempSync(join(tmpdir(), "lynk-hermes-config-attachment-"));
+  const localPath = join(root, "payload.blob");
+  writeFileSync(localPath, "hello");
+  let requestBody: string | undefined;
+  const fetchFn: FetchLike = async (_input, init) => {
+    requestBody = typeof init?.body === "string" ? init.body : undefined;
+    return sseResponse([{ choices: [{ delta: { content: "done" } }] }]);
+  };
+  const client = new HermesConfigRunsClient({
+    provider: "local-minimax",
+    model: "MiniMax-M2.7",
+    baseUrl: "http://127.0.0.1:8009/v1"
+  }, fetchFn);
+  try {
+    const run = await client.createRun({
+      input: "inspect",
+      sessionId: "session",
+      attachments: [{
+        id: "blob_attachment-1",
+        kind: "image",
+        displayName: "photo.png",
+        mimeType: "image/png",
+        sizeBytes: 5,
+        sha256: "a".repeat(64),
+        localPath
+      }]
+    });
+    await client.streamRunEvents(run.runId, () => undefined);
+    assert.ok(requestBody);
+    assert.equal(requestBody.includes(localPath), false);
+    assert.equal(requestBody.includes("data:image/png;base64,aGVsbG8="), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("Hermes run driver maps config adapter deltas into accumulated output", async () => {
   const fetchFn: FetchLike = async (input) => {
     const url = String(input);

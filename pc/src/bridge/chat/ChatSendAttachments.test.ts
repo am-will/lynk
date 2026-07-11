@@ -9,8 +9,7 @@ const attachment: ChatAttachment = {
   kind: "image",
   displayName: "photo.png",
   mimeType: "image/png",
-  sizeBytes: 12,
-  contentBase64: "aGVsbG8="
+  sizeBytes: 12
 };
 
 test("normalizeChatSendContent supplies an attachment-only prompt", () => {
