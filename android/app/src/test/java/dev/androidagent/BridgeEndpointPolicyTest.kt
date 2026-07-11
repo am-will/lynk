@@ -21,10 +21,18 @@ class BridgeEndpointPolicyTest {
             BridgeEndpointSecurity.LocalDevelopment,
             BridgeEndpointPolicy.normalize("ws://127.0.0.1:8788")?.security
         )
+        assertEquals(
+            BridgeEndpointSecurity.LocalDevelopment,
+            BridgeEndpointPolicy.normalize("ws://[::1]:8788")?.security
+        )
         assertNull(BridgeEndpointPolicy.normalize("ws://100.88.12.34:8788/phone"))
         assertEquals(
             BridgeEndpointSecurity.TrustedOverlayDevelopment,
             BridgeEndpointPolicy.normalize("ws://100.88.12.34:8788/phone", allowInsecureTrustedOverlay = true)?.security
+        )
+        assertEquals(
+            BridgeEndpointSecurity.TrustedOverlayDevelopment,
+            BridgeEndpointPolicy.normalize("ws://[fd7a:115c:a1e0::1]:8788/phone", allowInsecureTrustedOverlay = true)?.security
         )
         assertNull(BridgeEndpointPolicy.normalize("ws://192.168.1.20:8788/phone", allowInsecureTrustedOverlay = true))
     }

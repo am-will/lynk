@@ -14,7 +14,12 @@ object BridgeEndpointPolicy {
     fun normalize(raw: String, allowInsecureTrustedOverlay: Boolean = false): NormalizedBridgeEndpoint? {
         val uri = runCatching { URI(raw.trim()) }.getOrNull() ?: return null
         val scheme = uri.scheme?.lowercase() ?: return null
-        val host = uri.host?.lowercase()?.trimEnd('.') ?: return null
+        val host = uri.host
+            ?.removePrefix("[")
+            ?.removeSuffix("]")
+            ?.lowercase()
+            ?.trimEnd('.')
+            ?: return null
         if (scheme !in setOf("ws", "wss") || uri.userInfo != null || uri.fragment != null || uri.query != null) return null
         if (uri.port !in -1..65_535) return null
         if (!uri.path.isNullOrEmpty() && uri.path != "/" && uri.path != "/phone") return null
