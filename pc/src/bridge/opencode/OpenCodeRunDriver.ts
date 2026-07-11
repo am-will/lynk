@@ -81,6 +81,7 @@ export class OpenCodeRunDriver {
     let lastText = "";
     let eventError: string | undefined;
     const abortController = active.resource;
+    const startedAt = Date.now();
     try {
       const eventStream = this.consumeEvents(session, active.runId, directory, abortController.signal, (result) => {
         if (result.textDelta !== undefined) {
@@ -98,6 +99,8 @@ export class OpenCodeRunDriver {
         if (result.error) {
           eventError = result.error;
         }
+      }).catch((error) => {
+        if (!abortController.signal.aborted) eventError = error instanceof Error ? error.message : String(error);
       });
       await withAdapterDeadline(
         this.client.promptAsync({
@@ -108,10 +111,9 @@ export class OpenCodeRunDriver {
           model: parseModelRef(model),
           agent: this.client.defaultAgentName()
         }),
-        { timeoutMs: this.timeoutMs, harnessId: "opencode", operation: "prompt", signal: abortController.signal }
+        { timeoutMs: remainingTime(startedAt, this.timeoutMs), harnessId: "opencode", operation: "prompt", signal: abortController.signal }
       );
 
-      const startedAt = Date.now();
       let completed = false;
       while (Date.now() - startedAt < this.timeoutMs) {
         if (abortController.signal.aborted) {
@@ -145,7 +147,7 @@ export class OpenCodeRunDriver {
         if (eventError) {
           throw new Error(eventError);
         }
-        await new Promise((resolve) => setTimeout(resolve, 400));
+        await new Promise((resolve) => setTimeout(resolve, Math.min(400, remainingTime(startedAt, this.timeoutMs))));
       }
       if (!completed) {
         throw new AdapterFailure("timeout", `OpenCode run timed out after ${this.timeoutMs}ms`, {
@@ -154,7 +156,11 @@ export class OpenCodeRunDriver {
         });
       }
       abortController.abort();
-      await eventStream.catch(() => undefined);
+      await withAdapterDeadline(eventStream, {
+        timeoutMs: Math.min(1_000, this.timeoutMs),
+        harnessId: "opencode",
+        operation: "event-stream-close"
+      });
       if (eventError) {
         throw new Error(eventError);
       }
@@ -212,7 +218,12 @@ export class OpenCodeRunDriver {
           error: error instanceof Error ? error.message : String(error)
         });
       }
+      throw error;
     }
   }
 
+}
+
+function remainingTime(startedAt: number, timeoutMs: number): number {
+  return Math.max(1, timeoutMs - (Date.now() - startedAt));
 }

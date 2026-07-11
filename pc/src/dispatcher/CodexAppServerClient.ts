@@ -685,8 +685,12 @@ export class CodexAppServerClient implements AgentClient {
     let message: any;
     try {
       message = JSON.parse(line);
-    } catch {
-      this.activeSink?.info(line);
+    } catch (cause) {
+      void this.failGeneration(generation, new AdapterFailure("protocol", "Codex app-server emitted invalid JSON on stdout", {
+        cause,
+        harnessId: "codex",
+        operation: "stdout"
+      }), true);
       return;
     }
 
