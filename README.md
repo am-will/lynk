@@ -97,7 +97,7 @@ If npm package install is unavailable, use the source checkout fallback:
 If the user is using Tailscale:
 1. Confirm Tailscale is installed and signed in on both PC and Android.
 2. On the PC, run: tailscale status
-3. Use the Tailscale endpoint from the pairing payload. It should look like ws://<pc-magicdns-name>:8788/phone or ws://100.x.y.z:8788/phone.
+3. Use an explicitly configured `wss://` endpoint from the pairing payload. For trusted-overlay development only, `PHONE_AGENT_PAIRING_ALLOW_INSECURE_TAILSCALE=1` permits a confirmed `ws://100.x.y.z:8788/phone` endpoint.
 4. In a source checkout, you may also print the Tailscale URL with: npm run phone:tailscale
 5. Keep only the Lynk phone-facing bridge reachable over Tailscale. Do not expose OpenClaw Gateway, Hermes, Codex app-server, Devin ACP stdio, or other host-agent transports publicly.
 
@@ -287,11 +287,10 @@ npm run host:pairing
 npm run host:pairing:qr
 ```
 
-The pairing payload includes ordered endpoint candidates. Use the `tailscale` endpoint when present, usually one of:
+The pairing payload includes only usable endpoint candidates. Normal network pairing requires an explicitly configured TLS terminator, for example:
 
 ```text
-ws://<pc-magicdns-name>:8788/phone
-ws://100.x.y.z:8788/phone
+wss://lynk.your-tailnet.ts.net/phone
 ```
 
 For a source checkout, you can also print just the Tailscale bridge URL:
@@ -353,7 +352,7 @@ npm run phone:usb
 
 On Android, either scan the pairing QR or set these fields manually:
 
-- WebSocket URL: one of the pairing `endpoints[].url` values, usually `ws://<your-computer-lan-ip>:8788/phone`.
+- WebSocket URL: one of the pairing `endpoints[].url` values. Network endpoints use `wss://`; direct LAN `ws://` is rejected.
 - Device ID: `openclaw-agent` unless you changed `PHONE_AGENT_DEFAULT_DEVICE`.
 - Token: the pairing `token` value.
 
