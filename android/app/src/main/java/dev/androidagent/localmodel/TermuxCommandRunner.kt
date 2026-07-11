@@ -255,6 +255,11 @@ class TermuxCommandRunner private constructor(
         reason: TermuxCancellationReason
     ): Deferred<KillAttempt> = synchronized(execution) {
         execution.killRequest?.let { return@synchronized it }
+        if (execution.lifecycle.state() is TermuxExecutionState.Settled) {
+            return@synchronized CompletableDeferred(
+                KillAttempt(true, "already-exited", "Execution had already settled before cancellation.")
+            )
+        }
         execution.lifecycle.requestCancellation(reason)
         execution.lifecycle.markKillRequested()
         val requested = CompletableDeferred<KillAttempt>()

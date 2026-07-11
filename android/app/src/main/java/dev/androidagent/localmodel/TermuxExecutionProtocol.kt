@@ -354,9 +354,10 @@ internal object TermuxExecutionProtocol {
           attempt=__D__((attempt + 1))
           sleep 0.01
         done
-        acquire_guard || true
-        rm -f -- "__D__state" "__D__go" "__D__cancel"
-        release_guard
+        if acquire_guard; then
+          rm -f -- "__D__state" "__D__go" "__D__cancel"
+          release_guard
+        fi
         printf 'LYNK_KILL verified %s %s %s %s\n' "__D__id" "__D__pid" "__D__pgid" "__D__start"
         exit 0
         """.trimIndent()
