@@ -126,6 +126,26 @@ export const CHAT_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
 const CHAT_ATTACHMENT_MAX_BASE64_CHARS = Math.ceil(CHAT_ATTACHMENT_MAX_BYTES / 3) * 4;
 export type ChatTaskKind = typeof CHAT_TASK_KINDS[number];
 
+function isBoundedCanonicalBase64(value: string): boolean {
+  if (value.length > CHAT_ATTACHMENT_MAX_BASE64_CHARS || value.length % 4 !== 0) {
+    return false;
+  }
+  const paddingLength = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  const contentEnd = value.length - paddingLength;
+  for (let index = 0; index < contentEnd; index += 1) {
+    const code = value.charCodeAt(index);
+    const valid = (code >= 65 && code <= 90)
+      || (code >= 97 && code <= 122)
+      || (code >= 48 && code <= 57)
+      || code === 43
+      || code === 47;
+    if (!valid) {
+      return false;
+    }
+  }
+  return value.slice(contentEnd).split("").every((character) => character === "=");
+}
+
 export const registerMessageSchema = z.object({
   type: z.literal("register"),
   deviceId: z.string().min(1),
@@ -263,10 +283,11 @@ export const chatOpenMessageSchema = z.object({
 const chatAttachmentContentBase64Schema = z.string()
   .min(1)
   .max(CHAT_ATTACHMENT_MAX_BASE64_CHARS)
-  .refine((value) => /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value), {
+  .refine(isBoundedCanonicalBase64, {
     message: "Attachment content must be valid base64."
   })
-  .refine((value) => Buffer.from(value, "base64").byteLength <= CHAT_ATTACHMENT_MAX_BYTES, {
+  .refine((value) => value.length <= CHAT_ATTACHMENT_MAX_BASE64_CHARS
+    && Buffer.from(value, "base64").byteLength <= CHAT_ATTACHMENT_MAX_BYTES, {
     message: `Attachment content must be ${CHAT_ATTACHMENT_MAX_BYTES} bytes or smaller.`
   });
 

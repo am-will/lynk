@@ -5,6 +5,14 @@ import org.junit.Test
 
 class ChatAttachmentPolicyTest {
     @Test
+    fun importAcceptsExactItemLimit() {
+        ChatAttachmentPolicy.validateImport(
+            ChatAttachmentPolicy.MAX_ATTACHMENT_BYTES,
+            "exact-limit.bin"
+        )
+    }
+
+    @Test
     fun hostSendRejectsAttachmentsOverLimit() {
         val attachment = StoredChatAttachment(
             id = "att_1",
