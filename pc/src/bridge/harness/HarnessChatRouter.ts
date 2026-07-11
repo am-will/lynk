@@ -91,6 +91,7 @@ const HARNESS_ADAPTER_FACTORIES: Partial<Record<HarnessId, HarnessAdapterFactory
     command: config.devinAcpCommand,
     cwd: config.devinAgentCwd,
     runTimeoutMs: config.devinRunTimeoutMs,
+    permissionMode: config.devinPermissionMode,
     storagePath: join(dirname(config.configPath), "devin-sessions.json")
   })
 };

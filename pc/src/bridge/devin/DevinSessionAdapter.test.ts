@@ -57,15 +57,35 @@ function defaultModelOptions(): SessionConfigOption[] {
   ];
 }
 
-function buildAdapter(controls: FakeControls, storagePath: string, cwd = "/test"): DevinSessionAdapter {
+function buildAdapter(
+  controls: FakeControls,
+  storagePath: string,
+  cwd = "/test",
+  permissionMode?: string
+): DevinSessionAdapter {
   return new DevinSessionAdapter({
     command: "devin acp",
     cwd,
     storagePath,
     startupTimeoutMs: LONG_TIMEOUT_MS,
     requestTimeoutMs: LONG_TIMEOUT_MS,
+    permissionMode,
     processFactory: { create: async () => controls.process }
   });
+}
+
+function permissionModeOptions(currentValue = "accept-edits"): SessionConfigOption[] {
+  return [{
+    id: "mode",
+    name: "Session Mode",
+    type: "select",
+    category: "mode",
+    currentValue,
+    options: [
+      { value: "accept-edits", name: "Code" },
+      { value: "bypass", name: "Bypass Permissions" }
+    ]
+  }];
 }
 
 function textChunk(
@@ -838,6 +858,40 @@ describe("DevinSessionAdapter", () => {
       }]);
       assert.deepEqual(await adapter.effectiveTools("devin:commands-1"), []);
       assert.equal(adapter.capabilities.supportsAttachments, false);
+      cleanup();
+    });
+  });
+
+  describe("permission mode", () => {
+    it("reapplies bypass mode when sessions are created and loaded", async () => {
+      const { storagePath, cleanup } = tmpStorage();
+      const setCalls: Array<{ sessionId: string; configId: string; value: string }> = [];
+      const options = [...defaultModelOptions(), ...permissionModeOptions()];
+      const controls = createConfigurableDevinProcess({
+        handlers: {
+          sessionNew: () => ({ sessionId: "bypass-new", configOptions: options }),
+          sessionLoad: () => ({ configOptions: options }),
+          sessionSetConfigOption: (params) => {
+            setCalls.push({
+              sessionId: params.sessionId,
+              configId: params.configId,
+              value: params.value as string
+            });
+            return {
+              configOptions: [...defaultModelOptions(), ...permissionModeOptions(params.value as string)]
+            };
+          }
+        }
+      });
+      const adapter = buildAdapter(controls, storagePath, "/test", "bypass");
+
+      await adapter.createSession({});
+      await adapter.history("devin:bypass-existing");
+
+      assert.deepEqual(setCalls, [
+        { sessionId: "bypass-new", configId: "mode", value: "bypass" },
+        { sessionId: "bypass-existing", configId: "mode", value: "bypass" }
+      ]);
       cleanup();
     });
   });

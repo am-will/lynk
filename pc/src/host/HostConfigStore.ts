@@ -44,6 +44,7 @@ export interface HostBridgeConfigFile {
   devinAcpCommand?: string;
   devinAgentCwd?: string;
   devinRunTimeoutSeconds?: number;
+  devinPermissionMode?: string;
   discoveredPaths?: Record<string, string>;
 }
 
@@ -126,7 +127,8 @@ export function loadOrCreateHostBridgeConfig(path = defaultHostBridgeConfigPath(
     piRunTimeoutSeconds: 600,
     devinAcpCommand: "devin acp",
     devinAgentCwd: defaultAgentCwd,
-    devinRunTimeoutSeconds: 600
+    devinRunTimeoutSeconds: 600,
+    devinPermissionMode: ""
   };
   writeHostBridgeConfig(path, config);
   return { path, config, created: true };

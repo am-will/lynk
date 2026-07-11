@@ -38,6 +38,7 @@ import { DevinSessionCatalog } from "./DevinSessionCatalog.js";
 import {
   chatModelOptionsFromDevinConfig,
   devinConfigFromOptions,
+  selectDevinModeConfigId,
   selectDevinModelConfigId,
   selectDevinThoughtConfigId,
   type DevinEffectiveConfig
@@ -54,6 +55,7 @@ export interface DevinSessionAdapterOptions {
   runTimeoutMs?: number;
   startupTimeoutMs?: number;
   requestTimeoutMs?: number;
+  permissionMode?: string;
   processFactory?: DevinAcpProcessFactory;
 }
 
@@ -65,6 +67,7 @@ export class DevinSessionAdapter implements HarnessChatAdapter {
   private readonly store: InMemoryHarnessSessionStore;
   private readonly catalog: DevinSessionCatalog;
   private readonly workspaceCwd: string;
+  private readonly permissionMode?: string;
   private readonly handlers = new Set<GatewayEventHandler>();
   private readonly runDriver: DevinRunDriver;
   private readonly permissionBroker: DevinPermissionBroker;
@@ -79,6 +82,7 @@ export class DevinSessionAdapter implements HarnessChatAdapter {
 
   constructor(options: DevinSessionAdapterOptions) {
     this.workspaceCwd = resolveAbsoluteCwd(options.cwd);
+    this.permissionMode = options.permissionMode?.trim() || undefined;
     this.client = options.client ?? new DevinAcpClient({
       command: options.command,
       cwd: this.workspaceCwd,
@@ -201,6 +205,7 @@ export class DevinSessionAdapter implements HarnessChatAdapter {
       const sessionKey = `devin:${sessionId}`;
       const snapshot = collector.snapshot(sessionId);
       let config = devinConfigFromOptions(created.configOptions ?? snapshot.configOptions);
+      config = await this.applyPermissionMode(sessionId, config);
 
       const requestedModel = options.model?.trim();
       if (requestedModel) {
@@ -296,7 +301,9 @@ export class DevinSessionAdapter implements HarnessChatAdapter {
       const loaded = await this.client.sessionLoad({ sessionId, cwd: workspacePath, mcpServers: [] });
       const snapshot = collector.snapshot(sessionId);
       this.store.replaceHistory(sessionKey, snapshot.messages);
-      this.applyConfig(sessionKey, sessionId, loaded.configOptions ?? snapshot.configOptions, loaded.modes ?? snapshot.currentModeState);
+      let config = devinConfigFromOptions(loaded.configOptions ?? snapshot.configOptions);
+      config = await this.applyPermissionMode(sessionId, config);
+      this.applyConfig(sessionKey, sessionId, config.options, loaded.modes ?? snapshot.currentModeState);
       this.applyCommands(sessionKey, sessionId, snapshot.commands);
       const stored = this.store.ensureSession(sessionKey, sessionId);
       this.store.setMetadata(stored, "workspacePath", workspacePath);
@@ -319,6 +326,22 @@ export class DevinSessionAdapter implements HarnessChatAdapter {
       return config;
     }
     const response = await this.client.sessionSetConfigOption({ sessionId, configId, value });
+    return devinConfigFromOptions(response.configOptions);
+  }
+
+  private async applyPermissionMode(
+    sessionId: string,
+    config: DevinEffectiveConfig
+  ): Promise<DevinEffectiveConfig> {
+    const configId = selectDevinModeConfigId(config, this.permissionMode);
+    if (!configId || !this.permissionMode) {
+      return config;
+    }
+    const response = await this.client.sessionSetConfigOption({
+      sessionId,
+      configId,
+      value: this.permissionMode
+    });
     return devinConfigFromOptions(response.configOptions);
   }
 

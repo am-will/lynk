@@ -19,6 +19,12 @@ export interface DevinThoughtLevelOption {
   description?: string | null;
 }
 
+export interface DevinModeOption {
+  value: string;
+  label: string;
+  description?: string | null;
+}
+
 export interface DevinEffectiveConfig {
   options: SessionConfigOption[];
   modelConfig?: {
@@ -30,6 +36,11 @@ export interface DevinEffectiveConfig {
     id: string;
     currentValue: string;
     options: DevinThoughtLevelOption[];
+  };
+  modeConfig?: {
+    id: string;
+    currentValue: string;
+    options: DevinModeOption[];
   };
 }
 
@@ -55,6 +66,17 @@ export function devinConfigFromOptions(
     }
     if (option.category === "thought_level") {
       result.thoughtConfig = {
+        id: option.id,
+        currentValue: option.currentValue,
+        options: selectOptions.map((o) => ({
+          value: o.value,
+          label: o.name,
+          description: o.description
+        }))
+      };
+    }
+    if (option.category === "mode") {
+      result.modeConfig = {
         id: option.id,
         currentValue: option.currentValue,
         options: selectOptions.map((o) => ({
@@ -156,4 +178,24 @@ export function selectDevinThoughtConfigId(
     });
   }
   return config.thoughtConfig.id;
+}
+
+export function selectDevinModeConfigId(
+  config: DevinEffectiveConfig,
+  requestedMode: string | undefined
+): string | undefined {
+  if (!requestedMode || config.modeConfig?.currentValue === requestedMode) {
+    return undefined;
+  }
+  if (!config.modeConfig) {
+    throw new ChatClientError("Devin does not advertise a permission mode selector.", {
+      code: "devin.mode_not_available"
+    });
+  }
+  if (!config.modeConfig.options.some((option) => option.value === requestedMode)) {
+    throw new ChatClientError(`Devin mode "${requestedMode}" is not currently advertised.`, {
+      code: "devin.mode_not_available"
+    });
+  }
+  return config.modeConfig.id;
 }

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +10,7 @@ import { getBridgeConfig } from "./config.js";
 const originalToken = process.env.PHONE_AGENT_TOKEN;
 const originalConfigPath = process.env.PHONE_AGENT_CONFIG_PATH;
 const originalPath = process.env.PATH;
+const originalDevinPermissionMode = process.env.DEVIN_PERMISSION_MODE;
 let tempRoot: string | undefined;
 
 test.beforeEach(async () => {
@@ -29,6 +31,11 @@ test.afterEach(async () => {
     process.env.PHONE_AGENT_CONFIG_PATH = originalConfigPath;
   }
   process.env.PATH = originalPath;
+  if (originalDevinPermissionMode === undefined) {
+    delete process.env.DEVIN_PERMISSION_MODE;
+  } else {
+    process.env.DEVIN_PERMISSION_MODE = originalDevinPermissionMode;
+  }
   if (tempRoot) {
     await rm(tempRoot, { recursive: true, force: true });
     tempRoot = undefined;
@@ -60,19 +67,32 @@ test("getBridgeConfig uses Devin defaults and env overrides", () => {
   const defaults = getBridgeConfig();
   assert.equal(defaults.devinAcpCommand, "devin acp");
   assert.equal(defaults.devinRunTimeoutMs, 600_000);
+  assert.equal(defaults.devinPermissionMode, undefined);
+
+  const hostConfig = JSON.parse(readFileSync(defaults.configPath, "utf8")) as Record<string, unknown>;
+  hostConfig.devinPermissionMode = "bypass";
+  writeFileSync(defaults.configPath, `${JSON.stringify(hostConfig, null, 2)}\n`, { mode: 0o600 });
+  process.env.DEVIN_PERMISSION_MODE = "  ";
+  assert.equal(getBridgeConfig().devinPermissionMode, "bypass");
 
   process.env.DEVIN_ACP_COMMAND = "/opt/devin/bin/devin acp";
   process.env.DEVIN_AGENT_CWD = "/tmp/devin-cwd";
   process.env.DEVIN_RUN_TIMEOUT_SECONDS = "300";
+  process.env.DEVIN_PERMISSION_MODE = "bypass";
   try {
     const overridden = getBridgeConfig();
     assert.equal(overridden.devinAcpCommand, "/opt/devin/bin/devin acp");
     assert.equal(overridden.devinAgentCwd, "/tmp/devin-cwd");
     assert.equal(overridden.devinRunTimeoutMs, 300_000);
+    assert.equal(overridden.devinPermissionMode, "bypass");
 
     process.env.DEVIN_RUN_TIMEOUT_SECONDS = "0";
     assert.throws(() => getBridgeConfig(), /DEVIN_RUN_TIMEOUT_SECONDS must be a positive integer/);
+    process.env.DEVIN_RUN_TIMEOUT_SECONDS = "300";
+    process.env.DEVIN_PERMISSION_MODE = "unsafe";
+    assert.throws(() => getBridgeConfig(), /DEVIN_PERMISSION_MODE/);
   } finally {
+    delete process.env.DEVIN_PERMISSION_MODE;
     delete process.env.DEVIN_RUN_TIMEOUT_SECONDS;
     delete process.env.DEVIN_AGENT_CWD;
     delete process.env.DEVIN_ACP_COMMAND;

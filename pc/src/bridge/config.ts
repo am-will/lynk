@@ -49,6 +49,7 @@ export interface BridgeConfig {
   devinAcpCommand: string;
   devinAgentCwd: string;
   devinRunTimeoutMs: number;
+  devinPermissionMode?: string;
   devinConfigured: boolean;
 }
 
@@ -95,6 +96,15 @@ function readPositiveInt(name: string, fallback: number): number {
     throw new Error(`${name} must be a positive integer.`);
   }
   return parsed;
+}
+
+function readDevinPermissionMode(value: string | undefined): string | undefined {
+  const mode = value?.trim();
+  if (!mode) return undefined;
+  if (!new Set(["accept-edits", "ask", "plan", "bypass"]).has(mode)) {
+    throw new Error("DEVIN_PERMISSION_MODE must be accept-edits, ask, plan, or bypass.");
+  }
+  return mode;
 }
 
 export function getBridgeConfig(): BridgeConfig {
@@ -154,6 +164,7 @@ export function getBridgeConfig(): BridgeConfig {
     devinAcpCommand: process.env.DEVIN_ACP_COMMAND?.trim() || host.devinAcpCommand?.trim() || "devin acp",
     devinAgentCwd: process.env.DEVIN_AGENT_CWD?.trim() || host.devinAgentCwd?.trim() || process.cwd(),
     devinRunTimeoutMs: readPositiveInt("DEVIN_RUN_TIMEOUT_SECONDS", host.devinRunTimeoutSeconds ?? 600) * 1000,
+    devinPermissionMode: readDevinPermissionMode(process.env.DEVIN_PERMISSION_MODE?.trim() || host.devinPermissionMode),
     devinConfigured: resolveCommand(process.env.DEVIN_ACP_COMMAND?.trim() || host.devinAcpCommand?.trim() || "devin acp").available
   };
 }

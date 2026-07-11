@@ -5,6 +5,7 @@ import { ChatClientError } from "../chat/ChatErrors.js";
 import {
   chatModelOptionsFromDevinConfig,
   devinConfigFromOptions,
+  selectDevinModeConfigId,
   selectDevinModelConfigId,
   selectDevinThoughtConfigId
 } from "./DevinSessionConfig.js";
@@ -40,6 +41,21 @@ function thoughtOption(overrides: Partial<SessionConfigOption> = {}): SessionCon
   } as SessionConfigOption;
 }
 
+function modeOption(overrides: Partial<SessionConfigOption> = {}): SessionConfigOption {
+  return {
+    id: "mode",
+    name: "Session Mode",
+    type: "select",
+    category: "mode",
+    currentValue: "accept-edits",
+    options: [
+      { value: "accept-edits", name: "Code" },
+      { value: "bypass", name: "Bypass Permissions" }
+    ],
+    ...overrides
+  } as SessionConfigOption;
+}
+
 describe("DevinSessionConfig", () => {
   it("extracts model and thought config options by category", () => {
     const config = devinConfigFromOptions([modelOption(), thoughtOption()]);
@@ -53,6 +69,14 @@ describe("DevinSessionConfig", () => {
   it("recognizes model_config category as model selector", () => {
     const config = devinConfigFromOptions([modelOption({ category: "model_config" })]);
     assert.equal(config.modelConfig?.id, "model");
+  });
+
+  it("extracts and selects the advertised permission mode", () => {
+    const config = devinConfigFromOptions([modeOption()]);
+    assert.equal(config.modeConfig?.currentValue, "accept-edits");
+    assert.equal(selectDevinModeConfigId(config, "bypass"), "mode");
+    assert.equal(selectDevinModeConfigId(config, "accept-edits"), undefined);
+    assert.throws(() => selectDevinModeConfigId(config, "unknown"), ChatClientError);
   });
 
   it("returns default model option when no model selector is advertised", () => {
