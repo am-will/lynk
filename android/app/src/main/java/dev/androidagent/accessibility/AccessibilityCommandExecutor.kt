@@ -20,12 +20,15 @@ import android.view.accessibility.AccessibilityNodeInfo
 import dev.androidagent.OverlayController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
+import java.util.UUID
 import kotlin.coroutines.resume
 
 class AccessibilityCommandExecutor internal constructor(
@@ -37,36 +40,68 @@ class AccessibilityCommandExecutor internal constructor(
 ) {
     private val scope = CoroutineScope(Dispatchers.Main)
     private val observer = ScreenObserver()
+    private val commandActor = PhoneCommandActor { invocation ->
+        onPhoneControlCommandStarted(invocation.command)
+        try {
+            executeInternal(
+                invocation.command,
+                invocation.args,
+                invocation.ownerId,
+                invocation.approvalCapability
+            )
+        } finally {
+            onPhoneControlCommandFinished(invocation.command)
+        }
+    }
+
+    suspend fun executeSuspending(
+        commandId: String,
+        command: String,
+        args: JSONObject,
+        requestOwner: String = LEGACY_REQUEST_OWNER,
+        approvalCapability: String? = null
+    ): CommandResult = commandActor.execute(
+        PhoneCommandInvocation(commandId, requestOwner, command, args, approvalCapability)
+    )
 
     fun execute(
         command: String,
         args: JSONObject,
         requestOwner: String = LEGACY_REQUEST_OWNER,
         approvalCapability: String? = null,
+        commandId: String = "android_${UUID.randomUUID()}",
         callback: (CommandResult) -> Unit
     ) {
         scope.launch {
-            onPhoneControlCommandStarted(command)
-            val result = try {
-                runCatching { executeInternal(command, args, requestOwner, approvalCapability) }
-                    .getOrElse { CommandResult(false, currentObservationOrNull(), it.message ?: it.toString()) }
-            } finally {
-                onPhoneControlCommandFinished(command)
-            }
+            val result = executeSuspending(commandId, command, args, requestOwner, approvalCapability)
             callback(result)
         }
     }
 
     fun cancelApprovals(requestOwner: String) {
         approvalCapabilities.cancelOwner(requestOwner)
+        commandActor.cancelOwner(requestOwner)
     }
 
     fun cancelApprovalsForPrefix(prefix: String) {
         approvalCapabilities.cancelOwnerPrefix(prefix)
+        commandActor.cancelOwnerPrefix(prefix)
+    }
+
+    fun cancelCommand(commandId: String, requestOwner: String? = null, reason: String = PhoneCommandActor.COMMAND_CANCELLED) {
+        commandActor.cancelCommand(commandId, requestOwner, reason)
     }
 
     fun clearApprovals() {
         approvalCapabilities.clear()
+    }
+
+    fun close() {
+        approvalCapabilities.clear()
+        commandActor.close()
+        scope.cancel()
+        overlayController?.dismissConfirmation()
+        observer.clearNodes()
     }
 
     private suspend fun executeInternal(
@@ -475,13 +510,16 @@ class AccessibilityCommandExecutor internal constructor(
                 action.summary,
                 listOfNotNull(rationale, preview).joinToString("\n\n").takeIf { it.isNotBlank() }
             )
-        val confirmed = deferred?.let {
-            val result = withTimeoutOrNull(CONFIRMATION_TIMEOUT_MS) { it.await() }
-            if (result == null) {
-                overlayController.dismissConfirmation()
-            }
-            result ?: false
-        } ?: false
+        val confirmed = try {
+            deferred?.let {
+                val result = withTimeoutOrNull(CONFIRMATION_TIMEOUT_MS) { it.await() }
+                if (result == null) overlayController.dismissConfirmation()
+                result ?: false
+            } ?: false
+        } catch (error: CancellationException) {
+            overlayController?.dismissConfirmation()
+            throw error
+        }
         val capability = approvalCapabilities.issueIfApproved(
             confirmed,
             requestOwner,

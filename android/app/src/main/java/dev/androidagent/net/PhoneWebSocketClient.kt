@@ -4,6 +4,7 @@ import dev.androidagent.AgentConfig
 import dev.androidagent.BridgeEndpointPolicy
 import dev.androidagent.AgentLocation
 import dev.androidagent.accessibility.AccessibilityCommandExecutor
+import dev.androidagent.accessibility.PhoneCommandActor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -336,6 +337,7 @@ class PhoneWebSocketClient(
         }
         when (message.optString("type")) {
             "command" -> handleCommand(webSocket, message)
+            "command.cancel" -> handleCommandCancellation(message)
             "agent_status" -> onStatus(message.optString("text"), message.optString("status", "info"))
             "chat.state",
             "chat.history",
@@ -539,7 +541,7 @@ class PhoneWebSocketClient(
         }
         val args = message.optJSONObject("args") ?: JSONObject()
         val approvalCapability = message.optString("approvalCapability").takeIf { it.isNotBlank() }
-        commandExecutor.execute(command, args, requestOwner, approvalCapability) { result ->
+        commandExecutor.execute(command, args, requestOwner, approvalCapability, commandId = id) { result ->
             val response = JSONObject()
                 .put("id", id)
                 .put("type", "result")
@@ -553,6 +555,14 @@ class PhoneWebSocketClient(
             result.screenshot?.let { response.put("screenshot", it) }
             webSocket.send(response.toString())
         }
+    }
+
+    private fun handleCommandCancellation(message: JSONObject) {
+        val commandId = message.optString("commandId").takeIf { it.isNotBlank() } ?: return
+        val requestOwner = message.optString("requestOwner").takeIf { it.startsWith(HOST_OWNER_PREFIX) } ?: return
+        val reason = message.optString("reason").takeIf { it.isNotBlank() }
+            ?: PhoneCommandActor.COMMAND_CANCELLED
+        commandExecutor.cancelCommand(commandId, requestOwner, "command_cancelled: $reason")
     }
 
     private fun dispatchRealtimeError(message: String) {

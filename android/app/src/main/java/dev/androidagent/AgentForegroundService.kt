@@ -447,7 +447,7 @@ class AgentForegroundService : Service() {
     }
 
     override fun onDestroy() {
-        commandExecutor?.clearApprovals()
+        commandExecutor?.close()
         voiceRuntimeController?.stopFromUi()
         voiceRuntimeController?.close()
         realtimeVoiceCoordinator?.close()

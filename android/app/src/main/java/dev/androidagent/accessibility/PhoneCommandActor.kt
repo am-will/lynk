@@ -47,7 +47,7 @@ internal class PhoneCommandActor(
                 complete = { result -> if (continuation.isActive) continuation.resume(result) }
             )
             continuation.invokeOnCancellation {
-                cancelCommand(invocation.commandId, COMMAND_CANCELLED)
+                cancelCommand(invocation.commandId, invocation.ownerId, COMMAND_CANCELLED)
             }
             val rejection = synchronized(lock) {
                 when {
@@ -74,8 +74,8 @@ internal class PhoneCommandActor(
         cancelMatching({ it.ownerId.startsWith(prefix) }, reason)
     }
 
-    fun cancelCommand(commandId: String, reason: String = COMMAND_CANCELLED) {
-        cancelMatching({ it.commandId == commandId }, reason)
+    fun cancelCommand(commandId: String, ownerId: String? = null, reason: String = COMMAND_CANCELLED) {
+        cancelMatching({ it.commandId == commandId && (ownerId == null || it.ownerId == ownerId) }, reason)
     }
 
     fun close(reason: String = SERVICE_CLOSED) {

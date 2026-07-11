@@ -216,6 +216,7 @@ test("PC outbound phone messages have validating schemas for dev and tests", () 
   delete process.env.PHONE_AGENT_VALIDATE_OUTBOUND;
   const outboundMessages = [
     { id: "cmd_1", type: "command", requestOwner: "host:test", command: "observe_screen", args: {} },
+    { type: "command.cancel", commandId: "cmd_1", requestOwner: "host:test", reason: "timed out" },
     { type: "agent_status", deviceId: "pixel", status: "info", text: "Registered pixel" },
     { type: "realtime.sdp", deviceId: "pixel", sdp: "answer" },
     { type: "realtime.transcript_delta", deviceId: "pixel", role: "assistant", delta: "hi", isFinal: false },
