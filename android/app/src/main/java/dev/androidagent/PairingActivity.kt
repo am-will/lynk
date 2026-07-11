@@ -10,6 +10,8 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 
 class PairingActivity : ComponentActivity() {
+    private var pairingDialog: AlertDialog? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         showPairingIntent(intent)
@@ -18,7 +20,14 @@ class PairingActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        pairingDialog?.dismiss()
         showPairingIntent(intent)
+    }
+
+    override fun onDestroy() {
+        pairingDialog?.dismiss()
+        pairingDialog = null
+        super.onDestroy()
     }
 
     private fun showPairingIntent(intent: Intent?) {
@@ -44,7 +53,7 @@ class PairingActivity : ComponentActivity() {
             val vertical = (8 * resources.displayMetrics.density).toInt()
             setPadding(horizontal, vertical, horizontal, vertical)
         }
-        AlertDialog.Builder(this)
+        pairingDialog = AlertDialog.Builder(this)
             .setTitle(model.title)
             .setView(message)
             .setPositiveButton("Approve pairing") { _, _ -> approve(current, request) }
@@ -55,7 +64,7 @@ class PairingActivity : ComponentActivity() {
 
     private fun approve(current: AgentConfig, request: PairingRequest) {
         val fresh = PairingDeepLink.parse(intent?.dataString)
-        if (fresh !is PairingParseResult.Valid) {
+        if (fresh !is PairingParseResult.Valid || fresh.request != request) {
             showInvalid((fresh as? PairingParseResult.Invalid)?.reason ?: "Pairing link is no longer valid.")
             return
         }
@@ -90,7 +99,7 @@ class PairingActivity : ComponentActivity() {
     }
 
     private fun showInvalid(reason: String) {
-        AlertDialog.Builder(this)
+        pairingDialog = AlertDialog.Builder(this)
             .setTitle("Pairing link rejected")
             .setMessage(reason)
             .setPositiveButton("Close") { _, _ -> finish() }
