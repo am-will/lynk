@@ -100,8 +100,10 @@ export class PhoneHub {
     const message: CommandMessage = {
       id,
       type: "command",
+      requestOwner: `host:${request.requestOwner}`,
       command: request.command,
-      args: request.args ?? {}
+      args: request.args ?? {},
+      approvalCapability: request.approvalCapability
     };
     validatePhoneOutboundMessage(message);
 
@@ -163,7 +165,8 @@ export class PhoneHub {
       observation: result.observation,
       screenshotBase64: result.screenshotBase64 ?? null,
       screenshot: result.screenshot ?? null,
-      error: result.error ?? null
+      error: result.error ?? null,
+      approvalIssued: Boolean(result.approvalCapability)
     });
     pending.resolve({
       id: result.id,
@@ -172,7 +175,10 @@ export class PhoneHub {
       observation: result.observation,
       screenshotBase64: result.screenshotBase64 ?? null,
       screenshot: result.screenshot ?? null,
-      error: result.error ?? null
+      error: result.error ?? null,
+      approvalCapability: result.approvalCapability ?? null,
+      approvalExpiresAtMs: result.approvalExpiresAtMs ?? null,
+      approvedAction: result.approvedAction ?? null
     });
   }
 

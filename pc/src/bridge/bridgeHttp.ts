@@ -116,8 +116,12 @@ async function routeHttp(req: IncomingMessage, res: ServerResponse, deps: Bridge
     console.log(`[command] ${body.deviceId ?? deps.config.defaultDeviceId}: ${command}`);
     const result = await deps.hub.sendCommand({
       deviceId: typeof body.deviceId === "string" ? body.deviceId : undefined,
+      requestOwner: typeof body.requestOwner === "string" && body.requestOwner.trim()
+        ? body.requestOwner.trim()
+        : (() => { throw new Error("requestOwner is required"); })(),
       command,
       args: typeof body.args === "object" && body.args ? (body.args as Record<string, unknown>) : {},
+      approvalCapability: typeof body.approvalCapability === "string" ? body.approvalCapability : undefined,
       timeoutMs: typeof body.timeoutMs === "number" ? body.timeoutMs : undefined
     });
     console.log(`[result] ${result.deviceId}: ${command} ok=${result.ok}${result.error ? ` error=${result.error}` : ""}`);

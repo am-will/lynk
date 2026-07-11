@@ -124,6 +124,15 @@ internal class ApprovalCapabilityStore(
     }
 
     @Synchronized
+    fun cancelOwnerPrefix(prefix: String) {
+        val tokens = active.values.filter { it.ownerId.startsWith(prefix) }.map { it.token }
+        tokens.forEach { token ->
+            active.remove(token)
+            remember(token, TerminalState.Cancelled)
+        }
+    }
+
+    @Synchronized
     fun clear() {
         active.clear()
         terminal.clear()

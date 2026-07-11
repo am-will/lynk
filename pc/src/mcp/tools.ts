@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { PhoneToolClient, screenshotDirectory } from "./phoneToolClient.js";
-import { MCP_PHONE_TOOL_NAMES } from "../protocol/messages.js";
+import { MCP_PHONE_TOOL_NAMES, SENSITIVE_PHONE_COMMANDS } from "../protocol/messages.js";
 
 type ToolHandlerArgs = Record<string, unknown>;
 
@@ -37,11 +37,18 @@ function register(
   description: string,
   schema: z.ZodRawShape,
   command: Parameters<PhoneToolClient["command"]>[0],
-  mapArgs: (args: ToolHandlerArgs) => Record<string, unknown> = (args) => args
+  mapArgs: (args: ToolHandlerArgs) => Record<string, unknown> = (args) => args,
+  requiresApproval = false
 ): void {
   server.tool(name, description, schema, async (args) => {
     try {
-      return toolResult(await client.command(command, mapArgs(args)));
+      const approvalCapability = typeof args.approvalCapability === "string" ? args.approvalCapability : undefined;
+      if (requiresApproval && !approvalCapability) {
+        throw new Error(`authorization_required: call ${MCP_PHONE_TOOL_NAMES.askUserConfirmation} for this exact command and arguments first`);
+      }
+      const commandArgs = { ...args };
+      delete commandArgs.approvalCapability;
+      return toolResult(await client.command(command, mapArgs(commandArgs), 30_000, approvalCapability));
     } catch (error) {
       return toolError(error);
     }
@@ -49,6 +56,7 @@ function register(
 }
 
 export function registerPhoneTools(server: McpServer, client = new PhoneToolClient()): void {
+  const approvalCapability = { approvalCapability: z.string().min(20).max(256) };
   register(server, client, MCP_PHONE_TOOL_NAMES.observe, "Observe the current Android screen.", {}, "observe_screen");
 
   register(
@@ -63,32 +71,38 @@ export function registerPhoneTools(server: McpServer, client = new PhoneToolClie
     "open_app"
   );
 
-  register(server, client, MCP_PHONE_TOOL_NAMES.tapNode, "Tap an observed accessibility node. The result includes a fresh post-tap observation; do not call phone_observe again unless the result is ambiguous or stale.", { nodeId: z.string() }, "tap_node");
-  register(server, client, MCP_PHONE_TOOL_NAMES.tapXy, "Tap screen coordinates. The result includes a fresh post-tap observation; do not call phone_observe again unless the result is ambiguous or stale.", { x: z.number(), y: z.number() }, "tap_xy");
+  register(server, client, MCP_PHONE_TOOL_NAMES.tapNode, "Tap an observed accessibility node after exact user approval. The result includes a fresh post-tap observation.", { nodeId: z.string(), ...approvalCapability }, "tap_node", (args) => args, true);
+  register(server, client, MCP_PHONE_TOOL_NAMES.tapXy, "Tap screen coordinates after exact user approval. The result includes a fresh post-tap observation.", { x: z.number(), y: z.number(), ...approvalCapability }, "tap_xy", (args) => args, true);
   register(
     server,
     client,
     MCP_PHONE_TOOL_NAMES.tapNormalized,
     "Tap normalized full-screen coordinates from 0 to 1. Use this for coordinates derived from a screenshot shown at a scaled size. The result includes a fresh post-tap observation.",
-    { xPct: z.number().min(0).max(1), yPct: z.number().min(0).max(1) },
-    "tap_normalized"
+    { xPct: z.number().min(0).max(1), yPct: z.number().min(0).max(1), ...approvalCapability },
+    "tap_normalized",
+    (args) => args,
+    true
   );
-  register(server, client, MCP_PHONE_TOOL_NAMES.longPressNode, "Long press an observed accessibility node. The result includes a fresh post-action observation.", { nodeId: z.string() }, "long_press_node");
+  register(server, client, MCP_PHONE_TOOL_NAMES.longPressNode, "Long press an observed accessibility node after exact user approval.", { nodeId: z.string(), ...approvalCapability }, "long_press_node", (args) => args, true);
   register(
     server,
     client,
     MCP_PHONE_TOOL_NAMES.typeText,
     "Type text into the focused field. The Android client first tries Accessibility ACTION_SET_TEXT and falls back to clipboard paste for apps that reject direct text setting. The result includes a fresh post-type observation.",
-    { text: z.string() },
-    "type_text"
+    { text: z.string(), ...approvalCapability },
+    "type_text",
+    (args) => args,
+    true
   );
   register(
     server,
     client,
     MCP_PHONE_TOOL_NAMES.submitText,
     "Submit the focused Android text field using IME enter or a keyboard fallback tap. The result includes a fresh post-submit observation.",
-    {},
-    "submit_text"
+    approvalCapability,
+    "submit_text",
+    (args) => args,
+    true
   );
   register(
     server,
@@ -115,9 +129,9 @@ export function registerPhoneTools(server: McpServer, client = new PhoneToolClie
   register(server, client, MCP_PHONE_TOOL_NAMES.pressBack, "Press Android Back.", {}, "press_back");
   register(server, client, MCP_PHONE_TOOL_NAMES.pressHome, "Press Android Home.", {}, "press_home");
   register(server, client, MCP_PHONE_TOOL_NAMES.openRecents, "Open Android recents.", {}, "open_recents");
-  server.tool(MCP_PHONE_TOOL_NAMES.takeScreenshot, "Take an Android screenshot if supported and save it as a local PNG file.", {}, async () => {
+  server.tool(MCP_PHONE_TOOL_NAMES.takeScreenshot, "Take an approved Android screenshot and save it as a local PNG file.", approvalCapability, async (args) => {
     try {
-      const result = await client.command("take_screenshot", {});
+      const result = await client.command("take_screenshot", {}, 30_000, args.approvalCapability);
       if (!result.screenshotBase64) {
         return toolResult(result);
       }
@@ -139,9 +153,11 @@ export function registerPhoneTools(server: McpServer, client = new PhoneToolClie
     server,
     client,
     MCP_PHONE_TOOL_NAMES.askUserConfirmation,
-    "Ask the user to confirm a sensitive phone action.",
+    "Ask the user to approve one exact sensitive phone action. Pass the returned approvalCapability unchanged to that action; it expires quickly and can be used once.",
     {
-      message: z.string(),
+      command: z.enum(SENSITIVE_PHONE_COMMANDS),
+      args: z.record(z.string(), z.unknown()).default({}),
+      message: z.string().optional(),
       preview: z.string().optional()
     },
     "ask_user_confirmation"

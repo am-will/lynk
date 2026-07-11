@@ -21,10 +21,10 @@ class LocalToolRegistry(
 
     fun toolDescriptions() = LocalToolSpecs.descriptions()
 
-    suspend fun execute(call: LocalToolCall): JSONObject {
+    suspend fun execute(call: LocalToolCall, requestOwner: String): JSONObject {
         val phoneCommand = phoneTools[call.name]
         return if (phoneCommand != null) {
-            executePhone(phoneCommand, call.args)
+            executePhone(phoneCommand, call.args, requestOwner)
         } else when (call.name) {
             "local_read_skill" -> readSkill(call.args)
             "local_list_files" -> listFiles(call.args)
@@ -36,13 +36,19 @@ class LocalToolRegistry(
         }
     }
 
-    private suspend fun executePhone(command: String, args: JSONObject): JSONObject =
+    private suspend fun executePhone(command: String, args: JSONObject, requestOwner: String): JSONObject =
         suspendCancellableCoroutine { continuation ->
-            commandExecutor.execute(command, normalizePhoneArgs(command, args)) { result ->
+            val normalizedArgs = normalizePhoneArgs(command, args)
+            val approvalCapability = normalizedArgs.optString("approvalCapability").takeIf { it.isNotBlank() }
+            val commandArgs = JSONObject(normalizedArgs.toString()).apply { remove("approvalCapability") }
+            commandExecutor.execute(command, commandArgs, requestOwner, approvalCapability) { result ->
                 val json = JSONObject()
                     .put("ok", result.ok)
                     .put("observation", result.observation)
                     .put("error", result.error)
+                    .put("approvalCapability", result.approvalCapability)
+                    .put("approvalExpiresAtMs", result.approvalExpiresAtMs)
+                    .put("approvedAction", result.approvedAction)
                 result.screenshot?.let { json.put("screenshot", it) }
                 if (result.screenshotBase64 != null) {
                     val path = saveScreenshot(result.screenshotBase64)
@@ -52,6 +58,10 @@ class LocalToolRegistry(
                 continuation.resume(json)
             }
         }
+
+    fun cancelApprovals(requestOwner: String) {
+        commandExecutor.cancelApprovals(requestOwner)
+    }
 
     private fun normalizePhoneArgs(command: String, args: JSONObject): JSONObject {
         if (command == "open_app" && !args.has("packageName")) {

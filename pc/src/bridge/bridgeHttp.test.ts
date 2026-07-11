@@ -224,10 +224,11 @@ test("bridge HTTP routes commands, stop, unknown paths, and pet spritesheets", a
       const command = await fetch(`${baseUrl}/api/phone/default/command`, {
         method: "POST",
         headers: { ...authHeaders(), "content-type": "application/json" },
-        body: JSON.stringify({ command: "press_home" })
+        body: JSON.stringify({ command: "press_home", requestOwner: "test-client" })
       });
       assert.equal(command.status, 200);
       assert.equal(hub.commands[0].command, "press_home");
+      assert.equal(hub.commands[0].requestOwner, "test-client");
 
       const stop = await fetch(`${baseUrl}/api/agent/stop`, {
         method: "POST",

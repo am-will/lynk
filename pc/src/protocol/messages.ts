@@ -30,6 +30,15 @@ export type PhoneCommand = z.infer<typeof phoneCommandSchema>;
 
 export const PHONE_COMMAND_RISKS = ["observe", "navigation", "sensitive", "approval"] as const;
 export type PhoneCommandRisk = typeof PHONE_COMMAND_RISKS[number];
+export const SENSITIVE_PHONE_COMMANDS = [
+  "tap_node",
+  "tap_xy",
+  "tap_normalized",
+  "long_press_node",
+  "type_text",
+  "submit_text",
+  "take_screenshot"
+] as const;
 
 export const PHONE_COMMAND_RISK = {
   observe_screen: "observe",
@@ -127,8 +136,10 @@ export const registerMessageSchema = z.object({
 export const commandMessageSchema = z.object({
   id: z.string().min(1),
   type: z.literal("command"),
+  requestOwner: z.string().min(1).max(256),
   command: phoneCommandSchema,
-  args: z.record(z.string(), z.unknown()).default({})
+  args: z.record(z.string(), z.unknown()).default({}),
+  approvalCapability: z.string().min(20).max(256).optional()
 });
 
 export const resultMessageSchema = z.object({
@@ -144,7 +155,10 @@ export const resultMessageSchema = z.object({
     })
     .optional()
     .nullable(),
-  error: z.string().optional().nullable()
+  error: z.string().optional().nullable(),
+  approvalCapability: z.string().optional().nullable(),
+  approvalExpiresAtMs: z.number().int().positive().optional().nullable(),
+  approvedAction: z.string().optional().nullable()
 });
 
 export const selectedChatBackendModelSchema = z.string().min(1).refine((value) => {

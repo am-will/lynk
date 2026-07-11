@@ -61,6 +61,10 @@ class AccessibilityCommandExecutor internal constructor(
         approvalCapabilities.cancelOwner(requestOwner)
     }
 
+    fun cancelApprovalsForPrefix(prefix: String) {
+        approvalCapabilities.cancelOwnerPrefix(prefix)
+    }
+
     fun clearApprovals() {
         approvalCapabilities.clear()
     }
