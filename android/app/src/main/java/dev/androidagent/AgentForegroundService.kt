@@ -459,8 +459,13 @@ class AgentForegroundService : Service() {
         voiceTranscriptionManager?.close()
         serviceScope.cancel()
         chatClient?.close()
-        localModelEngineManager?.close()
+        val engineManager = localModelEngineManager
         localModelEngineManager = null
+        if (engineManager != null) {
+            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                engineManager.closeAndJoin("Lynk service destroyed")
+            }
+        }
         webSocketClient?.close()
         recentsRestoreCheck?.let(mainHandler::removeCallbacks)
         recentsRestoreCheck = null
