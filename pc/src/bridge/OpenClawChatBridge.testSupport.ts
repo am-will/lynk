@@ -55,6 +55,8 @@ export class FakeGatewayClient {
     options: { sessionKey: string; message: string; attachments?: ChatAttachment[]; thinking?: string; idempotencyKey?: string }
   ) => void;
   healthResponse: unknown = { ok: true, eventLoop: { degraded: false } };
+  healthGate?: Promise<void>;
+  healthCalls = 0;
   private runCount = 0;
 
   addEventListener(handler: GatewayEventHandler): () => void {
@@ -123,6 +125,8 @@ export class FakeGatewayClient {
   }
 
   async health(): Promise<unknown> {
+    this.healthCalls += 1;
+    await this.healthGate;
     return this.healthResponse;
   }
 

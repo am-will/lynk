@@ -4,6 +4,21 @@ import type { ChatAttachment } from "../protocol/messages.js";
 import { ChatClientError, CODEX_WORKSPACE_NOT_FOUND_CODE } from "./chat/ChatErrors.js";
 import { createHarness, defaultSessionKey, deferred, waitFor } from "./OpenClawChatBridge.testSupport.js";
 
+test("selected send does not wait for aggregate harness health", async () => {
+  const { bridge, client } = createHarness();
+  client.healthGate = new Promise(() => undefined);
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Hello selected harness",
+    idempotencyKey: "direct-send"
+  });
+
+  assert.equal(client.sent.length, 1);
+  assert.equal(client.healthCalls, 0);
+});
+
 test("realtime requests start a fresh chat only outside the reuse window", async () => {
   const originalNow = Date.now;
   let now = 1_000;

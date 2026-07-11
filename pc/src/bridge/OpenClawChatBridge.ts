@@ -15,8 +15,6 @@ import type {
   HarnessReadinessStatus
 } from "./OpenClawHarnessReadiness.js";
 import {
-  harnessUnavailableError,
-  healthForHarness,
   readinessAction
 } from "./OpenClawHarnessReadiness.js";
 import type {
@@ -287,30 +285,6 @@ export class OpenClawChatBridge {
       throw error;
     }
 
-    const healthError = await this.harnessHealthError(harnessId);
-    if (healthError) {
-      const reservationState = this.states.stateForReservation(message.deviceId, reservation);
-      this.states.rollbackRun(message.deviceId, state, reservation);
-      if (reservationState?.phase === "stopping") {
-        this.sendTerminalErrorOnce(
-          message.deviceId,
-          sessionKey,
-          idempotencyKey,
-          new ChatRunStartStoppedError(stopReasonForState(reservationState))
-        );
-        this.sendState(message.deviceId, "Stop requested");
-        this.drainQueuedSends(message.deviceId);
-        return;
-      }
-      this.sendChat(message.deviceId, buildChatErrorMessage({
-        deviceId: message.deviceId,
-        sessionKey,
-        runId: idempotencyKey,
-        error: healthError
-      }));
-      this.sendState(message.deviceId, `${harnessLabel(harnessId)} is not reachable`);
-      return;
-    }
     try {
       if (requestedModel && !isSameModelSelection(message.model?.trim() ?? requestedModel, previousModel)) {
         await this.client.patchSession(sessionKey, { model: requestedModel });
@@ -424,24 +398,6 @@ export class OpenClawChatBridge {
 
     this.states.rollbackRun(message.deviceId, state, reservation);
     this.sendTerminalErrorOnce(message.deviceId, reservation.sessionKey, idempotencyKey, error);
-  }
-
-  private async harnessHealthError(harnessId: HarnessId): Promise<ChatClientError | undefined> {
-    const label = harnessLabel(harnessId);
-    let payload: unknown;
-    try {
-      payload = await this.client.health();
-    } catch (error) {
-      return harnessUnavailableError(harnessId, label, error);
-    }
-    const health = healthForHarness(payload, harnessId);
-    if (!health) {
-      return undefined;
-    }
-    if (health.ok === false) {
-      return harnessUnavailableError(harnessId, label, health.error ?? health.message ?? payload);
-    }
-    return undefined;
   }
 
   private queueChatMessage(

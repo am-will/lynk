@@ -47,6 +47,8 @@ class FakeAdapter implements HarnessChatAdapter {
   readonly sessions: ChatSessionSummary[] = [];
   readonly models: ChatModelOption[] = [];
   readonly commands: ChatCommandOption[] = [];
+  healthGate?: Promise<void>;
+  healthResponse: unknown = { ok: true };
 
   constructor(readonly harnessId: HarnessId) {
     this.capabilities = { supportsAttachments: true };
@@ -100,7 +102,8 @@ class FakeAdapter implements HarnessChatAdapter {
   }
 
   async health(): Promise<unknown> {
-    return { ok: true };
+    await this.healthGate;
+    return this.healthResponse;
   }
 
   close(): void {}
@@ -326,4 +329,22 @@ test("production router instantiates the configured Devin adapter factory", asyn
   const health = await router.health() as { harnesses: Record<string, unknown> };
   assert.ok("devin" in health.harnesses);
   router.close();
+});
+
+test("aggregate diagnostics run concurrently and bound a hung harness", async () => {
+  const { openclaw, hermes, codex, opencode, pi, devin } = createRouter();
+  hermes.healthGate = new Promise(() => undefined);
+  codex.healthResponse = { ok: false, error: "offline" };
+  const router = new HarnessChatRouter(config, undefined, [openclaw, hermes, codex, opencode, pi, devin], {
+    diagnosticDeadlineMs: 10
+  });
+
+  const startedAt = Date.now();
+  const result = await router.health() as { harnesses: Record<string, { ok: boolean; code?: string }> };
+
+  assert.ok(Date.now() - startedAt < 100);
+  assert.equal(result.harnesses.openclaw?.ok, true);
+  assert.equal(result.harnesses.codex?.ok, false);
+  assert.equal(result.harnesses.hermes?.ok, false);
+  assert.equal(result.harnesses.hermes?.code, "timeout");
 });
