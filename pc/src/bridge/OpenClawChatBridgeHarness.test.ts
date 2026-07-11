@@ -234,7 +234,7 @@ test("open uses the selected session harness in loading status", async () => {
   assert.equal(chatMessages.find((message) => message.type === "chat.state")?.status, "Loading Hermes chat");
 });
 
-test("unhealthy active harness fails before sending with harness-specific guidance", async () => {
+test("diagnostic health does not preempt a selected harness send", async () => {
   const { bridge, chatMessages, client, fallbackCalls } = createHarness();
   client.healthResponse = {
     harnesses: {
@@ -251,12 +251,10 @@ test("unhealthy active harness fails before sending with harness-specific guidan
     model: "hermes:gpt-5.5"
   });
 
-  assert.equal(client.sent.length, 0);
+  assert.equal(client.sent.length, 1);
   assert.equal(fallbackCalls.length, 0);
   const error = chatMessages.find((message) => message.type === "chat.error");
-  assert.equal(error?.code, "hermes.unreachable");
-  assert.match(error?.message ?? "", /Hermes backend is not reachable/);
-  assert.match(error?.message ?? "", /HERMES_API_BASE_URL/);
+  assert.equal(error, undefined);
 });
 
 test("harness switch ignores stale OpenClaw session key on next send", async () => {

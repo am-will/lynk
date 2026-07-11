@@ -155,7 +155,7 @@ test("Codex RPC timeout tears down the hung generation and permits clean restart
   const previousCounter = process.env.CODEX_FAKE_COUNTER;
   const previousTimeout = process.env.CODEX_RPC_TIMEOUT_MS;
   process.env.CODEX_FAKE_COUNTER = counterPath;
-  process.env.CODEX_RPC_TIMEOUT_MS = "150";
+  process.env.CODEX_RPC_TIMEOUT_MS = "1000";
   const client = new CodexAppServerClient(undefined, `"${process.execPath}" "${scriptPath}"`, dir);
   try {
     await assert.rejects(client.listModels(), (error) => isAdapterFailure(error, "timeout"));
@@ -199,7 +199,7 @@ test("Codex teardown escalates from TERM to bounded KILL for an unresponsive own
   const previousTimeout = process.env.CODEX_RPC_TIMEOUT_MS;
   process.env.CODEX_FAKE_PID = pidPath;
   process.env.CODEX_FAKE_TERM = termPath;
-  process.env.CODEX_RPC_TIMEOUT_MS = "150";
+  process.env.CODEX_RPC_TIMEOUT_MS = "1000";
   const client = new CodexAppServerClient(undefined, `"${process.execPath}" "${scriptPath}"`, dir);
   try {
     await assert.rejects(client.listModels(), (error) => isAdapterFailure(error, "timeout"));
