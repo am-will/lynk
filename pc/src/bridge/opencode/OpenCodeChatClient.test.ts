@@ -337,7 +337,10 @@ test("OpenCode local sessions appear after first user message and empty sessions
   fake.messagesPayload = {
     messages: [{ info: { role: "assistant" }, parts: [{ type: "text", text: "ack" }] }]
   };
-  const client = new OpenCodeChatClient(undefined, fake as never, statePath, { storageDataDir: dataDir });
+  const client = new OpenCodeChatClient(undefined, fake as never, statePath, {
+    storageDataDir: dataDir,
+    legacyStoragePaths: []
+  });
 
   try {
     const created = await client.createSession({ label: "Draft", model: "openai/gpt-5.5", workspacePath: workspace }) as Record<string, unknown>;

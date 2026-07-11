@@ -53,6 +53,7 @@ export class OpenCodeChatClient {
       defaultAgent?: string;
       timeoutMs?: number;
       storageDataDir?: string;
+      legacyStoragePaths?: string[];
     } = {}
   ) {
     this.client = client ?? new OpenCodeServerClient(audit, options);
@@ -60,7 +61,7 @@ export class OpenCodeChatClient {
       defaultModel: OPENCODE_DEFAULT_MODEL,
       modelProvider: "opencode",
       storagePath: sessionStoragePath ?? undefined,
-      legacyStoragePaths: [join(process.cwd(), "state", "opencode-sessions.json")],
+      legacyStoragePaths: options.legacyStoragePaths ?? [join(process.cwd(), "state", "opencode-sessions.json")],
       persistEmptySessions: false
     });
     this.sessionCatalog = new OpenCodeSessionCatalog(this.sessions, this.client, OPENCODE_DEFAULT_MODEL, options.storageDataDir);
