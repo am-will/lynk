@@ -11,6 +11,7 @@ import {
   parseModelRef,
   usageFromMessages
 } from "./OpenCodeNormalizers.js";
+import { AdapterFailure, withAdapterDeadline } from "../harness/AdapterFailure.js";
 
 type EmitGatewayEvent = (event: string, payload: unknown) => void;
 
@@ -22,7 +23,8 @@ export class OpenCodeRunDriver {
     private readonly client: OpenCodeServerClient,
     private readonly sessions: InMemoryHarnessSessionStore,
     private readonly emit: EmitGatewayEvent,
-    private readonly audit?: AuditLog
+    private readonly audit?: AuditLog,
+    private readonly timeoutMs = 600_000
   ) {
     this.eventNormalizer = new OpenCodeEventNormalizer(emit);
     this.runs = new HarnessRunLifecycle(sessions, {
@@ -57,13 +59,10 @@ export class OpenCodeRunDriver {
     }
     const session = this.sessions.ensureSession(active.sessionKey);
     active.resource.abort();
-    await this.client.abort(session.sessionId, directoryForSession(session));
-    this.emit("chat", {
-      sessionKey: active.sessionKey,
-      runId: active.runId,
-      state: "error",
-      error: "OpenCode run stopped."
-    });
+    await withAdapterDeadline(
+      this.client.abort(session.sessionId, directoryForSession(session)),
+      { timeoutMs: Math.min(this.timeoutMs, 5_000), harnessId: "opencode", operation: "abort" }
+    );
     return { status: "stopping" };
   }
 
@@ -100,18 +99,30 @@ export class OpenCodeRunDriver {
           eventError = result.error;
         }
       });
-      await this.client.promptAsync({
-        sessionId: session.sessionId,
-        directory,
-        text,
-        attachments,
-        model: parseModelRef(model),
-        agent: this.client.defaultAgentName()
-      });
+      await withAdapterDeadline(
+        this.client.promptAsync({
+          sessionId: session.sessionId,
+          directory,
+          text,
+          attachments,
+          model: parseModelRef(model),
+          agent: this.client.defaultAgentName()
+        }),
+        { timeoutMs: this.timeoutMs, harnessId: "opencode", operation: "prompt", signal: abortController.signal }
+      );
 
       const startedAt = Date.now();
-      while (Date.now() - startedAt < 600_000) {
-        const messages = await this.client.messages(session.sessionId, directory).catch(() => undefined);
+      let completed = false;
+      while (Date.now() - startedAt < this.timeoutMs) {
+        if (abortController.signal.aborted) {
+          throw new AdapterFailure("cancelled", "OpenCode run stopped", { harnessId: "opencode", operation: "run" });
+        }
+        const remainingMs = this.timeoutMs - (Date.now() - startedAt);
+        const operationTimeoutMs = Math.max(1, Math.min(5_000, remainingMs));
+        const messages = await withAdapterDeadline(
+          this.client.messages(session.sessionId, directory),
+          { timeoutMs: operationTimeoutMs, harnessId: "opencode", operation: "messages", signal: abortController.signal }
+        );
         if (messages) {
           const nextText = latestAssistantText(messages);
           if (nextText && nextText !== lastText) {
@@ -123,14 +134,24 @@ export class OpenCodeRunDriver {
           }
           this.sessions.setUsage(session, usageFromMessages(messages));
         }
-        const status = await this.client.status(directory).catch(() => undefined);
+        const status = await withAdapterDeadline(
+          this.client.status(directory),
+          { timeoutMs: operationTimeoutMs, harnessId: "opencode", operation: "status", signal: abortController.signal }
+        );
         if (status && isIdleStatus(status, session.sessionId) && lastText) {
+          completed = true;
           break;
         }
         if (eventError) {
           throw new Error(eventError);
         }
         await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+      if (!completed) {
+        throw new AdapterFailure("timeout", `OpenCode run timed out after ${this.timeoutMs}ms`, {
+          harnessId: "opencode",
+          operation: "run"
+        });
       }
       abortController.abort();
       await eventStream.catch(() => undefined);
@@ -145,11 +166,19 @@ export class OpenCodeRunDriver {
         message: lastText
       });
     } catch (error) {
+      abortController.abort();
+      if (!(error instanceof AdapterFailure && error.code === "cancelled")) {
+        await withAdapterDeadline(
+          this.client.abort(session.sessionId, directory),
+          { timeoutMs: Math.min(this.timeoutMs, 5_000), harnessId: "opencode", operation: "abort" }
+        ).catch(() => undefined);
+      }
       this.emit("chat", {
         sessionKey: session.key,
         runId: active.runId,
         state: "error",
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
+        ...(error instanceof AdapterFailure ? { code: error.code } : {})
       });
     } finally {
       this.runs.clear(active);

@@ -60,7 +60,13 @@ export class OpenCodeChatClient {
       persistEmptySessions: false
     });
     this.sessionCatalog = new OpenCodeSessionCatalog(this.sessions, this.client, OPENCODE_DEFAULT_MODEL, options.storageDataDir);
-    this.runDriver = new OpenCodeRunDriver(this.client, this.sessions, (event, payload) => this.emit(event, payload), audit);
+    this.runDriver = new OpenCodeRunDriver(
+      this.client,
+      this.sessions,
+      (event, payload) => this.emit(event, payload),
+      audit,
+      options.timeoutMs
+    );
   }
 
   addEventListener(handler: GatewayEventHandler): () => void {
