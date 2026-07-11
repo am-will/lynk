@@ -1,0 +1,209 @@
+import { randomUUID } from "node:crypto";
+import { constants } from "node:fs";
+import {
+  access,
+  chmod,
+  copyFile,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  stat
+} from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
+
+const PRIVATE_DIRECTORY_MODE = 0o700;
+const PRIVATE_FILE_MODE = 0o600;
+
+export interface AtomicWriteOptions {
+  maxBytes?: number;
+  keepBackup?: boolean;
+  beforeRename?: (temporaryPath: string) => Promise<void> | void;
+}
+
+export interface JsonRecovery<T> {
+  value: T;
+  source: "primary" | "backup" | "fallback";
+  quarantinedPath?: string;
+}
+
+export async function ensurePrivateDirectory(path: string): Promise<void> {
+  await mkdir(path, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
+  await chmod(path, PRIVATE_DIRECTORY_MODE).catch(handleUnsupportedMode);
+}
+
+export async function atomicWritePrivateFile(
+  path: string,
+  data: string | Uint8Array,
+  options: AtomicWriteOptions = {}
+): Promise<void> {
+  const bytes = typeof data === "string" ? Buffer.byteLength(data) : data.byteLength;
+  const maxBytes = options.maxBytes ?? 16 * 1024 * 1024;
+  if (bytes > maxBytes) throw new Error(`Persistence payload exceeds ${maxBytes} bytes.`);
+
+  const directory = dirname(path);
+  await ensurePrivateDirectory(directory);
+  await cleanupAtomicLeftovers(path);
+  const temporaryPath = join(directory, `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`);
+  let handle;
+  try {
+    handle = await open(temporaryPath, "wx", PRIVATE_FILE_MODE);
+    await handle.writeFile(data);
+    await handle.sync();
+    await handle.close();
+    handle = undefined;
+    await chmod(temporaryPath, PRIVATE_FILE_MODE).catch(handleUnsupportedMode);
+    if (options.keepBackup !== false && await exists(path)) {
+      await copyFile(path, `${path}.bak`);
+      await chmod(`${path}.bak`, PRIVATE_FILE_MODE).catch(handleUnsupportedMode);
+    }
+    await options.beforeRename?.(temporaryPath);
+    await rename(temporaryPath, path);
+    await chmod(path, PRIVATE_FILE_MODE).catch(handleUnsupportedMode);
+    await syncDirectory(directory);
+  } catch (error) {
+    await handle?.close().catch(() => undefined);
+    await rm(temporaryPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+export async function readJsonWithRecovery<T>(
+  path: string,
+  fallback: () => T,
+  validate: (value: unknown) => value is T,
+  maxBytes = 16 * 1024 * 1024
+): Promise<JsonRecovery<T>> {
+  const primary = await readBoundedJson(path, validate, maxBytes);
+  if (primary.ok) return { value: primary.value, source: "primary" };
+  if (primary.missing) return { value: fallback(), source: "fallback" };
+
+  const quarantinedPath = `${path}.corrupt-${Date.now()}`;
+  await rename(path, quarantinedPath).catch(() => undefined);
+  const backup = await readBoundedJson(`${path}.bak`, validate, maxBytes);
+  if (backup.ok) {
+    await atomicWritePrivateFile(path, `${JSON.stringify(backup.value, null, 2)}\n`, { maxBytes, keepBackup: false });
+    return { value: backup.value, source: "backup", quarantinedPath };
+  }
+  return { value: fallback(), source: "fallback", quarantinedPath };
+}
+
+export class DebouncedAtomicJsonWriter<T> {
+  private timer?: NodeJS.Timeout;
+  private pending?: T;
+  private chain: Promise<void> = Promise.resolve();
+  private closed = false;
+
+  constructor(
+    private readonly path: string,
+    private readonly debounceMs = 25,
+    private readonly maxBytes = 16 * 1024 * 1024
+  ) {}
+
+  schedule(value: T): void {
+    if (this.closed) throw new Error("Persistence writer is closed.");
+    this.pending = value;
+    if (this.timer) return;
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      this.enqueuePending();
+    }, this.debounceMs);
+    this.timer.unref?.();
+  }
+
+  async flush(): Promise<void> {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = undefined;
+    }
+    this.enqueuePending();
+    await this.chain;
+  }
+
+  async close(): Promise<void> {
+    await this.flush();
+    this.closed = true;
+  }
+
+  private enqueuePending(): void {
+    const value = this.pending;
+    if (value === undefined) return;
+    this.pending = undefined;
+    const encoded = `${JSON.stringify(value, null, 2)}\n`;
+    this.chain = this.chain.then(() => atomicWritePrivateFile(this.path, encoded, { maxBytes: this.maxBytes }));
+  }
+}
+
+export async function migrateLegacyFile(
+  destination: string,
+  legacyCandidates: readonly string[],
+  markerPath: string,
+  maxBytes = 16 * 1024 * 1024
+): Promise<{ migrated: boolean; source?: string }> {
+  if (await exists(markerPath)) return { migrated: false };
+  if (await exists(destination)) {
+    await atomicWritePrivateFile(markerPath, `${JSON.stringify({ version: 1, state: "destination-present" })}\n`);
+    return { migrated: false };
+  }
+  for (const source of legacyCandidates) {
+    if (!await exists(source)) continue;
+    const sourceStat = await stat(source);
+    if (!sourceStat.isFile() || sourceStat.size > maxBytes) continue;
+    const contents = await readFile(source);
+    await atomicWritePrivateFile(destination, contents, { maxBytes, keepBackup: false });
+    const verified = await readFile(destination);
+    if (!verified.equals(contents)) throw new Error(`Legacy migration verification failed for ${source}.`);
+    await atomicWritePrivateFile(markerPath, `${JSON.stringify({ version: 1, state: "copied", source, destination })}\n`);
+    return { migrated: true, source };
+  }
+  await atomicWritePrivateFile(markerPath, `${JSON.stringify({ version: 1, state: "no-source" })}\n`);
+  return { migrated: false };
+}
+
+export async function cleanupAtomicLeftovers(path: string): Promise<void> {
+  const directory = dirname(path);
+  const prefix = `.${basename(path)}.`;
+  const entries = await readdir(directory).catch(() => []);
+  await Promise.all(entries
+    .filter((entry) => entry.startsWith(prefix) && entry.endsWith(".tmp"))
+    .map((entry) => rm(join(directory, entry), { force: true })));
+}
+
+async function readBoundedJson<T>(
+  path: string,
+  validate: (value: unknown) => value is T,
+  maxBytes: number
+): Promise<{ ok: true; value: T } | { ok: false; missing?: boolean }> {
+  try {
+    const info = await stat(path);
+    if (!info.isFile() || info.size > maxBytes) return { ok: false };
+    const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
+    return validate(parsed) ? { ok: true, value: parsed } : { ok: false };
+  } catch (error) {
+    return isMissing(error) ? { ok: false, missing: true } : { ok: false };
+  }
+}
+
+async function exists(path: string): Promise<boolean> {
+  return access(path, constants.F_OK).then(() => true, () => false);
+}
+
+async function syncDirectory(path: string): Promise<void> {
+  if (process.platform === "win32") return;
+  const handle = await open(path, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+function isMissing(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+}
+
+function handleUnsupportedMode(error: unknown): void {
+  if (process.platform !== "win32") throw error;
+}
