@@ -188,10 +188,10 @@ class AgentForegroundService : Service() {
         )
         voiceRuntimeController = VoiceRuntimeController(
             context = this,
-            sendStart = { sdp, config -> realtimeVoiceCoordinator?.sendStart(sdp, config) },
-            sendStop = { reason -> realtimeVoiceCoordinator?.sendStop(reason) },
-            onSessionTerminated = { reason -> realtimeVoiceCoordinator?.cancelLocalWork(reason) },
-            sendToolCall = { call -> realtimeVoiceCoordinator?.handleToolCall(call) },
+            sendStart = { voiceSessionId, sdp, config -> realtimeVoiceCoordinator?.sendStart(voiceSessionId, sdp, config) },
+            sendStop = { voiceSessionId, reason -> realtimeVoiceCoordinator?.sendStop(voiceSessionId, reason) },
+            onSessionTerminated = { _, reason -> realtimeVoiceCoordinator?.cancelLocalWork(reason) },
+            sendToolCall = { voiceSessionId, call -> realtimeVoiceCoordinator?.handleToolCall(voiceSessionId, call) },
             acquireForegroundLease = ::promoteVoiceForegroundIfAllowed,
             releaseForegroundLease = ::restoreBaseForeground,
             onStateChanged = ::handleVoiceRuntimeStateChanged

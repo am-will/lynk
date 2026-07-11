@@ -17,8 +17,9 @@ interface RealtimeTaskManagerOptions {
   webSearch?: {
     search(options: { deviceId: string; query: string; apiKey?: string; location?: PhoneLocation }): Promise<string>;
   };
-  getRealtimeApiKey?: (deviceId: string) => string | undefined;
-  getRealtimeLocation?: (deviceId: string) => PhoneLocation | undefined;
+  getRealtimeLocation?: (deviceId: string, voiceSessionId: string) => PhoneLocation | undefined;
+  getRealtimeApiKey?: (deviceId: string, voiceSessionId: string) => string | undefined;
+  isVoiceSessionActive?: (deviceId: string, voiceSessionId: string) => boolean;
   audit?: AuditLog;
   maxQueueSize?: number;
   taskTimeoutMs?: number;
@@ -29,6 +30,7 @@ interface RealtimeTaskManagerOptions {
 
 interface QueuedTask {
   deviceId: string;
+  voiceSessionId: string;
   callId: string;
   instruction: string;
   urgency: "normal" | "interrupt";
@@ -48,6 +50,9 @@ interface RealtimeTaskDelegateOptions extends RealtimeTaskRoutingContext {
 }
 
 interface DeviceTaskState {
+  deviceId: string;
+  voiceSessionId: string;
+  detached?: boolean;
   active?: QueuedTask;
   queue: QueuedTask[];
   completed: number;
@@ -84,9 +89,15 @@ export class RealtimeTaskManager {
   }
 
   async handleToolCall(message: RealtimeToolCallMessage): Promise<void> {
-    const duplicate = this.findAcceptedCall(message.deviceId, message.callId);
+    if (this.options.isVoiceSessionActive && !this.options.isVoiceSessionActive(message.deviceId, message.voiceSessionId)) {
+      this.sendUntrackedResult(message.deviceId, message.voiceSessionId, {
+        callId: message.callId, ok: false, status: "failed", error: "Realtime voice session is no longer active."
+      });
+      return;
+    }
+    const duplicate = this.findAcceptedCall(message.deviceId, message.voiceSessionId, message.callId);
     if (duplicate === "active" || duplicate === "queued") {
-      this.sendStatus(message.deviceId);
+      this.sendStatus(message.deviceId, message.voiceSessionId);
       return;
     }
     if (duplicate && typeof duplicate !== "string") {
@@ -111,7 +122,7 @@ export class RealtimeTaskManager {
 
     const validated = this.validate(message);
     if (!validated.ok) {
-      this.sendResult(message.deviceId, {
+      this.sendResult(message.deviceId, message.voiceSessionId, {
         callId: message.callId,
         ok: false,
         status: "failed",
@@ -123,6 +134,7 @@ export class RealtimeTaskManager {
     const routingContext = this.routingContextFor(message);
     const task: QueuedTask = {
       deviceId: message.deviceId,
+      voiceSessionId: message.voiceSessionId,
       callId: message.callId,
       instruction: validated.instruction,
       urgency: validated.urgency,
@@ -131,18 +143,18 @@ export class RealtimeTaskManager {
       reasoningEffort: routingContext?.reasoningEffort
     };
 
-    const state = this.stateFor(message.deviceId);
+    const state = this.stateFor(message.deviceId, message.voiceSessionId);
     if (task.urgency === "interrupt") {
       await this.interruptActiveTask(state, task);
       state.queue.unshift(task);
-      this.sendStatus(message.deviceId);
-      this.processNext(message.deviceId);
+      this.sendStatus(message.deviceId, message.voiceSessionId);
+      this.processNext(message.deviceId, message.voiceSessionId);
       return;
     }
 
     if (state.active) {
       if (state.queue.length >= this.maxQueueSize) {
-        this.sendResult(message.deviceId, {
+        this.sendResult(message.deviceId, message.voiceSessionId, {
           callId: message.callId,
           ok: false,
           status: "failed",
@@ -155,21 +167,21 @@ export class RealtimeTaskManager {
         callId: message.callId,
         queued: state.queue.length
       });
-      this.sendStatus(message.deviceId);
+      this.sendStatus(message.deviceId, message.voiceSessionId);
       return;
     }
 
     state.queue.push(task);
-    this.sendStatus(message.deviceId);
-    this.processNext(message.deviceId);
+    this.sendStatus(message.deviceId, message.voiceSessionId);
+    this.processNext(message.deviceId, message.voiceSessionId);
   }
 
   private async handleStopToolCall(message: RealtimeToolCallMessage): Promise<void> {
     const reason = typeof message.arguments.reason === "string" && message.arguments.reason.trim()
       ? message.arguments.reason.trim()
       : "Stopped by realtime voice";
-    await this.cancelDevice(message.deviceId, reason);
-    this.sendResult(message.deviceId, {
+    await this.cancelSession(message.deviceId, message.voiceSessionId, reason);
+    this.sendResult(message.deviceId, message.voiceSessionId, {
       callId: message.callId,
       ok: true,
       status: "completed",
@@ -185,7 +197,7 @@ export class RealtimeTaskManager {
       ? message.arguments.guidance.trim()
       : "";
     if (!guidance) {
-      this.sendResult(message.deviceId, {
+      this.sendResult(message.deviceId, message.voiceSessionId, {
         callId: message.callId,
         ok: false,
         status: "failed",
@@ -194,11 +206,12 @@ export class RealtimeTaskManager {
       return;
     }
 
-    const state = this.stateFor(message.deviceId);
+    const state = this.stateFor(message.deviceId, message.voiceSessionId);
     const routingContext = this.routingContextFor(message);
     if (!state.active) {
       const task: QueuedTask = {
         deviceId: message.deviceId,
+        voiceSessionId: message.voiceSessionId,
         callId: message.callId,
         instruction: guidance,
         urgency: "normal",
@@ -207,8 +220,8 @@ export class RealtimeTaskManager {
         reasoningEffort: routingContext?.reasoningEffort
       };
       state.queue.unshift(task);
-      this.sendStatus(message.deviceId);
-      this.processNext(message.deviceId);
+      this.sendStatus(message.deviceId, message.voiceSessionId);
+      this.processNext(message.deviceId, message.voiceSessionId);
       return;
     }
 
@@ -220,16 +233,16 @@ export class RealtimeTaskManager {
         message.callId,
         routingContext
       );
-      this.sendResult(message.deviceId, {
+      this.sendResult(message.deviceId, message.voiceSessionId, {
         callId: message.callId,
         ok: true,
         status: "completed",
       output: message.name === REALTIME_TOOL_NAMES.steerOpenClawTask || message.name === REALTIME_TOOL_NAMES.steerAgentTask ? "Steered the active agent task." : "Steered the active phone task.",
         createResponse: false
       });
-      this.sendStatus(message.deviceId);
+      this.sendStatus(message.deviceId, message.voiceSessionId);
     } catch (error) {
-      this.sendResult(message.deviceId, {
+      this.sendResult(message.deviceId, message.voiceSessionId, {
         callId: message.callId,
         ok: false,
         status: "failed",
@@ -243,7 +256,7 @@ export class RealtimeTaskManager {
       ? message.arguments.query.trim()
       : "";
     if (!query) {
-      this.sendResult(message.deviceId, {
+      this.sendResult(message.deviceId, message.voiceSessionId, {
         callId: message.callId,
         ok: false,
         status: "failed",
@@ -252,7 +265,7 @@ export class RealtimeTaskManager {
       return;
     }
     if (query.length > MAX_WEB_SEARCH_QUERY_LENGTH) {
-      this.sendResult(message.deviceId, {
+      this.sendResult(message.deviceId, message.voiceSessionId, {
         callId: message.callId,
         ok: false,
         status: "failed",
@@ -261,7 +274,7 @@ export class RealtimeTaskManager {
       return;
     }
     if (!this.options.webSearch) {
-      this.sendResult(message.deviceId, {
+      this.sendResult(message.deviceId, message.voiceSessionId, {
         callId: message.callId,
         ok: false,
         status: "failed",
@@ -274,17 +287,17 @@ export class RealtimeTaskManager {
       const output = await this.options.webSearch.search({
         deviceId: message.deviceId,
         query,
-        apiKey: this.options.getRealtimeApiKey?.(message.deviceId),
-        location: this.options.getRealtimeLocation?.(message.deviceId)
+        apiKey: this.options.getRealtimeApiKey?.(message.deviceId, message.voiceSessionId),
+        location: this.options.getRealtimeLocation?.(message.deviceId, message.voiceSessionId)
       });
-      this.sendResult(message.deviceId, {
+      this.sendResult(message.deviceId, message.voiceSessionId, {
         callId: message.callId,
         ok: true,
         status: "completed",
         output
       });
     } catch (error) {
-      this.sendResult(message.deviceId, {
+      this.sendResult(message.deviceId, message.voiceSessionId, {
         callId: message.callId,
         ok: false,
         status: "failed",
@@ -294,14 +307,16 @@ export class RealtimeTaskManager {
   }
 
   async cancelDevice(deviceId: string, reason = "Realtime phone task cancelled"): Promise<void> {
-    const state = this.states.get(deviceId);
-    if (!state?.active && (!state || state.queue.length === 0)) {
-      await this.stopActiveTurn(deviceId, reason);
-      return;
-    }
+    const states = [...this.states.values()].filter((state) => state.deviceId === deviceId);
+    await Promise.all(states.map((state) => this.cancelSession(deviceId, state.voiceSessionId, reason)));
+    if (states.length === 0) await this.stopActiveTurn(deviceId, reason);
+  }
 
+  async cancelSession(deviceId: string, voiceSessionId: string, reason = "Realtime phone task cancelled"): Promise<void> {
+    const state = this.states.get(this.stateKey(deviceId, voiceSessionId));
+    if (!state) return;
     for (const task of state.queue.splice(0)) {
-      this.sendResult(deviceId, {
+      this.sendResult(deviceId, voiceSessionId, {
         callId: task.callId,
         ok: false,
         status: "cancelled",
@@ -313,21 +328,33 @@ export class RealtimeTaskManager {
     if (active) {
       state.active = undefined;
       await this.stopActiveTurn(deviceId, reason);
-      this.sendResult(deviceId, {
+      this.sendResult(deviceId, voiceSessionId, {
         callId: active.callId,
         ok: false,
         status: "cancelled",
         error: reason
       });
     }
-    this.sendStatus(deviceId);
+    this.sendStatus(deviceId, voiceSessionId);
+  }
+
+  detachSession(deviceId: string, voiceSessionId: string): void {
+    const key = this.stateKey(deviceId, voiceSessionId);
+    const state = this.states.get(key);
+    if (!state) return;
+    state.detached = true;
+    state.active = undefined;
+    state.queue = [];
+    this.states.delete(key);
   }
 
   async failDevice(deviceId: string, reason: string): Promise<void> {
-    const state = this.states.get(deviceId);
-    if (!state) {
-      return;
-    }
+    const states = [...this.states.values()].filter((state) => state.deviceId === deviceId);
+    await Promise.all(states.map((state) => this.failSession(state, reason)));
+  }
+
+  private async failSession(state: DeviceTaskState, reason: string): Promise<void> {
+    const { deviceId, voiceSessionId } = state;
     const active = state.active;
     const tasks = [...(active ? [active] : []), ...state.queue];
     state.active = undefined;
@@ -337,7 +364,7 @@ export class RealtimeTaskManager {
         callId: task.callId,
         reason
       });
-      this.sendResult(deviceId, {
+      this.sendResult(deviceId, voiceSessionId, {
         callId: task.callId,
         ok: false,
         status: "failed",
@@ -354,7 +381,7 @@ export class RealtimeTaskManager {
         });
       }
     }
-    this.sendStatus(deviceId);
+    this.sendStatus(deviceId, voiceSessionId);
   }
 
   private async interruptActiveTask(state: DeviceTaskState, nextTask: QueuedTask): Promise<void> {
@@ -364,7 +391,7 @@ export class RealtimeTaskManager {
     }
     state.active = undefined;
     await this.stopActiveTurn(nextTask.deviceId, `Interrupted by newer realtime ${nextTask.kind === "phone" ? "phone" : "Open Claw"} task`);
-    this.sendResult(nextTask.deviceId, {
+    this.sendResult(nextTask.deviceId, nextTask.voiceSessionId, {
       callId: active.callId,
       ok: false,
       status: "cancelled",
@@ -372,23 +399,23 @@ export class RealtimeTaskManager {
     });
   }
 
-  private processNext(deviceId: string): void {
-    const state = this.stateFor(deviceId);
-    if (state.active) {
+  private processNext(deviceId: string, voiceSessionId: string): void {
+    const state = this.stateFor(deviceId, voiceSessionId);
+    if (state.detached || state.active) {
       return;
     }
     const task = state.queue.shift();
     if (!task) {
-      this.sendStatus(deviceId);
+      this.sendStatus(deviceId, voiceSessionId);
       return;
     }
     state.active = task;
-    this.sendStatus(deviceId);
+    this.sendStatus(deviceId, voiceSessionId);
     void this.runTask(task);
   }
 
   private async runTask(task: QueuedTask): Promise<void> {
-    const state = this.stateFor(task.deviceId);
+    const state = this.stateFor(task.deviceId, task.voiceSessionId);
     this.options.audit?.record("realtime_task_started", task.deviceId, {
       callId: task.callId,
       instruction: task.instruction
@@ -399,11 +426,12 @@ export class RealtimeTaskManager {
         this.handleUserRequest(task),
         this.taskTimeoutMs
       );
+      if (state.detached) return;
       if (state.completedResults.has(task.callId)) {
         return;
       }
       const error = result.error?.trim();
-      this.sendResult(task.deviceId, {
+      this.sendResult(task.deviceId, task.voiceSessionId, {
         callId: task.callId,
         ok: !error,
         status: error ? "failed" : "completed",
@@ -411,6 +439,7 @@ export class RealtimeTaskManager {
         error
       });
     } catch (error) {
+      if (state.detached) return;
       if (state.completedResults.has(task.callId)) {
         return;
       }
@@ -424,14 +453,14 @@ export class RealtimeTaskManager {
             error: stopError instanceof Error ? stopError.message : String(stopError)
           });
         }
-        this.sendResult(task.deviceId, {
+        this.sendResult(task.deviceId, task.voiceSessionId, {
           callId: task.callId,
           ok: false,
           status: "timeout",
           error: `${task.kind === "phone" ? "Phone" : "Open Claw"} task timed out after ${Math.round(this.taskTimeoutMs / 1000)} seconds.`
         });
       } else {
-        this.sendResult(task.deviceId, {
+        this.sendResult(task.deviceId, task.voiceSessionId, {
           callId: task.callId,
           ok: false,
           status: "failed",
@@ -442,7 +471,7 @@ export class RealtimeTaskManager {
       if (state.active?.callId === task.callId) {
         state.active = undefined;
       }
-      this.processNext(task.deviceId);
+      if (!state.detached) this.processNext(task.deviceId, task.voiceSessionId);
     }
   }
 
@@ -526,8 +555,8 @@ export class RealtimeTaskManager {
     return { ok: true, instruction, urgency, kind };
   }
 
-  private findAcceptedCall(deviceId: string, callId: string): "active" | "queued" | RealtimeToolResultMessage | undefined {
-    const state = this.states.get(deviceId);
+  private findAcceptedCall(deviceId: string, voiceSessionId: string, callId: string): "active" | "queued" | RealtimeToolResultMessage | undefined {
+    const state = this.states.get(this.stateKey(deviceId, voiceSessionId));
     if (!state) {
       return undefined;
     }
@@ -541,8 +570,8 @@ export class RealtimeTaskManager {
     return state.completedResults.get(callId)?.message;
   }
 
-  private sendResult(deviceId: string, result: Omit<RealtimeToolResultMessage, "type" | "deviceId">): void {
-    const state = this.stateFor(deviceId);
+  private sendResult(deviceId: string, voiceSessionId: string, result: Omit<RealtimeToolResultMessage, "type" | "deviceId" | "voiceSessionId">): void {
+    const state = this.stateFor(deviceId, voiceSessionId);
     if (result.ok) {
       state.completed += 1;
     } else {
@@ -551,6 +580,7 @@ export class RealtimeTaskManager {
     const message: RealtimeToolResultMessage = {
       type: "realtime.tool_result",
       deviceId,
+      voiceSessionId,
       ...result
     };
     this.pruneCompletedResults(state);
@@ -561,14 +591,19 @@ export class RealtimeTaskManager {
     this.pruneCompletedResults(state);
     this.options.audit?.record("realtime_task_result", deviceId, message);
     this.options.sendRealtime(deviceId, message);
-    this.sendStatus(deviceId);
+    this.sendStatus(deviceId, voiceSessionId);
   }
 
-  private sendStatus(deviceId: string): void {
-    const state = this.stateFor(deviceId);
+  private sendUntrackedResult(deviceId: string, voiceSessionId: string, result: Omit<RealtimeToolResultMessage, "type" | "deviceId" | "voiceSessionId">): void {
+    this.options.sendRealtime(deviceId, { type: "realtime.tool_result", deviceId, voiceSessionId, ...result });
+  }
+
+  private sendStatus(deviceId: string, voiceSessionId: string): void {
+    const state = this.stateFor(deviceId, voiceSessionId);
     this.options.sendRealtime(deviceId, {
       type: "realtime.task_status",
       deviceId,
+      voiceSessionId,
       running: Boolean(state.active),
       queued: state.queue.length,
       currentTask: state.active?.instruction ?? null,
@@ -589,18 +624,25 @@ export class RealtimeTaskManager {
     };
   }
 
-  private stateFor(deviceId: string): DeviceTaskState {
-    let state = this.states.get(deviceId);
+  private stateFor(deviceId: string, voiceSessionId: string): DeviceTaskState {
+    const key = this.stateKey(deviceId, voiceSessionId);
+    let state = this.states.get(key);
     if (!state) {
       state = {
+        deviceId,
+        voiceSessionId,
         queue: [],
         completed: 0,
         failed: 0,
         completedResults: new Map()
       };
-      this.states.set(deviceId, state);
+      this.states.set(key, state);
     }
     return state;
+  }
+
+  private stateKey(deviceId: string, voiceSessionId: string): string {
+    return `${deviceId}\u0000${voiceSessionId}`;
   }
 
   private pruneCompletedResults(state: DeviceTaskState): void {

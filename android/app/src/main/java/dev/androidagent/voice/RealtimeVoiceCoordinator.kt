@@ -30,29 +30,30 @@ internal class RealtimeVoiceCoordinator(
 ) {
     private var localDelegate: LocalRealtimeVoiceDelegate? = null
 
-    fun sendStart(sdp: String, config: AgentConfig) {
+    fun sendStart(voiceSessionId: String, sdp: String, config: AgentConfig) {
         webSocketClient()?.sendRealtimeStart(
+            voiceSessionId,
             sdp,
             realtimeRequestConfig(config),
             AgentLocationProvider.currentBestEffortLocation(context)
         )
     }
 
-    fun sendStop(reason: String) {
-        webSocketClient()?.sendRealtimeStop(reason)
+    fun sendStop(voiceSessionId: String, reason: String) {
+        webSocketClient()?.sendRealtimeStop(voiceSessionId, reason)
     }
 
     fun cancelLocalWork(reason: String) {
         localDelegate?.stopAndJoin(reason)
     }
 
-    fun handleToolCall(call: RealtimeToolCall) {
+    fun handleToolCall(voiceSessionId: String, call: RealtimeToolCall) {
         val config = configProvider()
         val model = selectedModel(config)
         val intent = RealtimeToolRouting.intentFor(call.name, call.arguments)
         when (RealtimeToolRouting.routeFor(model, intent)) {
-            RealtimeToolExecutionRoute.Local -> localDelegate().handleToolCall(call)
-            RealtimeToolExecutionRoute.Bridge -> webSocketClient()?.sendRealtimeToolCall(call, realtimeRequestConfig(config))
+            RealtimeToolExecutionRoute.Local -> localDelegate().handleToolCall(voiceSessionId, call)
+            RealtimeToolExecutionRoute.Bridge -> webSocketClient()?.sendRealtimeToolCall(voiceSessionId, call, realtimeRequestConfig(config))
         }
     }
 

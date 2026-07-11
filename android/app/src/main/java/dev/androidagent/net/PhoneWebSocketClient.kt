@@ -214,10 +214,11 @@ class PhoneWebSocketClient(
         sendJson(message, reportChatError = true)
     }
 
-    fun sendRealtimeStart(sdp: String, requestConfig: AgentConfig = config, location: AgentLocation? = null) {
+    fun sendRealtimeStart(voiceSessionId: String, sdp: String, requestConfig: AgentConfig = config, location: AgentLocation? = null) {
         val message = JSONObject()
             .put("type", "realtime.start")
             .put("deviceId", requestConfig.deviceId)
+            .put("voiceSessionId", voiceSessionId)
             .put("sdp", sdp)
             .put("systemPrompt", requestConfig.systemPrompt)
             .put("model", requestConfig.model)
@@ -232,26 +233,28 @@ class PhoneWebSocketClient(
         val sent = sendJson(message)
         Log.i(TAG, "sendRealtimeStart sent=$sent sdpLength=${sdp.length}")
         if (!sent) {
-            dispatchRealtimeError("Phone WebSocket is not connected for realtime voice.")
+            dispatchRealtimeError("Phone WebSocket is not connected for realtime voice.", voiceSessionId)
         }
     }
 
-    fun sendRealtimeStop(reason: String) {
+    fun sendRealtimeStop(voiceSessionId: String, reason: String) {
         val message = JSONObject()
             .put("type", "realtime.stop")
             .put("deviceId", config.deviceId)
+            .put("voiceSessionId", voiceSessionId)
             .put("reason", reason)
         val sent = sendJson(message)
         Log.i(TAG, "sendRealtimeStop sent=$sent")
         if (!sent) {
-            dispatchRealtimeError("Phone WebSocket is not connected for realtime voice.")
+            dispatchRealtimeError("Phone WebSocket is not connected for realtime voice.", voiceSessionId)
         }
     }
 
-    fun sendRealtimeToolCall(call: RealtimeToolCall, requestConfig: AgentConfig = config) {
+    fun sendRealtimeToolCall(voiceSessionId: String, call: RealtimeToolCall, requestConfig: AgentConfig = config) {
         val message = JSONObject()
             .put("type", "realtime.tool_call")
             .put("deviceId", requestConfig.deviceId)
+            .put("voiceSessionId", voiceSessionId)
             .put("callId", call.callId)
             .put("name", call.name)
             .put("arguments", call.arguments)
@@ -261,7 +264,7 @@ class PhoneWebSocketClient(
         val sent = sendJson(message)
         Log.i(TAG, "sendRealtimeToolCall sent=$sent callId=${call.callId} name=${call.name}")
         if (!sent) {
-            dispatchRealtimeError("Phone WebSocket is not connected for realtime tool calls.")
+            dispatchRealtimeError("Phone WebSocket is not connected for realtime tool calls.", voiceSessionId)
         }
     }
 
@@ -565,9 +568,11 @@ class PhoneWebSocketClient(
         commandExecutor.cancelCommand(commandId, requestOwner, "command_cancelled: $reason")
     }
 
-    private fun dispatchRealtimeError(message: String) {
+    private fun dispatchRealtimeError(message: String, voiceSessionId: String? = null) {
         runOnMain {
-            onRealtimeError(JSONObject().put("type", "realtime.error").put("message", message))
+            onRealtimeError(JSONObject().put("type", "realtime.error").put("message", message).also { payload ->
+                voiceSessionId?.let { payload.put("voiceSessionId", it) }
+            })
         }
     }
 

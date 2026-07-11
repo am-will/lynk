@@ -14,6 +14,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.util.UUID
 
 enum class VoiceRuntimeStatus(val label: String) {
     IDLE("Idle"),
@@ -39,10 +40,10 @@ data class VoiceRuntimeState(
 
 class VoiceRuntimeController internal constructor(
     @Suppress("UNUSED_PARAMETER") context: Context?,
-    private val sendStart: (sdp: String, config: AgentConfig) -> Unit,
-    private val sendStop: (reason: String) -> Unit,
-    private val onSessionTerminated: (reason: String) -> Unit,
-    private val sendToolCall: (RealtimeToolCall) -> Unit = {},
+    private val sendStart: (voiceSessionId: String, sdp: String, config: AgentConfig) -> Unit,
+    private val sendStop: (voiceSessionId: String, reason: String) -> Unit,
+    private val onSessionTerminated: (voiceSessionId: String, reason: String) -> Unit,
+    private val sendToolCall: (voiceSessionId: String, RealtimeToolCall) -> Unit = { _, _ -> },
     private val onStateChanged: (VoiceRuntimeState) -> Unit,
     private val micPermissionGranted: () -> Boolean,
     private val configProvider: () -> AgentConfig,
@@ -53,14 +54,15 @@ class VoiceRuntimeController internal constructor(
         onDataChannelEvent: (String) -> Unit,
         onConnectionState: (String) -> Unit
     ) -> RealtimeVoiceSession,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val voiceSessionIdFactory: () -> String
 ) {
     constructor(
         context: Context,
-        sendStart: (sdp: String, config: AgentConfig) -> Unit,
-        sendStop: (reason: String) -> Unit,
-        sendToolCall: (RealtimeToolCall) -> Unit = {},
-        onSessionTerminated: (reason: String) -> Unit = {},
+        sendStart: (voiceSessionId: String, sdp: String, config: AgentConfig) -> Unit,
+        sendStop: (voiceSessionId: String, reason: String) -> Unit,
+        sendToolCall: (voiceSessionId: String, RealtimeToolCall) -> Unit = { _, _ -> },
+        onSessionTerminated: (voiceSessionId: String, reason: String) -> Unit = { _, _ -> },
         acquireForegroundLease: () -> Unit = {},
         releaseForegroundLease: () -> Unit = {},
         onStateChanged: (VoiceRuntimeState) -> Unit
@@ -85,7 +87,8 @@ class VoiceRuntimeController internal constructor(
         acquireForegroundLease = acquireForegroundLease,
         releaseForegroundLease = releaseForegroundLease,
         sessionFactory = { onEvent, onConnection -> RealtimeWebRtcSession(context, onEvent, onConnection) },
-        scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+        voiceSessionIdFactory = { UUID.randomUUID().toString() }
     )
 
     private val transcriptNormalizer = RealtimeTranscriptNormalizer()
@@ -109,6 +112,7 @@ class VoiceRuntimeController internal constructor(
         }
 
         val generation = lifecycle.begin() ?: return
+        val voiceSessionId = voiceSessionIdFactory()
         val config = configProvider()
         val nextSession = runCatching {
             sessionFactory(
@@ -121,7 +125,7 @@ class VoiceRuntimeController internal constructor(
             updateState(VoiceRuntimeState(status = VoiceRuntimeStatus.ERROR, error = error.message ?: error.toString()))
             return
         }
-        val owner = OwnedSession(generation, nextSession)
+        val owner = OwnedSession(generation, voiceSessionId, nextSession)
         session = owner
         runCatching(acquireForegroundLease).onFailure { error ->
             terminate(generation, sendBackendStop = false, failure = error.message ?: error.toString())
@@ -138,7 +142,7 @@ class VoiceRuntimeController internal constructor(
             runCatching {
                 val offer = nextSession.createOffer()
                 if (!lifecycle.owns(generation)) return@runCatching
-                sendStart(offer, config)
+                sendStart(voiceSessionId, offer, config)
                 updateState(state.copy(status = VoiceRuntimeStatus.CONNECTING, error = "Waiting for realtime answer."))
             }.onFailure { error ->
                 terminate(generation, sendBackendStop = false, failure = error.message ?: error.toString())
@@ -162,6 +166,7 @@ class VoiceRuntimeController internal constructor(
     }
 
     fun onRealtimeSdp(payload: JSONObject) {
+        val owner = matchingOwner(payload) ?: return
         val answerSdp = payload.optString("sdp").ifBlank {
             payload.optString("answer").ifBlank { payload.optString("answerSdp") }
         }
@@ -170,7 +175,7 @@ class VoiceRuntimeController internal constructor(
             return
         }
         scope.launch {
-            val owner = session ?: return@launch
+            if (!lifecycle.owns(owner.generation)) return@launch
             runCatching {
                 owner.resource.applyAnswer(answerSdp)
                 if (!lifecycle.activate(owner.generation)) return@runCatching
@@ -182,7 +187,7 @@ class VoiceRuntimeController internal constructor(
     }
 
     fun onRealtimeTranscriptDelta(payload: JSONObject) {
-        val generation = session?.generation ?: return
+        val generation = matchingOwner(payload)?.generation ?: return
         scope.launch {
             if (!lifecycle.owns(generation)) return@launch
             val transcript = transcriptNormalizer.applyEvent("realtime.transcript_delta", payload)
@@ -197,7 +202,7 @@ class VoiceRuntimeController internal constructor(
     }
 
     fun onRealtimeItemAdded(payload: JSONObject) {
-        val generation = session?.generation ?: return
+        val generation = matchingOwner(payload)?.generation ?: return
         scope.launch {
             if (!lifecycle.owns(generation)) return@launch
             val transcript = transcriptNormalizer.applyEvent("realtime.item_added", payload)
@@ -212,7 +217,7 @@ class VoiceRuntimeController internal constructor(
     }
 
     fun onRealtimeSpeechStarted(payload: JSONObject) {
-        val generation = session?.generation ?: return
+        val generation = matchingOwner(payload)?.generation ?: return
         scope.launch {
             if (!lifecycle.owns(generation)) return@launch
             val transcript = transcriptNormalizer.applyEvent("realtime.speech_started", payload)
@@ -221,7 +226,7 @@ class VoiceRuntimeController internal constructor(
     }
 
     fun onRealtimeError(payload: JSONObject) {
-        val generation = session?.generation ?: return
+        val generation = matchingOwner(payload)?.generation ?: return
         scope.launch {
             if (!lifecycle.owns(generation)) return@launch
             showBackendError(
@@ -232,7 +237,7 @@ class VoiceRuntimeController internal constructor(
     }
 
     fun onRealtimeClosed(payload: JSONObject) {
-        val generation = session?.generation ?: return
+        val generation = matchingOwner(payload)?.generation ?: return
         scope.launch {
             if (!lifecycle.owns(generation)) return@launch
             val reason = payload.optString("reason").ifBlank { "Realtime voice closed." }
@@ -241,14 +246,11 @@ class VoiceRuntimeController internal constructor(
     }
 
     fun onRealtimeToolResult(payload: JSONObject) {
+        val owner = matchingOwner(payload) ?: return
         scope.launch {
+            if (!lifecycle.owns(owner.generation)) return@launch
             val callId = payload.optString("callId").ifBlank { payload.optString("call_id") }
             if (callId.isBlank() || !toolOutputsSent.add(callId)) {
-                return@launch
-            }
-            val owner = session
-            if (owner == null) {
-                updateState(state.copy(latestTaskResult = taskResultSummary(payload)))
                 return@launch
             }
             val events = buildRealtimeToolOutputEvents(payload)
@@ -268,7 +270,9 @@ class VoiceRuntimeController internal constructor(
     }
 
     fun onRealtimeTaskStatus(payload: JSONObject) {
+        val owner = matchingOwner(payload) ?: return
         scope.launch {
+            if (!lifecycle.owns(owner.generation)) return@launch
             val currentTask = payload.optString("currentTask").ifBlank { null }
             updateState(
                 state.copy(
@@ -290,7 +294,8 @@ class VoiceRuntimeController internal constructor(
         scope.launch {
             if (!lifecycle.owns(generation)) return@launch
             toolCallAccumulator.apply(event)?.let { call ->
-                sendToolCall(call)
+                val owner = session?.takeIf { it.generation == generation } ?: return@let
+                sendToolCall(owner.voiceSessionId, call)
                 updateState(
                     state.copy(
                         status = VoiceRuntimeStatus.THINKING,
@@ -438,8 +443,8 @@ class VoiceRuntimeController internal constructor(
         owner?.resource?.close()
         if (session?.generation == generation) session = null
         activeResponseId = null
-        if (sendBackendStop) sendStop(reason)
-        onSessionTerminated(reason)
+        if (sendBackendStop && owner != null) sendStop(owner.voiceSessionId, reason)
+        if (owner != null) onSessionTerminated(owner.voiceSessionId, reason)
         if (owner?.foregroundLeaseAcquired == true) releaseForegroundLease()
         lifecycle.finishStop(generation, failure)
         updateState(
@@ -455,7 +460,13 @@ class VoiceRuntimeController internal constructor(
 
     private data class OwnedSession(
         val generation: Long,
+        val voiceSessionId: String,
         val resource: RealtimeVoiceSession,
         var foregroundLeaseAcquired: Boolean = false
     )
+
+    private fun matchingOwner(payload: JSONObject): OwnedSession? {
+        val voiceSessionId = payload.optString("voiceSessionId")
+        return session?.takeIf { voiceSessionId.isNotBlank() && it.voiceSessionId == voiceSessionId }
+    }
 }

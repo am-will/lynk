@@ -212,9 +212,12 @@ export const phoneLocationSchema = z.object({
   capturedAtMs: z.number().int().positive().optional()
 });
 
+export const voiceSessionIdSchema = z.string().uuid();
+
 export const realtimeStartMessageSchema = z.object({
   type: z.literal("realtime.start"),
   deviceId: z.string().min(1),
+  voiceSessionId: voiceSessionIdSchema,
   sdp: z.string().min(1),
   systemPrompt: z.string().optional(),
   model: selectedChatBackendModelSchema.optional(),
@@ -226,12 +229,14 @@ export const realtimeStartMessageSchema = z.object({
 export const realtimeStopMessageSchema = z.object({
   type: z.literal("realtime.stop"),
   deviceId: z.string().min(1),
+  voiceSessionId: voiceSessionIdSchema,
   reason: z.string().optional()
 });
 
 export const realtimeToolCallMessageSchema = z.object({
   type: z.literal("realtime.tool_call"),
   deviceId: z.string().min(1),
+  voiceSessionId: voiceSessionIdSchema,
   callId: z.string().min(1),
   itemId: z.string().optional().nullable(),
   name: z.string().min(1),
@@ -379,12 +384,14 @@ export type ChatControlCommandMessage = z.infer<typeof chatControlCommandMessage
 export interface RealtimeSdpMessage {
   type: "realtime.sdp";
   deviceId: string;
+  voiceSessionId: string;
   sdp: string;
 }
 
 export interface RealtimeTranscriptDeltaMessage {
   type: "realtime.transcript_delta";
   deviceId: string;
+  voiceSessionId: string;
   role: string;
   delta: string;
   text?: string;
@@ -395,12 +402,14 @@ export interface RealtimeTranscriptDeltaMessage {
 export interface RealtimeItemAddedMessage {
   type: "realtime.item_added";
   deviceId: string;
+  voiceSessionId: string;
   item: unknown;
 }
 
 export interface RealtimeSpeechStartedMessage {
   type: "realtime.speech_started";
   deviceId: string;
+  voiceSessionId: string;
   role?: string;
   itemId?: string | null;
 }
@@ -408,18 +417,21 @@ export interface RealtimeSpeechStartedMessage {
 export interface RealtimeErrorMessage {
   type: "realtime.error";
   deviceId: string;
+  voiceSessionId: string;
   message: string;
 }
 
 export interface RealtimeClosedMessage {
   type: "realtime.closed";
   deviceId: string;
+  voiceSessionId: string;
   reason: string | null;
 }
 
 export interface RealtimeToolResultMessage {
   type: "realtime.tool_result";
   deviceId: string;
+  voiceSessionId: string;
   callId: string;
   ok: boolean;
   output?: string;
@@ -431,6 +443,7 @@ export interface RealtimeToolResultMessage {
 export interface RealtimeTaskStatusMessage {
   type: "realtime.task_status";
   deviceId: string;
+  voiceSessionId: string;
   running: boolean;
   queued: number;
   currentTask?: string | null;
@@ -706,12 +719,14 @@ export type PhoneOutboundMessage = CommandMessage | CommandCancelMessage | Agent
 export const realtimeSdpMessageSchema = z.object({
   type: z.literal("realtime.sdp"),
   deviceId: z.string().min(1),
+  voiceSessionId: voiceSessionIdSchema,
   sdp: z.string().min(1)
 });
 
 export const realtimeTranscriptDeltaMessageSchema = z.object({
   type: z.literal("realtime.transcript_delta"),
   deviceId: z.string().min(1),
+  voiceSessionId: voiceSessionIdSchema,
   role: z.string().min(1),
   delta: z.string(),
   text: z.string().optional(),
@@ -722,12 +737,14 @@ export const realtimeTranscriptDeltaMessageSchema = z.object({
 export const realtimeItemAddedMessageSchema = z.object({
   type: z.literal("realtime.item_added"),
   deviceId: z.string().min(1),
+  voiceSessionId: voiceSessionIdSchema,
   item: z.unknown()
 });
 
 export const realtimeSpeechStartedMessageSchema = z.object({
   type: z.literal("realtime.speech_started"),
   deviceId: z.string().min(1),
+  voiceSessionId: voiceSessionIdSchema,
   role: z.string().optional(),
   itemId: z.string().optional().nullable()
 });
@@ -735,18 +752,21 @@ export const realtimeSpeechStartedMessageSchema = z.object({
 export const realtimeErrorMessageSchema = z.object({
   type: z.literal("realtime.error"),
   deviceId: z.string().min(1),
+  voiceSessionId: voiceSessionIdSchema,
   message: z.string()
 });
 
 export const realtimeClosedMessageSchema = z.object({
   type: z.literal("realtime.closed"),
   deviceId: z.string().min(1),
+  voiceSessionId: voiceSessionIdSchema,
   reason: z.string().nullable()
 });
 
 export const realtimeToolResultMessageSchema = z.object({
   type: z.literal("realtime.tool_result"),
   deviceId: z.string().min(1),
+  voiceSessionId: voiceSessionIdSchema,
   callId: z.string().min(1),
   ok: z.boolean(),
   output: z.string().optional(),
@@ -758,6 +778,7 @@ export const realtimeToolResultMessageSchema = z.object({
 export const realtimeTaskStatusMessageSchema = z.object({
   type: z.literal("realtime.task_status"),
   deviceId: z.string().min(1),
+  voiceSessionId: voiceSessionIdSchema,
   running: z.boolean(),
   queued: z.number().int().nonnegative(),
   currentTask: z.string().optional().nullable(),

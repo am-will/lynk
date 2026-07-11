@@ -264,26 +264,26 @@ export function bindPhoneSocket(
       if (message.type === "realtime.tool_call") {
         if (message.name === REALTIME_TOOL_NAMES.hangUpRealtime) {
           deps.realtime.handleRealtimeHangUpToolCall(message, deviceId).catch((error) => {
-            deps.realtime.sendRealtimeError(message.deviceId, error instanceof Error ? error.message : String(error));
+            deps.realtime.sendRealtimeError(message.deviceId, message.voiceSessionId, error instanceof Error ? error.message : String(error));
           });
           return;
         }
         deps.realtimeTaskManager.handleToolCall(message).catch((error) => {
-          deps.realtime.sendRealtimeError(message.deviceId, error instanceof Error ? error.message : String(error));
+          deps.realtime.sendRealtimeError(message.deviceId, message.voiceSessionId, error instanceof Error ? error.message : String(error));
         });
         return;
       }
 
       if (message.type === "realtime.start") {
         deps.realtime.startRealtimeSession(message, deviceId).catch((error) => {
-          deps.realtime.sendRealtimeError(message.deviceId, error instanceof Error ? error.message : String(error));
+          deps.realtime.sendRealtimeError(message.deviceId, message.voiceSessionId, error instanceof Error ? error.message : String(error));
         });
         return;
       }
 
       if (message.type === "realtime.stop") {
         deps.realtime.handleRealtimeStop(message, deviceId).catch((error) => {
-          deps.realtime.sendRealtimeError(message.deviceId, error instanceof Error ? error.message : String(error));
+          deps.realtime.sendRealtimeError(message.deviceId, message.voiceSessionId, error instanceof Error ? error.message : String(error));
         });
       }
     } catch (error) {
@@ -293,8 +293,11 @@ export function bindPhoneSocket(
       const parsedType = rawMessage && typeof rawMessage === "object" && typeof (rawMessage as { type?: unknown }).type === "string"
         ? (rawMessage as { type: string }).type
         : undefined;
-      if (parsedDeviceId && parsedType?.startsWith("realtime.")) {
-        deps.realtime.sendRealtimeError(parsedDeviceId, error instanceof Error ? error.message : String(error));
+      const parsedVoiceSessionId = rawMessage && typeof rawMessage === "object" && typeof (rawMessage as { voiceSessionId?: unknown }).voiceSessionId === "string"
+        ? (rawMessage as { voiceSessionId: string }).voiceSessionId
+        : undefined;
+      if (parsedDeviceId && parsedVoiceSessionId && parsedType?.startsWith("realtime.")) {
+        deps.realtime.sendRealtimeError(parsedDeviceId, parsedVoiceSessionId, error instanceof Error ? error.message : String(error));
         return;
       }
       if (socket.readyState === WebSocketState.OPEN) {
@@ -313,7 +316,7 @@ export function bindPhoneSocket(
     deps.hub.unregister(socket);
     if (disconnectedDeviceId) {
       void Promise.resolve(deps.realtimeTaskManager.failDevice(disconnectedDeviceId, "Phone WebSocket disconnected")).catch((error) => {
-        deps.realtime.sendRealtimeError(disconnectedDeviceId, error instanceof Error ? error.message : String(error));
+        console.warn(`[realtime] ${disconnectedDeviceId}: failed to clear tasks after disconnect: ${error instanceof Error ? error.message : String(error)}`);
       });
       deps.realtime.disconnectDevice(disconnectedDeviceId);
     }

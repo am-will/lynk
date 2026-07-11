@@ -29,12 +29,21 @@ async function stopAgentWork(deviceId: string, reason: string): Promise<void> {
   await realtimeTaskManager.cancelDevice(deviceId, reason);
 }
 
+async function stopVoiceSessionWork(deviceId: string, voiceSessionId: string, reason: string): Promise<void> {
+  await realtimeTaskManager.cancelSession(deviceId, voiceSessionId, reason);
+}
+
+function detachVoiceSessionWork(deviceId: string, voiceSessionId: string): void {
+  realtimeTaskManager.detachSession(deviceId, voiceSessionId);
+}
+
 const realtime = new BridgeRealtime({
   config,
   hub,
   audit,
   realtimeClient,
-  stopAgentWork
+  stopAgentWork: stopVoiceSessionWork,
+  detachAgentWork: detachVoiceSessionWork
 });
 
 realtimeTaskManager = new RealtimeTaskManager({
@@ -42,8 +51,9 @@ realtimeTaskManager = new RealtimeTaskManager({
   audit,
   sendRealtime: (deviceId, message) => realtime.sendRealtime(deviceId, message),
   webSearch: webSearchClient,
-  getRealtimeApiKey: (deviceId) => realtime.getRealtimeApiKey(deviceId),
-  getRealtimeLocation: (deviceId) => realtime.getRealtimeLocation(deviceId)
+  getRealtimeApiKey: (deviceId, voiceSessionId) => realtime.getRealtimeApiKey(deviceId, voiceSessionId),
+  getRealtimeLocation: (deviceId, voiceSessionId) => realtime.getRealtimeLocation(deviceId, voiceSessionId),
+  isVoiceSessionActive: (deviceId, voiceSessionId) => realtime.owns(deviceId, voiceSessionId)
 });
 
 const handleHttp = createBridgeHttpHandler({
