@@ -31,7 +31,7 @@ class LocalToolRegistry(
             "local_read_file" -> readFile(call.args)
             "local_write_file" -> writeFile(call.args)
             "local_search_files" -> searchFiles(call.args)
-            "termux_command" -> termuxCommand(call.args)
+            "termux_command" -> termuxCommand(call.args, requestOwner)
             else -> JSONObject().put("ok", false).put("error", "Unknown local tool: ${call.name}")
         }
     }
@@ -62,6 +62,11 @@ class LocalToolRegistry(
     fun cancelApprovals(requestOwner: String) {
         commandExecutor.cancelApprovals(requestOwner)
     }
+
+    fun cancelTermux(requestOwner: String): Int =
+        termuxRunner.cancelOwner(requestOwner, TermuxCancellationReason.SESSION_STOPPED)
+
+    fun close(): Int = termuxRunner.cancelAll(TermuxCancellationReason.SERVICE_DESTROYED)
 
     private fun normalizePhoneArgs(command: String, args: JSONObject): JSONObject {
         if (command == "open_app" && !args.has("packageName")) {
@@ -167,7 +172,7 @@ class LocalToolRegistry(
         return JSONObject().put("ok", true).put("matches", matches)
     }
 
-    private suspend fun termuxCommand(args: JSONObject): JSONObject {
+    private suspend fun termuxCommand(args: JSONObject, requestOwner: String): JSONObject {
         val config = configProvider()
         if (!config.localDeveloperToolsEnabled) {
             return JSONObject().put("ok", false).put("error", "Termux-backed tools are disabled in Connection & Config.")
@@ -179,7 +184,7 @@ class LocalToolRegistry(
             .ifBlank { args.optString("cwd") }
             .ifBlank { "/data/data/com.termux/files/home" }
         val timeoutMs = args.optLong("timeoutMs", 60_000L).coerceIn(1_000L, 300_000L)
-        return termuxRunner.run(command, workdir, timeoutMs)
+        return termuxRunner.run(command, workdir, timeoutMs, requestOwner)
     }
 
     private fun workspaceRoot(): File = File(context.filesDir, "local-workspace").apply { mkdirs() }

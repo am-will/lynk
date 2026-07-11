@@ -2,10 +2,34 @@ package dev.androidagent.localmodel
 
 import android.content.Context
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
+
+internal class TermuxCommandCancellationException(
+    val executionId: String,
+    val terminationVerified: Boolean,
+    val terminationStatus: String,
+    val terminationDetail: String?,
+    cause: CancellationException
+) : CancellationException(
+    if (terminationVerified) {
+        "Termux command cancelled; external process-group termination was verified."
+    } else {
+        "Termux command cancelled, but external process-group termination could not be verified and it may still be running."
+    }
+) {
+    init {
+        initCause(cause)
+    }
+}
 
 class TermuxCommandRunner private constructor(
     private val gateway: TermuxRunCommandGateway,
@@ -21,11 +45,13 @@ class TermuxCommandRunner private constructor(
     ) : this(gateway, TermuxExecutionIdentity::create)
 
     private val activeExecutions = ConcurrentHashMap<String, ActiveTermuxExecution>()
+    private val cancellationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     suspend fun run(
         command: String,
         workdir: String,
-        timeoutMs: Long
+        timeoutMs: Long,
+        ownerId: String = "unowned"
     ): JSONObject {
         val trimmed = command.trim()
         if (trimmed.isBlank()) {
@@ -41,7 +67,7 @@ class TermuxCommandRunner private constructor(
 
         val identity = identityFactory()
         val lifecycle = TermuxExecutionLifecycle(identity.executionId)
-        val execution = ActiveTermuxExecution(identity, lifecycle)
+        val execution = ActiveTermuxExecution(identity, lifecycle, ownerId)
         activeExecutions[identity.executionId] = execution
         val resolvedWorkdir = workdir.ifBlank { TermuxExecutionProtocol.TERMUX_HOME }
 
@@ -68,10 +94,20 @@ class TermuxCommandRunner private constructor(
                 lifecycle.settle(TermuxExecutionOutcome.Failed("Termux command tracking could not be verified before execution."))
                 return trackingFailure(trimmed, resolvedWorkdir, identity.executionId, start.detail, kill)
             }
-            lifecycle.markRunning(startControl.process.copy(nonce = identity.nonce))
+            val cancellationPending = lifecycle.markRunning(startControl.process.copy(nonce = identity.nonce))
+            if (cancellationPending) {
+                val kill = killExecution(execution, TermuxCancellationReason.COROUTINE_CANCELLED)
+                lifecycle.settle(TermuxExecutionOutcome.Cancelled(TermuxCancellationReason.COROUTINE_CANCELLED, kill.verified))
+                return cancellationResult(trimmed, resolvedWorkdir, identity, "Termux command was cancelled.", kill)
+            }
 
             when (val outcome = awaitTermuxResult(timeoutMs) { commandHandle.awaitResult() }) {
                 is TermuxAwaitOutcome.Completed -> {
+                    execution.killRequest?.let { requestedKill ->
+                        val kill = requestedKill.await()
+                        lifecycle.settle(TermuxExecutionOutcome.Cancelled(TermuxCancellationReason.SESSION_STOPPED, kill.verified))
+                        return cancellationResult(trimmed, resolvedWorkdir, identity, "Termux command was cancelled.", kill)
+                    }
                     lifecycle.settle(TermuxExecutionOutcome.Completed)
                     outcome.value.toJson(trimmed, resolvedWorkdir)
                         .put("executionId", identity.executionId)
@@ -104,7 +140,13 @@ class TermuxCommandRunner private constructor(
                     kill.verified
                 )
             )
-            throw error
+            throw TermuxCommandCancellationException(
+                executionId = identity.executionId,
+                terminationVerified = kill.verified,
+                terminationStatus = kill.status,
+                terminationDetail = kill.detail,
+                cause = error
+            )
         } catch (error: SecurityException) {
             lifecycle.settle(TermuxExecutionOutcome.Failed(error.message ?: "RUN_COMMAND permission denied"))
             setupError("Lynk does not have Termux RUN_COMMAND permission. Grant it in Android Settings > Apps > Lynk > Permissions > Additional permissions.")
@@ -125,26 +167,46 @@ class TermuxCommandRunner private constructor(
         }
     }
 
+    internal fun cancelOwner(ownerId: String, reason: TermuxCancellationReason = TermuxCancellationReason.SESSION_STOPPED): Int {
+        val owned = activeExecutions.values.filter { it.ownerId == ownerId }
+        owned.forEach { requestKill(it, reason) }
+        return owned.size
+    }
+
+    internal fun cancelAll(reason: TermuxCancellationReason = TermuxCancellationReason.SERVICE_DESTROYED): Int {
+        val active = activeExecutions.values.toList()
+        active.forEach { requestKill(it, reason) }
+        return active.size
+    }
+
     private suspend fun killExecution(
         execution: ActiveTermuxExecution,
         reason: TermuxCancellationReason
-    ): KillAttempt {
+    ): KillAttempt = requestKill(execution, reason).await()
+
+    private fun requestKill(
+        execution: ActiveTermuxExecution,
+        reason: TermuxCancellationReason
+    ): Deferred<KillAttempt> = synchronized(execution) {
+        execution.killRequest?.let { return@synchronized it }
         execution.lifecycle.requestCancellation(reason)
         execution.lifecycle.markKillRequested()
-        val control = runControl(
-            TermuxExecutionProtocol.cancelControl(execution.identity),
-            KILL_CONTROL_TIMEOUT_MS
-        )
-        val parsed = control.control
-        val verified = control.result?.succeeded == true &&
-            parsed?.operation == "kill" &&
-            parsed.executionId == execution.identity.executionId &&
-            parsed.verified
-        return KillAttempt(
-            verified = verified,
-            status = parsed?.status ?: "unverified",
-            detail = parsed?.detail ?: control.detail
-        )
+        cancellationScope.async(start = CoroutineStart.UNDISPATCHED) {
+            val control = runControl(
+                TermuxExecutionProtocol.cancelControl(execution.identity),
+                KILL_CONTROL_TIMEOUT_MS
+            )
+            val parsed = control.control
+            val verified = control.result?.succeeded == true &&
+                parsed?.operation == "kill" &&
+                parsed.executionId == execution.identity.executionId &&
+                parsed.verified
+            KillAttempt(
+                verified = verified,
+                status = parsed?.status ?: "unverified",
+                detail = parsed?.detail ?: control.detail
+            )
+        }.also { execution.killRequest = it }
     }
 
     private suspend fun runControl(
@@ -219,7 +281,9 @@ class TermuxCommandRunner private constructor(
     private data class ActiveTermuxExecution(
         val identity: TermuxExecutionIdentity,
         val lifecycle: TermuxExecutionLifecycle,
-        @Volatile var commandHandle: TermuxCommandHandle? = null
+        val ownerId: String,
+        @Volatile var commandHandle: TermuxCommandHandle? = null,
+        @Volatile var killRequest: Deferred<KillAttempt>? = null
     )
 
     private data class ControlAttempt(

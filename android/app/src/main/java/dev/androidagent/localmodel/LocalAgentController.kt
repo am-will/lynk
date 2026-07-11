@@ -308,8 +308,13 @@ class LocalAgentController(
         val eventId = "local_tool_${UUID.randomUUID()}"
         emit(toolEvent(sessionKey, runId, eventId, call, "running", "Running ${call.name}", null, null))
         val requestOwner = localRequestOwner(sessionKey, runId)
-        val result = runCatching { tools.execute(call, requestOwner) }
-            .getOrElse { JSONObject().put("ok", false).put("error", it.message ?: it.toString()) }
+        val result = try {
+            tools.execute(call, requestOwner)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            JSONObject().put("ok", false).put("error", error.message ?: error.toString())
+        }
         Log.i(TAG, "local turn $runId tool=${call.name} ok=${result.optBoolean("ok", false)} error=${result.optString("error")}")
         emit(toolEvent(
             sessionKey = sessionKey,

@@ -11,6 +11,7 @@ import dev.androidagent.localmodel.LocalAgentController
 import dev.androidagent.localmodel.LocalChatSessionStore
 import dev.androidagent.localmodel.LocalModelRuntime
 import dev.androidagent.localmodel.LocalToolRegistry
+import dev.androidagent.localmodel.TermuxCommandCancellationException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -33,6 +34,7 @@ class LocalAgentTurnCoordinator(
     private val localRuntime = runtime
     private var activeSessionKey: String = store.session(null).key
     private var activeRun: Job? = null
+    private var activeToolOwner: String? = null
 
     fun open(sessionKey: String?): Boolean {
         activeSessionKey = store.session(sessionKey).key
@@ -66,6 +68,8 @@ class LocalAgentTurnCoordinator(
         }
 
         val runId = "${request.runIdPrefix}_${UUID.randomUUID()}"
+        val toolOwner = "local:${session.key}:$runId"
+        activeToolOwner = toolOwner
         request.onAccepted(LocalTurnHandle(session.key, runId))
         activeRun = scope.launch {
             onStatus("Local model is working", "working")
@@ -84,18 +88,23 @@ class LocalAgentTurnCoordinator(
                 onStatus(request.completedStatus, "done")
                 request.onCompleted(LocalTurnOutcome(session.key, runId, finalText))
             } catch (error: CancellationException) {
+                val stoppedMessage = if (error is TermuxCommandCancellationException && !error.terminationVerified) {
+                    "${request.stoppedMessage}. Termux process termination could not be verified; the command may still be running."
+                } else {
+                    request.stoppedMessage
+                }
                 activeRun = null
-                emit(LocalChatMessages.error(session.key, request.stoppedMessage, runId))
+                emit(LocalChatMessages.error(session.key, stoppedMessage, runId))
                 emit(LocalChatMessages.state(
                     config = configProvider(),
                     sessionKey = session.key,
                     runId = null,
                     isRunning = false,
-                    status = request.stoppedMessage
+                    status = stoppedMessage
                 ))
-                emit(LocalChatMessages.replyAvailable(store.session(session.key), runId, "failed", request.stoppedMessage))
-                onStatus(request.stoppedMessage, "done")
-                request.onCancelled(LocalTurnOutcome(session.key, runId, request.stoppedMessage))
+                emit(LocalChatMessages.replyAvailable(store.session(session.key), runId, "failed", stoppedMessage))
+                onStatus(stoppedMessage, "done")
+                request.onCancelled(LocalTurnOutcome(session.key, runId, stoppedMessage))
                 throw error
             } catch (error: Throwable) {
                 val message = error.message ?: error.toString()
@@ -111,6 +120,10 @@ class LocalAgentTurnCoordinator(
                 emit(LocalChatMessages.replyAvailable(store.session(session.key), runId, "failed", message))
                 onStatus(message, "error")
                 request.onFailed(LocalTurnOutcome(session.key, runId, message))
+            } finally {
+                if (activeToolOwner == toolOwner) {
+                    activeToolOwner = null
+                }
             }
         }
         return true
@@ -118,6 +131,7 @@ class LocalAgentTurnCoordinator(
 
     fun stop(sessionKey: String? = null, reason: String = "Stopped local model turn") {
         val key = sessionKey ?: activeSessionKey
+        activeToolOwner?.let(tools::cancelTermux)
         activeRun?.cancel()
         activeRun = null
         emit(LocalChatMessages.state(
@@ -136,6 +150,7 @@ class LocalAgentTurnCoordinator(
     }
 
     fun newSession(label: String?) {
+        activeToolOwner?.let(tools::cancelTermux)
         activeRun?.cancel()
         activeRun = null
         val session = store.create(label)
@@ -173,6 +188,7 @@ class LocalAgentTurnCoordinator(
     }
 
     fun close() {
+        tools.close()
         activeRun?.cancel()
         activeRun = null
         localRuntime.close()
