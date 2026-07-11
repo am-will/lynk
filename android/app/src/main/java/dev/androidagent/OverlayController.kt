@@ -400,7 +400,7 @@ class OverlayController(
                 pendingStreamingChatState = state
                 if (pendingStreamingChatRender == null) {
                     val elapsed = SystemClock.uptimeMillis() - lastChatRenderUptimeMs
-                    val delay = (STREAMING_RENDER_INTERVAL_MS - elapsed).coerceAtLeast(0L)
+                    val delay = (STREAMING_MARKDOWN_RENDER_INTERVAL_MS - elapsed).coerceAtLeast(0L)
                     val render = Runnable {
                         pendingStreamingChatRender = null
                         val latest = pendingStreamingChatState ?: return@Runnable
@@ -3148,7 +3148,7 @@ class OverlayController(
     }
 
     companion object {
-        private const val STREAMING_RENDER_INTERVAL_MS = 50L
+        private const val STREAMING_MARKDOWN_RENDER_INTERVAL_MS = 125L
         private const val CHAT_MODAL_HEIGHT_FRACTION = 0.82f
         private const val KEYBOARD_HEIGHT_ESTIMATE_FRACTION = 0.485f
         private const val KEYBOARD_COMPOSER_GAP_DP = 4

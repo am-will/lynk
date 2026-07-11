@@ -947,6 +947,44 @@ describe("DevinSessionAdapter", () => {
       cleanup();
     });
 
+    it("continues a truncated max-token response before emitting the final", async () => {
+      const { storagePath, cleanup } = tmpStorage();
+      const prompts: string[] = [];
+      let controls: FakeControls;
+      controls = createConfigurableDevinProcess({
+        handlers: {
+          sessionNew: () => ({ sessionId: "continued-1", configOptions: defaultModelOptions() }),
+          sessionPrompt: (params) => {
+            const prompt = params.prompt[0];
+            prompts.push(prompt?.type === "text" ? prompt.text : "");
+            if (prompts.length === 1) {
+              controls.pushReplay?.([
+                sessionUpdate("continued-1", { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Hello " } })
+              ]);
+              return { stopReason: "max_tokens" };
+            }
+            controls.pushReplay?.([
+              sessionUpdate("continued-1", { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "world" } })
+            ]);
+            return { stopReason: "end_turn" };
+          }
+        }
+      });
+      const adapter = buildAdapter(controls, storagePath);
+      await adapter.createSession({});
+      const events: GatewayEvent[] = [];
+      adapter.addEventListener((event) => events.push(event));
+      await adapter.sendChat({ sessionKey: "devin:continued-1", message: "finish this", idempotencyKey: "continued-run" });
+
+      await waitFor(() => payloads(events).some((payload) => payload.state === "final"), "continued final");
+      assert.equal(prompts.length, 2);
+      assert.equal(prompts[0], "finish this");
+      assert.match(prompts[1] ?? "", /continue exactly where/i);
+      assert.deepEqual(payloads(events).filter((payload) => payload.state === "final").map((payload) => payload.message), ["Hello world"]);
+      assert.equal(payloads(events).filter((payload) => payload.state === "error").length, 0);
+      cleanup();
+    });
+
     it("cancels the exact session and emits one terminal state across the cancel/final race", async () => {
       const { storagePath, cleanup } = tmpStorage();
       let resolvePrompt!: (outcome: { stopReason: "cancelled" }) => void;

@@ -16,6 +16,10 @@ interface DevinRunState {
   terminal: boolean;
 }
 
+const MAX_TOKEN_CONTINUATIONS = 2;
+const CONTINUE_TRUNCATED_RESPONSE =
+  "Continue exactly where the previous response stopped. Do not repeat prior content. Finish the original request.";
+
 export class DevinRunDriver {
   private readonly runs: HarnessRunLifecycle<DevinRunState>;
 
@@ -105,27 +109,37 @@ export class DevinRunDriver {
     text: string
   ): Promise<void> {
     try {
-      const response = await this.client.sessionPrompt({
-        sessionId: session.sessionId,
-        prompt: [{ type: "text", text }]
-      });
-      if (response.usage) {
-        this.sessions.setUsage(session, {
-          ...session.usage,
-          totalTokens: response.usage.totalTokens,
-          inputTokens: response.usage.inputTokens,
-          outputTokens: response.usage.outputTokens,
-          ...(response.usage.thoughtTokens != null ? { thoughtTokens: response.usage.thoughtTokens } : {}),
-          ...(response.usage.cachedReadTokens != null ? { cachedReadTokens: response.usage.cachedReadTokens } : {}),
-          ...(response.usage.cachedWriteTokens != null ? { cachedWriteTokens: response.usage.cachedWriteTokens } : {})
+      let promptText = text;
+      for (let continuation = 0; continuation <= MAX_TOKEN_CONTINUATIONS; continuation += 1) {
+        const response = await this.client.sessionPrompt({
+          sessionId: session.sessionId,
+          prompt: [{ type: "text", text: promptText }]
         });
-      }
-      if (response.stopReason === "end_turn") {
-        this.terminal(active, "final");
-      } else if (response.stopReason === "cancelled") {
-        this.terminal(active, "error", "Devin run cancelled.");
-      } else {
+        if (response.usage) {
+          this.sessions.setUsage(session, {
+            ...session.usage,
+            totalTokens: response.usage.totalTokens,
+            inputTokens: response.usage.inputTokens,
+            outputTokens: response.usage.outputTokens,
+            ...(response.usage.thoughtTokens != null ? { thoughtTokens: response.usage.thoughtTokens } : {}),
+            ...(response.usage.cachedReadTokens != null ? { cachedReadTokens: response.usage.cachedReadTokens } : {}),
+            ...(response.usage.cachedWriteTokens != null ? { cachedWriteTokens: response.usage.cachedWriteTokens } : {})
+          });
+        }
+        if (response.stopReason === "end_turn") {
+          this.terminal(active, "final");
+          return;
+        }
+        if (response.stopReason === "cancelled" || active.resource.cancelled) {
+          this.terminal(active, "error", "Devin run cancelled.");
+          return;
+        }
+        if (response.stopReason === "max_tokens" && continuation < MAX_TOKEN_CONTINUATIONS) {
+          promptText = CONTINUE_TRUNCATED_RESPONSE;
+          continue;
+        }
         this.terminal(active, "error", `Devin stopped: ${response.stopReason.replaceAll("_", " ")}.`);
+        return;
       }
     } catch (error) {
       this.terminal(active, "error", error instanceof Error ? error.message : String(error));

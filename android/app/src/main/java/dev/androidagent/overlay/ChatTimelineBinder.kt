@@ -76,13 +76,17 @@ class ChatTimelineBinder(
         val plan = ChatTimelineRenderer.plan(state, showToolCalls)
         val update = ChatTimelineRenderer.streamingTextUpdate(lastRenderPlan, plan) ?: return false
         val textView = streamingTextViews[update.itemId] ?: return false
-        textView.text = when (update.kind) {
-            ChatTimelineKind.MESSAGE -> update.text.ifBlank { "•  •  •" }
-            ChatTimelineKind.REASONING -> update.text.ifBlank { "Thinking..." }
+        when (update.kind) {
+            ChatTimelineKind.MESSAGE -> {
+                if (update.text.isBlank()) {
+                    textView.text = "•  •  •"
+                } else {
+                    MarkdownRenderer.render(textView, update.text, tokens())
+                }
+                attachMessageCopyGesture(textView, update.text, enabled = update.text.isNotBlank())
+            }
+            ChatTimelineKind.REASONING -> textView.text = update.text.ifBlank { "Thinking..." }
             ChatTimelineKind.TOOL -> return false
-        }
-        if (update.kind == ChatTimelineKind.MESSAGE) {
-            attachMessageCopyGesture(textView, update.text, enabled = update.text.isNotBlank())
         }
         lastRenderPlan = plan
         historyScrollView?.post { snapToBottom() }
