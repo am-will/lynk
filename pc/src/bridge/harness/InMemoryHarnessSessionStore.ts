@@ -154,6 +154,23 @@ export class InMemoryHarnessSessionStore {
     this.persist();
   }
 
+  appendSystemMessage(session: HarnessStoredSession, id: string, text: string): void {
+    const existing = session.messages.find((message) => message.id === id);
+    if (existing) {
+      existing.text = text;
+      existing.timestamp = Date.now();
+    } else {
+      session.messages.push({
+        id,
+        role: "system",
+        text,
+        timestamp: Date.now()
+      });
+    }
+    session.updatedAt = Date.now();
+    this.persist();
+  }
+
   setThinkingLevel(session: HarnessStoredSession, thinking?: string): void {
     session.thinkingLevel = thinking ?? session.thinkingLevel;
     this.persist();

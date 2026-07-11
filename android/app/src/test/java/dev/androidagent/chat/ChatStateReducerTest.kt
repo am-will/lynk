@@ -10,6 +10,19 @@ import org.junit.Test
 
 class ChatStateReducerTest {
     @Test
+    fun stateWithExplicitNullStatusClearsStaleLoadingMessage() {
+        val state = ChatStateReducer.reduce(
+            ChatState(status = "Loading Devin Chat"),
+            JSONObject()
+                .put("type", "chat.state")
+                .put("sessionKey", "devin:session")
+                .put("status", JSONObject.NULL)
+        )
+
+        assertEquals(null, state.status)
+    }
+
+    @Test
     fun historyReplacesTimelineWithMessageRows() {
         val state = ChatStateReducer.reduce(ChatState(), JSONObject()
             .put("type", "chat.history")

@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { isAbsolute, resolve } from "node:path";
 import type {
   ChatCommandOption,
+  ChatHistoryMessage,
   ChatModelOption,
   ChatReasoningOption,
   ChatSessionSummary,
@@ -300,7 +301,10 @@ export class DevinSessionAdapter implements HarnessChatAdapter {
     try {
       const loaded = await this.client.sessionLoad({ sessionId, cwd: workspacePath, mcpServers: [] });
       const snapshot = collector.snapshot(sessionId);
-      this.store.replaceHistory(sessionKey, snapshot.messages);
+      this.store.replaceHistory(
+        sessionKey,
+        mergeDevinHistoryWithLocalErrors(snapshot.messages, this.store.history(sessionKey).messages)
+      );
       let config = devinConfigFromOptions(loaded.configOptions ?? snapshot.configOptions);
       config = await this.applyPermissionMode(sessionId, config);
       this.applyConfig(sessionKey, sessionId, config.options, loaded.modes ?? snapshot.currentModeState);
@@ -491,6 +495,42 @@ function devinSessionIdFromKey(sessionKey: string): string {
 
 function invalidSessionKey(sessionKey: string): ChatClientError {
   return new ChatClientError(`Invalid Devin session key: ${sessionKey}`, { code: "devin.invalid_session_key" });
+}
+
+function mergeDevinHistoryWithLocalErrors(
+  remote: ChatHistoryMessage[],
+  local: ChatHistoryMessage[]
+): ChatHistoryMessage[] {
+  const merged = [...remote];
+  const existingIds = new Set(remote.flatMap((message) => message.id ? [message.id] : []));
+  for (const error of local.filter((message) => message.role === "system" && message.id?.startsWith("devin_error_"))) {
+    if (error.id && existingIds.has(error.id)) continue;
+    const runId = error.id?.slice("devin_error_".length);
+    const anchor = runId ? local.find((message) => message.id === `user_${runId}`) : undefined;
+    const anchorIndex = anchor ? matchingUserIndex(merged, local, anchor) : -1;
+    const nextUserIndex = anchorIndex >= 0
+      ? merged.findIndex((message, index) => index > anchorIndex && message.role === "user")
+      : -1;
+    merged.splice(nextUserIndex >= 0 ? nextUserIndex : merged.length, 0, error);
+    if (error.id) existingIds.add(error.id);
+  }
+  return merged;
+}
+
+function matchingUserIndex(
+  remote: ChatHistoryMessage[],
+  local: ChatHistoryMessage[],
+  anchor: ChatHistoryMessage
+): number {
+  const localIndex = local.indexOf(anchor);
+  const occurrence = local.slice(0, localIndex + 1)
+    .filter((message) => message.role === "user" && message.text === anchor.text).length;
+  let seen = 0;
+  return remote.findIndex((message) => {
+    if (message.role !== "user" || message.text !== anchor.text) return false;
+    seen += 1;
+    return seen === occurrence;
+  });
 }
 
 function workspaceNameFromPath(workspacePath: string): string {

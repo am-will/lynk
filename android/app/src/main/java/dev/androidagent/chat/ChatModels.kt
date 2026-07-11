@@ -311,7 +311,7 @@ object ChatStateReducer {
             harnessLabel = message.optNullableString("harnessLabel") ?: state.harnessLabel,
             activeRunId = message.optNullableString("runId"),
             isRunning = message.optBoolean("isRunning", state.isRunning),
-            status = message.optNullableString("status") ?: state.status,
+            status = if (message.has("status")) message.optNullableString("status") else state.status,
             selectedModel = selectedModelForActiveHarness(
                 current = state.selectedModel,
                 incoming = message.optNullableString("model"),

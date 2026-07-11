@@ -164,11 +164,13 @@ export class DevinRunDriver {
         usage: session.usage
       });
     } else {
+      const message = error ?? "Devin run failed.";
+      this.sessions.appendSystemMessage(session, `devin_error_${active.runId}`, message);
       this.emit("chat", {
         sessionKey: active.sessionKey,
         runId: active.runId,
         state: "error",
-        error: error ?? "Devin run failed."
+        error: message
       });
     }
     this.permissions().cancelRun(active.sessionKey, active.runId);

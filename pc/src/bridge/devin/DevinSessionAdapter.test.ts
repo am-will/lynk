@@ -9,7 +9,7 @@ import type {
   SessionConfigSelectOptions,
   SessionNotification
 } from "@agentclientprotocol/sdk";
-import { methods } from "@agentclientprotocol/sdk";
+import { methods, RequestError } from "@agentclientprotocol/sdk";
 import { ChatClientError } from "../chat/ChatErrors.js";
 import type { GatewayEvent, HarnessPermissionReplyOptions } from "../chat/ChatTransportTypes.js";
 import { InMemoryHarnessSessionStore } from "../harness/InMemoryHarnessSessionStore.js";
@@ -1036,6 +1036,71 @@ describe("DevinSessionAdapter", () => {
       assert.match(prompts[1] ?? "", /continue exactly where/i);
       assert.deepEqual(payloads(events).filter((payload) => payload.state === "final").map((payload) => payload.message), ["Hello world"]);
       assert.equal(payloads(events).filter((payload) => payload.state === "error").length, 0);
+      cleanup();
+    });
+
+    it("persists exact Devin failures so reconnecting clients can see them", async () => {
+      const { storagePath, cleanup } = tmpStorage();
+      const quotaError = "Your weekly usage quota has been exhausted. Visit https://app.devin.ai/plans to manage your plan.";
+      let promptCount = 0;
+      let firstControls: FakeControls;
+      firstControls = createConfigurableDevinProcess({
+        handlers: {
+          sessionNew: () => ({ sessionId: "quota-1", configOptions: defaultModelOptions() }),
+          sessionPrompt: () => {
+            promptCount += 1;
+            if (promptCount === 1) throw new RequestError(-32011, quotaError);
+            firstControls.pushReplay?.([
+              sessionUpdate("quota-1", {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: "Recovered" }
+              })
+            ]);
+            return { stopReason: "end_turn" };
+          }
+        }
+      });
+      const firstAdapter = buildAdapter(firstControls, storagePath);
+      await firstAdapter.createSession({});
+      const events: GatewayEvent[] = [];
+      firstAdapter.addEventListener((event) => events.push(event));
+      await firstAdapter.sendChat({ sessionKey: "devin:quota-1", message: "hi", idempotencyKey: "quota-run" });
+      await waitFor(() => payloads(events).some((payload) => payload.state === "error"), "quota error");
+
+      const emittedError = String(payloads(events).find((payload) => payload.state === "error")?.error);
+      assert.match(emittedError, /weekly usage quota has been exhausted/);
+      assert.deepEqual((await firstAdapter.history("devin:quota-1")).messages.at(-1), {
+        id: "devin_error_quota-run",
+        role: "system",
+        text: emittedError,
+        timestamp: (await firstAdapter.history("devin:quota-1")).messages.at(-1)?.timestamp
+      });
+      await firstAdapter.sendChat({ sessionKey: "devin:quota-1", message: "try again", idempotencyKey: "recovered-run" });
+      await waitFor(() => payloads(events).some((payload) => payload.state === "final"), "recovered final");
+      firstAdapter.close();
+
+      let reconnectControls: FakeControls;
+      reconnectControls = createConfigurableDevinProcess({
+        handlers: {
+          sessionLoad: () => {
+            reconnectControls.pushReplay?.([
+              textChunk("quota-1", "user_message_chunk", "hi", "remote-user-1"),
+              textChunk("quota-1", "user_message_chunk", "try again", "remote-user-2"),
+              textChunk("quota-1", "agent_message_chunk", "Recovered", "remote-agent-2")
+            ]);
+            return { configOptions: defaultModelOptions() };
+          }
+        }
+      });
+      const reconnected = buildAdapter(reconnectControls, storagePath);
+      const history = await reconnected.history("devin:quota-1");
+      assert.deepEqual(history.messages.map(({ role, text }) => ({ role, text })), [
+        { role: "user", text: "hi" },
+        { role: "system", text: emittedError },
+        { role: "user", text: "try again" },
+        { role: "assistant", text: "Recovered" }
+      ]);
+      reconnected.close();
       cleanup();
     });
 
