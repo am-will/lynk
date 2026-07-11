@@ -7,7 +7,7 @@ function firstHeader(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function tokenEquals(candidate: string | undefined, expected: string): boolean {
+export function tokenEquals(candidate: string | undefined, expected: string): boolean {
   if (!candidate || !expected) {
     return false;
   }

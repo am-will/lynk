@@ -56,6 +56,8 @@ The bridge exposes:
 - `http://127.0.0.1:8788/health` for local status
 - protected `http://127.0.0.1:8788/api/*` routes for phones, audit, pets, harness diagnostics, agent control, and command dispatch. Call these with `Authorization: Bearer $PHONE_AGENT_TOKEN` or `X-Phone-Agent-Token: $PHONE_AGENT_TOKEN`.
 
+The generated host configuration uses a 64-character random token. Manual tokens must contain 32 to 256 printable, non-whitespace characters with at least 8 distinct characters. The bridge also rejects malformed persisted configuration, partial or out-of-range ports, wrong URL schemes, and credentials embedded in endpoint URLs. `PHONE_AGENT_ALLOW_UNSAFE_DEVELOPMENT=1` bypasses only token-strength checks and is intended solely for an isolated development bridge; never use it on LAN or Tailscale listeners.
+
 The bridge server is split into focused HTTP, WebSocket, and realtime modules. Legacy Codex schema generation remains available with `npm run codex:schemas`, but `pc/src/generated/codex-app-server/` is local/gitignored and not required for normal Open Claw setup.
 
 The Android model picker can select multiple harnesses through this same bridge:

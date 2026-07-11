@@ -73,29 +73,116 @@ function nestedString(value: unknown, path: string[]): string | undefined {
   return typeof current === "string" && current.trim() ? current.trim() : undefined;
 }
 
-const weakPhoneAgentTokens = new Set(["12345678"]);
+const weakPhoneAgentTokens = new Set([
+  "12345678",
+  "change-me",
+  "password",
+  "replace-with-strong-token",
+  "secret",
+  "test-token",
+  "token"
+]);
+const minimumPhoneAgentTokenLength = 32;
+const maximumPhoneAgentTokenLength = 256;
+const minimumDistinctTokenCharacters = 8;
+const unsafeDevelopmentEnv = "PHONE_AGENT_ALLOW_UNSAFE_DEVELOPMENT";
 
 function readPhoneAgentToken(configToken: string): string {
-  const token = process.env.PHONE_AGENT_TOKEN?.trim() || configToken;
+  const rawEnvironmentToken = process.env.PHONE_AGENT_TOKEN;
+  if (rawEnvironmentToken && rawEnvironmentToken !== rawEnvironmentToken.trim()) {
+    throw new Error("PHONE_AGENT_TOKEN must not contain leading or trailing whitespace.");
+  }
+  const token = rawEnvironmentToken?.trim() || configToken;
   if (!token) {
     throw new Error("PHONE_AGENT_TOKEN is required. Generate a strong shared token or let the host bridge config create one.");
   }
-  if (weakPhoneAgentTokens.has(token)) {
-    throw new Error("PHONE_AGENT_TOKEN uses a known weak default. Generate a strong token and save it on both PC and Android.");
+  if (/\s|[\u0000-\u001f\u007f]/u.test(token) || token.length > maximumPhoneAgentTokenLength) {
+    throw new Error(`PHONE_AGENT_TOKEN must be ${maximumPhoneAgentTokenLength} printable non-whitespace characters or fewer.`);
+  }
+
+  const weakness = tokenWeakness(token);
+  const allowUnsafeDevelopment = readUnsafeDevelopmentOverride();
+  if (weakness && !allowUnsafeDevelopment) {
+    throw new Error(
+      `PHONE_AGENT_TOKEN ${weakness}. Use the generated 64-character token, or set ${unsafeDevelopmentEnv}=1 only for an isolated development bridge.`
+    );
+  }
+  if (weakness) {
+    console.warn(`[security] accepting a weak PHONE_AGENT_TOKEN because ${unsafeDevelopmentEnv}=1; do not expose this bridge to a network.`);
   }
   return token;
 }
 
 function readPositiveInt(name: string, fallback: number): number {
   const raw = process.env[name]?.trim();
-  if (!raw) {
-    return fallback;
+  return parsePositiveInteger(name, raw || String(fallback));
+}
+
+function readPort(configPort: number): number {
+  const environmentPort = process.env.PHONE_AGENT_PORT;
+  const raw = environmentPort === undefined ? String(configPort) : environmentPort.trim();
+  const port = parsePositiveInteger("PHONE_AGENT_PORT", raw);
+  if (port > 65_535) {
+    throw new Error("PHONE_AGENT_PORT must be an integer between 1 and 65535.");
   }
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  return port;
+}
+
+function parsePositiveInteger(name: string, raw: string): number {
+  if (!/^[1-9]\d*$/u.test(raw)) {
     throw new Error(`${name} must be a positive integer.`);
   }
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed) || parsed > Math.floor(Number.MAX_SAFE_INTEGER / 1_000)) {
+    throw new Error(`${name} must be a positive safe integer.`);
+  }
   return parsed;
+}
+
+function readUnsafeDevelopmentOverride(): boolean {
+  const raw = process.env[unsafeDevelopmentEnv]?.trim();
+  if (!raw) {
+    return false;
+  }
+  if (raw !== "1") {
+    throw new Error(`${unsafeDevelopmentEnv} must be exactly 1 or unset.`);
+  }
+  return true;
+}
+
+function tokenWeakness(token: string): string | undefined {
+  if (weakPhoneAgentTokens.has(token.toLowerCase())) {
+    return "uses a known weak default";
+  }
+  if (token.length < minimumPhoneAgentTokenLength) {
+    return `must contain at least ${minimumPhoneAgentTokenLength} characters`;
+  }
+  if (new Set(token).size < minimumDistinctTokenCharacters) {
+    return `must contain at least ${minimumDistinctTokenCharacters} distinct characters`;
+  }
+  return undefined;
+}
+
+function readRequiredText(name: string, value: string): string {
+  const normalized = value.trim();
+  if (!normalized || /[\u0000-\u001f\u007f]/u.test(normalized)) {
+    throw new Error(`${name} must be a non-empty value without control characters.`);
+  }
+  return normalized;
+}
+
+function readUrl(name: string, value: string, protocols: readonly string[]): string {
+  const normalized = readRequiredText(name, value);
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    throw new Error(`${name} must be a valid ${protocols.join(" or ")} URL.`);
+  }
+  if (!protocols.includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new Error(`${name} must be a credential-free ${protocols.join(" or ")} URL.`);
+  }
+  return normalized;
 }
 
 function readDevinPermissionMode(value: string | undefined): string | undefined {
@@ -110,28 +197,47 @@ function readDevinPermissionMode(value: string | undefined): string | undefined 
 export function getBridgeConfig(): BridgeConfig {
   const hostConfig = loadOrCreateHostBridgeConfig();
   const host = hostConfig.config;
-  const port = Number.parseInt(process.env.PHONE_AGENT_PORT ?? String(host.phoneAgentPort ?? 8788), 10);
+  const port = readPort(host.phoneAgentPort ?? 8788);
+  const bridgeHost = readRequiredText("PHONE_AGENT_HOST", process.env.PHONE_AGENT_HOST ?? host.phoneAgentHost ?? "0.0.0.0");
+  const bridgeUrl = readUrl(
+    "PHONE_AGENT_BRIDGE_URL",
+    process.env.PHONE_AGENT_BRIDGE_URL ?? host.phoneAgentBridgeUrl ?? `http://127.0.0.1:${port}`,
+    ["http:", "https:"]
+  );
+  const openClawGatewayUrl = readUrl(
+    "OPENCLAW_GATEWAY_URL",
+    process.env.OPENCLAW_GATEWAY_URL ?? host.openClawGatewayUrl ?? "ws://127.0.0.1:18789",
+    ["ws:", "wss:"]
+  );
+  const hermesApiBaseUrl = readUrl(
+    "HERMES_API_BASE_URL",
+    process.env.HERMES_API_BASE_URL ?? host.hermesApiBaseUrl ?? "http://127.0.0.1:8642/v1",
+    ["http:", "https:"]
+  ).replace(/\/+$/, "");
   const openClawConfig = readOpenClawConfig();
   const codexAppServerCommand = process.env.CODEX_APP_SERVER_COMMAND ?? host.codexAppServerCommand ?? "codex app-server --listen stdio://";
   const codexResolution = resolveCommand(codexAppServerCommand);
-  const opencodeServerUrl = process.env.OPENCODE_SERVER_URL?.trim() || host.opencodeServerUrl?.trim() || undefined;
+  const rawOpenCodeServerUrl = process.env.OPENCODE_SERVER_URL?.trim() || host.opencodeServerUrl?.trim() || undefined;
+  const opencodeServerUrl = rawOpenCodeServerUrl
+    ? readUrl("OPENCODE_SERVER_URL", rawOpenCodeServerUrl, ["http:", "https:"])
+    : undefined;
   const opencodeServerCommand = process.env.OPENCODE_SERVER_COMMAND ?? host.opencodeServerCommand ?? "opencode serve --hostname 127.0.0.1 --port 4096";
   const opencodeResolution = resolveCommand(opencodeServerCommand);
   const hermesApiKey = process.env.HERMES_API_KEY?.trim() || host.hermesApiKey?.trim() || undefined;
   const hermesCliCommand = process.env.HERMES_COMMAND?.trim() || "hermes";
   const hermesCliResolution = resolveCommand(hermesCliCommand);
   return {
-    host: process.env.PHONE_AGENT_HOST ?? host.phoneAgentHost ?? "0.0.0.0",
+    host: bridgeHost,
     port,
     token: readPhoneAgentToken(host.phoneAgentToken),
-    defaultDeviceId: process.env.PHONE_AGENT_DEFAULT_DEVICE ?? host.phoneAgentDefaultDevice ?? "openclaw-agent",
-    bridgeUrl: process.env.PHONE_AGENT_BRIDGE_URL ?? host.phoneAgentBridgeUrl ?? `http://127.0.0.1:${port}`,
-    openClawGatewayUrl: process.env.OPENCLAW_GATEWAY_URL ?? host.openClawGatewayUrl ?? "ws://127.0.0.1:18789",
+    defaultDeviceId: readRequiredText("PHONE_AGENT_DEFAULT_DEVICE", process.env.PHONE_AGENT_DEFAULT_DEVICE ?? host.phoneAgentDefaultDevice ?? "openclaw-agent"),
+    bridgeUrl,
+    openClawGatewayUrl,
     openClawGatewayToken: process.env.OPENCLAW_GATEWAY_TOKEN ?? host.openClawGatewayToken ?? nestedString(openClawConfig, ["gateway", "auth", "token"]) ?? nestedString(openClawConfig, ["gateway", "remote", "token"]),
     openClawGatewayPassword: process.env.OPENCLAW_GATEWAY_PASSWORD ?? host.openClawGatewayPassword ?? nestedString(openClawConfig, ["gateway", "auth", "password"]) ?? nestedString(openClawConfig, ["gateway", "remote", "password"]),
     openClawChatAgentId: process.env.OPENCLAW_CHAT_AGENT_ID ?? host.openClawChatAgentId ?? "main",
     openClawChatSessionKey: process.env.OPENCLAW_CHAT_SESSION_KEY ?? host.openClawChatSessionKey ?? "agent:main:explicit:open-claw-agent",
-    hermesApiBaseUrl: (process.env.HERMES_API_BASE_URL ?? host.hermesApiBaseUrl ?? "http://127.0.0.1:8642/v1").replace(/\/+$/, ""),
+    hermesApiBaseUrl,
     hermesApiKey,
     hermesCliCommand,
     hermesConfigured: Boolean(hermesApiKey) || hermesCliResolution.available,

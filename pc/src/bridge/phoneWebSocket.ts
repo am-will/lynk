@@ -8,6 +8,7 @@ import type { PhoneHub } from "./PhoneHub.js";
 import { REALTIME_TOOL_NAMES, inboundPhoneMessageSchema } from "../protocol/messages.js";
 import type { BridgeRealtime } from "./bridgeRealtime.js";
 import { buildChatErrorMessage } from "./chat/ChatErrors.js";
+import { tokenEquals } from "./httpAuth.js";
 import {
   WebSocketAdmissionBudget,
   WebSocketHeartbeat,
@@ -110,7 +111,7 @@ export function bindPhoneSocket(
       }
       const message = inboundPhoneMessageSchema.parse(rawMessage);
       if (message.type === "register") {
-        if (message.token !== deps.config.token) {
+        if (!tokenEquals(message.token, deps.config.token)) {
           socket.close(4001, "invalid token");
           return;
         }
