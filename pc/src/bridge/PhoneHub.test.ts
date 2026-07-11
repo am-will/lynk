@@ -17,7 +17,10 @@ test("command results resolve only from the owning registered device", async () 
   hub.register({ type: "register", deviceId: "phone-a", token: "token", capabilities: [] }, socket);
 
   let settled = false;
-  const resultPromise = hub.sendCommand({ command: "press_home" }).finally(() => { settled = true; });
+  const resultPromise = hub.sendCommand({
+    requestOwner: "test:phone-hub",
+    command: "press_home"
+  }).finally(() => { settled = true; });
   const id = JSON.parse(sent[0]!).id as string;
   hub.handleResult("phone-b", { type: "result", id, ok: true });
   await new Promise((resolve) => setImmediate(resolve));
