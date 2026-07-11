@@ -17,6 +17,7 @@ import { BodyTooLargeError, json, readJson } from "./httpUtils.js";
 import { createHostPairingPayload } from "../host/PairingPayload.js";
 import { buildDiagnosticsBundle } from "../host/Diagnostics.js";
 import { detectIntegrations, refreshHostIntegrations } from "../host/IntegrationManager.js";
+import { HostBlobStoreError, type HostBlobStore, type HostBlobOwner } from "./blob/HostBlobStore.js";
 
 export interface BridgeHttpDependencies {
   config: Pick<BridgeConfig, "defaultDeviceId" | "token" | "port">;
@@ -26,6 +27,7 @@ export interface BridgeHttpDependencies {
   chatBridge: Pick<OpenClawChatBridge, "backendReadiness" | "health">;
   stopAgentWork: (deviceId: string, reason: string) => Promise<void>;
   petsDir?: string;
+  blobs?: Pick<HostBlobStore, "upload" | "openDownload" | "delete">;
 }
 
 export type BridgeHttpHandler = (req: IncomingMessage, res: ServerResponse) => Promise<void>;
@@ -41,6 +43,10 @@ export function createBridgeHttpHandler(deps: BridgeHttpDependencies): BridgeHtt
       }
       if (error instanceof SyntaxError) {
         json(res, 400, { ok: false, error: "invalid json" });
+        return;
+      }
+      if (error instanceof HostBlobStoreError) {
+        json(res, error.statusCode, { ok: false, error: error.message });
         return;
       }
       json(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) });
@@ -59,6 +65,12 @@ async function routeHttp(req: IncomingMessage, res: ServerResponse, deps: Bridge
   if (url.pathname.startsWith("/api/") && !isAuthorizedHttpRequest(req.headers, deps.config.token)) {
     res.setHeader("www-authenticate", "Bearer");
     json(res, 401, { ok: false, error: "unauthorized" });
+    return;
+  }
+
+  const blobMatch = url.pathname.match(/^\/api\/blobs\/([^/]+)$/u);
+  if (blobMatch) {
+    await handleBlobRequest(req, res, decodePathSegment(blobMatch[1] ?? ""), url, deps);
     return;
   }
 
@@ -173,6 +185,102 @@ async function routeHttp(req: IncomingMessage, res: ServerResponse, deps: Bridge
   }
 
   json(res, 404, { ok: false, error: "not found" });
+}
+
+async function handleBlobRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  blobId: string,
+  url: URL,
+  deps: BridgeHttpDependencies
+): Promise<void> {
+  if (!deps.blobs) {
+    json(res, 404, { ok: false, error: "blob storage is unavailable" });
+    return;
+  }
+  const owner = blobOwner(req);
+  if (req.method === "PUT") {
+    const kind = url.searchParams.get("kind");
+    if (kind !== "image" && kind !== "file") {
+      throw new HostBlobStoreError("kind must be image or file", 400);
+    }
+    const metadata = await deps.blobs.upload(req, {
+      id: blobId,
+      ...owner,
+      displayName: url.searchParams.get("displayName") ?? "",
+      mimeType: url.searchParams.get("mimeType") ?? "",
+      kind,
+      sha256: url.searchParams.get("sha256") ?? "",
+      declaredSizeBytes: contentLength(req)
+    });
+    json(res, 201, {
+      ok: true,
+      blob: {
+        id: metadata.id,
+        sizeBytes: metadata.sizeBytes,
+        sha256: metadata.sha256
+      }
+    });
+    return;
+  }
+  if (req.method === "GET") {
+    const download = deps.blobs.openDownload(blobId, owner);
+    if (!download) {
+      json(res, 404, { ok: false, error: "blob not found" });
+      return;
+    }
+    res.writeHead(200, {
+      "content-type": download.metadata.mimeType,
+      "content-length": download.metadata.sizeBytes,
+      "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(download.metadata.displayName)}`,
+      "x-content-type-options": "nosniff",
+      "x-lynk-blob-sha256": download.metadata.sha256,
+      "cache-control": "private, no-store"
+    });
+    download.stream.on("error", (error) => res.destroy(error instanceof Error ? error : new Error(String(error))));
+    download.stream.pipe(res);
+    return;
+  }
+  if (req.method === "DELETE") {
+    if (!deps.blobs.delete(blobId, owner)) {
+      json(res, 404, { ok: false, error: "blob not found" });
+      return;
+    }
+    json(res, 200, { ok: true });
+    return;
+  }
+  res.setHeader("allow", "PUT, GET, DELETE");
+  json(res, 405, { ok: false, error: "method not allowed" });
+}
+
+function blobOwner(req: IncomingMessage): HostBlobOwner {
+  return {
+    deviceId: singleHeader(req, "x-lynk-device-id"),
+    sessionKey: singleHeader(req, "x-lynk-session-key")
+  };
+}
+
+function singleHeader(req: IncomingMessage, name: string): string {
+  const value = req.headers[name];
+  if (Array.isArray(value)) throw new HostBlobStoreError(`${name} must be sent once`, 400);
+  return value ?? "";
+}
+
+function contentLength(req: IncomingMessage): number | undefined {
+  const raw = singleHeader(req, "content-length");
+  if (!raw) return undefined;
+  if (!/^\d+$/u.test(raw)) throw new HostBlobStoreError("Invalid Content-Length", 400);
+  const parsed = Number(raw);
+  if (!Number.isSafeInteger(parsed)) throw new HostBlobStoreError("Invalid Content-Length", 400);
+  return parsed;
+}
+
+function decodePathSegment(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    throw new HostBlobStoreError("Invalid blob path", 400);
+  }
 }
 
 async function handlePetSpritesheet(req: IncomingMessage, res: ServerResponse, petId: string, deps: BridgeHttpDependencies): Promise<void> {
