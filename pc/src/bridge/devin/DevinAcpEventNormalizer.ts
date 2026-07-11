@@ -76,7 +76,7 @@ export class DevinAcpEventNormalizer {
           type: "chat.tool_event",
           sessionKey: session.key,
           runId,
-          eventId: `devin_plan_${update.id}`,
+          eventId: `devin_plan_${planIdentifier(update)}`,
           toolName: "plan",
           title: "Devin plan",
           status: "info",
@@ -183,13 +183,22 @@ export class DevinAcpEventNormalizer {
       type: "chat.tool_event",
       sessionKey: session.key,
       runId,
-      eventId: `devin_plan_${plan.id}`,
+      eventId: `devin_plan_${planIdentifier(plan)}`,
       toolName: "plan",
       title: "Devin plan",
       status: "info",
       output
     });
   }
+}
+
+function planIdentifier(value: unknown): string {
+  if (value && typeof value === "object") {
+    const record = value as { id?: unknown; planId?: unknown };
+    if (typeof record.planId === "string" && record.planId) return record.planId;
+    if (typeof record.id === "string" && record.id) return record.id;
+  }
+  return "unknown";
 }
 
 function textContent(content: ContentBlock): string | undefined {
