@@ -19,3 +19,10 @@
 - The authenticated Devin smoke test is opt-in because it starts a real remote-backed turn. `cd pc && npm run test:devin:real` passed against CLI `3000.1.27` for process restart, list, load, history replay, and retained context; it is not a claim of feature parity with every Devin CLI version or ACP extension.
 - Local phone mode requires a user-imported `.litertlm` model and device resources vary widely by RAM, GPU/NPU support, and thermals.
 - Local phone mode can control Android and use app-private workspace tools. It does not provide a full desktop-class shell/git/build environment. `termux_command` requires a compatible F-Droid/GitHub Termux installation and remains fail-closed until Lynk verifies its [tracked process-group cancellation protocol](termux-cancellation.md) on the device.
+
+## Host harness reliability boundaries
+
+- A chat send goes directly to its selected harness. Aggregate model and health diagnostics run concurrently and give each harness 3 seconds; a slow unrelated backend is reported as timed out without delaying the selected send.
+- Hermes local model discovery runs in an isolated worker, is single-flight, and caches successful results for 5 minutes. A refresh has a 30-second outer deadline; its authenticated and curated CLI probes are limited to 15 and 10 seconds respectively with 1 MiB output caps. Failed refreshes expose a typed stale result when a prior catalog exists, otherwise unavailable. Restarting the bridge clears the cache.
+- Codex app-server RPCs default to a 30-second deadline (`CODEX_RPC_TIMEOUT_MS` can override it), JSON-lines are capped at 1 MiB, and turns retain the existing 10-minute default deadline. A failed generation rejects all owned pending work. Teardown sends `SIGTERM`, waits 1.5 seconds, then sends `SIGKILL` and waits another 0.5 seconds; only the child process spawned by Lynk is signalled.
+- OpenCode uses `OPENCODE_RUN_TIMEOUT_MS` for prompt, polling, and overall run completion. Timeout, cancellation, and hung-stream paths emit an error terminal and never a successful final response.
