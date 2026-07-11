@@ -26,6 +26,7 @@
     "build": "npm run prompt:check && npm run clean && tsc -p tsconfig.build.json",
     "check": "npm run prompt:check && tsc -p tsconfig.json --noEmit",
     "test": "npm run prompt:check && node --import tsx --test \"src/**/*.test.ts\"",
+    "test:artifact": "node scripts/smokeHostArtifact.mjs",
     "test:devin:real": "node --import tsx --test src/bridge/devin/DevinRealAcceptance.test.ts",
     "bridge": "tsx --env-file-if-exists=.env.local src/bridge/server.ts",
     "bridge:dist": "node dist/bridge/server.js",

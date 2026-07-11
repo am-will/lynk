@@ -37,6 +37,7 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: npm run build
+      - run: npm run test:artifact
       - name: Stage package
         shell: bash
         run: |
@@ -47,6 +48,9 @@ jobs:
           cp -R installers package-root/installers
           cp ../docs/host-installer.md package-root/README.md
           npm ci --omit=dev --prefix package-root
+      - name: Smoke staged archive
+        shell: bash
+        run: node scripts/smokeHostArtifact.mjs --package-root package-root
       - name: Archive package
         shell: bash
         run: |
