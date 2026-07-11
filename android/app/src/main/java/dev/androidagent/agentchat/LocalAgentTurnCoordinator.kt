@@ -5,7 +5,6 @@ import dev.androidagent.AgentConfig
 import dev.androidagent.AgentModelOptions
 import dev.androidagent.accessibility.AccessibilityCommandExecutor
 import dev.androidagent.chat.StoredChatAttachment
-import dev.androidagent.localmodel.LiteRtLmRuntime
 import dev.androidagent.localmodel.LocalAttachmentInputPreparer
 import dev.androidagent.localmodel.LocalAgentController
 import dev.androidagent.localmodel.LocalChatSessionStore
@@ -25,12 +24,11 @@ class LocalAgentTurnCoordinator(
     private val configProvider: () -> AgentConfig,
     private val onStatus: (String, String) -> Unit,
     private val onChatMessage: (JSONObject) -> Unit,
-    runtime: LocalModelRuntime = LiteRtLmRuntime(context.applicationContext)
+    runtime: LocalModelRuntime
 ) {
     private val store = LocalChatSessionStore(context.applicationContext)
     private val tools = LocalToolRegistry(context.applicationContext, commandExecutor, configProvider)
     private val controller = LocalAgentController(runtime, tools, configProvider, ::emit)
-    private val localRuntime = runtime
     private var activeSessionKey: String = store.session(null).key
     private var activeRun: Job? = null
 
@@ -175,7 +173,6 @@ class LocalAgentTurnCoordinator(
     fun close() {
         activeRun?.cancel()
         activeRun = null
-        localRuntime.close()
     }
 
     private fun refresh(sessionKey: String, status: String) {

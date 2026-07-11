@@ -6,6 +6,7 @@ import dev.androidagent.AgentLocationProvider
 import dev.androidagent.ChatClientRoute
 import dev.androidagent.accessibility.AccessibilityCommandExecutor
 import dev.androidagent.net.PhoneWebSocketClient
+import dev.androidagent.localmodel.LocalModelEngineManager
 import kotlinx.coroutines.CoroutineScope
 import org.json.JSONObject
 
@@ -22,7 +23,8 @@ internal class RealtimeVoiceCoordinator(
     private val onStatus: (String, String) -> Unit,
     private val onChatMessage: (JSONObject) -> Unit,
     private val onRealtimeToolResult: (JSONObject) -> Unit,
-    private val onRealtimeTaskStatus: (JSONObject) -> Unit
+    private val onRealtimeTaskStatus: (JSONObject) -> Unit,
+    private val localModelEngineManager: LocalModelEngineManager
 ) {
     private var localDelegate: LocalRealtimeVoiceDelegate? = null
 
@@ -63,7 +65,8 @@ internal class RealtimeVoiceCoordinator(
             onStatus = onStatus,
             onChatMessage = onChatMessage,
             onRealtimeToolResult = onRealtimeToolResult,
-            onRealtimeTaskStatus = onRealtimeTaskStatus
+            onRealtimeTaskStatus = onRealtimeTaskStatus,
+            engineManager = localModelEngineManager
         ).also { localDelegate = it }
     }
 
