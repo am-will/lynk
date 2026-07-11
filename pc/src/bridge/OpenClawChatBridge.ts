@@ -847,9 +847,10 @@ export class OpenClawChatBridge {
     await this.client.respondToPermission({ sessionKey, permissionId, response });
   }
 
-  close(): void {
+  async close(): Promise<void> {
     this.runWaiters.close();
     this.states.closeRunLifecycles();
+    await this.client.flushPersistence?.();
     this.client.close();
   }
 

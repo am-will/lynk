@@ -81,7 +81,7 @@ async function shutdown(): Promise<void> {
   adbReverseMonitor.stop();
   server.close();
   wss.close();
-  chatBridge.close();
+  await chatBridge.close();
   await audit.close();
 }
 

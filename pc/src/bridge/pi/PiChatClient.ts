@@ -249,6 +249,10 @@ export class PiChatClient {
     void this.sessions.close().catch((error) => console.warn(`[pi] session persistence flush failed: ${String(error)}`));
   }
 
+  async flushPersistence(): Promise<void> {
+    await this.sessions.flushPersistence();
+  }
+
   private async processRun(active: ActiveRun, message: string, attachments?: ChatAttachment[]): Promise<void> {
     try {
       await this.client.runWithTimeout(

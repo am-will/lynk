@@ -234,6 +234,10 @@ export class OpenCodeChatClient {
     void this.client.close();
   }
 
+  async flushPersistence(): Promise<void> {
+    await this.sessions.flushPersistence();
+  }
+
   private async ensureOpenCodeSession(session: HarnessStoredSession): Promise<void> {
     const directory = directoryForSession(session) ?? this.client.defaultDirectory();
     if (session.metadata?.[OPENCODE_REMOTE_SESSION_KEY] === true) {

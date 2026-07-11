@@ -284,6 +284,10 @@ export class CodexChatClient {
     void this.client.close();
   }
 
+  async flushPersistence(): Promise<void> {
+    await this.sessions.flushPersistence();
+  }
+
   private async processRun(
     session: HarnessStoredSession,
     runId: string,

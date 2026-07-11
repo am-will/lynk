@@ -254,6 +254,10 @@ export class HarnessChatRouter implements GatewayChatClient {
     }
   }
 
+  async flushPersistence(): Promise<void> {
+    await Promise.all([...this.adapters.values()].map((adapter) => adapter.flushPersistence?.()));
+  }
+
   defaultSessionKey(harnessId: HarnessId, deviceId: string): string {
     return defaultSessionKeyForHarness(harnessId, this.config, deviceId);
   }

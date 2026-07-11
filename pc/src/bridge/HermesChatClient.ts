@@ -356,6 +356,10 @@ export class HermesChatClient {
     void this.sessions.close().catch((error) => console.warn(`[hermes] session persistence flush failed: ${String(error)}`));
   }
 
+  async flushPersistence(): Promise<void> {
+    await this.sessions.flushPersistence();
+  }
+
   private activeRunFor(sessionKey: string, runId?: string): ActiveChatRun | undefined {
     if (runId) {
       const active = this.activeRuns.get(runId);
