@@ -77,7 +77,8 @@ class PairingActivity : ComponentActivity() {
             hostUrl = request.endpoints.first(),
             hostUrlCandidates = request.endpoints.drop(1),
             deviceId = request.deviceId ?: current.deviceId,
-            token = request.token
+            token = request.token,
+            allowInsecureTrustedOverlay = request.allowInsecureTrustedOverlay
         )
         val changed = updated.hostUrl != current.hostUrl ||
             updated.hostUrlCandidates != current.hostUrlCandidates ||
@@ -120,6 +121,9 @@ internal data class PairingConfirmationModel(val title: String, val message: Str
             val message = buildString {
                 if (replacement) appendLine("Warning: this will replace the bridge currently trusted by Lynk.")
                 if (request.isLegacy) appendLine("Legacy link: this request has no expiry or one-time nonce. Confirm its source carefully.")
+                if (request.allowInsecureTrustedOverlay) {
+                    appendLine("Warning: this development pairing permits cleartext WebSocket traffic only over the listed Tailscale overlay endpoint.")
+                }
                 appendLine("Bridge endpoint${if (request.endpoints.size == 1) "" else "s"}:")
                 request.endpoints.forEach { appendLine("  $it") }
                 append("Device ID: ${request.deviceId ?: current.deviceId}\n\n")

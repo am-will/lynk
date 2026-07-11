@@ -1,6 +1,7 @@
 package dev.androidagent.net
 
 import dev.androidagent.AgentConfig
+import dev.androidagent.BridgeEndpointPolicy
 import dev.androidagent.AgentLocation
 import dev.androidagent.accessibility.AccessibilityCommandExecutor
 import okhttp3.OkHttpClient
@@ -66,7 +67,14 @@ class PhoneWebSocketClient(
         manuallyClosed = false
         connected = false
         registered = false
-        val hostUrl = activeHostUrl()
+        val requestedHostUrl = activeHostUrl()
+        val hostUrl = BridgeEndpointPolicy.normalize(requestedHostUrl, config.allowInsecureTrustedOverlay)?.url
+        if (hostUrl == null) {
+            val statusText = "Blocked insecure bridge endpoint $requestedHostUrl. Network bridges require wss; ws is limited to loopback/ADB or an explicitly approved Tailscale development endpoint."
+            onStatus(statusText, "error")
+            onConnectionState(BridgeConnectionState(BridgeConnectionPhase.ERROR, statusText))
+            return
+        }
         val request = Request.Builder().url(hostUrl).build()
         socket = client.newWebSocket(request, this)
         val statusText = "Connecting to $hostUrl"
@@ -212,7 +220,12 @@ class PhoneWebSocketClient(
             .put("systemPrompt", requestConfig.systemPrompt)
             .put("model", requestConfig.model)
             .put("reasoningEffort", requestConfig.reasoningEffort)
-        requestConfig.openAiApiKey.takeIf { it.isNotBlank() }?.let { message.put("openAiApiKey", it) }
+        BridgeEndpointPolicy.providerKeyForBridge(activeHostUrl(), requestConfig.openAiApiKey)?.let {
+            message.put("openAiApiKey", it)
+        }
+        if (requestConfig.openAiApiKey.isNotBlank() && !BridgeEndpointPolicy.protectsProviderSecrets(activeHostUrl())) {
+            onStatus("Android OpenAI key was not sent over the cleartext bridge connection. Configure OPENAI_API_KEY on the PC bridge or use wss.", "info")
+        }
         location?.let { message.put("location", it.toJson()) }
         val sent = sendJson(message)
         Log.i(TAG, "sendRealtimeStart sent=$sent sdpLength=${sdp.length}")

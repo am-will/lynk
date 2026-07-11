@@ -5,6 +5,7 @@ Safety policy ownership depends on the path:
 - Primary `chat.*` messages stream through the installed OpenClaw Gateway session. That session and its configured tools own system-level policy enforcement for ordinary Gateway chat; the bridge does not currently inject the Android default system prompt into this path.
 - Explicit phone tasks, legacy `user_request` requests, and realtime delegated tasks are wrapped by the bridge/dispatcher with the OpenAgent phone-safety context before reaching the active session adapter.
 - The Android **System prompt** setting is saved locally and sent with legacy/realtime request metadata. It mirrors the canonical phone-control policy for paths that consume that field.
+- Network bridge endpoints require platform-verified TLS. Android sends a saved provider API key only over `wss://`, while the host-owned `OPENAI_API_KEY` is preferred and never traverses the phone bridge.
 
 The active session adapter must call `phone_ask_user_confirmation` before:
 

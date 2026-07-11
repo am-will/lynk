@@ -111,6 +111,10 @@ export function bindPhoneSocket(
       }
       const message = inboundPhoneMessageSchema.parse(rawMessage);
       if (message.type === "register") {
+        if (deviceId) {
+          closeSocket(socket, 4004, "already registered");
+          return;
+        }
         if (!tokenEquals(message.token, deps.config.token)) {
           socket.close(4001, "invalid token");
           return;
@@ -128,6 +132,16 @@ export function bindPhoneSocket(
 
       if (!deviceId) {
         socket.close(4002, "register first");
+        return;
+      }
+
+      const claimedDeviceId = "deviceId" in message ? message.deviceId : undefined;
+      if (claimedDeviceId !== undefined && claimedDeviceId !== deviceId) {
+        deps.audit.record("phone_device_identity_rejected", deviceId, {
+          claimedDeviceId,
+          messageType: message.type
+        });
+        closeSocket(socket, 4004, "device identity mismatch");
         return;
       }
 
@@ -248,10 +262,6 @@ export function bindPhoneSocket(
       }
 
       if (message.type === "realtime.tool_call") {
-        if (message.deviceId !== deviceId) {
-          deps.realtime.sendRealtimeError(deviceId, `realtime.tool_call deviceId ${message.deviceId} does not match registered device ${deviceId}`);
-          return;
-        }
         if (message.name === REALTIME_TOOL_NAMES.hangUpRealtime) {
           deps.realtime.handleRealtimeHangUpToolCall(message, deviceId).catch((error) => {
             deps.realtime.sendRealtimeError(message.deviceId, error instanceof Error ? error.message : String(error));

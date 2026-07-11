@@ -1,11 +1,10 @@
 import { execFile } from "node:child_process";
-import { networkInterfaces } from "node:os";
 import { promisify } from "node:util";
 import { resolveExecutable } from "./CommandDiscovery.js";
 
 const execFileAsync = promisify(execFile);
 
-export type EndpointKind = "usb" | "tailscale" | "lan" | "loopback";
+export type EndpointKind = "usb" | "tailscale" | "loopback" | "configured";
 
 export interface EndpointCandidate {
   kind: EndpointKind;
@@ -36,16 +35,12 @@ export interface DiscoverySnapshot {
 }
 
 export async function discoverEndpoints(
-  options: { port: number; includeUsb?: boolean; includeLoopback?: boolean } = { port: 8788 }
+  options: { port: number; includeUsb?: boolean; includeLoopback?: boolean; allowInsecureTrustedOverlay?: boolean } = { port: 8788 }
 ): Promise<DiscoverySnapshot> {
   const endpoints: EndpointCandidate[] = [];
 
-  const tailscale = await discoverTailscale(options.port);
+  const tailscale = await discoverTailscale(options.port, options.allowInsecureTrustedOverlay === true);
   endpoints.push(...tailscale.endpoints);
-
-  for (const address of lanAddresses()) {
-    endpoints.push(endpoint("lan", `Local network (${address.interfaceName})`, address.address, options.port, address.family));
-  }
 
   if (options.includeUsb === true) {
     endpoints.push(endpoint("usb", "USB reverse", "127.0.0.1", options.port, "adb reverse"));
@@ -65,11 +60,11 @@ export async function discoverTailscaleEndpoint(port: number): Promise<EndpointC
 }
 
 export async function discoverTailscaleEndpoints(port: number): Promise<EndpointCandidate[]> {
-  const snapshot = await discoverTailscale(port);
+  const snapshot = await discoverTailscale(port, process.env.PHONE_AGENT_PAIRING_ALLOW_INSECURE_TAILSCALE === "1");
   return snapshot.endpoints;
 }
 
-async function discoverTailscale(port: number): Promise<{ endpoints: EndpointCandidate[]; status: DiscoverySnapshot["tailscale"] }> {
+async function discoverTailscale(port: number, allowInsecureTrustedOverlay: boolean): Promise<{ endpoints: EndpointCandidate[]; status: DiscoverySnapshot["tailscale"] }> {
   const cli = process.env.TAILSCALE_CLI?.trim() || resolveExecutable("tailscale") || macTailscaleCli();
   if (!cli) {
     return { endpoints: [], status: { installed: false, running: false, online: null } };
@@ -78,7 +73,7 @@ async function discoverTailscale(port: number): Promise<{ endpoints: EndpointCan
   try {
     const { stdout } = await execFileAsync(cli, ["status", "--json"], { timeout: 5_000, maxBuffer: 1024 * 1024 });
     const status = JSON.parse(stdout) as TailscaleStatus;
-    const endpoints = tailscaleEndpointsFromStatus(status, port);
+    const endpoints = tailscaleEndpointsFromStatus(status, port, { allowInsecureTrustedOverlay });
     const running = status.BackendState === undefined || status.BackendState === "Running";
     const online = status.Self?.Online ?? null;
     return {
@@ -96,7 +91,9 @@ async function discoverTailscale(port: number): Promise<{ endpoints: EndpointCan
       const { stdout } = await execFileAsync(cli, ["ip", "-4"], { timeout: 5_000, maxBuffer: 1024 * 1024 });
       const host = stdout.split(/\s+/).find(Boolean);
       return {
-        endpoints: host ? [endpoint("tailscale", "Tailscale", host, port, "Tailscale IPv4")] : [],
+        endpoints: host && allowInsecureTrustedOverlay
+          ? [endpoint("tailscale", "Tailscale", host, port, "Tailscale IPv4")]
+          : [],
         status: {
           installed: true,
           running: Boolean(host),
@@ -119,7 +116,14 @@ async function discoverTailscale(port: number): Promise<{ endpoints: EndpointCan
   }
 }
 
-export function tailscaleEndpointsFromStatus(status: TailscaleStatus, port: number): EndpointCandidate[] {
+export function tailscaleEndpointsFromStatus(
+  status: TailscaleStatus,
+  port: number,
+  options: { allowInsecureTrustedOverlay?: boolean } = {}
+): EndpointCandidate[] {
+  if (options.allowInsecureTrustedOverlay !== true) {
+    return [];
+  }
   const endpoints: EndpointCandidate[] = [];
   const dnsName = normalizeDnsName(status.Self?.DNSName);
   if (dnsName) {
@@ -139,33 +143,6 @@ function endpoint(kind: EndpointKind, label: string, host: string, port: number,
     source,
     url: `ws://${formatUrlHost(host)}:${port}/phone`
   };
-}
-
-function lanAddresses(): Array<{ interfaceName: string; address: string; family: string }> {
-  const result: Array<{ interfaceName: string; address: string; family: string }> = [];
-  for (const [interfaceName, addresses] of Object.entries(networkInterfaces())) {
-    for (const address of addresses ?? []) {
-      if (address.internal || address.family !== "IPv4") {
-        continue;
-      }
-      if (isIgnoredLanAddress(address.address, interfaceName)) {
-        continue;
-      }
-      result.push({ interfaceName, address: address.address, family: address.family });
-    }
-  }
-  return result;
-}
-
-function isIgnoredLanAddress(address: string, interfaceName: string): boolean {
-  const lowerName = interfaceName.toLowerCase();
-  return address.startsWith("169.254.")
-    || address.startsWith("172.17.")
-    || lowerName.includes("docker")
-    || lowerName.includes("bridge")
-    || lowerName.includes("vmnet")
-    || lowerName.includes("vbox")
-    || lowerName.includes("utun");
 }
 
 function dedupeEndpoints(endpoints: EndpointCandidate[]): EndpointCandidate[] {

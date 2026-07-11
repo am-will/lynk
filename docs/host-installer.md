@@ -34,10 +34,13 @@ Environment variables still override the file for development and support sessio
 
 ## Discovery
 
-Pairing candidates are ordered for the common paths:
+Pairing candidates are ordered from endpoints that are actually usable:
 
-1. Tailscale MagicDNS and tailnet IP candidates when Tailscale is installed and running.
-2. Local LAN IPv4 addresses, excluding loopback, Docker, VM, link-local, and tunnel interfaces.
+1. Explicit certificate-valid endpoints from `PHONE_AGENT_PAIRING_WSS_URLS`.
+2. USB reverse or loopback development endpoints when their opt-ins are set.
+3. Tailscale `ws://` endpoints only when `PHONE_AGENT_PAIRING_ALLOW_INSECURE_TAILSCALE=1` explicitly enables the trusted-overlay development exception.
+
+The Node bridge does not terminate TLS by default and therefore never invents LAN or Tailscale `wss://` candidates. Without a usable endpoint, pairing JSON includes an actionable warning and QR mode exits without producing a dead QR.
 
 USB reverse is not included in normal pairing because it depends on `adb reverse`. For development-only USB pairing, set `PHONE_AGENT_PAIRING_INCLUDE_USB=1` before printing the pairing QR.
 Loopback is also omitted from normal Android pairing because `127.0.0.1` points at the phone, not the host. For host-local diagnostics, set `PHONE_AGENT_PAIRING_INCLUDE_LOOPBACK=1`.

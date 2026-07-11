@@ -13,6 +13,8 @@ npm run host:pairing:qr
 
 Current QR links expire after five minutes and include a one-time nonce. Scanning opens a Lynk confirmation screen; it does not change the saved bridge immediately. Verify every displayed endpoint and approve the replacement warning, if shown. The authentication token is deliberately hidden on this screen.
 
+The bridge does not synthesize TLS. For normal LAN or remote pairing, configure a real TLS terminator and set its endpoint explicitly, for example `PHONE_AGENT_PAIRING_WSS_URLS=wss://lynk.example.com/phone`. If no usable secure, USB, loopback, or explicitly permitted Tailscale endpoint exists, JSON pairing output contains `deepLink: null` and an actionable warning; QR mode exits instead of displaying a dead code.
+
 Older `android-agent://pair` and `openclaw-agent://pair` links remain usable for compatibility, but Lynk labels them as legacy because they have no expiry or nonce. Only approve a legacy link if you generated it yourself and can verify its endpoint. Reopening a current link after approval is rejected as a replay.
 
 Cancelling or dismissing the confirmation leaves the existing pairing and running service unchanged. Approving a replacement stops an existing bridge service so the old trusted connection is not left active; restart Lynk when you are ready to connect with the new pairing.
@@ -46,14 +48,22 @@ tailscale status
 
 2. Install Tailscale on Android, sign in to the same tailnet, and confirm the phone can see this PC in the Tailscale app.
 
-3. Print the Android bridge URL from the PC:
+3. For normal use, terminate TLS in a private reverse proxy or platform service and advertise the URL:
 
 ```bash
 cd pc
-npm run phone:tailscale
+PHONE_AGENT_PAIRING_WSS_URLS=wss://lynk.your-tailnet.ts.net/phone npm run host:pairing:qr
 ```
 
-The helper prints a `ws://...:8788/phone` URL and any fallback URLs. Pairing payloads include both MagicDNS and `100.x.y.z` tailnet IP candidates when Tailscale reports both.
+The configured endpoint must actually terminate TLS with a certificate accepted by Android and forward `/phone` to the bridge. Lynk intentionally does not advertise guessed `wss://` URLs.
+
+For trusted-overlay development only, Tailscale already encrypts the overlay but the WebSocket hop remains `ws://`. Opt in explicitly when generating pairing data:
+
+```bash
+PHONE_AGENT_PAIRING_ALLOW_INSECURE_TAILSCALE=1 npm run host:pairing:qr
+```
+
+The confirmation screen labels this as cleartext development, and Android will not transmit its saved OpenAI API key over the connection. Prefer `OPENAI_API_KEY` on the PC bridge.
 
 4. Generate a bridge token, then start OpenClaw Gateway and the bridge on the PC:
 
@@ -69,14 +79,14 @@ npm run bridge
 
 5. On Android, open **OpenAgent**, tap **Open Connection & Config**, then set these fields in the **Bridge** section:
 
-- WebSocket URL: `ws://<pc-tailnet-name-or-ip>:8788/phone`
+- WebSocket URL: the configured `wss://` endpoint, or the explicitly approved Tailscale development endpoint
 - Device ID: `openclaw-agent`
 - Auth token: the printed `Android token` value from the PC shell
 
 For example:
 
-- WebSocket URL: `ws://100.88.12.34:8788/phone`
-- WebSocket URL: `ws://your-mac.your-tailnet.ts.net:8788/phone`
+- WebSocket URL: `wss://lynk.your-tailnet.ts.net/phone`
+- Development exception: `ws://100.88.12.34:8788/phone`
 
 6. Put the phone on mobile data, keep Tailscale connected, then tap **Save** and **Start Agent Bubble**.
 
@@ -108,7 +118,7 @@ Do not expose OpenClaw Gateway, Codex app-server, or the bridge directly to the 
 
 ## Local Wi-Fi
 
-This is the preferred mode once the app is installed. It does not rely on `adb reverse`, so the phone can be unplugged as long as it stays on the same LAN as the PC.
+LAN mode requires a real TLS endpoint. Direct `ws://192.168.x.x` pairing is rejected because the shared token, chat content, screenshots, and commands would otherwise cross the LAN in cleartext.
 
 1. Start the bridge on the PC:
 
@@ -130,15 +140,15 @@ If that is empty, inspect active interfaces:
 ifconfig | rg "inet .*broadcast|status: active|^[a-z].*:"
 ```
 
-3. On Android, open **OpenAgent**, tap **Open Connection & Config**, then set these fields in the **Bridge** section:
+3. Configure a private TLS terminator that forwards `/phone` to the bridge, set `PHONE_AGENT_PAIRING_WSS_URLS`, then use the generated QR. Manual fields are:
 
-- WebSocket URL: `ws://<pc-lan-ip>:8788/phone`
+- WebSocket URL: a certificate-valid `wss://` endpoint
 - Device ID: `openclaw-agent`
 - Auth token: the printed `Android token` value from the PC shell
 
 For example:
 
-- WebSocket URL: `ws://192.168.1.163:8788/phone`
+- WebSocket URL: `wss://lynk.home.example/phone`
 
 4. Tap **Save**, then **Start Agent Bubble**.
 

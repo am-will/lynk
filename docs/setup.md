@@ -13,7 +13,7 @@ Requirements:
 - Pi SDK configuration if selecting the Pi harness
 - Devin CLI installed and authenticated if selecting the Devin harness
 - Hermes API server access if selecting the Hermes harness
-- Same network reachability from phone to PC, either local Wi-Fi or Tailscale for off-LAN use
+- Secure network reachability from phone to a TLS terminator in front of the bridge, or loopback/ADB for local development
 - Gradle or Android Studio for Android builds
 
 Install and start the bridge:
@@ -108,7 +108,7 @@ cd pc
 npm run phone:tailscale
 ```
 
-Then use the printed `ws://<pc-tailnet-name-or-ip>:8788/phone` URL in Android. Pairing payloads include both MagicDNS and tailnet IP candidates when Tailscale reports both. On Android, the `100.x.y.z` tailnet IP is the safest manual value unless **Use Tailscale DNS** is enabled in the Tailscale app. Do not expose OpenClaw Gateway, Hermes, Codex app-server, OpenCode server, Pi SDK internals, Devin ACP stdio, or other host-agent transports directly to the public internet.
+For normal use, configure a certificate-valid TLS endpoint and set `PHONE_AGENT_PAIRING_WSS_URLS`; the bridge does not fabricate WSS URLs for its plain listener. `PHONE_AGENT_PAIRING_ALLOW_INSECURE_TAILSCALE=1` is an explicit trusted-overlay development exception and disables Android provider-key forwarding. Do not expose OpenClaw Gateway, Hermes, Codex app-server, OpenCode server, Pi SDK internals, Devin ACP stdio, or other host-agent transports directly to the public internet.
 
 The realtime voice path is separate from the task dispatcher: Android starts the WebRTC call, the PC bridge creates the OpenAI Realtime session, and completed general realtime intents route to the currently selected backend. Host selections use the PC harness router; Local LiteRT-LM selections run delegated work on Android. Phone-control tool calls remain a separate phone-task path.
 

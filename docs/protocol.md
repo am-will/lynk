@@ -2,11 +2,13 @@
 
 Android connects outbound to the PC bridge at `/phone`. The bridge validates `token` during registration. Android never implements MCP directly.
 
+Network endpoints must use `wss://` and the normal Android platform certificate verifier. The bridge is a plain HTTP/WebSocket listener by default, so a WSS endpoint is advertised only when `PHONE_AGENT_PAIRING_WSS_URLS` explicitly names a real TLS terminator or reverse proxy. Cleartext `ws://` is limited to loopback/ADB; a Tailscale endpoint is allowed only through the explicit `PHONE_AGENT_PAIRING_ALLOW_INSECURE_TAILSCALE=1` development exception. Certificate pinning is not currently enabled, leaving the OkHttp client/TLS-terminator boundary available for a future managed pin policy.
+
 In **Local phone** mode, Android bypasses `/phone` for chat turns and generates the same `chat.*` event shapes in-process. The WebSocket protocol below still describes Host bridge mode and remains the compatibility contract for PC/OpenClaw sessions.
 
 The host bridge bounds WebSocket ingress before dispatch. An upgrade must use the origin-form `/phone` target with one valid `Host` header. At most 32 sockets are active at once, and each source address receives an upgrade burst of 12 with one slot restored every 5 seconds. A new socket must send a text registration frame of at most 16 KiB within 5 seconds. After registration, ordinary control frames are capped at 256 KiB and message bursts are rate limited; inline attachment turns retain a separate total frame allowance of about 67 MiB until the streaming attachment transport replaces inline base64. The bridge pings every 30 seconds and terminates a socket that does not answer the previous ping.
 
-Policy closes use `4002` for missing registration, `4008` for message rate exhaustion, `1003` for binary input, and `1009` for payload limits. Invalid credentials continue to use `4001`.
+Policy closes use `4002` for missing registration, `4004` for re-registration or a device identity mismatch, `4008` for message rate exhaustion, `1003` for binary input, and `1009` for payload limits. Invalid credentials continue to use `4001`.
 
 ## Register
 
@@ -20,6 +22,8 @@ Policy closes use `4002` for missing registration, `4008` for message rate exhau
 ```
 
 Opening the TCP/WebSocket connection does not authenticate it. Until Android receives the exact `agent_status` acknowledgement `Registered <its deviceId>`, it accepts only non-registration `agent_status` progress/error messages. A command, chat, realtime, malformed registration acknowledgement, or any other frame before that acknowledgement is a protocol violation and closes the socket without dispatching the frame.
+
+Registration permanently binds that socket to its `deviceId`. A second `register` frame is rejected. Every later message carrying `deviceId` must match the socket identity before any dispatcher runs, and command results without a `deviceId` resolve only against pending commands owned by that socket's registered device.
 
 ## Command
 
@@ -396,7 +400,7 @@ Hermes-specific HTTP expectations are documented in `docs/hermes-runs-api.md`. T
 
 Realtime voice mode uses Android WebRTC for live audio and the PC bridge for OpenAI Realtime session creation. Android creates the WebRTC offer, sends it to the PC bridge, and the bridge posts it to OpenAI's `/v1/realtime/calls` endpoint. Android message names use dotted `realtime.*` types.
 
-The OpenAI API key can be supplied either by setting `OPENAI_API_KEY` on the PC bridge or by saving it in the Android app settings. If the Android app sends an `openAiApiKey` in `realtime.start`, the bridge uses it only for that realtime call. The bridge defaults voice sessions to `gpt-realtime-2`; override with `OPENAI_REALTIME_MODEL` if needed.
+Prefer `OPENAI_API_KEY` on the PC bridge. The bridge-owned key takes precedence and never crosses the phone transport. An Android override is included in `realtime.start` only over `wss://`; it is omitted on loopback, ADB, and cleartext Tailscale development links. The bridge defaults voice sessions to `gpt-realtime-2`; override with `OPENAI_REALTIME_MODEL` if needed.
 
 ### Start
 

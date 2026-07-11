@@ -210,9 +210,9 @@ export class OpenAiRealtimeClient {
   constructor(private readonly config: BridgeConfig) {}
 
   async start(options: OpenAiRealtimeStartOptions): Promise<{ answerSdp: string; session: OpenAiRealtimeSession }> {
-    const apiKey = options.apiKey?.trim() || this.config.openAiApiKey?.trim();
+    const apiKey = selectRealtimeApiKey(this.config.openAiApiKey, options.apiKey);
     if (!apiKey) {
-      throw new Error("OpenAI API key is required for realtime voice. Set it in the Android app settings or OPENAI_API_KEY on the PC bridge.");
+      throw new Error("OpenAI API key is required for realtime voice. Prefer OPENAI_API_KEY on the PC bridge; an Android override is accepted only over wss.");
     }
 
     const sessionConfig = {
@@ -279,4 +279,8 @@ export class OpenAiRealtimeClient {
       }
     }).catch(() => undefined);
   }
+}
+
+export function selectRealtimeApiKey(hostKey: string | undefined, phoneOverride: string | undefined): string | undefined {
+  return hostKey?.trim() || phoneOverride?.trim() || undefined;
 }
