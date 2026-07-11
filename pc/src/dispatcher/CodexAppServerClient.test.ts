@@ -188,6 +188,33 @@ test("Codex child exit rejects pending RPC and stale callbacks cannot poison res
   }
 });
 
+test("Codex teardown escalates from TERM to bounded KILL for an unresponsive owned child", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "codex-kill-test-"));
+  const scriptPath = join(dir, "kill-app-server.mjs");
+  const pidPath = join(dir, "pid.txt");
+  const termPath = join(dir, "term.txt");
+  await writeFile(scriptPath, unresponsiveAppServerScript());
+  const previousPid = process.env.CODEX_FAKE_PID;
+  const previousTerm = process.env.CODEX_FAKE_TERM;
+  const previousTimeout = process.env.CODEX_RPC_TIMEOUT_MS;
+  process.env.CODEX_FAKE_PID = pidPath;
+  process.env.CODEX_FAKE_TERM = termPath;
+  process.env.CODEX_RPC_TIMEOUT_MS = "150";
+  const client = new CodexAppServerClient(undefined, `"${process.execPath}" "${scriptPath}"`, dir);
+  try {
+    await assert.rejects(client.listModels(), (error) => isAdapterFailure(error, "timeout"));
+    const pid = Number(await readFile(pidPath, "utf8"));
+    await waitUntil(async () => !(await processExists(pid)), 2_500);
+    assert.equal((await readFile(termPath, "utf8")).trim(), "SIGTERM");
+    assert.equal(await processExists(pid), false);
+  } finally {
+    await client.close();
+    restoreEnv("CODEX_FAKE_PID", previousPid);
+    restoreEnv("CODEX_FAKE_TERM", previousTerm);
+    restoreEnv("CODEX_RPC_TIMEOUT_MS", previousTimeout);
+  }
+});
+
 function fakeAppServerScript(): string {
   return `
 import { appendFileSync } from "node:fs";
@@ -281,4 +308,37 @@ for await (const line of lines) {
 function restoreEnv(name: string, value: string | undefined): void {
   if (value === undefined) delete process.env[name];
   else process.env[name] = value;
+}
+
+function unresponsiveAppServerScript(): string {
+  return `
+import { writeFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+writeFileSync(process.env.CODEX_FAKE_PID, String(process.pid));
+process.on("SIGTERM", () => writeFileSync(process.env.CODEX_FAKE_TERM, "SIGTERM"));
+const lines = createInterface({ input: process.stdin });
+const write = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+for await (const line of lines) {
+  const message = JSON.parse(line);
+  if (message.method === "initialize") write({ id: message.id, result: {} });
+}
+`;
+}
+
+async function processExists(pid: number): Promise<boolean> {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitUntil(predicate: () => Promise<boolean>, timeoutMs: number): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.equal(await predicate(), true);
 }
