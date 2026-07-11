@@ -6,7 +6,7 @@ import { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js";
 import { PHONE_AGENT_SYSTEM_PROMPT } from "../dispatcher/promptPolicy.js";
 import { codexAppServerContextWindow, DEFAULT_REASONING_OPTIONS } from "./chat/ModelCatalog.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "./harness/InMemoryHarnessSessionStore.js";
-import type { ChatAttachment } from "../protocol/messages.js";
+import type { ResolvedChatAttachment } from "../attachments/AttachmentTypes.js";
 import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "./chat/ChatTransportTypes.js";
 import { prepareCodexWorkspace } from "./codex/CodexWorkspace.js";
 import {
@@ -104,7 +104,7 @@ export class CodexChatClient {
     sessionKey: string;
     sessionId?: string;
     message: string;
-    attachments?: ChatAttachment[];
+    attachments?: ResolvedChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
@@ -149,7 +149,7 @@ export class CodexChatClient {
     sessionId?: string;
     runId?: string;
     message: string;
-    attachments?: ChatAttachment[];
+    attachments?: ResolvedChatAttachment[];
     thinking?: string;
     idempotencyKey?: string;
   }): Promise<GatewayChatSendResult> {
@@ -288,7 +288,7 @@ export class CodexChatClient {
     model: string | undefined,
     reasoningEffort: string | undefined,
     cwd: string | undefined,
-    attachments: ChatAttachment[] | undefined
+    attachments: ResolvedChatAttachment[] | undefined
   ): Promise<void> {
     try {
       const threadId = codexThreadIdFromSessionKey(session.key) ?? session.sessionId;

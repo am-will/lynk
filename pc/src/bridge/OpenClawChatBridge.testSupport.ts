@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { OpenClawChatBridge } from "./OpenClawChatBridge.js";
 import type { BridgeConfig } from "./config.js";
 import type { PhoneHub } from "./PhoneHub.js";
-import type { ChatAttachment, ChatOutboundMessage } from "../protocol/messages.js";
+import type { ChatOutboundMessage } from "../protocol/messages.js";
+import type { ResolvedChatAttachment } from "../attachments/AttachmentTypes.js";
 import type { GatewayEvent, GatewayEventHandler } from "./OpenClawGatewayChatClient.js";
 
 export const config: BridgeConfig = {
@@ -38,8 +39,8 @@ export const config: BridgeConfig = {
 
 export class FakeGatewayClient {
   readonly handlers = new Set<GatewayEventHandler>();
-  readonly sent: Array<{ sessionKey: string; message: string; attachments?: ChatAttachment[]; thinking?: string; idempotencyKey?: string }> = [];
-  readonly steered: Array<{ sessionKey: string; runId?: string; message: string; attachments?: ChatAttachment[]; thinking?: string; idempotencyKey?: string }> = [];
+  readonly sent: Array<{ sessionKey: string; message: string; attachments?: ResolvedChatAttachment[]; thinking?: string; idempotencyKey?: string }> = [];
+  readonly steered: Array<{ sessionKey: string; runId?: string; message: string; attachments?: ResolvedChatAttachment[]; thinking?: string; idempotencyKey?: string }> = [];
   readonly created: Array<{ key?: string; label?: string; model?: string; workspacePath?: string; createWorkspaceIfMissing?: boolean }> = [];
   readonly patched: Array<{ sessionKey: string; patch: Record<string, unknown> }> = [];
   readonly aborted: Array<{ sessionKey: string; runId?: string }> = [];
@@ -52,7 +53,7 @@ export class FakeGatewayClient {
   sendGate?: Promise<void>;
   beforeSendResolve?: (
     result: { runId: string; sessionKey: string },
-    options: { sessionKey: string; message: string; attachments?: ChatAttachment[]; thinking?: string; idempotencyKey?: string }
+    options: { sessionKey: string; message: string; attachments?: ResolvedChatAttachment[]; thinking?: string; idempotencyKey?: string }
   ) => void;
   healthResponse: unknown = { ok: true, eventLoop: { degraded: false } };
   private runCount = 0;
@@ -66,7 +67,7 @@ export class FakeGatewayClient {
     return { sessionId: `${sessionKey}:id`, messages: [] };
   }
 
-  async sendChat(options: { sessionKey: string; message: string; attachments?: ChatAttachment[]; thinking?: string; idempotencyKey?: string }): Promise<{ runId: string; sessionKey: string }> {
+  async sendChat(options: { sessionKey: string; message: string; attachments?: ResolvedChatAttachment[]; thinking?: string; idempotencyKey?: string }): Promise<{ runId: string; sessionKey: string }> {
     if (this.sendError) {
       throw this.sendError;
     }
@@ -78,7 +79,7 @@ export class FakeGatewayClient {
     return result;
   }
 
-  async steerChat(options: { sessionKey: string; runId?: string; message: string; attachments?: ChatAttachment[]; thinking?: string; idempotencyKey?: string }): Promise<{ runId: string; sessionKey: string }> {
+  async steerChat(options: { sessionKey: string; runId?: string; message: string; attachments?: ResolvedChatAttachment[]; thinking?: string; idempotencyKey?: string }): Promise<{ runId: string; sessionKey: string }> {
     this.steered.push(options);
     return { runId: options.runId ?? `run_${this.runCount}`, sessionKey: options.sessionKey };
   }
@@ -155,7 +156,23 @@ export function createHarness(overrides: Partial<BridgeConfig> = {}) {
     }
   };
   const client = new FakeGatewayClient();
-  const bridge = new OpenClawChatBridge({ ...config, ...overrides }, hub, dispatcher, undefined, client);
+  const blobs = {
+    resolve(id: string, owner: { deviceId: string; sessionKey: string }, sha256?: string) {
+      return {
+        version: 1 as const,
+        id,
+        ...owner,
+        displayName: "photo.png",
+        mimeType: "image/png",
+        kind: "image" as const,
+        sizeBytes: 12,
+        sha256: sha256 ?? "a".repeat(64),
+        createdAt: 1,
+        path: "/private/blob"
+      };
+    }
+  };
+  const bridge = new OpenClawChatBridge({ ...config, ...overrides }, hub, dispatcher, undefined, client, blobs);
   return { bridge, chatMessages, client, fallbackCalls, fallbackControl };
 }
 

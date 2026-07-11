@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ChatAttachment } from "../protocol/messages.js";
+import type { ChatAttachmentReference } from "../protocol/messages.js";
 import { ChatClientError, CODEX_WORKSPACE_NOT_FOUND_CODE } from "./chat/ChatErrors.js";
 import { createHarness, defaultSessionKey, deferred, waitFor } from "./OpenClawChatBridge.testSupport.js";
 
@@ -335,26 +335,31 @@ test("harness permission action commands reject invalid replies before routing",
 });
 
 test("chat send forwards attachments to the gateway client", async () => {
-  const { bridge, client } = createHarness();
-  const attachment: ChatAttachment = {
-    id: "att_1",
+  const { bridge, client, chatMessages } = createHarness();
+  const attachment: ChatAttachmentReference = {
+    id: "blob_attachment-1",
     kind: "image",
     displayName: "photo.png",
     mimeType: "image/png",
     sizeBytes: 12,
-    contentBase64: "aGVsbG8="
+    sha256: "a".repeat(64)
   };
 
   await bridge.send({
     type: "chat.send",
     deviceId: "pixel",
+    sessionKey: defaultSessionKey("pixel"),
     text: "",
     attachments: [attachment]
   });
 
   assert.equal(client.sent.length, 1);
   assert.equal(client.sent[0]?.message, "Please review the attached image.");
-  assert.deepEqual(client.sent[0]?.attachments, [attachment]);
+  assert.deepEqual(client.sent[0]?.attachments, [{ ...attachment, localPath: "/private/blob" }]);
+  const historyJson = JSON.stringify(chatMessages.filter((message) => message.type === "chat.history"));
+  assert.equal(historyJson.includes("localPath"), false);
+  assert.equal(historyJson.includes("contentBase64"), false);
+  assert.equal(historyJson.includes("/private/blob"), false);
 });
 
 test("gateway fallback preserves explicit phone task kind", async () => {

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readHermesConfigSummary, type HermesConfigSummary } from "../hermes/HermesConfigReader.js";
-import type { ChatAttachment } from "../protocol/messages.js";
+import type { ResolvedChatAttachment } from "../attachments/AttachmentTypes.js";
+import { inlineCompatibilityAttachments } from "../attachments/AttachmentCompatibility.js";
 import type {
   FetchLike,
   HermesRunCreateOptions,
@@ -320,13 +321,13 @@ function openAiDeltaText(value: unknown): string | undefined {
   return typeof content === "string" && content.length > 0 ? content : undefined;
 }
 
-function userContent(input: string, attachments: ChatAttachment[] | undefined): unknown {
+function userContent(input: string, attachments: ResolvedChatAttachment[] | undefined): unknown {
   if (!attachments?.length) {
     return input;
   }
   const parts: Array<Record<string, unknown>> = [{ type: "text", text: input }];
-  for (const attachment of attachments) {
-    if (attachment.kind !== "image" || !attachment.contentBase64) {
+  for (const attachment of inlineCompatibilityAttachments(attachments)) {
+    if (attachment.kind !== "image") {
       continue;
     }
     parts.push({

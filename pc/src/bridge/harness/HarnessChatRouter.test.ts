@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { ChatAttachment, ChatCommandOption, ChatModelOption, ChatSessionSummary } from "../../protocol/messages.js";
+import type { ChatCommandOption, ChatModelOption, ChatSessionSummary } from "../../protocol/messages.js";
+import type { ResolvedChatAttachment } from "../../attachments/AttachmentTypes.js";
 import { defaultSessionKeyForHarness, harnessDescriptors, harnessInfos, isWorkspaceAwareHarness, type HarnessId } from "../AgentHarness.js";
 import type { BridgeConfig } from "../config.js";
 import type { GatewayChatSendResult, GatewayEventHandler, HarnessCapabilities } from "../chat/ChatTransportTypes.js";
@@ -42,8 +43,8 @@ const config: BridgeConfig = {
 class FakeAdapter implements HarnessChatAdapter {
   readonly capabilities: HarnessCapabilities;
   readonly created: Array<{ key?: string; label?: string; model?: string; workspacePath?: string; createWorkspaceIfMissing?: boolean }> = [];
-  readonly sent: Array<{ sessionKey: string; message: string; attachments?: ChatAttachment[] }> = [];
-  readonly steered: Array<{ sessionKey: string; message: string; attachments?: ChatAttachment[] }> = [];
+  readonly sent: Array<{ sessionKey: string; message: string; attachments?: ResolvedChatAttachment[] }> = [];
+  readonly steered: Array<{ sessionKey: string; message: string; attachments?: ResolvedChatAttachment[] }> = [];
   readonly sessions: ChatSessionSummary[] = [];
   readonly models: ChatModelOption[] = [];
   readonly commands: ChatCommandOption[] = [];
@@ -60,12 +61,12 @@ class FakeAdapter implements HarnessChatAdapter {
     return { messages: [] };
   }
 
-  async sendChat(options: { sessionKey: string; message: string; attachments?: ChatAttachment[] }): Promise<GatewayChatSendResult> {
+  async sendChat(options: { sessionKey: string; message: string; attachments?: ResolvedChatAttachment[] }): Promise<GatewayChatSendResult> {
     this.sent.push(options);
     return { runId: `${this.harnessId}_run`, sessionKey: options.sessionKey };
   }
 
-  async steerChat(options: { sessionKey: string; message: string; attachments?: ChatAttachment[] }): Promise<GatewayChatSendResult> {
+  async steerChat(options: { sessionKey: string; message: string; attachments?: ResolvedChatAttachment[] }): Promise<GatewayChatSendResult> {
     this.steered.push(options);
     return { runId: `${this.harnessId}_run`, sessionKey: options.sessionKey };
   }
@@ -222,13 +223,14 @@ test("harness router rejects disabled Hermes session keys clearly", async () => 
 
 test("harness router forwards attachments to host harnesses", async () => {
   const { router, openclaw, hermes, codex } = createRouter();
-  const attachment: ChatAttachment = {
-    id: "att_1",
+  const attachment: ResolvedChatAttachment = {
+    id: "blob_attachment-1",
     kind: "image",
     displayName: "photo.png",
     mimeType: "image/png",
     sizeBytes: 12,
-    contentBase64: "aGVsbG8="
+    sha256: "a".repeat(64),
+    localPath: "/private/blob"
   };
 
   await router.sendChat({

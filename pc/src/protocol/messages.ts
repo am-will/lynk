@@ -123,28 +123,9 @@ export const CHAT_SEND_DELIVERIES = ["normal", "queue", "steer"] as const;
 export const CHAT_TASK_KINDS = ["general", "phone"] as const;
 export const CHAT_ATTACHMENT_KINDS = ["image", "file"] as const;
 export const CHAT_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
-const CHAT_ATTACHMENT_MAX_BASE64_CHARS = Math.ceil(CHAT_ATTACHMENT_MAX_BYTES / 3) * 4;
+export const CHAT_ATTACHMENT_MAX_COUNT = 8;
+export const CHAT_ATTACHMENT_MAX_MESSAGE_BYTES = 100 * 1024 * 1024;
 export type ChatTaskKind = typeof CHAT_TASK_KINDS[number];
-
-function isBoundedCanonicalBase64(value: string): boolean {
-  if (value.length > CHAT_ATTACHMENT_MAX_BASE64_CHARS || value.length % 4 !== 0) {
-    return false;
-  }
-  const paddingLength = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
-  const contentEnd = value.length - paddingLength;
-  for (let index = 0; index < contentEnd; index += 1) {
-    const code = value.charCodeAt(index);
-    const valid = (code >= 65 && code <= 90)
-      || (code >= 97 && code <= 122)
-      || (code >= 48 && code <= 57)
-      || code === 43
-      || code === 47;
-    if (!valid) {
-      return false;
-    }
-  }
-  return value.slice(contentEnd).split("").every((character) => character === "=");
-}
 
 export const registerMessageSchema = z.object({
   type: z.literal("register"),
@@ -280,25 +261,18 @@ export const chatOpenMessageSchema = z.object({
   sessionKey: z.string().min(1).optional()
 });
 
-const chatAttachmentContentBase64Schema = z.string()
-  .min(1)
-  .max(CHAT_ATTACHMENT_MAX_BASE64_CHARS)
-  .refine(isBoundedCanonicalBase64, {
-    message: "Attachment content must be valid base64."
-  })
-  .refine((value) => value.length <= CHAT_ATTACHMENT_MAX_BASE64_CHARS
-    && Buffer.from(value, "base64").byteLength <= CHAT_ATTACHMENT_MAX_BYTES, {
-    message: `Attachment content must be ${CHAT_ATTACHMENT_MAX_BYTES} bytes or smaller.`
-  });
-
 export const chatAttachmentSchema = z.object({
   id: z.string().min(1),
   kind: z.enum(CHAT_ATTACHMENT_KINDS),
   displayName: z.string().min(1),
   mimeType: z.string().min(1),
-  sizeBytes: z.number().int().nonnegative().max(CHAT_ATTACHMENT_MAX_BYTES),
-  contentBase64: chatAttachmentContentBase64Schema.optional()
+  sizeBytes: z.number().int().positive().max(CHAT_ATTACHMENT_MAX_BYTES)
 });
+
+export const chatAttachmentReferenceSchema = chatAttachmentSchema.extend({
+  id: z.string().regex(/^blob_[A-Za-z0-9-]{8,80}$/u),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/u)
+}).strict();
 
 export const chatSendMessageSchema = z.object({
   type: z.literal("chat.send"),
@@ -310,7 +284,24 @@ export const chatSendMessageSchema = z.object({
   reasoningEffort: z.string().min(1).optional(),
   idempotencyKey: z.string().min(1).optional(),
   delivery: z.enum(CHAT_SEND_DELIVERIES).optional(),
-  attachments: z.array(chatAttachmentSchema).optional()
+  attachments: z.array(chatAttachmentReferenceSchema).max(CHAT_ATTACHMENT_MAX_COUNT).optional()
+}).superRefine((message, context) => {
+  if (!message.attachments?.length) return;
+  if (!message.sessionKey) {
+    context.addIssue({
+      code: "custom",
+      path: ["sessionKey"],
+      message: "Attachment sends require an explicit sessionKey"
+    });
+  }
+  const aggregateBytes = message.attachments.reduce((total, attachment) => total + attachment.sizeBytes, 0);
+  if (aggregateBytes > CHAT_ATTACHMENT_MAX_MESSAGE_BYTES) {
+    context.addIssue({
+      code: "custom",
+      path: ["attachments"],
+      message: `Attachments must total ${CHAT_ATTACHMENT_MAX_MESSAGE_BYTES} bytes or less`
+    });
+  }
 });
 
 export const chatStopMessageSchema = z.object({
@@ -389,6 +380,7 @@ export type AgentStatusMessage = z.infer<typeof agentStatusMessageSchema>;
 export type AgentControlMessage = z.infer<typeof agentControlMessageSchema>;
 export type ChatOpenMessage = z.infer<typeof chatOpenMessageSchema>;
 export type ChatAttachment = z.infer<typeof chatAttachmentSchema>;
+export type ChatAttachmentReference = z.infer<typeof chatAttachmentReferenceSchema>;
 export type ChatSendMessage = z.infer<typeof chatSendMessageSchema>;
 export type ChatStopMessage = z.infer<typeof chatStopMessageSchema>;
 export type ChatSelectSessionMessage = z.infer<typeof chatSelectSessionMessageSchema>;

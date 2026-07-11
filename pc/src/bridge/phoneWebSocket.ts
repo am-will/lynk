@@ -105,7 +105,7 @@ export function bindPhoneSocket(
     let rawMessage: unknown;
     try {
       rawMessage = JSON.parse(rawDataToString(data));
-      if (deviceId && frameBytes > ingress.controlFrameMaxBytes && !hasInlineAttachment(rawMessage)) {
+      if (deviceId && frameBytes > ingress.controlFrameMaxBytes) {
         closeSocket(socket, 1009, "control payload too large");
         return;
       }
@@ -345,18 +345,4 @@ function rawDataToString(data: RawData): string {
     return data.toString("utf8");
   }
   return Buffer.from(data).toString("utf8");
-}
-
-function hasInlineAttachment(value: unknown): boolean {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const message = value as { type?: unknown; attachments?: unknown };
-  return message.type === "chat.send"
-    && Array.isArray(message.attachments)
-    && message.attachments.some((attachment) => Boolean(
-      attachment
-      && typeof attachment === "object"
-      && typeof (attachment as { contentBase64?: unknown }).contentBase64 === "string"
-    ));
 }

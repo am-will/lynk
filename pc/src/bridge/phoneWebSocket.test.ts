@@ -301,7 +301,7 @@ test("phone websocket enforces per-connection message rate budgets", () => {
   assert.deepEqual(socket.closed, { code: 4008, reason: "message rate limit" });
 });
 
-test("phone websocket bounds control frames while preserving inline attachments", async () => {
+test("phone websocket applies the control-frame limit to inline attachments", async () => {
   const bounded = bindFakes({ controlFrameMaxBytes: 128 });
   register(bounded.socket);
   bounded.socket.receive({
@@ -329,8 +329,8 @@ test("phone websocket bounds control frames while preserving inline attachments"
   });
   await flushPromises();
 
-  assert.equal(attachment.socket.closed, undefined);
-  assert.equal(attachment.chatBridge.sends.length, 1);
+  assert.deepEqual(attachment.socket.closed, { code: 1009, reason: "control payload too large" });
+  assert.equal(attachment.chatBridge.sends.length, 0);
 });
 
 test("websocket server closes an oversized frame without crashing", async (t) => {

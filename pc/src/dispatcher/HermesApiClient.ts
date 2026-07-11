@@ -1,4 +1,5 @@
-import type { ChatAttachment } from "../protocol/messages.js";
+import type { ResolvedChatAttachment } from "../attachments/AttachmentTypes.js";
+import { inlineCompatibilityAttachments } from "../attachments/AttachmentCompatibility.js";
 
 export interface HermesApiClientConfig {
   apiBaseUrl: string;
@@ -13,7 +14,7 @@ export interface HermesRunCreateOptions {
   model?: string;
   instructions?: string;
   idempotencyKey?: string;
-  attachments?: ChatAttachment[];
+  attachments?: ResolvedChatAttachment[];
   serviceTier?: "priority" | null;
 }
 
@@ -133,7 +134,7 @@ export class HermesApiClient implements HermesRunsApi {
         session_id: options.sessionId,
         model: options.model ?? this.config.model,
         ...(options.instructions ? { instructions: options.instructions } : {}),
-        ...(options.attachments?.length ? { attachments: options.attachments } : {}),
+        ...(options.attachments?.length ? { attachments: inlineCompatibilityAttachments(options.attachments) } : {}),
         ...(options.serviceTier ? { service_tier: options.serviceTier } : {})
       })
     });

@@ -1,7 +1,7 @@
 import type { AuditLog } from "../AuditLog.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "../harness/InMemoryHarnessSessionStore.js";
 import { HarnessRunLifecycle, type HarnessActiveRun } from "../harness/HarnessRunLifecycle.js";
-import type { ChatAttachment } from "../../protocol/messages.js";
+import type { ResolvedChatAttachment } from "../../attachments/AttachmentTypes.js";
 import { OpenCodeEventNormalizer, type OpenCodeRunEventResult } from "./OpenCodeEventNormalizer.js";
 import type { OpenCodeServerClient } from "./OpenCodeServerClient.js";
 import { directoryForSession } from "./OpenCodeSessionCatalog.js";
@@ -41,7 +41,7 @@ export class OpenCodeRunDriver {
       runId: string;
       text: string;
       model?: string;
-      attachments?: ChatAttachment[];
+      attachments?: ResolvedChatAttachment[];
     }
   ): void {
     this.assertIdle();
@@ -76,7 +76,7 @@ export class OpenCodeRunDriver {
     session: HarnessStoredSession,
     text: string,
     model: string | undefined,
-    attachments: ChatAttachment[] | undefined
+    attachments: ResolvedChatAttachment[] | undefined
   ): Promise<void> {
     const directory = directoryForSession(session) ?? this.client.defaultDirectory();
     let lastText = "";

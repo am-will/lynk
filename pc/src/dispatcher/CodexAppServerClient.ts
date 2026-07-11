@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface, type Interface } from "node:readline";
-import type { ChatAttachment } from "../protocol/messages.js";
+import type { ResolvedChatAttachment } from "../attachments/AttachmentTypes.js";
 import type { AuditLog } from "../bridge/AuditLog.js";
 import type { AgentClient, AgentRequestOptions, AgentRunResult, AgentStatusSink } from "./AgentClient.js";
 import { PHONE_AGENT_SYSTEM_PROMPT, buildPhoneAgentPrompt } from "./safetyPrompt.js";
@@ -30,7 +30,8 @@ interface PendingTurn {
 
 type CodexUserInput =
   | { type: "text"; text: string }
-  | { type: "image"; url: string };
+  | { type: "image"; url: string }
+  | { type: "localImage"; path: string };
 
 export interface RealtimeTranscriptDelta {
   role: string;
@@ -425,7 +426,7 @@ export class CodexAppServerClient implements AgentClient {
     return threadId;
   }
 
-  async steer(text: string, attachments?: ChatAttachment[]): Promise<void> {
+  async steer(text: string, attachments?: ResolvedChatAttachment[]): Promise<void> {
     const pendingTurn = this.pendingTurn;
     if (!pendingTurn) {
       throw new Error("No active Codex turn to steer");
@@ -814,20 +815,20 @@ export class CodexAppServerClient implements AgentClient {
   }
 }
 
-function codexUserInput(text: string, attachments: ChatAttachment[] | undefined): CodexUserInput[] {
+function codexUserInput(text: string, attachments: ResolvedChatAttachment[] | undefined): CodexUserInput[] {
   const input: CodexUserInput[] = [{ type: "text", text }];
   for (const attachment of attachments ?? []) {
-    if (!isImageAttachment(attachment) || !attachment.contentBase64) {
+    if (!isImageAttachment(attachment)) {
       continue;
     }
     input.push({
-      type: "image",
-      url: `data:${attachment.mimeType};base64,${attachment.contentBase64}`
+      type: "localImage",
+      path: attachment.localPath
     });
   }
   return input;
 }
 
-function isImageAttachment(attachment: ChatAttachment): boolean {
+function isImageAttachment(attachment: ResolvedChatAttachment): boolean {
   return attachment.kind === "image" || attachment.mimeType.startsWith("image/");
 }

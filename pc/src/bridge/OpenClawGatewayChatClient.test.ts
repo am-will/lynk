@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
+  buildOpenClawChatSendParams,
   chatMessagesFromHistory,
   extractGatewayText,
   mapGatewayChatEvent,
@@ -10,6 +14,32 @@ import {
   normalizeSessions,
   requestKeyFromSessionKey
 } from "./OpenClawGatewayChatClient.js";
+
+test("OpenClaw attachment materialization is bounded and does not leak host paths", () => {
+  const root = mkdtempSync(join(tmpdir(), "lynk-openclaw-attachment-"));
+  const localPath = join(root, "payload.blob");
+  writeFileSync(localPath, "hello");
+  try {
+    const params = buildOpenClawChatSendParams({
+      sessionKey: "agent:main:session",
+      message: "inspect",
+      attachments: [{
+        id: "blob_attachment-1",
+        kind: "image",
+        displayName: "photo.png",
+        mimeType: "image/png",
+        sizeBytes: 5,
+        sha256: "a".repeat(64),
+        localPath
+      }]
+    }, "request-1");
+    const serialized = JSON.stringify(params);
+    assert.equal(serialized.includes(localPath), false);
+    assert.equal(serialized.includes("aGVsbG8="), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("extractGatewayText handles OpenClaw content blocks", () => {
   assert.equal(
