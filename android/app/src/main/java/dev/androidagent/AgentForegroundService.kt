@@ -37,6 +37,7 @@ import dev.androidagent.chat.ChatTimelineKind
 import dev.androidagent.chat.ChatUsageSummary
 import dev.androidagent.chat.StoredChatAttachment
 import dev.androidagent.localmodel.LocalModelStore
+import dev.androidagent.localmodel.LocalModelEngineManager
 import dev.androidagent.net.BridgeConnectionPhase
 import dev.androidagent.net.BridgeConnectionState
 import dev.androidagent.net.PhoneWebSocketClient
@@ -79,6 +80,7 @@ class AgentForegroundService : Service() {
     private var voiceRuntimeController: VoiceRuntimeController? = null
     private var realtimeVoiceCoordinator: RealtimeVoiceCoordinator? = null
     private var voiceTranscriptionManager: VoiceTranscriptionManager? = null
+    private var localModelEngineManager: LocalModelEngineManager? = null
     private var isAgentTurnActive = false
     private var foregroundNotificationActive = false
     private var chatState = ChatState()
@@ -117,6 +119,7 @@ class AgentForegroundService : Service() {
             publishBackendAvailability(config)
         }
         voiceTranscriptionManager = VoiceTranscriptionManager(onStateChanged = ::handleTranscriptionState)
+        localModelEngineManager = LocalModelEngineManager(applicationContext)
         overlayController = OverlayController(
             context = this,
             onSubmit = { text, attachments -> submitChatText(text, attachments) },
@@ -180,7 +183,8 @@ class AgentForegroundService : Service() {
             onStatus = ::handleBridgeStatus,
             onChatMessage = { handleChatMessage(it) },
             onRealtimeToolResult = { voiceRuntimeController?.onRealtimeToolResult(it) },
-            onRealtimeTaskStatus = { voiceRuntimeController?.onRealtimeTaskStatus(it) }
+            onRealtimeTaskStatus = { voiceRuntimeController?.onRealtimeTaskStatus(it) },
+            localModelEngineManager = requireNotNull(localModelEngineManager)
         )
         voiceRuntimeController = VoiceRuntimeController(
             context = this,
@@ -455,6 +459,13 @@ class AgentForegroundService : Service() {
         voiceTranscriptionManager?.close()
         serviceScope.cancel()
         chatClient?.close()
+        val engineManager = localModelEngineManager
+        localModelEngineManager = null
+        if (engineManager != null) {
+            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                engineManager.closeAndJoin("Lynk service destroyed")
+            }
+        }
         webSocketClient?.close()
         recentsRestoreCheck?.let(mainHandler::removeCallbacks)
         recentsRestoreCheck = null
@@ -504,7 +515,8 @@ class AgentForegroundService : Service() {
                     commandExecutor = commandExecutor(),
                     configProvider = { AgentConfigStore.load(this) },
                     onStatus = ::handleBridgeStatus,
-                    onChatMessage = { handleChatMessage(it) }
+                    onChatMessage = { handleChatMessage(it) },
+                    engineManager = requireNotNull(localModelEngineManager)
                 ).also { it.open(sessionKeyForRoute(ChatClientRoute.Local)) }
             }
         }

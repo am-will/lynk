@@ -23,10 +23,23 @@ data class LocalChatSession(
     val messages: List<LocalChatMessage>
 )
 
-class LocalChatSessionStore(context: Context) {
+interface LocalChatSessionRepository {
+    fun all(): List<LocalChatSession>
+    fun session(key: String?): LocalChatSession
+    fun create(label: String? = null): LocalChatSession
+    fun append(
+        sessionKey: String,
+        role: String,
+        text: String,
+        id: String = "${role}_${UUID.randomUUID()}",
+        attachments: List<ChatAttachmentPreview> = emptyList()
+    ): LocalChatSession
+}
+
+class LocalChatSessionStore(context: Context) : LocalChatSessionRepository {
     private val file = File(context.filesDir, "local-chat-sessions.json")
 
-    fun all(): List<LocalChatSession> {
+    override fun all(): List<LocalChatSession> {
         if (!file.isFile) return listOf(defaultSession())
         val root = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return listOf(defaultSession())
         val sessions = root.optJSONArray("sessions") ?: return listOf(defaultSession())
@@ -37,12 +50,12 @@ class LocalChatSessionStore(context: Context) {
         }.ifEmpty { listOf(defaultSession()) }.sortedByDescending { it.updatedAt }
     }
 
-    fun session(key: String?): LocalChatSession {
+    override fun session(key: String?): LocalChatSession {
         val sessions = all()
         return key?.let { requested -> sessions.firstOrNull { it.key == requested } } ?: sessions.first()
     }
 
-    fun create(label: String? = null): LocalChatSession {
+    override fun create(label: String?): LocalChatSession {
         val now = System.currentTimeMillis()
         val session = LocalChatSession(
             key = "local:${UUID.randomUUID()}",
@@ -54,12 +67,12 @@ class LocalChatSessionStore(context: Context) {
         return session
     }
 
-    fun append(
+    override fun append(
         sessionKey: String,
         role: String,
         text: String,
-        id: String = "${role}_${UUID.randomUUID()}",
-        attachments: List<ChatAttachmentPreview> = emptyList()
+        id: String,
+        attachments: List<ChatAttachmentPreview>
     ): LocalChatSession {
         val sessions = all()
         val current = sessions.firstOrNull { it.key == sessionKey } ?: defaultSession(sessionKey)

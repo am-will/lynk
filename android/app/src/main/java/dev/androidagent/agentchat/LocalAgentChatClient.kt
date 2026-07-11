@@ -4,8 +4,7 @@ import android.content.Context
 import dev.androidagent.AgentConfig
 import dev.androidagent.accessibility.AccessibilityCommandExecutor
 import dev.androidagent.chat.StoredChatAttachment
-import dev.androidagent.localmodel.LiteRtLmRuntime
-import dev.androidagent.localmodel.LocalModelRuntime
+import dev.androidagent.localmodel.LocalModelEngineManager
 import kotlinx.coroutines.CoroutineScope
 import org.json.JSONObject
 
@@ -16,7 +15,7 @@ class LocalAgentChatClient(
     configProvider: () -> AgentConfig,
     onStatus: (String, String) -> Unit,
     onChatMessage: (JSONObject) -> Unit,
-    runtime: LocalModelRuntime = LiteRtLmRuntime(context.applicationContext)
+    engineManager: LocalModelEngineManager
 ) : AgentChatClient {
     private val coordinator = LocalAgentTurnCoordinator(
         context = context,
@@ -25,7 +24,7 @@ class LocalAgentChatClient(
         configProvider = configProvider,
         onStatus = onStatus,
         onChatMessage = onChatMessage,
-        runtime = runtime
+        runtime = engineManager
     )
 
     override fun open(sessionKey: String?): Boolean = coordinator.open(sessionKey)

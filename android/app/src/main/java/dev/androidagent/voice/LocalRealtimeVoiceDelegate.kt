@@ -5,8 +5,7 @@ import dev.androidagent.AgentConfig
 import dev.androidagent.accessibility.AccessibilityCommandExecutor
 import dev.androidagent.agentchat.LocalAgentTurnCoordinator
 import dev.androidagent.agentchat.LocalTurnRequest
-import dev.androidagent.localmodel.LiteRtLmRuntime
-import dev.androidagent.localmodel.LocalModelRuntime
+import dev.androidagent.localmodel.LocalModelEngineManager
 import kotlinx.coroutines.CoroutineScope
 import org.json.JSONObject
 import java.util.ArrayDeque
@@ -20,7 +19,7 @@ class LocalRealtimeVoiceDelegate(
     onChatMessage: (JSONObject) -> Unit,
     private val onRealtimeToolResult: (JSONObject) -> Unit,
     private val onRealtimeTaskStatus: (JSONObject) -> Unit,
-    runtime: LocalModelRuntime = LiteRtLmRuntime(context.applicationContext)
+    engineManager: LocalModelEngineManager
 ) {
     private val coordinator = LocalAgentTurnCoordinator(
         context = context,
@@ -29,7 +28,7 @@ class LocalRealtimeVoiceDelegate(
         configProvider = configProvider,
         onStatus = onStatus,
         onChatMessage = onChatMessage,
-        runtime = runtime
+        runtime = engineManager
     )
     private val queue = ArrayDeque<QueuedLocalRealtimeTask>()
     private var activeTask: QueuedLocalRealtimeTask? = null
