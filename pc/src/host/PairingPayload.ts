@@ -1,5 +1,6 @@
 import type { BridgeConfig } from "../bridge/config.js";
 import { discoverEndpoints, type EndpointCandidate } from "./EndpointDiscovery.js";
+import { randomBytes } from "node:crypto";
 
 export interface HostPairingPayload {
   version: 1;
@@ -26,12 +27,20 @@ export async function createHostPairingPayload(config: Pick<BridgeConfig, "defau
     deepLink: buildAndroidPairingDeepLink({
       deviceId: config.defaultDeviceId,
       token: config.token,
-      urls: endpoints.map((endpoint) => endpoint.url)
+      urls: endpoints.map((endpoint) => endpoint.url),
+      expiresAt: Math.floor(Date.now() / 1_000) + 5 * 60,
+      nonce: randomBytes(18).toString("base64url")
     })
   };
 }
 
-export function buildAndroidPairingDeepLink(options: { deviceId: string; token: string; urls: string[] }): string {
+export function buildAndroidPairingDeepLink(options: {
+  deviceId: string;
+  token: string;
+  urls: string[];
+  expiresAt?: number;
+  nonce?: string;
+}): string {
   const params = new URLSearchParams();
   const urls = uniqueStrings(options.urls);
   if (urls[0]) {
@@ -42,6 +51,13 @@ export function buildAndroidPairingDeepLink(options: { deviceId: string; token: 
   }
   params.set("deviceId", options.deviceId);
   params.set("token", options.token);
+  if ((options.expiresAt === undefined) !== (options.nonce === undefined)) {
+    throw new Error("Pairing links must provide both expiresAt and nonce");
+  }
+  if (options.expiresAt !== undefined && options.nonce !== undefined) {
+    params.set("expiresAt", String(options.expiresAt));
+    params.set("nonce", options.nonce);
+  }
   return `android-agent://pair?${params.toString()}`;
 }
 
