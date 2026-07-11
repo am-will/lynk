@@ -8,7 +8,7 @@ import { HermesRunDriver, type HermesActiveRun, type HermesRunDriverEvent } from
 import type { ChatAttachment, ChatHistoryMessage, ChatSessionSummary } from "../protocol/messages.js";
 import { resolveCommand, type CommandResolution } from "../host/CommandDiscovery.js";
 import type { BridgeConfig } from "./config.js";
-import { discoverHermesModels } from "./HermesModelDiscovery.js";
+import { HermesModelDiscoveryService } from "./HermesModelDiscoveryService.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "./harness/InMemoryHarnessSessionStore.js";
 import type { GatewayChatSendResult, GatewayEvent, GatewayEventHandler } from "./chat/ChatTransportTypes.js";
 import {
@@ -107,6 +107,7 @@ export class HermesChatClient {
   private readonly activeRuns = new Map<string, ActiveChatRun>();
   private readonly remoteSessionObservations = new Map<string, RemoteSessionObservation>();
   private remoteSessionsInitialized = false;
+  private readonly modelDiscovery = new HermesModelDiscoveryService();
 
   constructor(
     private readonly config: BridgeConfig,
@@ -255,9 +256,18 @@ export class HermesChatClient {
     const api = await this.selectMetadataApi();
     const payload = await api?.listModels().catch(() => undefined);
     const apiModels = normalizeHermesApiModels(payload, this.config.hermesModel);
-    const discoveredModels = discoverHermesModels(this.config.hermesModel);
+    const discovered = await this.modelDiscovery.get(this.config.hermesModel);
+    const discoveredModels = discovered.models;
     const models = mergeHermesModels(apiModels, discoveredModels, this.config.hermesModel);
     return { models };
+  }
+
+  async refreshModelDiscovery(): Promise<unknown> {
+    return await this.modelDiscovery.get(this.config.hermesModel, { force: true });
+  }
+
+  invalidateModelDiscovery(): void {
+    this.modelDiscovery.invalidate();
   }
 
   async listSessions(limit = 50): Promise<unknown> {
