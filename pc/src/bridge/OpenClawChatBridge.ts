@@ -268,7 +268,11 @@ export class OpenClawChatBridge {
 
     let reservation: HostChatRunReservation;
     try {
-      reservation = this.states.reserveRun(message.deviceId, sessionKey, { idempotencyKey, taskKind });
+      reservation = this.states.reserveRun(message.deviceId, sessionKey, {
+        idempotencyKey,
+        taskKind,
+        execution: "harness"
+      });
     } catch (error) {
       if (error instanceof HarnessRunBusyError) {
         this.sendChat(message.deviceId, buildChatErrorMessage({
@@ -402,6 +406,9 @@ export class OpenClawChatBridge {
     }
 
     if (harnessId === "openclaw" && this.states.canEnterHarness(message.deviceId, reservation)) {
+      if (reservation.metadata) {
+        reservation.metadata.execution = "fallback";
+      }
       this.states.promoteRun(message.deviceId, state, reservation, reservation.sessionKey, idempotencyKey);
       try {
         await this.fallbackSender.send(message, idempotencyKey, taskKind, {
@@ -543,10 +550,17 @@ export class OpenClawChatBridge {
       return;
     }
     const runId = runIdForState(runState) ?? message.runId ?? selectedRunId;
+    const isFallbackRun = runState.phase !== "idle" && runState.metadata?.execution === "fallback";
     try {
-      await this.client.abort(sessionKey, runId);
+      if (isFallbackRun) {
+        await this.dispatcher.stopActiveTurn(message.deviceId, message.reason ?? "Stopped from Android chat");
+      } else {
+        await this.client.abort(sessionKey, runId);
+      }
     } catch (error) {
-      await this.dispatcher.stopActiveTurn(message.deviceId, message.reason ?? "Stopped from Android chat");
+      if (!isFallbackRun) {
+        await this.dispatcher.stopActiveTurn(message.deviceId, message.reason ?? "Stopped from Android chat");
+      }
       if (runState.phase === "idle") {
         this.sendChat(message.deviceId, buildChatErrorMessage({
           deviceId: message.deviceId,

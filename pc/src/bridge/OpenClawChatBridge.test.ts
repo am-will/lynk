@@ -371,6 +371,37 @@ test("gateway fallback preserves explicit phone task kind", async () => {
   assert.deepEqual((fallbackCalls[0] as unknown[])[1], { taskKind: "phone" });
 });
 
+test("stopping an active fallback run cancels its dispatcher and emits one terminal", async () => {
+  const { bridge, chatMessages, client, fallbackCalls, fallbackControl } = createHarness();
+  const fallbackGate = deferred();
+  fallbackControl.gate = fallbackGate.promise;
+  client.sendError = new Error("gateway unavailable");
+
+  const sending = bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Use fallback",
+    idempotencyKey: "fallback_run"
+  });
+  await waitFor(() => fallbackCalls.length === 1);
+  await bridge.stop({
+    type: "chat.stop",
+    deviceId: "pixel",
+    reason: "Stop fallback"
+  });
+
+  assert.deepEqual(fallbackControl.stops, ["Stop fallback"]);
+  assert.deepEqual(client.aborted, []);
+  fallbackGate.resolve();
+  await sending;
+
+  const terminals = chatMessages.filter((message) =>
+    (message.type === "chat.final" || message.type === "chat.error") && message.runId === "fallback_run"
+  );
+  assert.equal(terminals.length, 1);
+  assert.equal(terminals[0]?.type, "chat.error");
+});
+
 test("non-OpenClaw send failure emits chat error without gateway fallback", async () => {
   const { bridge, chatMessages, client, fallbackCalls } = createHarness();
   client.sendError = new Error("hermes unavailable");

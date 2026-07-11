@@ -35,6 +35,7 @@ export class OpenClawFallbackSender {
     const state = this.options.states.stateFor(message.deviceId);
     const sessionKey = context?.sessionKey ?? state.sessionKey;
     const sessionId = context?.sessionId ?? state.sessionId ?? null;
+    let emittedTerminal = false;
     this.options.states.trackPendingRun(state, runId, sessionKey, sessionId, taskKind);
     this.options.sendChat(message.deviceId, {
       type: "chat.history",
@@ -72,9 +73,12 @@ export class OpenClawFallbackSender {
         runId,
         text: result.finalMessage ?? "OpenClaw task completed."
       };
-      state.completedRunIds.add(runId);
-      this.options.sendChat(message.deviceId, finalMessage);
-      this.options.sendReplyAvailable(message.deviceId, finalMessage, sessionKey, state.pendingRuns.get(runId));
+      if (!state.completedRunIds.has(runId)) {
+        state.completedRunIds.add(runId);
+        emittedTerminal = true;
+        this.options.sendChat(message.deviceId, finalMessage);
+        this.options.sendReplyAvailable(message.deviceId, finalMessage, sessionKey, state.pendingRuns.get(runId));
+      }
     } catch (error) {
       const errorMessage: ChatErrorMessage = {
         type: "chat.error",
@@ -83,12 +87,17 @@ export class OpenClawFallbackSender {
         runId,
         message: error instanceof Error ? error.message : String(error)
       };
-      state.completedRunIds.add(runId);
-      this.options.sendChat(message.deviceId, errorMessage);
-      this.options.sendReplyAvailable(message.deviceId, errorMessage, sessionKey, state.pendingRuns.get(runId));
+      if (!state.completedRunIds.has(runId)) {
+        state.completedRunIds.add(runId);
+        emittedTerminal = true;
+        this.options.sendChat(message.deviceId, errorMessage);
+        this.options.sendReplyAvailable(message.deviceId, errorMessage, sessionKey, state.pendingRuns.get(runId));
+      }
     } finally {
       state.pendingRuns.delete(runId);
-      this.options.sendState(message.deviceId, "OpenClaw finished");
+      if (emittedTerminal) {
+        this.options.sendState(message.deviceId, "OpenClaw finished");
+      }
     }
   }
 }

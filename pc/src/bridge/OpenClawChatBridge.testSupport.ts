@@ -138,6 +138,7 @@ export class FakeGatewayClient {
 export function createHarness(overrides: Partial<BridgeConfig> = {}) {
   const chatMessages: ChatOutboundMessage[] = [];
   const fallbackCalls: unknown[] = [];
+  const fallbackControl: { gate?: Promise<void>; stops: string[] } = { stops: [] };
   const hub = {
     sendChat(_deviceId: string, message: ChatOutboundMessage) {
       chatMessages.push(message);
@@ -146,13 +147,16 @@ export function createHarness(overrides: Partial<BridgeConfig> = {}) {
   const dispatcher = {
     async handleUserRequest(...args: unknown[]) {
       fallbackCalls.push(args);
+      await fallbackControl.gate;
       return { finalMessage: "fallback" };
     },
-    async stopActiveTurn() {}
+    async stopActiveTurn(_deviceId: string, reason: string) {
+      fallbackControl.stops.push(reason);
+    }
   };
   const client = new FakeGatewayClient();
   const bridge = new OpenClawChatBridge({ ...config, ...overrides }, hub, dispatcher, undefined, client);
-  return { bridge, chatMessages, client, fallbackCalls };
+  return { bridge, chatMessages, client, fallbackCalls, fallbackControl };
 }
 
 export function defaultSessionKey(deviceId: string): string {

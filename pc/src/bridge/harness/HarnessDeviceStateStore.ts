@@ -18,6 +18,7 @@ import {
 export interface HostChatRunMetadata {
   idempotencyKey: string;
   taskKind: ChatTaskKind;
+  execution: "harness" | "fallback";
 }
 
 export type HostChatRunReservation = HarnessRunReservation<HostChatRunMetadata>;
