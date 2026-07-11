@@ -38,24 +38,26 @@ export class HarnessRunLifecycle<Runtime> {
       resource,
       cleanup
     };
-    this.activeRuns.set(runId, active);
-    this.activeRunBySession.set(session.key, runId);
+    const key = activeRunKey(session.key, runId);
+    this.activeRuns.set(key, active);
+    this.activeRunBySession.set(session.key, key);
     this.sessions.setActiveRun(session, runId);
     return active;
   }
 
   activeFor(sessionKey: string, runId?: string): HarnessActiveRun<Runtime> | undefined {
     if (runId) {
-      const active = this.activeRuns.get(runId);
+      const active = this.activeRuns.get(activeRunKey(sessionKey, runId));
       return active?.sessionKey === sessionKey ? active : undefined;
     }
-    const activeRunId = this.activeRunBySession.get(sessionKey);
-    return activeRunId ? this.activeRuns.get(activeRunId) : undefined;
+    const activeKey = this.activeRunBySession.get(sessionKey);
+    return activeKey ? this.activeRuns.get(activeKey) : undefined;
   }
 
   activeByRun(runId?: string): HarnessActiveRun<Runtime> | undefined {
     if (runId) {
-      return this.activeRuns.get(runId);
+      const matches = [...this.activeRuns.values()].filter((active) => active.runId === runId);
+      return matches.length === 1 ? matches[0] : undefined;
     }
     if (this.options.concurrency === "single" && this.activeRuns.size === 1) {
       return this.activeRuns.values().next().value;
@@ -63,13 +65,18 @@ export class HarnessRunLifecycle<Runtime> {
     return undefined;
   }
 
+  active(): HarnessActiveRun<Runtime>[] {
+    return [...this.activeRuns.values()];
+  }
+
   clear(active: HarnessActiveRun<Runtime>): void {
-    if (this.activeRuns.get(active.runId) !== active) {
+    const key = activeRunKey(active.sessionKey, active.runId);
+    if (this.activeRuns.get(key) !== active) {
       return;
     }
     active.cleanup?.();
-    this.activeRuns.delete(active.runId);
-    if (this.activeRunBySession.get(active.sessionKey) === active.runId) {
+    this.activeRuns.delete(key);
+    if (this.activeRunBySession.get(active.sessionKey) === key) {
       this.activeRunBySession.delete(active.sessionKey);
     }
     const session = this.sessions.ensureSession(active.sessionKey);
@@ -81,4 +88,8 @@ export class HarnessRunLifecycle<Runtime> {
       this.clear(active);
     }
   }
+}
+
+function activeRunKey(sessionKey: string, runId: string): string {
+  return `${sessionKey.length}:${sessionKey}${runId}`;
 }

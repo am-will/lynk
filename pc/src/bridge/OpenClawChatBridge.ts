@@ -36,6 +36,7 @@ import type {
 } from "../protocol/messages.js";
 import type { AuditLog } from "./AuditLog.js";
 import type { BridgeConfig } from "./config.js";
+import type { HarnessPermissionResponse } from "./chat/ChatTransportTypes.js";
 import { HarnessDeviceStateStore } from "./harness/HarnessDeviceStateStore.js";
 import { HarnessChatRouter } from "./harness/HarnessChatRouter.js";
 import { OpenClawControlCommandRouter } from "./OpenClawControlCommands.js";
@@ -617,7 +618,7 @@ export class OpenClawChatBridge {
   private async respondToPermission(
     sessionKey: string,
     permissionId: string,
-    response: "once" | "always" | "reject"
+    response: HarnessPermissionResponse
   ): Promise<void> {
     if (!this.client.respondToPermission) {
       throw new Error("Current harness does not support permission replies.");

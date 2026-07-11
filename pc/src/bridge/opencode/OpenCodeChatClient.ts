@@ -111,6 +111,9 @@ export class OpenCodeChatClient {
   }
 
   async respondToPermission(options: HarnessPermissionReplyOptions): Promise<unknown> {
+    if (typeof options.response !== "string") {
+      throw new Error("OpenCode permission reply requires an OpenCode decision.");
+    }
     const session = this.sessions.ensureSession(options.sessionKey, opencodeSessionIdFromKey(options.sessionKey));
     return await this.client.respondToPermission({
       sessionId: session.sessionId,

@@ -5,6 +5,7 @@ import { agent, methods, PROTOCOL_VERSION, ndJsonStream, RequestError } from "@a
 import type {
   AgentConnection,
   AuthMethod,
+  CancelNotification,
   CloseSessionRequest,
   InitializeRequest,
   InitializeResponse,
@@ -398,6 +399,7 @@ export interface DevinSessionHandlers {
   ) => SetSessionConfigOptionResponse | Promise<SetSessionConfigOptionResponse>;
   sessionClose?: (params: CloseSessionRequest) => void | Promise<void>;
   sessionPrompt?: (params: PromptRequest) => PromptResponse | Promise<PromptResponse>;
+  sessionCancel?: (params: CancelNotification) => void | Promise<void>;
 }
 
 export function createConfigurableDevinProcess(
@@ -464,6 +466,9 @@ export function createConfigurableDevinProcess(
     .onRequest(methods.agent.session.prompt, async (ctx) => {
       const handler = options.handlers?.sessionPrompt;
       return handler ? await handler(ctx.params as PromptRequest) : { stopReason: "end_turn" };
+    })
+    .onNotification(methods.agent.session.cancel, async (ctx) => {
+      await options.handlers?.sessionCancel?.(ctx.params as CancelNotification);
     });
 
   const agentApp = agentAppBuilder.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable));

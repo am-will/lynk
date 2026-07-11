@@ -34,8 +34,14 @@ export interface HarnessChatSteerOptions extends HarnessChatSendOptions {
 export interface HarnessPermissionReplyOptions {
   sessionKey: string;
   permissionId: string;
-  response: "once" | "always" | "reject";
+  response: HarnessPermissionResponse;
 }
+
+export type HarnessPermissionResponse =
+  | "once"
+  | "always"
+  | "reject"
+  | { kind: "acp_option"; optionId: string };
 
 export class HarnessAttachmentUnsupportedError extends Error {
   constructor(readonly harnessId: HarnessId) {

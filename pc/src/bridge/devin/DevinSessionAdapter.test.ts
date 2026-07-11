@@ -3,8 +3,15 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SessionConfigOption, SessionConfigSelectOptions, SessionNotification } from "@agentclientprotocol/sdk";
+import type {
+  RequestPermissionOutcome,
+  SessionConfigOption,
+  SessionConfigSelectOptions,
+  SessionNotification
+} from "@agentclientprotocol/sdk";
+import { methods } from "@agentclientprotocol/sdk";
 import { ChatClientError } from "../chat/ChatErrors.js";
+import type { GatewayEvent, HarnessPermissionReplyOptions } from "../chat/ChatTransportTypes.js";
 import { InMemoryHarnessSessionStore } from "../harness/InMemoryHarnessSessionStore.js";
 import {
   createConfigurableDevinProcess,
@@ -91,6 +98,40 @@ function availableCommandsUpdate(sessionId: string): SessionNotification {
       ]
     }
   } as SessionNotification;
+}
+
+function sessionUpdate(sessionId: string, update: SessionNotification["update"]): SessionNotification {
+  return { sessionId, update };
+}
+
+async function waitFor(
+  predicate: () => boolean,
+  message: string,
+  timeoutMs = 1_000
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error(message);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+function payloads(events: GatewayEvent[]): Array<Record<string, unknown>> {
+  return events
+    .map((event) => event.payload)
+    .filter((payload): payload is Record<string, unknown> => Boolean(payload) && typeof payload === "object");
+}
+
+function permissionReply(
+  sessionKey: string,
+  permissionId: string,
+  optionId: string
+): HarnessPermissionReplyOptions {
+  return {
+    sessionKey,
+    permissionId,
+    response: { kind: "acp_option", optionId }
+  };
 }
 
 describe("DevinSessionAdapter", () => {
@@ -859,23 +900,247 @@ describe("DevinSessionAdapter", () => {
     });
   });
 
-  describe("Wave 4 boundary", () => {
-    it("sendChat throws instead of pretending to work", async () => {
+  describe("live runs", () => {
+    it("streams text, reasoning, usage, metadata, config, commands, and one final", async () => {
       const { storagePath, cleanup } = tmpStorage();
-      const controls = createConfigurableDevinProcess();
+      let controls: FakeControls;
+      controls = createConfigurableDevinProcess({
+        handlers: {
+          sessionNew: () => ({ sessionId: "live-1", configOptions: defaultModelOptions() }),
+          sessionPrompt: () => {
+            controls.pushReplay?.([
+              sessionUpdate("live-1", { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Hel" } }),
+              sessionUpdate("live-1", { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "thinking" } }),
+              sessionUpdate("live-1", { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "lo" } }),
+              sessionUpdate("live-1", { sessionUpdate: "usage_update", used: 50, size: 100 }),
+              sessionUpdate("live-1", {
+                sessionUpdate: "tool_call",
+                toolCallId: "tool-live",
+                title: "Inspect workspace",
+                kind: "search",
+                status: "completed"
+              }),
+              sessionUpdate("live-1", { sessionUpdate: "session_info_update", title: "Live title", updatedAt: "2026-07-10T12:00:00Z" }),
+              sessionUpdate("live-1", { sessionUpdate: "config_option_update", configOptions: defaultModelOptions() }),
+              availableCommandsUpdate("live-1")
+            ]);
+            return { stopReason: "end_turn" };
+          }
+        }
+      });
       const adapter = buildAdapter(controls, storagePath);
+      await adapter.createSession({});
+      const events: GatewayEvent[] = [];
+      adapter.addEventListener((event) => events.push(event));
+      const result = await adapter.sendChat({ sessionKey: "devin:live-1", message: "hi", idempotencyKey: "run-live" });
+      assert.equal(result.runId, "run-live");
+      await waitFor(() => payloads(events).some((payload) => payload.state === "final"), "final event");
+      const live = payloads(events);
+      assert.deepEqual(live.filter((payload) => payload.state === "delta").map((payload) => payload.delta), ["Hel", "lo"]);
+      assert.equal(live.filter((payload) => payload.type === "reasoning.delta").length, 1);
+      assert.deepEqual(live.filter((payload) => payload.state === "final").map((payload) => payload.message), ["Hello"]);
+      const history = await adapter.history("devin:live-1");
+      assert.equal(history.messages.at(-1)?.text, "Hello");
+      assert.equal((await adapter.listCommands("devin:live-1"))[0]?.name, "review");
+      assert.deepEqual(await adapter.effectiveTools("devin:live-1"), [{ id: "search", label: "Inspect workspace", source: "devin" }]);
+      assert.equal((await adapter.listSessions()).sessions.find((session) => session.key === "devin:live-1")?.displayName, "Live title");
+      cleanup();
+    });
+
+    it("cancels the exact session and emits one terminal state across the cancel/final race", async () => {
+      const { storagePath, cleanup } = tmpStorage();
+      let resolvePrompt!: (outcome: { stopReason: "cancelled" }) => void;
+      let cancelledSession: string | undefined;
+      const controls = createConfigurableDevinProcess({
+        handlers: {
+          sessionNew: () => ({ sessionId: "cancel-1", configOptions: defaultModelOptions() }),
+          sessionPrompt: () => new Promise((resolve) => { resolvePrompt = resolve; }),
+          sessionCancel: ({ sessionId }) => {
+            cancelledSession = sessionId;
+            resolvePrompt({ stopReason: "cancelled" });
+          }
+        }
+      });
+      const adapter = buildAdapter(controls, storagePath);
+      await adapter.createSession({});
+      const events: GatewayEvent[] = [];
+      adapter.addEventListener((event) => events.push(event));
+      const run = await adapter.sendChat({ sessionKey: "devin:cancel-1", message: "wait" });
+      await adapter.abort("devin:cancel-1", run.runId);
+      await adapter.abort("devin:cancel-1", run.runId);
+      await waitFor(() => payloads(events).some((payload) => payload.state === "error"), "cancel terminal");
+      assert.equal(cancelledSession, "cancel-1");
+      assert.equal(payloads(events).filter((payload) => payload.state === "error" || payload.state === "final").length, 1);
+      cleanup();
+    });
+
+    it("does not persist a phantom user message when the session is busy", async () => {
+      const { storagePath, cleanup } = tmpStorage();
+      const controls = createConfigurableDevinProcess({
+        handlers: {
+          sessionNew: () => ({ sessionId: "busy-1", configOptions: defaultModelOptions() }),
+          sessionPrompt: () => new Promise(() => undefined)
+        }
+      });
+      const adapter = buildAdapter(controls, storagePath);
+      await adapter.createSession({});
+      await adapter.sendChat({ sessionKey: "devin:busy-1", message: "accepted", idempotencyKey: "busy-run" });
       await assert.rejects(
-        adapter.sendChat({ sessionKey: "devin:x", message: "hi" }),
-        /Wave 4/
+        adapter.sendChat({ sessionKey: "devin:busy-1", message: "must not persist", idempotencyKey: "busy-run-2" }),
+        /already running/
+      );
+      const history = await adapter.history("devin:busy-1");
+      assert.deepEqual(history.messages.filter((message) => message.role === "user").map((message) => message.text), ["accepted"]);
+      adapter.close();
+      cleanup();
+    });
+
+    it("merges prompt totals into rich streamed usage", async () => {
+      const { storagePath, cleanup } = tmpStorage();
+      let controls: FakeControls;
+      controls = createConfigurableDevinProcess({
+        handlers: {
+          sessionNew: () => ({ sessionId: "usage-1", configOptions: defaultModelOptions() }),
+          sessionPrompt: () => {
+            controls.pushReplay?.([sessionUpdate("usage-1", {
+              sessionUpdate: "usage_update",
+              used: 300,
+              size: 1000,
+              cost: { amount: 2.5, currency: "USD" }
+            })]);
+            return {
+              stopReason: "end_turn",
+              usage: {
+                totalTokens: 777,
+                inputTokens: 500,
+                outputTokens: 277,
+                thoughtTokens: 25,
+                cachedReadTokens: 10,
+                cachedWriteTokens: 5
+              }
+            };
+          }
+        }
+      });
+      const adapter = buildAdapter(controls, storagePath);
+      await adapter.createSession({});
+      const events: GatewayEvent[] = [];
+      adapter.addEventListener((event) => events.push(event));
+      await adapter.sendChat({ sessionKey: "devin:usage-1", message: "usage", idempotencyKey: "usage-run" });
+      await waitFor(() => payloads(events).some((payload) => payload.state === "final"), "usage final");
+      assert.deepEqual(payloads(events).find((payload) => payload.state === "final")?.usage, {
+        contextTokens: 300,
+        contextWindowTokens: 1000,
+        estimatedCostUsd: 2.5,
+        totalTokens: 777,
+        inputTokens: 500,
+        outputTokens: 277,
+        thoughtTokens: 25,
+        cachedReadTokens: 10,
+        cachedWriteTokens: 5
+      });
+      cleanup();
+    });
+
+    it("wires exact ACP permission options through adapter actions and replies", async () => {
+      const { storagePath, cleanup } = tmpStorage();
+      let outcome: RequestPermissionOutcome | undefined;
+      let controls: FakeControls;
+      controls = createConfigurableDevinProcess({
+        handlers: {
+          sessionNew: () => ({ sessionId: "permission-1", configOptions: defaultModelOptions() }),
+          sessionPrompt: async () => {
+            const response = await controls.agent.client.request(methods.client.session.requestPermission, {
+              sessionId: "permission-1",
+              toolCall: { toolCallId: "perm-tool", title: "Run command", kind: "execute" },
+              options: [
+                { optionId: "arbitrary-allow", name: "Allow just this", kind: "allow_once" },
+                { optionId: "reject_always", name: "Never allow", kind: "reject_always" }
+              ]
+            });
+            outcome = response.outcome;
+            return { stopReason: "end_turn" };
+          }
+        }
+      });
+      const adapter = buildAdapter(controls, storagePath);
+      await adapter.createSession({});
+      const events: GatewayEvent[] = [];
+      adapter.addEventListener((event) => events.push(event));
+      await adapter.sendChat({ sessionKey: "devin:permission-1", message: "run", idempotencyKey: "run-permission" });
+      await waitFor(() => payloads(events).some((payload) => payload.status === "blocked"), "permission event");
+      const blocked = payloads(events).find((payload) => payload.status === "blocked")!;
+      const actions = blocked.actions as Array<Record<string, unknown>>;
+      assert.deepEqual(actions.map((action) => [action.id, action.label]), [
+        ["arbitrary-allow", "Allow just this"],
+        ["reject_always", "Never allow"]
+      ]);
+      await adapter.respondToPermission(permissionReply(
+        "devin:permission-1",
+        String(blocked.eventId),
+        "reject_always"
+      ));
+      await waitFor(() => payloads(events).some((payload) => payload.state === "final"), "permission final");
+      assert.deepEqual(outcome, { outcome: "selected", optionId: "reject_always" });
+      cleanup();
+    });
+
+    it("errors an active run once on unexpected process exit", async () => {
+      const { storagePath, cleanup } = tmpStorage();
+      const controls = createConfigurableDevinProcess({
+        handlers: {
+          sessionNew: () => ({ sessionId: "exit-1", configOptions: defaultModelOptions() }),
+          sessionPrompt: () => new Promise(() => undefined)
+        }
+      });
+      const adapter = buildAdapter(controls, storagePath);
+      await adapter.createSession({});
+      const events: GatewayEvent[] = [];
+      adapter.addEventListener((event) => events.push(event));
+      await adapter.sendChat({ sessionKey: "devin:exit-1", message: "wait" });
+      controls.exit(1);
+      await waitFor(() => payloads(events).some((payload) => payload.state === "error"), "exit terminal");
+      assert.equal(payloads(events).filter((payload) => payload.state === "error").length, 1);
+      cleanup();
+    });
+
+    it("keeps concurrent session streams isolated", async () => {
+      const { storagePath, cleanup } = tmpStorage();
+      let created = 0;
+      let controls: FakeControls;
+      controls = createConfigurableDevinProcess({
+        handlers: {
+          sessionNew: () => ({ sessionId: `parallel-${++created}`, configOptions: defaultModelOptions() }),
+          sessionPrompt: ({ sessionId }) => {
+            controls.pushReplay?.([sessionUpdate(sessionId, {
+              sessionUpdate: "agent_message_chunk",
+              content: { type: "text", text: sessionId }
+            })]);
+            return { stopReason: "end_turn" };
+          }
+        }
+      });
+      const adapter = buildAdapter(controls, storagePath);
+      await adapter.createSession({});
+      await adapter.createSession({});
+      const events: GatewayEvent[] = [];
+      adapter.addEventListener((event) => events.push(event));
+      await Promise.all([
+        adapter.sendChat({ sessionKey: "devin:parallel-1", message: "one", idempotencyKey: "r1" }),
+        adapter.sendChat({ sessionKey: "devin:parallel-2", message: "two", idempotencyKey: "r2" })
+      ]);
+      await waitFor(() => payloads(events).filter((payload) => payload.state === "final").length === 2, "parallel finals");
+      assert.deepEqual(
+        payloads(events).filter((payload) => payload.state === "final").map((payload) => [payload.sessionKey, payload.message]).sort(),
+        [["devin:parallel-1", "parallel-1"], ["devin:parallel-2", "parallel-2"]]
       );
       cleanup();
     });
 
-    it("abort throws instead of implementing cancellation", async () => {
+    it("does not claim ACP active steering", async () => {
       const { storagePath, cleanup } = tmpStorage();
-      const controls = createConfigurableDevinProcess();
-      const adapter = buildAdapter(controls, storagePath);
-      await assert.rejects(adapter.abort("devin:x"), /Wave 4/);
+      const adapter = buildAdapter(createConfigurableDevinProcess(), storagePath);
+      await assert.rejects(adapter.steerChat({ sessionKey: "devin:x", message: "hi" }), /does not advertise active-turn steering/);
       cleanup();
     });
 

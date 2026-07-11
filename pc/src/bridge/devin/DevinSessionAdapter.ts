@@ -4,6 +4,7 @@ import type {
   SessionMode,
   SessionModeState
 } from "@agentclientprotocol/sdk";
+import { randomUUID } from "node:crypto";
 import { isAbsolute, resolve } from "node:path";
 import type {
   ChatCommandOption,
@@ -16,6 +17,7 @@ import type { HarnessId } from "../AgentHarness.js";
 import { ChatClientError } from "../chat/ChatErrors.js";
 import type {
   GatewayChatSendResult,
+  GatewayEvent,
   GatewayEventHandler,
   HarnessCapabilities,
   HarnessChatSendOptions,
@@ -41,6 +43,8 @@ import {
   type DevinEffectiveConfig
 } from "./DevinSessionConfig.js";
 import { prepareDevinWorkspace } from "./DevinWorkspace.js";
+import { DevinPermissionBroker } from "./DevinPermissionBroker.js";
+import { DevinRunDriver } from "./DevinRunDriver.js";
 
 export interface DevinSessionAdapterOptions {
   client?: DevinAcpClient;
@@ -61,12 +65,16 @@ export class DevinSessionAdapter implements HarnessChatAdapter {
   private readonly store: InMemoryHarnessSessionStore;
   private readonly catalog: DevinSessionCatalog;
   private readonly workspaceCwd: string;
+  private readonly handlers = new Set<GatewayEventHandler>();
+  private readonly runDriver: DevinRunDriver;
+  private readonly permissionBroker: DevinPermissionBroker;
 
   private transportGeneration = 0;
   private readonly attachedSessions = new Set<string>();
   private readonly configCache = new Map<string, DevinEffectiveConfig>();
   private readonly commandsCache = new Map<string, ChatCommandOption[]>();
   private readonly currentModeCache = new Map<string, { currentModeId?: string; availableModes?: SessionMode[] }>();
+  private readonly toolsCache = new Map<string, Map<string, ChatToolSummary>>();
   private modelCache?: { generation: number; config: DevinEffectiveConfig; models: ChatModelOption[] };
 
   constructor(options: DevinSessionAdapterOptions) {
@@ -89,12 +97,28 @@ export class DevinSessionAdapter implements HarnessChatAdapter {
       store: this.store,
       toSummary: (session) => this.toSummary(session)
     });
+    this.runDriver = new DevinRunDriver(
+      this.client,
+      this.store,
+      (event, payload) => this.emit(event, payload),
+      () => this.permissionBroker,
+      (sessionKey, tool) => {
+        const tools = this.toolsCache.get(sessionKey) ?? new Map<string, ChatToolSummary>();
+        tools.set(tool.id, tool);
+        this.toolsCache.set(sessionKey, tools);
+      }
+    );
+    this.permissionBroker = new DevinPermissionBroker(
+      (sessionId) => this.runDriver.permissionRun(sessionId),
+      (event, payload) => this.emit(event, payload)
+    );
+    this.client.setPermissionHandler((request) => this.permissionBroker.request(request));
     this.client.addEventListener((event) => this.handleClientEvent(event));
   }
 
-  addEventListener(_handler: GatewayEventHandler): () => void {
-    // Wave 4 owns normalization of live ACP updates into Lynk chat events.
-    return () => undefined;
+  addEventListener(handler: GatewayEventHandler): () => void {
+    this.handlers.add(handler);
+    return () => this.handlers.delete(handler);
   }
 
   async history(sessionKey: string): Promise<HarnessChatHistory> {
@@ -105,16 +129,27 @@ export class DevinSessionAdapter implements HarnessChatAdapter {
     return this.store.history(sessionKey);
   }
 
-  async sendChat(_options: HarnessChatSendOptions): Promise<GatewayChatSendResult> {
-    throw new Error("Devin live chat streaming is implemented in Wave 4.");
+  async sendChat(options: HarnessChatSendOptions): Promise<GatewayChatSendResult> {
+    const sessionId = devinSessionIdFromKey(options.sessionKey);
+    if (!this.attachedSessions.has(sessionId)) {
+      await this.attachSession(options.sessionKey, sessionId);
+    }
+    const session = this.store.ensureSession(options.sessionKey, sessionId);
+    this.runDriver.assertCanStart(session.key);
+    this.store.setThinkingLevel(session, options.thinking);
+    this.store.appendUserMessage(session, options.message, options.idempotencyKey);
+    const runId = options.idempotencyKey ?? `devin_${randomUUID()}`;
+    this.runDriver.startRun(session, runId, options.message);
+    return { runId, sessionKey: session.key };
   }
 
   async steerChat(_options: HarnessChatSteerOptions): Promise<GatewayChatSendResult> {
-    throw new Error("Devin active-turn steering is implemented in Wave 4.");
+    throw new Error("Devin ACP does not advertise active-turn steering.");
   }
 
-  async abort(_sessionKey: string, _runId?: string): Promise<unknown> {
-    throw new Error("Devin run cancellation is implemented in Wave 4.");
+  async abort(sessionKey: string, runId?: string): Promise<unknown> {
+    devinSessionIdFromKey(sessionKey);
+    return await this.runDriver.abort(sessionKey, runId);
   }
 
   async listModels(): Promise<ChatModelOption[]> {
@@ -231,12 +266,14 @@ export class DevinSessionAdapter implements HarnessChatAdapter {
     return this.commandsCache.get(sessionKey) ?? this.storedCommands(sessionKey);
   }
 
-  async effectiveTools(_sessionKey: string): Promise<ChatToolSummary[]> {
-    return [];
+  async effectiveTools(sessionKey: string): Promise<ChatToolSummary[]> {
+    devinSessionIdFromKey(sessionKey);
+    return [...(this.toolsCache.get(sessionKey)?.values() ?? [])];
   }
 
-  async respondToPermission(_options: HarnessPermissionReplyOptions): Promise<unknown> {
-    throw new Error("Devin permission replies are implemented in Wave 4.");
+  async respondToPermission(options: HarnessPermissionReplyOptions): Promise<unknown> {
+    devinSessionIdFromKey(options.sessionKey);
+    return this.permissionBroker.respond(options);
   }
 
   async health(): Promise<unknown> {
@@ -244,6 +281,8 @@ export class DevinSessionAdapter implements HarnessChatAdapter {
   }
 
   close(): void {
+    this.runDriver.close();
+    this.client.setPermissionHandler(undefined);
     void this.client.close();
   }
 
@@ -324,9 +363,37 @@ export class DevinSessionAdapter implements HarnessChatAdapter {
     if (event.type === "session/update") {
       const sessionId = event.notification.sessionId;
       const key = `devin:${sessionId}`;
-      if (event.notification.update.sessionUpdate === "available_commands_update") {
-        this.applyCommands(key, sessionId, event.notification.update.availableCommands);
+      const update = event.notification.update;
+      if (update.sessionUpdate === "available_commands_update") {
+        this.applyCommands(key, sessionId, update.availableCommands);
+      } else if (update.sessionUpdate === "config_option_update") {
+        this.applyConfig(key, sessionId, update.configOptions);
+      } else if (update.sessionUpdate === "current_mode_update") {
+        const cached = this.currentModeCache.get(sessionId);
+        this.currentModeCache.set(sessionId, { ...cached, currentModeId: update.currentModeId });
+        this.store.setMetadata(this.store.ensureSession(key, sessionId), "currentModeId", update.currentModeId);
+      } else if (update.sessionUpdate === "session_info_update") {
+        const session = this.store.ensureSession(key, sessionId);
+        if (typeof update.title === "string") {
+          this.store.patchSession(key, { displayName: update.title });
+        } else if (update.title === null) {
+          session.displayName = undefined;
+          this.store.setMetadata(session, "acpTitle", null);
+        }
+        if (update.updatedAt) {
+          const parsed = Date.parse(update.updatedAt);
+          if (Number.isFinite(parsed)) this.store.setMetadata(session, "acpUpdatedAt", parsed);
+        } else if (update.updatedAt === null) {
+          this.store.setMetadata(session, "acpUpdatedAt", null);
+        }
+      } else if (update.sessionUpdate === "usage_update") {
+        this.store.setUsage(this.store.ensureSession(key, sessionId), {
+          contextTokens: update.used,
+          contextWindowTokens: update.size,
+          ...(update.cost?.currency.toUpperCase() === "USD" ? { estimatedCostUsd: update.cost.amount } : {})
+        });
       }
+      this.runDriver.handleUpdate(event.notification);
       return;
     }
     if (event.state === "starting") this.transportGeneration += 1;
@@ -335,8 +402,17 @@ export class DevinSessionAdapter implements HarnessChatAdapter {
       this.configCache.clear();
       this.commandsCache.clear();
       this.currentModeCache.clear();
+      this.toolsCache.clear();
       this.modelCache = undefined;
     }
+    if (event.state === "failed" && event.error) {
+      this.runDriver.failAll(event.error);
+    }
+  }
+
+  private emit(event: string, payload: unknown): void {
+    const gatewayEvent: GatewayEvent = { event, payload };
+    for (const handler of this.handlers) handler(gatewayEvent);
   }
 
   private reasoningOptions(): ChatReasoningOption[] {

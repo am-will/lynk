@@ -5,6 +5,7 @@ import type {
 } from "../protocol/messages.js";
 import { parseHarnessPermissionReply } from "./harness/HarnessControlActions.js";
 import type { DeviceChatState } from "./OpenClawChatTypes.js";
+import type { HarnessPermissionResponse } from "./chat/ChatTransportTypes.js";
 
 interface ControlCommandRouterOptions {
   stateFor(deviceId: string): DeviceChatState;
@@ -25,7 +26,7 @@ interface ControlCommandRouterOptions {
   patchSession(deviceId: string, sessionKey: string, patch: Record<string, unknown>, status?: string): Promise<void>;
   sendState(deviceId: string, status?: string): void;
   send(message: ChatSendMessage): Promise<void>;
-  respondToPermission(sessionKey: string, permissionId: string, response: "once" | "always" | "reject"): Promise<void>;
+  respondToPermission(sessionKey: string, permissionId: string, response: HarnessPermissionResponse): Promise<void>;
 }
 
 export class OpenClawControlCommandRouter {
