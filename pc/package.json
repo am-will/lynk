@@ -49,6 +49,7 @@
     "postinstall": "node -e \"const fs=require('node:fs'); const global=process.env.npm_config_global==='true'||process.env.npm_config_location==='global'||process.env.LYNK_BRIDGE_INSTALL_SERVICE==='1'; if(global && process.env.LYNK_BRIDGE_SKIP_SERVICE_INSTALL!=='1' && fs.existsSync('./dist/host/npmPostinstall.js')) import('./dist/host/npmPostinstall.js');\""
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "1.1.0",
     "@earendil-works/pi-coding-agent": "^0.78.0",
     "@modelcontextprotocol/sdk": "^1.22.0",
     "@opencode-ai/sdk": "^1.15.12",

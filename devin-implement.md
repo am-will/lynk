@@ -795,21 +795,21 @@ The orchestrator updates this section after reviewing each subagent. Parallel su
 - Review/fixes: Corrected quoting for discovered executable paths containing spaces; replaced unreliable child timeout-event handling with an explicit race-safe timer; kept installed Devin configured but not ready on auth timeout/spawn failure; replaced hardcoded host model classification with canonical `isHarnessId()`; added real timeout/exit and integration-status regressions.
 - Commit: `feat(devin): add harness identity and configuration`.
 
-### Wave 1B — pending
+### Wave 1B — implemented; Wave 5 review pending
 
-- Agent ID:
-- Files:
-- Tests:
-- Review/fixes:
+- Agent ID: `1ef2cc9d` (SWE 1.7 Lightning).
+- Files: Android-only Devin harness/model/preferences/workspace controls plus generic `HostWorkspacePaths` and `WorkspaceSessionPickerSections` renames.
+- Tests: Agent reported `:app:testDebugUnitTest`, `:app:assembleDebug`, and `git diff --check` passing.
+- Review/fixes: pending Wave 5 reconciliation with the final PC wire contract.
 - Commit held until Wave 5.
 
-### Wave 2 — pending
+### Wave 2 — completed
 
-- Agent ID:
-- Files:
-- Tests:
-- Review/fixes:
-- Commit:
+- Agent ID: `4c5a60c9` (SWE 1.7 Lightning).
+- Files: Added exact ACP SDK 1.1.0 dependency and focused typed transport/process/capability/stderr modules under `pc/src/bridge/devin/`; added deterministic fake ACP fixtures and transport lifecycle tests.
+- Tests: Independent orchestrator run passed `npm run check`, `npm run build`, and all 269 PC tests; `git diff --check` passed.
+- Review/fixes: Fixed pre-start capability gating, additional-directory presence checks, async teardown/restart races, invalid startup-sharing coverage, spawn-error classification, bounded sensitive stderr streaming, safe health metadata, barrel import cycles, deterministic SIGTERM/SIGKILL shutdown, and unrelated lockfile normalization.
+- Commit: `feat(devin): add ACP client transport`.
 
 ### Wave 3 — pending
 
