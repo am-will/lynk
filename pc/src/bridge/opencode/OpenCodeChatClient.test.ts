@@ -291,6 +291,7 @@ test("OpenCode local sessions appear after first user message and empty sessions
       message: "first user message",
       idempotencyKey: "run_first"
     });
+    await client.flushPersistence();
     const afterFirstMessage = await client.listSessions() as { sessions: Array<Record<string, unknown>> };
 
     assert.deepEqual(afterFirstMessage.sessions.map((session) => session.key), [created.key]);
