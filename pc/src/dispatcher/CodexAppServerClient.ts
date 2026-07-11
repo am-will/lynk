@@ -1,9 +1,14 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createInterface, type Interface } from "node:readline";
 import type { ChatAttachment } from "../protocol/messages.js";
 import type { AuditLog } from "../bridge/AuditLog.js";
 import type { AgentClient, AgentRequestOptions, AgentRunResult, AgentStatusSink } from "./AgentClient.js";
 import { PHONE_AGENT_SYSTEM_PROMPT, buildPhoneAgentPrompt } from "./safetyPrompt.js";
+import { AdapterFailure } from "../bridge/harness/AdapterFailure.js";
+
+const DEFAULT_RPC_TIMEOUT_MS = 30_000;
+const MAX_RPC_LINE_BYTES = 1_048_576;
+const TERM_GRACE_MS = 1_500;
+const KILL_GRACE_MS = 500;
 
 interface JsonRpcRequest {
   id?: number;
@@ -16,6 +21,9 @@ interface JsonRpcRequest {
 interface PendingRpc {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
+  timer: NodeJS.Timeout;
+  generation: number;
+  method: string;
 }
 
 interface PendingTurn {
@@ -26,6 +34,7 @@ interface PendingTurn {
   resolve: (value: AgentRunResult) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
+  generation: number;
 }
 
 type CodexUserInput =
@@ -232,9 +241,12 @@ function sumTokens(inputTokens: number | undefined, outputTokens: number | undef
 
 export class CodexAppServerClient implements AgentClient {
   private child?: ChildProcessWithoutNullStreams;
-  private lines?: Interface;
+  private stdoutBuffer = "";
   private nextId = 1;
   private initialized = false;
+  private generation = 0;
+  private starting?: Promise<void>;
+  private closed = false;
   private readonly pending = new Map<number, PendingRpc>();
   private readonly latestUsageByThread = new Map<string, Record<string, unknown>>();
   private readonly loadedThreads = new Set<string>();
@@ -345,12 +357,17 @@ export class CodexAppServerClient implements AgentClient {
   }
 
   async close(): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
     for (const session of this.realtimeSessions.values()) {
       session.sink.closed("Codex client closed");
     }
     this.realtimeSessions.clear();
-    this.lines?.close();
-    this.child?.kill();
+    const generation = this.generation;
+    await this.failGeneration(generation, new AdapterFailure("cancelled", "Codex client closed", {
+      harnessId: "codex",
+      operation: "close"
+    }), true);
     this.loadedThreads.clear();
     this.latestUsageByThread.clear();
   }
@@ -477,64 +494,114 @@ export class CodexAppServerClient implements AgentClient {
   }
 
   private async ensureStarted(): Promise<void> {
-    if (this.initialized) {
+    if (this.closed) {
+      throw new AdapterFailure("cancelled", "Codex client is closed", { harnessId: "codex", operation: "start" });
+    }
+    if (this.initialized && this.child) {
       return;
     }
+    if (this.starting) return await this.starting;
+
+    const generation = ++this.generation;
+    const starting = this.startGeneration(generation);
+    this.starting = starting;
+    try {
+      await starting;
+    } finally {
+      if (this.starting === starting) this.starting = undefined;
+    }
+  }
+
+  private async startGeneration(generation: number): Promise<void> {
 
     const [bin, ...args] = commandParts(this.command);
     if (!bin) {
       throw new Error("CODEX_APP_SERVER_COMMAND is empty");
     }
 
-    this.child = spawn(bin, args, {
+    const child = spawn(bin, args, {
       cwd: this.cwd,
       env: process.env
     });
+    this.child = child;
+    this.stdoutBuffer = "";
 
-    this.child.stderr.on("data", (chunk) => {
+    child.stderr.on("data", (chunk) => {
+      if (generation !== this.generation) return;
       this.activeSink?.info(chunk.toString().trim());
     });
-    this.child.on("exit", (code, signal) => {
-      const error = new Error(`Codex app-server exited with code ${code ?? "null"} signal ${signal ?? "null"}`);
-      for (const pending of this.pending.values()) {
-        pending.reject(error);
-      }
-      this.pending.clear();
-      this.initialized = false;
-      this.loadedThreads.clear();
-      this.latestUsageByThread.clear();
-      this.pendingTurn?.reject(error);
-      this.pendingTurn = undefined;
-      for (const session of this.realtimeSessions.values()) {
-        session.sink.error(error.message);
-        session.sink.closed(error.message);
-      }
-      this.realtimeSessions.clear();
-      this.activeSink?.error(error.message);
+    child.stdout.on("data", (chunk) => this.handleStdoutChunk(generation, chunk));
+    child.on("error", (cause) => {
+      void this.failGeneration(generation, new AdapterFailure("unavailable", `Codex app-server process failed: ${cause.message}`, {
+        cause,
+        harnessId: "codex",
+        operation: "process"
+      }), true);
+    });
+    child.on("exit", (code, signal) => {
+      void this.failGeneration(generation, new AdapterFailure(
+        "unavailable",
+        `Codex app-server exited with code ${code ?? "null"} signal ${signal ?? "null"}`,
+        { harnessId: "codex", operation: "process" }
+      ), false);
+    });
+    child.stdin.on("error", (cause) => {
+      void this.failGeneration(generation, new AdapterFailure("unavailable", `Codex app-server stdin failed: ${cause.message}`, {
+        cause,
+        harnessId: "codex",
+        operation: "stdin"
+      }), true);
     });
 
-    this.lines = createInterface({ input: this.child.stdout });
-    this.lines.on("line", (line) => this.handleLine(line));
-
-    await this.request("initialize", {
-      clientInfo: {
-        name: "android_phone_agent",
-        title: "Android Phone Agent Dispatcher",
-        version: "0.1.0"
-      },
-      capabilities: { experimentalApi: true }
-    });
-    this.notify("initialized", {});
-    this.initialized = true;
+    try {
+      await this.request("initialize", {
+        clientInfo: {
+          name: "android_phone_agent",
+          title: "Android Phone Agent Dispatcher",
+          version: "0.1.0"
+        },
+        capabilities: { experimentalApi: true }
+      }, generation);
+      if (generation !== this.generation || this.child !== child) {
+        throw new AdapterFailure("cancelled", "Codex startup generation was superseded", {
+          harnessId: "codex",
+          operation: "initialize"
+        });
+      }
+      this.notify("initialized", {}, generation);
+      this.initialized = true;
+    } catch (error) {
+      await this.failGeneration(generation, error instanceof Error ? error : new Error(String(error)), true);
+      throw error;
+    }
   }
 
-  private request(method: string, params?: unknown): Promise<unknown> {
+  private request(method: string, params?: unknown, generation = this.generation): Promise<unknown> {
     const id = this.nextId++;
     const payload: JsonRpcRequest = { id, method, params };
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const timeoutMs = positiveEnvInt("CODEX_RPC_TIMEOUT_MS", DEFAULT_RPC_TIMEOUT_MS);
+      const timer = setTimeout(() => {
+        const pending = this.pending.get(id);
+        if (!pending || pending.generation !== generation) return;
+        this.pending.delete(id);
+        const error = new AdapterFailure("timeout", `Codex RPC ${method} timed out after ${timeoutMs}ms`, {
+          harnessId: "codex",
+          operation: method
+        });
+        reject(error);
+        void this.failGeneration(generation, error, true);
+      }, timeoutMs);
+      timer.unref?.();
+      this.pending.set(id, { resolve, reject, timer, generation, method });
       this.audit?.record("codex_rpc_request", undefined, { id, method, params });
-      this.write(payload);
+      try {
+        this.write(payload, generation);
+      } catch (error) {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
     });
   }
 
@@ -546,7 +613,12 @@ export class CodexAppServerClient implements AgentClient {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingTurn = undefined;
-        reject(new Error(`Timed out waiting for Codex turn ${turnId} to complete`));
+        const error = new AdapterFailure("timeout", `Timed out waiting for Codex turn ${turnId} to complete`, {
+          harnessId: "codex",
+          operation: "turn/completed"
+        });
+        reject(error);
+        void this.failGeneration(this.generation, error, true);
       }, Number.parseInt(process.env.CODEX_TURN_TIMEOUT_MS ?? "600000", 10));
 
       this.pendingTurn = {
@@ -555,23 +627,58 @@ export class CodexAppServerClient implements AgentClient {
         finalMessage: [],
         resolve,
         reject,
-        timer
+        timer,
+        generation: this.generation
       };
     });
   }
 
-  private notify(method: string, params?: unknown): void {
-    this.write({ method, params });
+  private notify(method: string, params?: unknown, generation = this.generation): void {
+    this.write({ method, params }, generation);
   }
 
-  private write(payload: JsonRpcRequest): void {
-    if (!this.child) {
+  private write(payload: JsonRpcRequest, generation = this.generation): void {
+    if (!this.child || generation !== this.generation) {
       throw new Error("Codex app-server process is not started");
     }
-    this.child.stdin.write(`${JSON.stringify(payload)}\n`);
+    const frame = `${JSON.stringify(payload)}\n`;
+    if (Buffer.byteLength(frame) > MAX_RPC_LINE_BYTES) {
+      throw new AdapterFailure("protocol", `Codex RPC frame exceeds ${MAX_RPC_LINE_BYTES} bytes`, {
+        harnessId: "codex",
+        operation: payload.method
+      });
+    }
+    this.child.stdin.write(frame);
   }
 
-  private handleLine(line: string): void {
+  private handleStdoutChunk(generation: number, chunk: Buffer | string): void {
+    if (generation !== this.generation) return;
+    this.stdoutBuffer += chunk.toString();
+    if (Buffer.byteLength(this.stdoutBuffer) > MAX_RPC_LINE_BYTES && !this.stdoutBuffer.includes("\n")) {
+      void this.failGeneration(generation, new AdapterFailure("protocol", `Codex RPC line exceeds ${MAX_RPC_LINE_BYTES} bytes`, {
+        harnessId: "codex",
+        operation: "stdout"
+      }), true);
+      return;
+    }
+    while (true) {
+      const newline = this.stdoutBuffer.indexOf("\n");
+      if (newline < 0) return;
+      const line = this.stdoutBuffer.slice(0, newline);
+      this.stdoutBuffer = this.stdoutBuffer.slice(newline + 1);
+      if (Buffer.byteLength(line) > MAX_RPC_LINE_BYTES) {
+        void this.failGeneration(generation, new AdapterFailure("protocol", `Codex RPC line exceeds ${MAX_RPC_LINE_BYTES} bytes`, {
+          harnessId: "codex",
+          operation: "stdout"
+        }), true);
+        return;
+      }
+      this.handleLine(line, generation);
+    }
+  }
+
+  private handleLine(line: string, generation: number): void {
+    if (generation !== this.generation) return;
     if (!line.trim()) {
       return;
     }
@@ -585,7 +692,9 @@ export class CodexAppServerClient implements AgentClient {
 
     if (typeof message.id === "number" && this.pending.has(message.id)) {
       const pending = this.pending.get(message.id)!;
+      if (pending.generation !== generation) return;
       this.pending.delete(message.id);
+      clearTimeout(pending.timer);
       if (message.error) {
         this.audit?.record("codex_rpc_response", undefined, { id: message.id, error: message.error });
         pending.reject(new Error(message.error.message ?? JSON.stringify(message.error)));
@@ -603,6 +712,43 @@ export class CodexAppServerClient implements AgentClient {
 
     this.audit?.record("codex_app_server_message", undefined, message);
     this.handleNotification(message);
+  }
+
+  private async failGeneration(generation: number, error: Error, terminate: boolean): Promise<void> {
+    if (generation !== this.generation) return;
+    const child = this.child;
+    this.generation += 1;
+    this.child = undefined;
+    this.initialized = false;
+    this.stdoutBuffer = "";
+    for (const [id, pending] of this.pending) {
+      if (pending.generation !== generation) continue;
+      clearTimeout(pending.timer);
+      this.pending.delete(id);
+      pending.reject(error);
+    }
+    if (this.pendingTurn?.generation === generation) {
+      clearTimeout(this.pendingTurn.timer);
+      this.pendingTurn.reject(error);
+      this.pendingTurn = undefined;
+    }
+    this.loadedThreads.clear();
+    this.latestUsageByThread.clear();
+    for (const session of this.realtimeSessions.values()) {
+      session.sink.error(error.message);
+      session.sink.closed(error.message);
+    }
+    this.realtimeSessions.clear();
+    this.activeSink?.error(error.message);
+    if (!child) return;
+    if (terminate && child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGTERM");
+      if (!await waitForChildExit(child, TERM_GRACE_MS)) {
+        child.kill("SIGKILL");
+        await waitForChildExit(child, KILL_GRACE_MS);
+      }
+    }
+    removeChildListeners(child);
   }
 
   private handleServerRequest(message: { id: number; method: string; params?: any }): void {
@@ -796,22 +942,42 @@ export class CodexAppServerClient implements AgentClient {
   }
 
   private resolveCompletedTurn(pendingTurn: PendingTurn, finalMessage: string): void {
-    const resolve = () => {
-      const blocked = isBlockedFinalMessage(finalMessage);
-      pendingTurn.resolve({
-        threadId: pendingTurn.threadId,
-        turnId: pendingTurn.turnId,
-        finalMessage,
-        error: blocked ? finalMessage : undefined,
-        usage: pendingTurn.usage ?? this.latestUsageByThread.get(pendingTurn.threadId)
-      });
-    };
-    if (pendingTurn.usage ?? this.latestUsageByThread.get(pendingTurn.threadId)) {
-      resolve();
-      return;
-    }
-    setTimeout(resolve, Number.parseInt(process.env.CODEX_TOKEN_USAGE_GRACE_MS ?? "150", 10));
+    const blocked = isBlockedFinalMessage(finalMessage);
+    pendingTurn.resolve({
+      threadId: pendingTurn.threadId,
+      turnId: pendingTurn.turnId,
+      finalMessage,
+      error: blocked ? finalMessage : undefined,
+      usage: pendingTurn.usage ?? this.latestUsageByThread.get(pendingTurn.threadId)
+    });
   }
+}
+
+function positiveEnvInt(name: string, fallback: number): number {
+  const parsed = Number.parseInt(process.env[name] ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+async function waitForChildExit(child: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null) return true;
+  return await new Promise<boolean>((resolve) => {
+    const onExit = () => finish(true);
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    timer.unref?.();
+    const finish = (exited: boolean) => {
+      clearTimeout(timer);
+      child.off("exit", onExit);
+      resolve(exited);
+    };
+    child.once("exit", onExit);
+  });
+}
+
+function removeChildListeners(child: ChildProcessWithoutNullStreams): void {
+  child.removeAllListeners();
+  child.stdin.removeAllListeners();
+  child.stdout.removeAllListeners();
+  child.stderr.removeAllListeners();
 }
 
 function codexUserInput(text: string, attachments: ChatAttachment[] | undefined): CodexUserInput[] {
