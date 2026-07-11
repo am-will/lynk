@@ -47,10 +47,8 @@ class LocalAgentController(
             toolDescriptionsJson = tools.toolDescriptions().toString()
         )
         var rejectedUnneededTool = false
-        var rejectedEmptyTermuxCommand = false
         var repeatedObserveCount = 0
         var latestScreenshotPath: String? = null
-        var lastSparseObservationScreenshotKey: String? = null
         var androidControlSkillLoaded = false
         var phoneToolExecuted = false
         var phoneActionCount = 0
@@ -137,7 +135,7 @@ class LocalAgentController(
                     if (noToolPhoneNudges < MAX_NO_TOOL_PHONE_NUDGES) {
                         noToolPhoneNudges += 1
                         transcript.add("assistant: $finalText")
-                        transcript.add("system: You ended the turn without a phone tool call, but the Android phone-control request is not sufficiently verified. Continue by emitting only the next tool JSON now. For multi-step requests, do not stop after the first action; keep acting until every requested subgoal is visibly complete or blocked. Start with phone_observe if you do not have current screen context.")
+                        transcript.add("system: You ended the turn without a phone tool call, but the Android phone-control request is not sufficiently verified. Continue with exactly one valid Lynk control frame for the next tool. For multi-step requests, do not stop after the first action; keep acting until every requested subgoal is visibly complete or blocked. Start with phone_observe if you do not have current screen context.")
                         return@toolLoop
                     }
                     val message = "BLOCKED: The local model stopped before completing the requested phone workflow."
@@ -163,7 +161,6 @@ class LocalAgentController(
             }
 
             for (call in calls) {
-                var callToExecute = call
                 if (!toolAccess.allows(call.name)) {
                     val rejected = JSONObject()
                         .put("ok", false)
@@ -198,70 +195,20 @@ class LocalAgentController(
                 } else {
                     repeatedObserveCount = 0
                 }
-                var demoFallbackTargetPath: String? = null
-                val replacementFallback = if (call.name == "termux_command") {
-                    DemoHtmlTermuxFallbackPolicy.replacementFor(userText, call.args)
-                } else {
-                    null
-                }
-                if (replacementFallback != null) {
-                    transcript.add("assistant tool request: ${JSONObject().put("tool", call.name).put("args", call.args)}")
-                    transcript.add("system: ${replacementFallback.reason}")
-                    callToExecute = LocalToolCall("termux_command", replacementFallback.args)
-                    demoFallbackTargetPath = replacementFallback.targetPath
-                } else if (call.name == "termux_command" && call.args.optString("command").isBlank()) {
-                    val emptyCommandFallback = DemoHtmlTermuxFallbackPolicy.fallbackForEmptyCommand(userText)
-                    if (emptyCommandFallback != null) {
-                        transcript.add("assistant tool request: ${JSONObject().put("tool", call.name).put("args", call.args)}")
-                        transcript.add("system: ${emptyCommandFallback.reason}")
-                        callToExecute = LocalToolCall("termux_command", emptyCommandFallback.args)
-                        demoFallbackTargetPath = emptyCommandFallback.targetPath
-                    } else if (!rejectedEmptyTermuxCommand) {
-                        rejectedEmptyTermuxCommand = true
-                        val rejected = JSONObject()
-                            .put("ok", false)
-                            .put("error", "termux_command requires a non-empty command argument. Choose the shell command yourself and call termux_command with args.command.")
-                        transcript.add("assistant tool request: ${JSONObject().put("tool", call.name).put("args", call.args)}")
-                        transcript.add("tool ${call.name} result: ${rejected.toString()}")
-                        continue
-                    }
-                }
-                val result = executeAndRecordTool(sessionKey, runId, round, callToExecute, transcript)
-                if (LocalToolPolicy.isPhoneTool(callToExecute.name)) {
+                val result = executeAndRecordTool(sessionKey, runId, round, call, transcript)
+                if (LocalToolPolicy.isPhoneTool(call.name)) {
                     phoneToolExecuted = true
-                    if (LocalPhoneControlTurnPolicy.isPhoneActionTool(callToExecute.name)) {
+                    if (LocalPhoneControlTurnPolicy.isPhoneActionTool(call.name)) {
                         phoneActionCount += 1
                     }
                 }
-                if (callToExecute.name == "local_read_skill" && result.optBoolean("ok", false) &&
+                if (call.name == "local_read_skill" && result.optBoolean("ok", false) &&
                     result.optString("name") == LocalToolRegistry.ANDROID_CONTROL_SKILL_NAME
                 ) {
                     androidControlSkillLoaded = true
                 }
                 result.optString("screenshotPath").takeIf { it.isNotBlank() }?.let { path ->
                     latestScreenshotPath = path
-                }
-                if (callToExecute.name == "termux_command" && result.optBoolean("ok", false) && callToExecute !== call) {
-                    val target = demoFallbackTargetPath ?: "/sdcard/Download/openclaw-project"
-                    val message = "Done. I created the HTML project at `$target/index.html` and opened it in the browser."
-                    emitAssistant(sessionKey, runId, message)
-                    return message
-                }
-                if (call.name == "phone_observe" && isSparseObservation(result)) {
-                    val observationKey = sparseObservationKey(result)
-                    if (observationKey != lastSparseObservationScreenshotKey) {
-                        lastSparseObservationScreenshotKey = observationKey
-                        val screenshotResult = executeAndRecordTool(
-                            sessionKey = sessionKey,
-                            runId = runId,
-                            round = round,
-                            call = LocalToolCall("phone_take_screenshot"),
-                            transcript = transcript
-                        )
-                        screenshotResult.optString("screenshotPath").takeIf { it.isNotBlank() }?.let { path ->
-                            latestScreenshotPath = path
-                        }
-                    }
                 }
             }
         }
@@ -467,30 +414,6 @@ class LocalAgentController(
     private fun chunk(text: String): List<String> {
         if (text.length <= 80) return listOf(text)
         return text.chunked(80)
-    }
-
-    private fun isSparseObservation(result: JSONObject): Boolean {
-        if (!result.optBoolean("ok", false)) return true
-        val observation = result.optJSONObject("observation") ?: return true
-        val summary = observation.optString("screenSummary")
-        val nodes = observation.optJSONArray("nodes")
-        if (summary.isBlank() && (nodes == null || nodes.length() == 0)) return true
-        val labeledNodes = (0 until (nodes?.length() ?: 0)).count { index ->
-            val node = nodes?.optJSONObject(index) ?: return@count false
-            node.optString("text").isNotBlank() || node.optString("contentDescription").isNotBlank()
-        }
-        return summary.isBlank() || labeledNodes == 0
-    }
-
-    private fun sparseObservationKey(result: JSONObject): String {
-        val observation = result.optJSONObject("observation")
-        return listOf(
-            result.optString("error"),
-            observation?.optString("package").orEmpty(),
-            observation?.optString("activity").orEmpty(),
-            observation?.optString("screenSummary").orEmpty(),
-            observation?.optJSONArray("nodes")?.length()?.toString().orEmpty()
-        ).joinToString("|")
     }
 
     private fun cleanFinalText(text: String): String {
