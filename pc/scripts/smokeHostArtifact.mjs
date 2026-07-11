@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -35,6 +35,11 @@ async function installPackedArtifact() {
 
 async function smokePackageRoot(packageRoot) {
   const manifest = JSON.parse(await readFile(resolve(packageRoot, "package.json"), "utf8"));
+  await Promise.all([
+    access(resolve(packageRoot, "README.md")),
+    access(resolve(packageRoot, ".env.example"))
+  ]);
+  await assert.rejects(access(resolve(packageRoot, "android")), "artifact must not depend on the Android source tree");
   const expectedBins = ["lynk-bridge", "lynk-bridge-host", "lynk-bridge-mcp"];
   assert.deepEqual(Object.keys(manifest.bin).sort(), expectedBins.sort());
 

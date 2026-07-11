@@ -6,11 +6,10 @@ The Host Bridge installer packages the PC bridge as a background companion for A
 
 1. Install the host bridge companion on macOS, Windows, or Linux.
 2. The installer creates or preserves the host config and registers the bridge to start at login.
-3. Open the host pairing screen or run:
+3. Open the host pairing screen or run the installed CLI:
 
    ```bash
-   cd pc
-   npm run host:pairing:qr
+   lynk-bridge-host pairing --qr
    ```
 
 4. Scan the QR code with Android. The QR encodes an `android-agent://pair` deep link with the token, pairing ID, and ordered endpoint candidates.
@@ -47,8 +46,7 @@ Only the token-authenticated phone-facing bridge should be reachable over Tailsc
 If a user installs Hermes, Codex, OpenClaw, Devin, Tailscale, or ADB after installing the bridge, run:
 
 ```bash
-cd pc
-npm run host:refresh
+lynk-bridge-host refresh
 ```
 
 The installed companion should expose the same action as **Refresh Integrations**. Refresh rescans known tools, stores discovered absolute paths, and reports whether a bridge restart is recommended. For Devin it also runs a bounded, output-redacted `devin auth status` check. The result distinguishes missing CLI, unauthenticated CLI, timeout/spawn failure, and authenticated readiness without including identity or token output. Authenticate with `devin auth login`, rerun refresh, and restart the service when refresh recommends it.
@@ -58,8 +56,7 @@ The installed companion should expose the same action as **Refresh Integrations*
 If the user wants OpenClaw, Hermes, or Codex to control the Android phone through MCP tools, run:
 
 ```bash
-cd pc
-npm run host:mcp
+lynk-bridge-host mcp
 ```
 
 This command updates the available host-agent MCP registrations with the current bridge URL and token. It is safe to rerun after moving the app, changing the bridge port, regenerating the pairing token, or installing a host agent later. `npm run host:refresh -- --configure-mcp` performs the same MCP update while also refreshing integration discovery. Hermes profile users should set `HERMES_CONFIG_PATH` to the active profile config. Host agents should load `.agents/skills/android-control/SKILL.md` alongside the MCP tools for proper observe-act-verify phone-control behavior.
@@ -69,8 +66,7 @@ This command updates the available host-agent MCP registrations with the current
 For support, run:
 
 ```bash
-cd pc
-npm run host:diagnostics
+lynk-bridge-host diagnostics
 ```
 
 The diagnostics bundle redacts secrets and includes OS details, config shape, endpoint discovery, service plan, and integration status. Devin diagnostics report only safe configuration/auth/readiness fields. The bridge also exposes authenticated diagnostics at `/api/diagnostics`; live harness state is available from the authenticated `/api/harnesses/health` and `/api/harnesses/readiness` routes.
@@ -79,8 +75,20 @@ The diagnostics bundle redacts secrets and includes OS details, config shape, en
 
 - Build and test PC bridge: `cd pc && npm ci && npm run check && npm test && npm run build`.
 - Build and test Android: `cd android && ./gradlew :app:assembleDebug :app:testDebugUnitTest`.
-- Package the host bridge with `pc/dist`, `pc/package.json`, `pc/package-lock.json`, and `pc/installers`.
+- Package the host bridge with `pc/dist`, `pc/package.json`, `pc/package-lock.json`, `pc/.env.example`, `pc/installers`, production dependencies, and the archive README.
 - Code sign and notarize macOS artifacts.
 - Sign Windows installer artifacts.
 - Smoke test clean macOS, Windows, and Ubuntu VMs.
 - Verify LAN pairing, Tailscale pairing, wrong-token recovery, refresh after installing Codex/Hermes/Devin, Devin auth failure and live ACP readiness, optional `host:mcp` registration, and uninstall/upgrade token preservation.
+
+## Extracted Tagged Archives
+
+Tagged release archives already contain production dependencies. From the extracted archive root, run the compiled entrypoints directly; the source-only `npm run` commands are not part of this artifact:
+
+```bash
+node dist/bin/lynk-bridge-host.js help
+node dist/bin/lynk-bridge-host.js pairing --qr
+node dist/bin/lynk-bridge.js
+```
+
+The MCP stdio server entrypoint is `node dist/bin/lynk-bridge-mcp.js`. Keep the extracted directory intact because its `dist`, `node_modules`, and installer files form one runtime unit.

@@ -46,8 +46,9 @@ jobs:
           cp -R dist package-root/dist
           cp package.json package-lock.json package-root/
           cp -R installers package-root/installers
+          cp .env.example package-root/.env.example
           cp ../docs/host-installer.md package-root/README.md
-          npm ci --omit=dev --prefix package-root
+          LYNK_BRIDGE_SKIP_SERVICE_INSTALL=1 npm ci --omit=dev --prefix package-root
       - name: Smoke staged archive
         shell: bash
         run: node scripts/smokeHostArtifact.mjs --package-root package-root
