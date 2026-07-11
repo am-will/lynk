@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import org.json.JSONArray
@@ -73,6 +74,7 @@ class LocalAgentTurnCoordinator internal constructor(
     private var generationSequence = 0L
     private var activeTurn: ActiveTurn? = null
     private var sessionTransition: Job? = null
+    private val shutdownJobs = mutableListOf<Job>()
     private var closed = false
 
     fun open(sessionKey: String?): Boolean {
@@ -175,6 +177,13 @@ class LocalAgentTurnCoordinator internal constructor(
         emitStoppedState(key, reason)
     }
 
+    suspend fun stopAndJoin(sessionKey: String? = null, reason: String = "Stopped local model turn") {
+        val key = sessionKey ?: activeSessionKey
+        val turn = detachAndCancelActive(reason)
+        emitStoppedState(key, reason)
+        turn?.job?.join()
+    }
+
     fun selectSession(sessionKey: String) {
         transitionSession("Switched local session") {
             store.session(sessionKey)
@@ -219,10 +228,19 @@ class LocalAgentTurnCoordinator internal constructor(
     fun close() {
         if (closed) return
         closed = true
-        sessionTransition?.cancel()
+        sessionTransition?.let {
+            it.cancel()
+            shutdownJobs += it
+        }
         sessionTransition = null
-        detachAndCancelActive("Local chat route closed")
+        detachAndCancelActive("Local chat route closed")?.job?.let(shutdownJobs::add)
         closeTools()
+    }
+
+    suspend fun closeAndJoin() {
+        close()
+        shutdownJobs.toList().joinAll()
+        shutdownJobs.clear()
     }
 
     private fun refresh(sessionKey: String, status: String) {

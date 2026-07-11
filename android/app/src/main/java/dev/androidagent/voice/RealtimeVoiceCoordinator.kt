@@ -8,6 +8,8 @@ import dev.androidagent.accessibility.AccessibilityCommandExecutor
 import dev.androidagent.net.PhoneWebSocketClient
 import dev.androidagent.localmodel.LocalModelEngineManager
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 internal class RealtimeVoiceCoordinator(
@@ -38,6 +40,7 @@ internal class RealtimeVoiceCoordinator(
 
     fun sendStop(reason: String) {
         webSocketClient()?.sendRealtimeStop(reason)
+        localDelegate?.stopAndJoin(reason)
     }
 
     fun handleToolCall(call: RealtimeToolCall) {
@@ -50,9 +53,10 @@ internal class RealtimeVoiceCoordinator(
         }
     }
 
-    fun close() {
-        localDelegate?.close()
+    fun close(): Job? {
+        val closing = localDelegate?.close()
         localDelegate = null
+        return closing
     }
 
     private fun localDelegate(): LocalRealtimeVoiceDelegate {

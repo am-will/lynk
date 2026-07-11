@@ -455,7 +455,7 @@ class AgentForegroundService : Service() {
         commandExecutor?.close()
         voiceRuntimeController?.stopFromUi()
         voiceRuntimeController?.close()
-        realtimeVoiceCoordinator?.close()
+        val voiceCloseJob = realtimeVoiceCoordinator?.close()
         realtimeVoiceCoordinator = null
         voiceTranscriptionManager?.close()
         serviceScope.cancel()
@@ -464,6 +464,7 @@ class AgentForegroundService : Service() {
         localModelEngineManager = null
         if (engineManager != null) {
             CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                voiceCloseJob?.join()
                 engineManager.closeAndJoin("Lynk service destroyed")
             }
         }
