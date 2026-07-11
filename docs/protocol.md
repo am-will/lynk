@@ -15,6 +15,8 @@ In **Local phone** mode, Android bypasses `/phone` for chat turns and generates 
 }
 ```
 
+Opening the TCP/WebSocket connection does not authenticate it. Until Android receives the exact `agent_status` acknowledgement `Registered <its deviceId>`, it accepts only non-registration `agent_status` progress/error messages. A command, chat, realtime, malformed registration acknowledgement, or any other frame before that acknowledgement is a protocol violation and closes the socket without dispatching the frame.
+
 ## Command
 
 ```json
