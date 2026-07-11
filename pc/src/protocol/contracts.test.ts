@@ -9,6 +9,7 @@ import {
   CHAT_SEND_DELIVERIES,
   MCP_PHONE_TOOL_NAME_BY_COMMAND,
   PHONE_COMMANDS,
+  PHONE_COMMAND_RISK,
   REASONING_EFFORTS,
   REALTIME_TOOL_NAMES,
   chatAttachmentSchema,
@@ -34,6 +35,16 @@ test("Android command executor handles every protocol phone command", () => {
   const commandBlock = source.slice(start, end);
   const androidCommands = Array.from(commandBlock.matchAll(/^\s*"([^"]+)"\s*->/gm), (match) => match[1]).sort();
   assert.deepEqual(androidCommands, [...PHONE_COMMANDS].sort());
+});
+
+test("Android and TypeScript command risk classifications stay aligned", () => {
+  const source = readRepoFile("android/app/src/main/java/dev/androidagent/accessibility/PhoneCommandPolicy.kt");
+  const androidRisks = Object.fromEntries(Array.from(
+    source.matchAll(/"([^"]+)" to PhoneCommandRisk\.([A-Za-z]+)/g),
+    (match) => [match[1], match[2].toLowerCase()]
+  ));
+  assert.deepEqual(androidRisks, PHONE_COMMAND_RISK);
+  assert.deepEqual(Object.keys(PHONE_COMMAND_RISK).sort(), [...PHONE_COMMANDS].sort());
 });
 
 test("Android model and reasoning options match protocol enums", () => {
