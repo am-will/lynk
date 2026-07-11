@@ -113,12 +113,15 @@ async function routeHttp(req: IncomingMessage, res: ServerResponse, deps: Bridge
   if (req.method === "POST" && url.pathname === "/api/phone/default/command") {
     const body = (await readJson(req)) as Partial<PhoneCommandRequest>;
     const command = phoneCommandSchema.parse(body.command);
+    const requestOwner = typeof body.requestOwner === "string" ? body.requestOwner.trim() : "";
+    if (!requestOwner || requestOwner.length > 240) {
+      json(res, 400, { ok: false, error: "requestOwner must be 1-240 characters" });
+      return;
+    }
     console.log(`[command] ${body.deviceId ?? deps.config.defaultDeviceId}: ${command}`);
     const result = await deps.hub.sendCommand({
       deviceId: typeof body.deviceId === "string" ? body.deviceId : undefined,
-      requestOwner: typeof body.requestOwner === "string" && body.requestOwner.trim()
-        ? body.requestOwner.trim()
-        : (() => { throw new Error("requestOwner is required"); })(),
+      requestOwner,
       command,
       args: typeof body.args === "object" && body.args ? (body.args as Record<string, unknown>) : {},
       approvalCapability: typeof body.approvalCapability === "string" ? body.approvalCapability : undefined,

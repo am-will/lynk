@@ -230,6 +230,14 @@ test("bridge HTTP routes commands, stop, unknown paths, and pet spritesheets", a
       assert.equal(hub.commands[0].command, "press_home");
       assert.equal(hub.commands[0].requestOwner, "test-client");
 
+      const missingOwner = await fetch(`${baseUrl}/api/phone/default/command`, {
+        method: "POST",
+        headers: { ...authHeaders(), "content-type": "application/json" },
+        body: JSON.stringify({ command: "press_home" })
+      });
+      assert.equal(missingOwner.status, 400);
+      assert.equal(hub.commands.length, 1);
+
       const stop = await fetch(`${baseUrl}/api/agent/stop`, {
         method: "POST",
         headers: { ...authHeaders(), "content-type": "application/json" },
