@@ -2,13 +2,16 @@ package dev.androidagent.localmodel
 
 import android.content.Context
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
@@ -46,6 +49,8 @@ class TermuxCommandRunner private constructor(
 
     private val activeExecutions = ConcurrentHashMap<String, ActiveTermuxExecution>()
     private val cancellationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val capabilityMutex = Mutex()
+    @Volatile private var cancellationCapability: CancellationCapability = CancellationCapability.Unknown
 
     suspend fun run(
         command: String,
@@ -63,6 +68,16 @@ class TermuxCommandRunner private constructor(
                 return setupError("Termux is not installed or is not visible to Lynk.")
             TermuxAvailability.PermissionMissing ->
                 return setupError("Lynk does not have Termux RUN_COMMAND permission. Grant it in Android Settings > Apps > Lynk > Permissions > Additional permissions.")
+        }
+        val capability = ensureCancellationCapability()
+        if (capability !is CancellationCapability.Verified) {
+            val detail = (capability as? CancellationCapability.Unavailable)?.detail
+            return JSONObject()
+                .put("ok", false)
+                .put("error", "Termux commands are blocked because Lynk could not verify tracked process-group cancellation on this device.")
+                .put("cancellationVerified", false)
+                .put("status", "cancellation_unavailable")
+                .apply { detail?.let { put("detail", it) } }
         }
 
         val identity = identityFactory()
@@ -179,6 +194,57 @@ class TermuxCommandRunner private constructor(
         return active.size
     }
 
+    private suspend fun ensureCancellationCapability(): CancellationCapability {
+        if (cancellationCapability is CancellationCapability.Verified) return cancellationCapability
+        return capabilityMutex.withLock {
+            when (val current = cancellationCapability) {
+                CancellationCapability.Unknown -> {
+                    val verified = withContext(NonCancellable) { probeCancellation() }
+                    (if (verified.verified) {
+                        CancellationCapability.Verified
+                    } else {
+                        CancellationCapability.Unavailable(
+                            verified.detail ?: "Termux did not return a verified process-group kill result."
+                        )
+                    }).also { cancellationCapability = it }
+                }
+                else -> current
+            }
+        }
+    }
+
+    private suspend fun probeCancellation(): KillAttempt {
+        val identity = identityFactory()
+        val probeHandle = try {
+            gateway.start(
+                TermuxExecutionProtocol.wrappedCommand(
+                    identity,
+                    command = "exec /data/data/com.termux/files/usr/bin/sleep 30",
+                    workdir = TermuxExecutionProtocol.TERMUX_HOME
+                )
+            )
+        } catch (error: Throwable) {
+            return KillAttempt(false, "unverified", error.message ?: error.toString())
+        }
+        return try {
+            val control = runControl(
+                TermuxExecutionProtocol.cancelControl(identity, requireRunning = true),
+                KILL_CONTROL_TIMEOUT_MS
+            )
+            val parsed = control.control
+            KillAttempt(
+                verified = control.result?.succeeded == true &&
+                    parsed?.operation == "kill" &&
+                    parsed.status == "verified" &&
+                    parsed.executionId == identity.executionId,
+                status = parsed?.status ?: "unverified",
+                detail = parsed?.detail ?: control.detail
+            )
+        } finally {
+            probeHandle.close()
+        }
+    }
+
     private suspend fun killExecution(
         execution: ActiveTermuxExecution,
         reason: TermuxCancellationReason
@@ -191,22 +257,30 @@ class TermuxCommandRunner private constructor(
         execution.killRequest?.let { return@synchronized it }
         execution.lifecycle.requestCancellation(reason)
         execution.lifecycle.markKillRequested()
-        cancellationScope.async(start = CoroutineStart.UNDISPATCHED) {
-            val control = runControl(
-                TermuxExecutionProtocol.cancelControl(execution.identity),
-                KILL_CONTROL_TIMEOUT_MS
-            )
-            val parsed = control.control
-            val verified = control.result?.succeeded == true &&
-                parsed?.operation == "kill" &&
-                parsed.executionId == execution.identity.executionId &&
-                parsed.verified
-            KillAttempt(
-                verified = verified,
-                status = parsed?.status ?: "unverified",
-                detail = parsed?.detail ?: control.detail
-            )
-        }.also { execution.killRequest = it }
+        val requested = CompletableDeferred<KillAttempt>()
+        execution.killRequest = requested
+        cancellationScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            val attempt = try {
+                val control = runControl(
+                    TermuxExecutionProtocol.cancelControl(execution.identity),
+                    KILL_CONTROL_TIMEOUT_MS
+                )
+                val parsed = control.control
+                val verified = control.result?.succeeded == true &&
+                    parsed?.operation == "kill" &&
+                    parsed.executionId == execution.identity.executionId &&
+                    parsed.verified
+                KillAttempt(
+                    verified = verified,
+                    status = parsed?.status ?: "unverified",
+                    detail = parsed?.detail ?: control.detail
+                )
+            } catch (error: Throwable) {
+                KillAttempt(false, "unverified", error.message ?: error.toString())
+            }
+            requested.complete(attempt)
+        }
+        requested
     }
 
     private suspend fun runControl(
@@ -297,6 +371,12 @@ class TermuxCommandRunner private constructor(
         val status: String,
         val detail: String?
     )
+
+    private sealed interface CancellationCapability {
+        data object Unknown : CancellationCapability
+        data object Verified : CancellationCapability
+        data class Unavailable(val detail: String) : CancellationCapability
+    }
 
     companion object {
         private const val START_CONTROL_TIMEOUT_MS = 10_000L
