@@ -45,6 +45,34 @@ class ChatTimelineRendererTest {
         assertEquals(items, plan.items)
     }
 
+    @Test
+    fun identifiesSingleStreamingTextChangeForIncrementalRendering() {
+        val oldStreaming = item("stream", ChatTimelineKind.MESSAGE).copy(text = "Hel", isStreaming = true)
+        val newStreaming = oldStreaming.copy(text = "Hello")
+        val previous = ChatTimelineRenderPlan(listOf(item("old", ChatTimelineKind.MESSAGE), oldStreaming), isEmpty = false)
+        val current = ChatTimelineRenderPlan(listOf(item("old", ChatTimelineKind.MESSAGE), newStreaming), isEmpty = false)
+
+        assertEquals(
+            ChatTimelineTextUpdate("stream", "Hello", ChatTimelineKind.MESSAGE),
+            ChatTimelineRenderer.streamingTextUpdate(previous, current)
+        )
+    }
+
+    @Test
+    fun rejectsStructuralAndTerminalChangesForIncrementalRendering() {
+        val streaming = item("stream", ChatTimelineKind.MESSAGE).copy(text = "Hello", isStreaming = true)
+        val previous = ChatTimelineRenderPlan(listOf(streaming), isEmpty = false)
+
+        assertEquals(null, ChatTimelineRenderer.streamingTextUpdate(
+            previous,
+            ChatTimelineRenderPlan(listOf(streaming.copy(isStreaming = false)), isEmpty = false)
+        ))
+        assertEquals(null, ChatTimelineRenderer.streamingTextUpdate(
+            previous,
+            ChatTimelineRenderPlan(listOf(streaming, item("tool", ChatTimelineKind.TOOL)), isEmpty = false)
+        ))
+    }
+
     private fun item(
         id: String,
         kind: ChatTimelineKind,

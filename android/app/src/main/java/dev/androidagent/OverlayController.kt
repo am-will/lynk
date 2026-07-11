@@ -14,6 +14,7 @@ import android.graphics.RectF
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.text.Editable
 import android.text.InputType
@@ -191,7 +192,9 @@ class OverlayController(
     // don't silently mark replies as read while the user is on the home screen.
     private var panelHasWindowFocus = false
     private var lastChatState = ChatState()
-    private var chatRenderSequence = 0L
+    private var pendingStreamingChatState: ChatState? = null
+    private var pendingStreamingChatRender: Runnable? = null
+    private var lastChatRenderUptimeMs = 0L
     private var showToolCalls = false
     private var suppressComposerAutocomplete = false
     private var composerContainer: LinearLayout? = null
@@ -392,16 +395,36 @@ class OverlayController(
 
     fun setChatState(state: ChatState) {
         lastChatState = state
-        val sequence = ++chatRenderSequence
         mainHandler.post {
-            if (sequence < chatRenderSequence) {
-                return@post
+            if (state.isRunning && state.timeline.any { it.isStreaming && !it.isClearing }) {
+                pendingStreamingChatState = state
+                if (pendingStreamingChatRender == null) {
+                    val elapsed = SystemClock.uptimeMillis() - lastChatRenderUptimeMs
+                    val delay = (STREAMING_RENDER_INTERVAL_MS - elapsed).coerceAtLeast(0L)
+                    val render = Runnable {
+                        pendingStreamingChatRender = null
+                        val latest = pendingStreamingChatState ?: return@Runnable
+                        pendingStreamingChatState = null
+                        renderChatStateAndStatus(latest)
+                    }
+                    pendingStreamingChatRender = render
+                    mainHandler.postDelayed(render, delay)
+                }
+            } else {
+                pendingStreamingChatRender?.let(mainHandler::removeCallbacks)
+                pendingStreamingChatRender = null
+                pendingStreamingChatState = null
+                renderChatStateAndStatus(state)
             }
-            renderChatState(state)
-            state.status?.let { setStatus(it) }
-            state.error?.let { setStatus(it) }
-            notifyCurrentChatSessionViewed()
         }
+    }
+
+    private fun renderChatStateAndStatus(state: ChatState) {
+        renderChatState(state)
+        lastChatRenderUptimeMs = SystemClock.uptimeMillis()
+        state.status?.let { setStatus(it) }
+        state.error?.let { setStatus(it) }
+        notifyCurrentChatSessionViewed()
     }
 
     fun isViewingChatSession(sessionKey: String?): Boolean {
@@ -2514,6 +2537,14 @@ class OverlayController(
 
     private fun renderChatState(state: ChatState) {
         val tokens = tokens()
+        if (chatTimelineBinder.renderStreamingUpdate(state, showToolCalls)) {
+            statusText?.let { sv ->
+                sv.setText(chatStatusText(state.status, state))
+                sv.setActive(state.isRunning)
+            }
+            bubbleOverlay.renderChatState(state)
+            return
+        }
         renderHeaderBrand(tokens, state)
         attachmentTray.render(tokens)
         renderComposerActionButtons(tokens, state, lastTranscriptionState)
@@ -3117,6 +3148,7 @@ class OverlayController(
     }
 
     companion object {
+        private const val STREAMING_RENDER_INTERVAL_MS = 50L
         private const val CHAT_MODAL_HEIGHT_FRACTION = 0.82f
         private const val KEYBOARD_HEIGHT_ESTIMATE_FRACTION = 0.485f
         private const val KEYBOARD_COMPOSER_GAP_DP = 4

@@ -450,12 +450,14 @@ object ChatStateReducer {
 
     private fun reduceError(state: ChatState, message: JSONObject): ChatState {
         val text = message.optString("message", "OpenAgent chat failed")
-        val runId = message.optNullableString("runId") ?: state.activeRunId
+        val messageRunId = message.optNullableString("runId")
+        val runId = messageRunId ?: state.activeRunId
+        val endsActiveRun = state.activeRunId == null || messageRunId == null || messageRunId == state.activeRunId
         return state.copy(
             sessionKey = message.optNullableString("sessionKey") ?: state.sessionKey,
-            activeRunId = null,
-            isRunning = false,
-            status = "Failed",
+            activeRunId = if (endsActiveRun) null else state.activeRunId,
+            isRunning = if (endsActiveRun) false else state.isRunning,
+            status = if (endsActiveRun) "Failed" else state.status,
             error = text,
             timeline = markReasoningClearing(state.timeline, runId) + ChatTimelineItem(
                 id = "error_${UUID.randomUUID()}",
@@ -525,8 +527,12 @@ object ChatStateReducer {
             actions = event.actions.ifEmpty { existing?.actions.orEmpty() },
             isExpanded = existing?.isExpanded ?: false
         )
+        val marksRunActive = event.runId != null && (event.status == "running" || event.status == "blocked")
         return state.copy(
             sessionKey = message.optNullableString("sessionKey") ?: state.sessionKey,
+            activeRunId = if (marksRunActive) event.runId else state.activeRunId,
+            isRunning = if (marksRunActive) true else state.isRunning,
+            status = if (event.status == "blocked") "Waiting for permission" else state.status,
             timeline = upsertTimeline(state.timeline, ChatTimelineItem(
                 id = "tool_${event.eventId}",
                 kind = ChatTimelineKind.TOOL,
@@ -720,6 +726,7 @@ object ChatStateReducer {
         item: ChatTimelineItem,
         history: List<ChatTimelineItem>
     ): Boolean {
+        if (item.kind == ChatTimelineKind.TOOL && item.toolEvent?.status == "blocked") return true
         if (item.kind != ChatTimelineKind.MESSAGE) return false
         if (item.id.startsWith("system_")) return true
         if (!item.id.startsWith("local_") || item.role != "user") return false

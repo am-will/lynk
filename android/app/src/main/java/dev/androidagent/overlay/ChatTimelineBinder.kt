@@ -18,6 +18,7 @@ import dev.androidagent.chat.ChatAttachmentPreview
 import dev.androidagent.chat.ChatState
 import dev.androidagent.chat.ChatTimelineItem
 import dev.androidagent.chat.ChatTimelineKind
+import dev.androidagent.chat.ChatTimelineRenderPlan
 import dev.androidagent.chat.ChatTimelineRenderer
 import dev.androidagent.chat.ChatToolAction
 import dev.androidagent.localmodel.LocalResponseTextNormalizer
@@ -56,6 +57,8 @@ class ChatTimelineBinder(
 ) {
     private var historyContainer: LinearLayout? = null
     private var historyScrollView: ScrollView? = null
+    private var lastRenderPlan: ChatTimelineRenderPlan? = null
+    private val streamingTextViews = mutableMapOf<String, TextView>()
 
     fun bind(container: LinearLayout, scrollView: ScrollView) {
         historyContainer = container
@@ -65,6 +68,25 @@ class ChatTimelineBinder(
     fun clear() {
         historyContainer = null
         historyScrollView = null
+        lastRenderPlan = null
+        streamingTextViews.clear()
+    }
+
+    fun renderStreamingUpdate(state: ChatState, showToolCalls: Boolean): Boolean {
+        val plan = ChatTimelineRenderer.plan(state, showToolCalls)
+        val update = ChatTimelineRenderer.streamingTextUpdate(lastRenderPlan, plan) ?: return false
+        val textView = streamingTextViews[update.itemId] ?: return false
+        textView.text = when (update.kind) {
+            ChatTimelineKind.MESSAGE -> update.text.ifBlank { "•  •  •" }
+            ChatTimelineKind.REASONING -> update.text.ifBlank { "Thinking..." }
+            ChatTimelineKind.TOOL -> return false
+        }
+        if (update.kind == ChatTimelineKind.MESSAGE) {
+            attachMessageCopyGesture(textView, update.text, enabled = update.text.isNotBlank())
+        }
+        lastRenderPlan = plan
+        historyScrollView?.post { snapToBottom() }
+        return true
     }
 
     fun render(state: ChatState, showToolCalls: Boolean, brand: ClientBrandPresentation) {
@@ -72,22 +94,36 @@ class ChatTimelineBinder(
         val scrollView = historyScrollView
         val tokens = tokens()
         container.removeAllViews()
+        streamingTextViews.clear()
         val plan = ChatTimelineRenderer.plan(state, showToolCalls)
         if (plan.isEmpty) {
             container.addView(emptyHistoryView(tokens, brand))
         } else {
             plan.items.forEach { item ->
-                container.addView(when (item.kind) {
+                val view = when (item.kind) {
                     ChatTimelineKind.MESSAGE -> messageBubble(item, tokens)
                     ChatTimelineKind.TOOL -> toolRow(item, tokens)
                     ChatTimelineKind.REASONING -> reasoningBlock(item, tokens)
-                }, LinearLayout.LayoutParams(
+                }
+                registerStreamingTextView(item, view)
+                container.addView(view, LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply { bottomMargin = dp(DesignTokens.Spacing.sm) })
             }
         }
+        lastRenderPlan = plan
         scrollView?.post { snapToBottom() }
+    }
+
+    private fun registerStreamingTextView(item: ChatTimelineItem, view: View) {
+        if (!item.isStreaming) return
+        val textView = when (item.kind) {
+            ChatTimelineKind.MESSAGE -> (view as? LinearLayout)?.getChildAt(0) as? TextView
+            ChatTimelineKind.REASONING -> (view as? LinearLayout)?.getChildAt(1) as? TextView
+            ChatTimelineKind.TOOL -> null
+        }
+        if (textView != null) streamingTextViews[item.id] = textView
     }
 
     fun snapToBottom() {

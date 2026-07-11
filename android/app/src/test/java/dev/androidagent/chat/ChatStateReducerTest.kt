@@ -390,6 +390,60 @@ class ChatStateReducerTest {
     }
 
     @Test
+    fun blockedPermissionSurvivesHistoryRefreshAndKeepsRunActive() {
+        val blocked = ChatStateReducer.reduce(ChatState(), JSONObject()
+            .put("type", "chat.tool_event")
+            .put("sessionKey", "devin:session")
+            .put("runId", "run1")
+            .put("eventId", "permission1")
+            .put("toolName", "webfetch")
+            .put("title", "Allow web fetch")
+            .put("status", "blocked")
+            .put("actions", JSONArray().put(JSONObject()
+                .put("id", "allow_once")
+                .put("label", "Allow once")
+                .put("command", "devin.permission")
+                .put("args", JSONObject()
+                    .put("permissionId", "permission1")
+                    .put("optionId", "allow_once")))))
+
+        assertTrue(blocked.isRunning)
+        assertEquals("run1", blocked.activeRunId)
+
+        val refreshed = ChatStateReducer.reduce(blocked, JSONObject()
+            .put("type", "chat.history")
+            .put("sessionKey", "devin:session")
+            .put("messages", JSONArray().put(JSONObject()
+                .put("id", "user1")
+                .put("role", "user")
+                .put("text", "Research this"))))
+
+        assertEquals(2, refreshed.timeline.size)
+        val permission = refreshed.timeline.single { it.kind == ChatTimelineKind.TOOL }.toolEvent
+        assertEquals("blocked", permission?.status)
+        assertEquals("Allow once", permission?.actions?.single()?.label)
+    }
+
+    @Test
+    fun errorForFollowUpRequestDoesNotClearDifferentActiveRun() {
+        val running = ChatState(
+            sessionKey = "devin:session",
+            activeRunId = "active-run",
+            isRunning = true,
+            status = "Waiting for permission"
+        )
+        val withBusyError = ChatStateReducer.reduce(running, JSONObject()
+            .put("type", "chat.error")
+            .put("sessionKey", "devin:session")
+            .put("runId", "follow-up-request")
+            .put("message", "A Devin task is already running in this session."))
+
+        assertTrue(withBusyError.isRunning)
+        assertEquals("active-run", withBusyError.activeRunId)
+        assertEquals("Waiting for permission", withBusyError.status)
+    }
+
+    @Test
     fun reasoningDeltasStreamIntoTemporaryRowThenAssistantClearsIt() {
         val withReasoning = ChatStateReducer.reduce(ChatState(), JSONObject()
             .put("type", "chat.reasoning_delta")
