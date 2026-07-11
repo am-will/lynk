@@ -21,17 +21,21 @@ class LocalToolRegistry(
     fun toolDescriptions() = LocalToolSpecs.descriptions()
 
     suspend fun execute(call: LocalToolCall, requestOwner: String): JSONObject {
-        val phoneCommand = phoneTools[call.name]
+        val validated = when (val validation = LocalToolContracts.validate(call)) {
+            is LocalToolValidation.Valid -> validation.call
+            is LocalToolValidation.Invalid -> return JSONObject().put("ok", false).put("error", "Invalid tool call: ${validation.error}")
+        }
+        val phoneCommand = phoneTools[validated.name]
         return if (phoneCommand != null) {
-            executePhone(phoneCommand, call.args, requestOwner)
-        } else when (call.name) {
-            "local_read_skill" -> readSkill(call.args)
-            "local_list_files" -> listFiles(call.args)
-            "local_read_file" -> readFile(call.args)
-            "local_write_file" -> writeFile(call.args)
-            "local_search_files" -> searchFiles(call.args)
-            "termux_command" -> termuxCommand(call.args, requestOwner)
-            else -> JSONObject().put("ok", false).put("error", "Unknown local tool: ${call.name}")
+            executePhone(phoneCommand, validated.args, requestOwner)
+        } else when (validated.name) {
+            "local_read_skill" -> readSkill(validated.args)
+            "local_list_files" -> listFiles(validated.args)
+            "local_read_file" -> readFile(validated.args)
+            "local_write_file" -> writeFile(validated.args)
+            "local_search_files" -> searchFiles(validated.args)
+            "termux_command" -> termuxCommand(validated.args, requestOwner)
+            else -> JSONObject().put("ok", false).put("error", "Unknown local tool: ${validated.name}")
         }
     }
 
@@ -181,11 +185,8 @@ class LocalToolRegistry(
         if (!config.localDeveloperToolsEnabled) {
             return JSONObject().put("ok", false).put("error", "Termux-backed tools are disabled in Connection & Config.")
         }
-        val command = args.optString("command")
-            .ifBlank { args.optString("cmd") }
-            .ifBlank { args.optString("script") }
+        val command = args.getString("command")
         val workdir = args.optString("workdir")
-            .ifBlank { args.optString("cwd") }
             .ifBlank { "/data/data/com.termux/files/home" }
         val timeoutMs = args.optLong("timeoutMs", 60_000L).coerceIn(1_000L, 300_000L)
         return termuxRunner.run(command, workdir, timeoutMs, requestOwner)

@@ -58,7 +58,10 @@ object LocalToolCallParser {
         if (!toolName.matches(name)) return LocalModelOutput.InvalidControl("Tool name is invalid")
         val args = root["args"] as? Map<*, *>
             ?: return LocalModelOutput.InvalidControl("Tool args must be an object")
-        return LocalModelOutput.ToolControl(LocalToolCall(name, args.toJsonObject()))
+        return when (val validation = LocalToolContracts.validate(LocalToolCall(name, args.toJsonObject()))) {
+            is LocalToolValidation.Valid -> LocalModelOutput.ToolControl(validation.call)
+            is LocalToolValidation.Invalid -> LocalModelOutput.InvalidControl("Invalid tool call: ${validation.error}")
+        }
     }
 
     private fun String.countOccurrences(value: String): Int {
