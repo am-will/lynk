@@ -3,6 +3,12 @@ package dev.androidagent.chat
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import dev.androidagent.storage.AppPrivateBlobStore
+import dev.androidagent.storage.BlobImportRequest
+import dev.androidagent.storage.BlobStoreLimits
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -25,7 +31,8 @@ data class StoredChatAttachment(
     val displayName: String,
     val mimeType: String,
     val sizeBytes: Long,
-    val localPath: String
+    val localPath: String,
+    val sha256: String = ""
 ) {
     val isImage: Boolean
         get() = kind == ChatAttachmentKind.IMAGE || mimeType.startsWith("image/")
@@ -47,6 +54,7 @@ data class StoredChatAttachment(
             .put("mimeType", mimeType)
             .put("sizeBytes", sizeBytes)
             .put("localPath", localPath)
+            .put("sha256", sha256)
 
     companion object {
         fun fromStoredJson(value: JSONObject?): StoredChatAttachment? {
@@ -61,7 +69,8 @@ data class StoredChatAttachment(
                 displayName = displayName,
                 mimeType = mimeType,
                 sizeBytes = value.optLong("sizeBytes", 0L),
-                localPath = localPath
+                localPath = localPath,
+                sha256 = value.optString("sha256")
             )
         }
     }
@@ -125,27 +134,52 @@ class ChatAttachmentStore(private val context: Context) {
     private val directory: File
         get() = File(context.filesDir, "chat-attachments")
 
-    fun importUri(uri: Uri, requestedKind: ChatAttachmentKind): StoredChatAttachment {
+    private val blobStore by lazy {
+        AppPrivateBlobStore(
+            directory = directory,
+            limits = BlobStoreLimits(
+                maxItemBytes = ChatAttachmentPolicy.MAX_ATTACHMENT_BYTES,
+                maxBlobCount = 32,
+                maxAggregateBytes = 256L * 1024L * 1024L,
+                freeSpaceReserveBytes = 128L * 1024L * 1024L,
+                retentionMillis = 7L * 24L * 60L * 60L * 1000L
+            )
+        )
+    }
+
+    suspend fun importUri(
+        uri: Uri,
+        requestedKind: ChatAttachmentKind,
+        onProgress: (copiedBytes: Long, totalBytes: Long?) -> Unit = { _, _ -> }
+    ): StoredChatAttachment = withContext(Dispatchers.IO) {
         val resolver = context.contentResolver
         val metadata = queryMetadata(uri)
         val mimeType = resolver.getType(uri)
             ?: metadata.mimeType
             ?: if (requestedKind == ChatAttachmentKind.IMAGE) "image/*" else "application/octet-stream"
         val displayName = metadata.displayName ?: fallbackDisplayName(requestedKind, mimeType)
-        val id = "att_${UUID.randomUUID()}"
-        val outputFile = File(directory, "$id-${sanitizeFileName(displayName)}")
-        directory.mkdirs()
-        resolver.openInputStream(uri)?.use { input ->
-            outputFile.outputStream().use { output -> input.copyTo(output) }
-        } ?: throw IllegalArgumentException("Could not open selected file")
-        val sizeBytes = metadata.sizeBytes?.takeIf { it >= 0L } ?: outputFile.length()
-        return StoredChatAttachment(
+        val id = "blob_${UUID.randomUUID()}"
+        val blob = blobStore.import(
+            request = BlobImportRequest(
+                id = id,
+                displayName = displayName,
+                mimeType = mimeType,
+                declaredSizeBytes = metadata.sizeBytes?.takeIf { it > 0L }
+            ),
+            openInput = {
+                resolver.openInputStream(uri) ?: throw IllegalArgumentException("Could not open selected file")
+            },
+            shouldCancel = { !isActive },
+            onProgress = onProgress
+        )
+        StoredChatAttachment(
             id = id,
             kind = if (mimeType.startsWith("image/")) ChatAttachmentKind.IMAGE else requestedKind,
-            displayName = displayName,
-            mimeType = mimeType,
-            sizeBytes = sizeBytes,
-            localPath = outputFile.absolutePath
+            displayName = blob.displayName,
+            mimeType = blob.mimeType,
+            sizeBytes = blob.sizeBytes,
+            localPath = blob.file.absolutePath,
+            sha256 = blob.sha256
         )
     }
 
@@ -167,10 +201,6 @@ class ChatAttachmentStore(private val context: Context) {
         val extension = mimeType.substringAfter('/', "").takeIf { it.isNotBlank() && "*" !in it }
         val baseName = if (kind == ChatAttachmentKind.IMAGE) "image" else "file"
         return extension?.let { "$baseName.$it" } ?: baseName
-    }
-
-    private fun sanitizeFileName(name: String): String {
-        return name.replace(Regex("""[^\w. -]"""), "_").take(80).ifBlank { "attachment" }
     }
 
     private data class AttachmentMetadata(

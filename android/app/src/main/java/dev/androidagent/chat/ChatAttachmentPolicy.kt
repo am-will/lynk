@@ -4,6 +4,8 @@ import java.io.File
 
 object ChatAttachmentPolicy {
     const val MAX_ATTACHMENT_BYTES: Long = 50L * 1024L * 1024L
+    const val MAX_ATTACHMENTS_PER_MESSAGE: Int = 8
+    const val MAX_MESSAGE_ATTACHMENT_BYTES: Long = 100L * 1024L * 1024L
     const val LOCAL_TEXT_ATTACHMENT_MAX_BYTES: Long = 64L * 1024L
     const val LOCAL_TEXT_ATTACHMENT_MAX_CHARS: Int = 32_000
 
@@ -29,8 +31,17 @@ object ChatAttachmentPolicy {
     }
 
     fun validateHostSend(attachments: List<StoredChatAttachment>) {
+        if (attachments.size > MAX_ATTACHMENTS_PER_MESSAGE) {
+            throw IllegalArgumentException("Attach at most $MAX_ATTACHMENTS_PER_MESSAGE files per message.")
+        }
+        var aggregateBytes = 0L
         attachments.forEach { attachment ->
-            validateImport(File(attachment.localPath).length().takeIf { it > 0L } ?: attachment.sizeBytes, attachment.displayName)
+            val size = File(attachment.localPath).length().takeIf { it > 0L } ?: attachment.sizeBytes
+            validateImport(size, attachment.displayName)
+            if (aggregateBytes > MAX_MESSAGE_ATTACHMENT_BYTES - size) {
+                throw IllegalArgumentException("Attachments exceed the ${MAX_MESSAGE_ATTACHMENT_BYTES / (1024 * 1024)} MB message limit.")
+            }
+            aggregateBytes += size
         }
     }
 

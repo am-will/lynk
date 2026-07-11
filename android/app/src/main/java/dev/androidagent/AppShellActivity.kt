@@ -30,6 +30,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
 import dev.androidagent.chat.ChatAttachmentKind
 import dev.androidagent.chat.ChatAttachmentStore
 import dev.androidagent.localmodel.LocalModelStore
@@ -43,6 +44,7 @@ import dev.androidagent.ui.DesignTokens
 import dev.androidagent.ui.Drawables
 import dev.androidagent.ui.ThemeTokens
 import android.widget.ImageView
+import kotlinx.coroutines.launch
 
 class AppShellActivity : ComponentActivity() {
 
@@ -456,16 +458,19 @@ class AppShellActivity : ComponentActivity() {
             DiagnosticsEventLog.append(DiagnosticsEventLevel.Info, "Attachment picker cancelled")
             return
         }
-        runCatching {
-            ChatAttachmentStore(this).importUri(uri, kind)
-        }.onSuccess { attachment ->
-            val intent = Intent(this, AgentForegroundService::class.java)
-                .setAction(AgentForegroundService.ACTION_ADD_CHAT_ATTACHMENT)
-                .putExtra(AgentForegroundService.EXTRA_CHAT_ATTACHMENT_JSON, attachment.toStoredJson().toString())
-            runCatching { startService(intent) }
-            DiagnosticsEventLog.append(DiagnosticsEventLevel.Success, "Attached ${attachment.displayName}")
-        }.onFailure { error ->
-            DiagnosticsEventLog.append(DiagnosticsEventLevel.Error, error.message ?: "Could not attach file")
+        lifecycleScope.launch {
+            DiagnosticsEventLog.append(DiagnosticsEventLevel.Info, "Importing selected attachment")
+            runCatching {
+                ChatAttachmentStore(this@AppShellActivity).importUri(uri, kind)
+            }.onSuccess { attachment ->
+                val intent = Intent(this@AppShellActivity, AgentForegroundService::class.java)
+                    .setAction(AgentForegroundService.ACTION_ADD_CHAT_ATTACHMENT)
+                    .putExtra(AgentForegroundService.EXTRA_CHAT_ATTACHMENT_JSON, attachment.toStoredJson().toString())
+                runCatching { startService(intent) }
+                DiagnosticsEventLog.append(DiagnosticsEventLevel.Success, "Attached ${attachment.displayName}")
+            }.onFailure { error ->
+                DiagnosticsEventLog.append(DiagnosticsEventLevel.Error, error.message ?: "Could not attach file")
+            }
         }
     }
 
