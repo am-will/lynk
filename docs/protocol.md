@@ -6,7 +6,7 @@ Network endpoints must use `wss://` and the normal Android platform certificate 
 
 In **Local phone** mode, Android bypasses `/phone` for chat turns and generates the same `chat.*` event shapes in-process. The WebSocket protocol below still describes Host bridge mode and remains the compatibility contract for PC/OpenClaw sessions.
 
-The host bridge bounds WebSocket ingress before dispatch. An upgrade must use the origin-form `/phone` target with one valid `Host` header. At most 32 sockets are active at once, and each source address receives an upgrade burst of 12 with one slot restored every 5 seconds. A new socket must send a text registration frame of at most 16 KiB within 5 seconds. After registration, ordinary control frames are capped at 256 KiB and message bursts are rate limited; inline attachment turns retain a separate total frame allowance of about 67 MiB until the streaming attachment transport replaces inline base64. The bridge pings every 30 seconds and terminates a socket that does not answer the previous ping.
+The host bridge bounds WebSocket ingress before dispatch. An upgrade must use the origin-form `/phone` target with one valid `Host` header. At most 32 sockets are active at once, and each source address receives an upgrade burst of 12 with one slot restored every 5 seconds. A new socket must send a text registration frame of at most 16 KiB within 5 seconds. After registration, control frames are capped at 256 KiB and message bursts are rate limited. Attachment bytes never travel in WebSocket JSON; Android streams them through the authenticated HTTP blob route before sending a small reference frame. The bridge pings every 30 seconds and terminates a socket that does not answer the previous ping.
 
 Policy closes use `4002` for missing registration, `4004` for re-registration or a device identity mismatch, `4008` for message rate exhaustion, `1003` for binary input, and `1009` for payload limits. Invalid credentials continue to use `4001`.
 
@@ -235,13 +235,44 @@ Android sends user text, optional model, optional reasoning selection, and optio
       "displayName": "screenshot.png",
       "mimeType": "image/png",
       "sizeBytes": 153244,
-      "contentBase64": "..."
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     }
   ]
 }
 ```
 
-Attachment `kind` is `"image"` or `"file"`. Android sends selected files inline as base64 in `contentBase64`; each attachment is capped at 50 MiB before base64 encoding, and both Android and the PC protocol reject larger payloads. Host harnesses receive the attachment payload with the turn: OpenClaw receives the bridge attachment array, Hermes forwards the same array to run creation, and Codex converts image attachments to app-server image user input data URLs. Hermes adapters may drop unsupported attachment kinds, but they should not reinterpret the fields. Devin currently rejects attachments before starting a turn. `delivery` is optional and defaults to `"normal"`. Android uses `"queue"` or `"steer"` when the user sends text while a turn is already active:
+Attachment `kind` is `"image"` or `"file"`. An attachment reference requires a `blob_` id, exact metadata, and a lowercase SHA-256 checksum; it never contains Base64 or an absolute path. A `chat.send` containing attachments must name the same `sessionKey` used to upload them. The protocol accepts at most eight attachments, 50 MiB per item, and 100 MiB total per message.
+
+Before sending the reference frame, Android streams each app-private file as the raw body of:
+
+```http
+PUT /api/blobs/blob_12345678?displayName=screenshot.png&mimeType=image%2Fpng&kind=image&sha256=<64-lowercase-hex>
+Authorization: Bearer <PHONE_AGENT_TOKEN>
+X-Lynk-Device-Id: openclaw-agent
+X-Lynk-Session-Key: agent:main:explicit:open-claw-agent
+Content-Length: 153244
+```
+
+The HTTP URL uses `http` for an allowed `ws` bridge and `https` for `wss`. The bridge streams to a private temporary file, enforces the limit from bytes actually received, verifies the declared length and checksum, fsyncs, and atomically publishes metadata plus payload. A successful response is:
+
+```json
+{
+  "ok": true,
+  "blob": {
+    "id": "blob_12345678",
+    "sizeBytes": 153244,
+    "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  }
+}
+```
+
+Blob access requires the bearer token plus the matching device and session headers. A reference is resolved only for that owner and exact checksum/metadata. An identical retry is read and revalidated byte-for-byte, then returns the existing blob; a conflicting reuse of an id returns `409`. Protected `GET` and `DELETE` on the same path use the same owner headers.
+
+Android retains at most 32 chat blobs / 256 MiB for seven days and preserves a 128 MiB free-space reserve. The bridge retains at most 256 blobs / 1 GiB for 24 hours and preserves a 512 MiB reserve. Startup cleanup removes partial, orphaned, invalid, and expired entries. These are store-wide budgets in addition to the per-message protocol limits.
+
+The bridge resolves references only at the selected harness boundary. Codex app-server receives image paths directly. OpenClaw, the Hermes Runs API, the local Hermes provider adapter, and OpenCode currently require a runtime-only inline compatibility object; Pi requires the same conversion for images. That conversion is capped at 8 MiB per attachment and is never admitted from Android or written to bridge history. Codex and Pi ignore non-image files, while Devin rejects attachments before starting a turn.
+
+`delivery` is optional and defaults to `"normal"`. Android uses `"queue"` or `"steer"` when the user sends text while a turn is already active:
 
 - `"queue"` keeps the message FIFO and starts it as the next turn after the active run settles.
 - `"steer"` sends the message into the active run at the next supported harness boundary. OpenClaw uses its explicit `/steer` path, Hermes uses active session steering, and Codex app-server uses `turn/steer` with the active turn id.
@@ -310,11 +341,27 @@ The bridge returns session state, history, metadata, stream deltas, final text, 
   "deviceId": "openclaw-agent",
   "sessionKey": "agent:main:explicit:open-claw-agent",
   "messages": [
-    { "id": "u1", "role": "user", "text": "Hello", "timestamp": 1779070000000 },
+    {
+      "id": "u1",
+      "role": "user",
+      "text": "Review this",
+      "attachments": [
+        {
+          "id": "blob_12345678",
+          "kind": "image",
+          "displayName": "screenshot.png",
+          "mimeType": "image/png",
+          "sizeBytes": 153244
+        }
+      ],
+      "timestamp": 1779070000000
+    },
     { "id": "a1", "role": "assistant", "text": "Hi.", "timestamp": 1779070001000 }
   ]
 }
 ```
+
+History attachments are display metadata only. History and session persistence omit SHA-256 values, local paths, and payload-bearing compatibility objects.
 
 The bridge can also append a single visible message without replacing the timeline. Realtime-delegated requests, steers, and stop reasons use this so the viewfinder shows them as normal user bubbles while Gateway output continues streaming into the same chat:
 

@@ -1,9 +1,9 @@
 # Attachment and model import pipeline inventory
 
 This inventory records the pre-R12 data paths and the ownership boundaries the
-replacement pipeline must enforce. It intentionally describes the baseline
-before implementation so later commits can be reviewed against concrete failure
-modes instead of inferred intent.
+replacement pipeline enforces. The baseline section intentionally describes the
+old implementation so the completed R12 behavior can be reviewed against
+concrete failure modes instead of inferred intent.
 
 ## Baseline data paths
 
@@ -38,22 +38,22 @@ failed replacement can destroy the previously working model.
 
 ### PC bridge ingress and storage
 
-`chat.send.attachments` currently accepts an optional `contentBase64` property.
-The phone WebSocket admits an approximately 67 MiB frame when that property is
-present, bypassing the normal control-frame bound. Zod validates a 50 MiB
-decoded item, but the JSON parser and Base64 decoder have already materialized
+At baseline, `chat.send.attachments` accepted an optional `contentBase64`
+property. The phone WebSocket admitted an approximately 67 MiB frame when it was
+present, bypassing the normal control-frame bound. Zod validated a 50 MiB
+decoded item, but the JSON parser and Base64 decoder had already materialized
 large copies by then.
 
-The bridge has no attachment/blob storage owner. OpenClaw forwards the inline
-object, Hermes constructs an inline data URL, and Codex constructs an inline
-data URL. `InMemoryHarnessSessionStore`, pending-run history, fallback history,
-and normalized gateway history all use the same payload-capable attachment type,
-so Base64 can be retained in process state and persisted in session JSON.
+The baseline bridge had no attachment/blob storage owner. OpenClaw forwarded
+the inline object, while Hermes and Codex constructed inline data URLs.
+`InMemoryHarnessSessionStore`, pending-run history, fallback history, and
+normalized gateway history all used the same payload-capable attachment type,
+so Base64 could be retained in process state and persisted in session JSON.
 
-All `/api/*` routes already share bearer-token authentication. R12 can therefore
-add a protected streaming blob route without creating a second authentication
-mechanism, but the blob itself must additionally be bound to the uploading
-Android `deviceId` and target chat `sessionKey`.
+All `/api/*` routes already shared bearer-token authentication. R12 therefore
+added a protected streaming blob route without creating a second authentication
+mechanism, and additionally bound each blob to the uploading Android `deviceId`
+and target chat `sessionKey`.
 
 ## Replacement ownership and limits
 
@@ -71,7 +71,7 @@ checksum mismatch, short bodies, and write failures remove the temporary file.
 Startup cleanup removes stale partial files, orphaned metadata/payload pairs,
 expired blobs, and traversal-shaped names.
 
-## Target contracts
+## Implemented contracts
 
 - Android composer and local-model imports run on `Dispatchers.IO` and expose
   byte progress plus coroutine cancellation.
@@ -104,4 +104,3 @@ no safe abstraction for:
 | Cross-device or cross-session blob lookup | not found/forbidden without revealing metadata |
 | Restart with partial/orphan/expired files | bounded cleanup removes them |
 | Persisted harness history | contains metadata/reference only, never Base64 or local paths |
-
