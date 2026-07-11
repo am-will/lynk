@@ -1,58 +1,68 @@
-import { mkdirSync } from "node:fs";
-import { appendFile } from "node:fs/promises";
+import { appendFile, chmod, readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { defaultHostBridgeConfigDir } from "../host/HostConfigStore.js";
+import { createHostPaths } from "../host/HostPaths.js";
+import { ensurePrivateDirectory } from "../host/PrivatePersistence.js";
 
-interface AuditEvent {
+export interface AuditEvent {
   id: string;
   timestamp: string;
   turnId?: string;
   deviceId?: string;
   type: string;
-  data?: unknown;
+  data?: AuditMetadata;
 }
 
-function sanitize(value: unknown): unknown {
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-  if (Array.isArray(value)) {
-    return value.map(sanitize);
-  }
-
-  const input = value as Record<string, unknown>;
-  const output: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(input)) {
-    if (key === "screenshotBase64" && typeof item === "string") {
-      output[key] = `<base64:${item.length} chars>`;
-    } else if (key === "nodes" && Array.isArray(item)) {
-      output.nodesCount = item.length;
-      output.nodesSample = item.slice(0, 50).map(sanitize);
-    } else {
-      output[key] = sanitize(item);
-    }
-  }
-  return output;
+export interface AuditLogOptions {
+  maxFileBytes?: number;
+  maxFileAgeMs?: number;
+  maxTotalBytes?: number;
+  maxRetentionAgeMs?: number;
+  now?: () => number;
 }
+
+type AuditScalar = string | number | boolean | null;
+type AuditMetadata = Record<string, AuditScalar | Record<string, AuditScalar>>;
+
+const SAFE_SCALAR_KEYS = new Set([
+  "id", "callId", "runId", "sessionId", "sessionKey", "threadId", "turnId", "taskId", "itemId",
+  "command", "method", "eventType", "harness", "model", "reasoningEffort", "status", "state", "code", "signal",
+  "ok", "active", "queued", "position", "count", "chars", "estimatedTokens", "timeoutMs", "durationMs",
+  "inputTokens", "outputTokens", "totalTokens", "contextTokens", "attachmentsCount", "nodesCount", "resultCount"
+]);
+const SAFE_CONTAINERS = new Set(["metrics", "message", "usage"]);
+const SENSITIVE_KEYS = /(?:token|password|secret|authorization|prompt|text|guidance|reason|params|result|content|capabilit|attachment|screenshot|nodes|path|cwd|toolOutput|apiKey)/iu;
 
 export class AuditLog {
   private readonly events: AuditEvent[] = [];
   private readonly activeTurns = new Map<string, string>();
-  private readonly filePath: string;
-  private writeChain: Promise<void> = Promise.resolve();
+  private readonly auditDir: string;
+  private readonly options: Required<AuditLogOptions>;
+  private currentFilePath: string;
+  private currentFileSequence = 0;
+  private writeChain: Promise<void>;
+  private closed = false;
 
   constructor(
     private readonly maxEvents = 1_000,
-    auditDir = defaultAuditDir()
+    auditDir = defaultAuditDir(),
+    options: AuditLogOptions = {}
   ) {
-    mkdirSync(auditDir, { recursive: true });
-    this.filePath = join(auditDir, "phone-agent-audit.jsonl");
+    this.auditDir = auditDir;
+    this.options = {
+      maxFileBytes: options.maxFileBytes ?? 2 * 1024 * 1024,
+      maxFileAgeMs: options.maxFileAgeMs ?? 24 * 60 * 60 * 1_000,
+      maxTotalBytes: options.maxTotalBytes ?? 20 * 1024 * 1024,
+      maxRetentionAgeMs: options.maxRetentionAgeMs ?? 14 * 24 * 60 * 60 * 1_000,
+      now: options.now ?? Date.now
+    };
+    this.currentFilePath = join(auditDir, "phone-agent-audit.jsonl");
+    this.writeChain = ensurePrivateDirectory(auditDir).then(() => this.cleanupRetention(false));
   }
 
-  startTurn(deviceId: string, text: string): string {
-    const turnId = `turn_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  startTurn(deviceId: string, _text: string): string {
+    const turnId = `turn_${this.options.now()}_${Math.random().toString(16).slice(2)}`;
     this.activeTurns.set(deviceId, turnId);
-    this.record("turn_started", deviceId, { text }, turnId);
+    this.record("turn_started", deviceId, undefined, turnId);
     return turnId;
   }
 
@@ -63,28 +73,27 @@ export class AuditLog {
   }
 
   record(type: string, deviceId?: string, data?: unknown, explicitTurnId?: string): void {
+    if (this.closed) return;
     const event: AuditEvent = {
-      id: `evt_${Date.now()}_${Math.random().toString(16).slice(2)}`,
-      timestamp: new Date().toISOString(),
+      id: `evt_${this.options.now()}_${Math.random().toString(16).slice(2)}`,
+      timestamp: new Date(this.options.now()).toISOString(),
       turnId: explicitTurnId ?? (deviceId ? this.activeTurns.get(deviceId) : undefined),
-      deviceId,
-      type,
-      data: sanitize(data)
+      ...(deviceId ? { deviceId: deviceId.slice(0, 128) } : {}),
+      type: type.slice(0, 128),
+      ...metadataField(data)
     };
     this.events.push(event);
-    if (this.events.length > this.maxEvents) {
-      this.events.splice(0, this.events.length - this.maxEvents);
-    }
+    if (this.events.length > this.maxEvents) this.events.splice(0, this.events.length - this.maxEvents);
     const line = `${JSON.stringify(event)}\n`;
     this.writeChain = this.writeChain
-      .then(() => appendFile(this.filePath, line))
+      .then(() => this.appendRotated(line))
       .catch((error) => {
         console.warn(`[audit] failed to write event ${event.id}: ${error instanceof Error ? error.message : String(error)}`);
       });
   }
 
   recent(limit = 100): AuditEvent[] {
-    return this.events.slice(-limit);
+    return this.events.slice(-Math.max(0, Math.min(limit, this.maxEvents)));
   }
 
   active(): Array<{ deviceId: string; turnId: string; events: AuditEvent[] }> {
@@ -98,8 +107,82 @@ export class AuditLog {
   async flush(): Promise<void> {
     await this.writeChain;
   }
+
+  async close(): Promise<void> {
+    this.closed = true;
+    await this.flush();
+  }
+
+  private async appendRotated(line: string): Promise<void> {
+    if (Buffer.byteLength(line) > this.options.maxFileBytes) return;
+    const info = await stat(this.currentFilePath).catch(() => undefined);
+    if (info && (info.size + Buffer.byteLength(line) > this.options.maxFileBytes
+      || this.options.now() - info.mtimeMs >= this.options.maxFileAgeMs)) {
+      const rotated = join(this.auditDir, `phone-agent-audit-${this.options.now()}-${this.currentFileSequence++}.jsonl`);
+      await import("node:fs/promises").then(({ rename }) => rename(this.currentFilePath, rotated));
+      this.currentFilePath = join(this.auditDir, "phone-agent-audit.jsonl");
+    }
+    await appendFile(this.currentFilePath, line, { encoding: "utf8", mode: 0o600, flag: "a" });
+    await chmod(this.currentFilePath, 0o600).catch((error) => {
+      if (process.platform !== "win32") throw error;
+    });
+    await this.cleanupRetention(true);
+  }
+
+  private async cleanupRetention(preserveCurrent: boolean): Promise<void> {
+    const now = this.options.now();
+    const entries = (await readdir(this.auditDir, { withFileTypes: true })).filter((entry) =>
+      entry.isFile() && entry.name.startsWith("phone-agent-audit") && entry.name.endsWith(".jsonl")
+    );
+    const files = (await Promise.all(entries.map(async (entry) => {
+      const path = join(this.auditDir, entry.name);
+      return { path, info: await stat(path) };
+    }))).sort((left, right) => right.info.mtimeMs - left.info.mtimeMs);
+    let retainedBytes = 0;
+    for (const file of files) {
+      const expired = now - file.info.mtimeMs > this.options.maxRetentionAgeMs;
+      const overCap = retainedBytes + file.info.size > this.options.maxTotalBytes;
+      if ((expired || overCap) && (!preserveCurrent || file.path !== this.currentFilePath)) {
+        await rm(file.path, { force: true });
+      } else {
+        retainedBytes += file.info.size;
+      }
+    }
+  }
 }
 
 export function defaultAuditDir(): string {
-  return process.env.PHONE_AGENT_AUDIT_DIR?.trim() || join(defaultHostBridgeConfigDir(), "audit");
+  return process.env.PHONE_AGENT_AUDIT_DIR?.trim() || createHostPaths().auditRoot;
+}
+
+export function allowlistedMetadata(value: unknown): AuditMetadata | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const output: AuditMetadata = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (SAFE_SCALAR_KEYS.has(key) && isAuditScalar(item)) {
+      output[key] = typeof item === "string" ? item.slice(0, 256) : item;
+      continue;
+    }
+    if (SENSITIVE_KEYS.test(key)) {
+      if (Array.isArray(item) && (key === "attachments" || key === "nodes")) output[`${key}Count`] = item.length;
+      continue;
+    }
+    if (SAFE_CONTAINERS.has(key) && item && typeof item === "object" && !Array.isArray(item)) {
+      const nested = allowlistedMetadata(item);
+      if (nested) {
+        const scalars = Object.fromEntries(Object.entries(nested).filter((entry): entry is [string, AuditScalar] => isAuditScalar(entry[1])));
+        if (Object.keys(scalars).length > 0) output[key] = scalars;
+      }
+    }
+  }
+  return Object.keys(output).length > 0 ? output : undefined;
+}
+
+function metadataField(value: unknown): { data?: AuditMetadata } {
+  const data = allowlistedMetadata(value);
+  return data ? { data } : {};
+}
+
+function isAuditScalar(value: unknown): value is AuditScalar {
+  return value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
 }
