@@ -4,6 +4,9 @@ import { RealtimeTaskManager } from "./RealtimeTaskManager.js";
 import type { AgentRunResult } from "../dispatcher/AgentClient.js";
 import type { RealtimeOutboundMessage, RealtimeToolCallMessage } from "../protocol/messages.js";
 
+const VOICE_SESSION_A = "11111111-1111-4111-8111-111111111111";
+const VOICE_SESSION_B = "22222222-2222-4222-8222-222222222222";
+
 class Deferred<T> {
   readonly promise: Promise<T>;
   resolve!: (value: T) => void;
@@ -69,10 +72,11 @@ class FakeTaskDelegate {
   }
 }
 
-function toolCall(callId: string, instruction: string, extraArgs: Record<string, unknown> = {}): RealtimeToolCallMessage {
+function toolCall(callId: string, instruction: string, extraArgs: Record<string, unknown> = {}, voiceSessionId = VOICE_SESSION_A): RealtimeToolCallMessage {
   return {
     type: "realtime.tool_call",
     deviceId: "pixel",
+    voiceSessionId,
     callId,
     name: "run_phone_task",
     arguments: {
@@ -82,10 +86,11 @@ function toolCall(callId: string, instruction: string, extraArgs: Record<string,
   };
 }
 
-function namedToolCall(callId: string, name: string, args: Record<string, unknown> = {}): RealtimeToolCallMessage {
+function namedToolCall(callId: string, name: string, args: Record<string, unknown> = {}, voiceSessionId = VOICE_SESSION_A): RealtimeToolCallMessage {
   return {
     type: "realtime.tool_call",
     deviceId: "pixel",
+    voiceSessionId,
     callId,
     name,
     arguments: args
@@ -193,6 +198,41 @@ test("ignores duplicate call IDs while active", async () => {
 
   assert.deepEqual(dispatcher.requests.map((request) => request.text), ["Open Settings"]);
   first.resolve({ finalMessage: "Settings opened" });
+});
+
+test("same callId is independent across two voice sessions", async () => {
+  const { dispatcher, manager, messages } = createHarness();
+  dispatcher.results.push(Promise.resolve({ finalMessage: "a" }), Promise.resolve({ finalMessage: "b" }));
+  await manager.handleToolCall(toolCall("same", "first", {}, VOICE_SESSION_A));
+  await manager.handleToolCall(toolCall("same", "second", {}, VOICE_SESSION_B));
+  await waitFor(() => results(messages).filter((message) => message.callId === "same").length === 2);
+  assert.deepEqual(
+    results(messages).filter((message) => message.callId === "same").map((message) => message.voiceSessionId).sort(),
+    [VOICE_SESSION_A, VOICE_SESSION_B].sort()
+  );
+});
+
+test("detached old voice work cannot publish a late result into its replacement", async () => {
+  const { dispatcher, manager, messages } = createHarness();
+  const deferred = new Deferred<AgentRunResult>();
+  dispatcher.results.push(deferred.promise);
+  await manager.handleToolCall(toolCall("old", "slow", {}, VOICE_SESSION_A));
+  manager.detachSession("pixel", VOICE_SESSION_A);
+  deferred.resolve({ finalMessage: "late" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(results(messages).some((message) => message.callId === "old"), false);
+});
+
+test("tool calls for a mismatched voice session fail closed with correlated output", async () => {
+  const messages: RealtimeOutboundMessage[] = [];
+  const manager = new RealtimeTaskManager({
+    dispatcher: new FakeDispatcher(),
+    sendRealtime: (_deviceId, message) => messages.push(message),
+    isVoiceSessionActive: (_deviceId, voiceSessionId) => voiceSessionId === VOICE_SESSION_B
+  });
+  await manager.handleToolCall(toolCall("stale", "ignored", {}, VOICE_SESSION_A));
+  assert.equal(results(messages)[0]?.voiceSessionId, VOICE_SESSION_A);
+  assert.equal(results(messages)[0]?.ok, false);
 });
 
 test("replays completed duplicate call IDs only within the result TTL", async () => {

@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
 
+const VOICE_SESSION_ID = "11111111-1111-4111-8111-111111111111";
+
 import {
   AGENT_MODEL_IDS,
   CHAT_ATTACHMENT_MAX_BYTES,
@@ -23,6 +25,7 @@ import {
   observedNodeTargetSchema,
   resultMessageSchema,
   realtimeStartMessageSchema,
+  realtimeStopMessageSchema,
   realtimeToolCallMessageSchema,
   validatePhoneOutboundMessage
 } from "./messages.js";
@@ -189,6 +192,7 @@ test("realtime start accepts selected chat backend model IDs", () => {
     assert.equal(realtimeStartMessageSchema.safeParse({
       type: "realtime.start",
       deviceId: "pixel",
+      voiceSessionId: VOICE_SESSION_ID,
       sdp: "v=0\r\n...",
       model,
       reasoningEffort: "medium"
@@ -198,24 +202,28 @@ test("realtime start accepts selected chat backend model IDs", () => {
   assert.equal(realtimeStartMessageSchema.safeParse({
     type: "realtime.start",
     deviceId: "pixel",
+    voiceSessionId: VOICE_SESSION_ID,
     sdp: "v=0\r\n...",
     model: ""
   }).success, false);
   assert.equal(realtimeStartMessageSchema.safeParse({
     type: "realtime.start",
     deviceId: "pixel",
+    voiceSessionId: VOICE_SESSION_ID,
     sdp: "v=0\r\n...",
     model: "devin:"
   }).success, false);
   assert.equal(realtimeStartMessageSchema.safeParse({
     type: "realtime.start",
     deviceId: "pixel",
+    voiceSessionId: VOICE_SESSION_ID,
     sdp: "v=0\r\n...",
     model: "other:gpt-5.5"
   }).success, false);
   assert.equal(realtimeStartMessageSchema.safeParse({
     type: "realtime.start",
     deviceId: "pixel",
+    voiceSessionId: VOICE_SESSION_ID,
     sdp: "v=0\r\n...",
     reasoningEffort: "extreme"
   }).success, false);
@@ -225,6 +233,7 @@ test("realtime tool calls accept selected backend routing context", () => {
   assert.equal(realtimeToolCallMessageSchema.safeParse({
     type: "realtime.tool_call",
     deviceId: "pixel",
+    voiceSessionId: VOICE_SESSION_ID,
     callId: "call_1",
     name: "delegate_agent_task",
     model: "codex:gpt-5.3-codex",
@@ -235,11 +244,37 @@ test("realtime tool calls accept selected backend routing context", () => {
   assert.equal(realtimeToolCallMessageSchema.safeParse({
     type: "realtime.tool_call",
     deviceId: "pixel",
+    voiceSessionId: VOICE_SESSION_ID,
     callId: "call_1",
     name: "delegate_agent_task",
     model: "local-litertlm",
     reasoningEffort: "extreme",
     arguments: { instruction: "Summarize" }
+  }).success, false);
+});
+
+test("every realtime wire message requires a UUID voiceSessionId", () => {
+  const inboundWithoutOwners = [
+    { type: "realtime.start", deviceId: "pixel", sdp: "v=0\r\n..." },
+    { type: "realtime.stop", deviceId: "pixel" },
+    { type: "realtime.tool_call", deviceId: "pixel", callId: "call_1", name: "stop_phone_task", arguments: {} }
+  ];
+  const inboundSchemas = [realtimeStartMessageSchema, realtimeStopMessageSchema, realtimeToolCallMessageSchema];
+  inboundWithoutOwners.forEach((message, index) => {
+    assert.equal(inboundSchemas[index]!.safeParse(message).success, false);
+    assert.equal(inboundSchemas[index]!.safeParse({ ...message, voiceSessionId: "not-a-uuid" }).success, false);
+  });
+
+  assert.equal(phoneOutboundMessageSchema.safeParse({
+    type: "realtime.error",
+    deviceId: "pixel",
+    message: "uncorrelated"
+  }).success, false);
+  assert.equal(phoneOutboundMessageSchema.safeParse({
+    type: "realtime.error",
+    deviceId: "pixel",
+    voiceSessionId: "not-a-uuid",
+    message: "malformed owner"
   }).success, false);
 });
 
@@ -252,14 +287,14 @@ test("PC outbound phone messages have validating schemas for dev and tests", () 
     { id: "cmd_1", type: "command", requestOwner: "host:test", command: "observe_screen", args: {} },
     { type: "command.cancel", commandId: "cmd_1", requestOwner: "host:test", reason: "timed out" },
     { type: "agent_status", deviceId: "pixel", status: "info", text: "Registered pixel" },
-    { type: "realtime.sdp", deviceId: "pixel", sdp: "answer" },
-    { type: "realtime.transcript_delta", deviceId: "pixel", role: "assistant", delta: "hi", isFinal: false },
-    { type: "realtime.item_added", deviceId: "pixel", item: { id: "item_1" } },
-    { type: "realtime.speech_started", deviceId: "pixel", role: "user", itemId: null },
-    { type: "realtime.error", deviceId: "pixel", message: "bad" },
-    { type: "realtime.closed", deviceId: "pixel", reason: null },
-    { type: "realtime.tool_result", deviceId: "pixel", callId: "call_1", ok: false, status: "failed", error: "bad" },
-    { type: "realtime.task_status", deviceId: "pixel", running: false, queued: 0, currentTask: null, completed: 0, failed: 1 },
+    { type: "realtime.sdp", deviceId: "pixel", voiceSessionId: VOICE_SESSION_ID, sdp: "answer" },
+    { type: "realtime.transcript_delta", deviceId: "pixel", voiceSessionId: VOICE_SESSION_ID, role: "assistant", delta: "hi", isFinal: false },
+    { type: "realtime.item_added", deviceId: "pixel", voiceSessionId: VOICE_SESSION_ID, item: { id: "item_1" } },
+    { type: "realtime.speech_started", deviceId: "pixel", voiceSessionId: VOICE_SESSION_ID, role: "user", itemId: null },
+    { type: "realtime.error", deviceId: "pixel", voiceSessionId: VOICE_SESSION_ID, message: "bad" },
+    { type: "realtime.closed", deviceId: "pixel", voiceSessionId: VOICE_SESSION_ID, reason: null },
+    { type: "realtime.tool_result", deviceId: "pixel", voiceSessionId: VOICE_SESSION_ID, callId: "call_1", ok: false, status: "failed", error: "bad" },
+    { type: "realtime.task_status", deviceId: "pixel", voiceSessionId: VOICE_SESSION_ID, running: false, queued: 0, currentTask: null, completed: 0, failed: 1 },
     { type: "chat.state", deviceId: "pixel", sessionKey: "session", isRunning: false },
     { type: "chat.history", deviceId: "pixel", sessionKey: "session", messages: [] },
     { type: "chat.message", deviceId: "pixel", sessionKey: "session", message: { role: "user", text: "hello" } },

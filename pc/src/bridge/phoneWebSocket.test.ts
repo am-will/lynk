@@ -103,11 +103,11 @@ class FakeChatBridge {
 }
 
 class FakeRealtime {
-  readonly errors: Array<{ deviceId: string; message: string }> = [];
+  readonly errors: Array<{ deviceId: string; voiceSessionId: string; message: string }> = [];
   readonly starts: unknown[] = [];
 
-  sendRealtimeError(deviceId: string, message: string): void {
-    this.errors.push({ deviceId, message });
+  sendRealtimeError(deviceId: string, voiceSessionId: string, message: string): void {
+    this.errors.push({ deviceId, voiceSessionId, message });
   }
 
   async startRealtimeSession(message: unknown): Promise<void> {
@@ -255,6 +255,7 @@ test("phone websocket rejects realtime device spoofing and reports malformed rea
   socket.receive({
     type: "realtime.tool_call",
     deviceId: "other-phone",
+    voiceSessionId: "11111111-1111-4111-8111-111111111111",
     callId: "call_1",
     name: "run_phone_task",
     arguments: { instruction: "Open Settings" }
@@ -264,7 +265,11 @@ test("phone websocket rejects realtime device spoofing and reports malformed rea
 
   const malformed = bindFakes();
   register(malformed.socket, "registered-phone");
-  malformed.socket.receive({ type: "realtime.start", deviceId: "registered-phone" });
+  malformed.socket.receive({
+    type: "realtime.start",
+    deviceId: "registered-phone",
+    voiceSessionId: "11111111-1111-4111-8111-111111111111"
+  });
   assert.equal(malformed.realtime.errors[0].deviceId, "registered-phone");
   assert.match(malformed.realtime.errors[0].message, /sdp/);
 });

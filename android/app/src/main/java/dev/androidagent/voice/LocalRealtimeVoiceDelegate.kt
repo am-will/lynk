@@ -39,23 +39,25 @@ class LocalRealtimeVoiceDelegate(
     private var closed = false
     private var completed = 0
     private var failed = 0
+    private var currentVoiceSessionId: String? = null
 
-    fun handleToolCall(call: RealtimeToolCall) {
+    fun handleToolCall(voiceSessionId: String, call: RealtimeToolCall) {
         if (closed) return
-        when (admission.admit(call.callId, activeTask != null, queue.size)) {
+        currentVoiceSessionId = voiceSessionId
+        when (admission.admit("$voiceSessionId:${call.callId}", activeTask != null, queue.size)) {
             RealtimeTaskAdmission.Result.DUPLICATE -> return
             RealtimeTaskAdmission.Result.QUEUE_FULL -> {
-                failCall(call.callId, "Local realtime task queue is full ($MAX_QUEUED_TASKS).")
+                failCall(voiceSessionId, call.callId, "Local realtime task queue is full ($MAX_QUEUED_TASKS).")
                 return
             }
             RealtimeTaskAdmission.Result.ACCEPTED -> Unit
         }
         when (val intent = RealtimeToolRouting.intentFor(call.name, call.arguments)) {
-            is RealtimeToolIntent.StartTask -> enqueueTask(call.callId, call.name, intent.instruction)
-            is RealtimeToolIntent.SteerTask -> handleSteer(call, intent)
-            is RealtimeToolIntent.StopTask -> stopActive(call, intent.reason)
-            RealtimeToolIntent.BridgeOnly -> failCall(call.callId, "${call.name} must be handled by the bridge realtime path.")
-            is RealtimeToolIntent.Unsupported -> failCall(call.callId, "Unsupported realtime tool ${intent.toolName}.")
+            is RealtimeToolIntent.StartTask -> enqueueTask(voiceSessionId, call.callId, call.name, intent.instruction)
+            is RealtimeToolIntent.SteerTask -> handleSteer(voiceSessionId, call, intent)
+            is RealtimeToolIntent.StopTask -> stopActive(voiceSessionId, call, intent.reason)
+            RealtimeToolIntent.BridgeOnly -> failCall(voiceSessionId, call.callId, "${call.name} must be handled by the bridge realtime path.")
+            is RealtimeToolIntent.Unsupported -> failCall(voiceSessionId, call.callId, "Unsupported realtime tool ${intent.toolName}.")
         }
     }
 
@@ -65,7 +67,7 @@ class LocalRealtimeVoiceDelegate(
         coordinator.close()
         activeTask = null
         queue.clear()
-        sendTaskStatus()
+        currentVoiceSessionId?.let(::sendTaskStatus)
         return scope.launch { coordinator.closeAndJoin() }
     }
 
@@ -78,42 +80,42 @@ class LocalRealtimeVoiceDelegate(
         activeTask = null
         cancelled.forEach { task ->
             failed += 1
-            sendResult(task.callId, ok = false, status = "cancelled", error = reason)
+            sendResult(task.voiceSessionId, task.callId, ok = false, status = "cancelled", error = reason)
         }
-        sendTaskStatus()
+        currentVoiceSessionId?.let(::sendTaskStatus)
         return scope.launch { coordinator.stopAndJoin(reason = reason) }
     }
 
-    private fun enqueueTask(callId: String, toolName: String, instruction: String) {
+    private fun enqueueTask(voiceSessionId: String, callId: String, toolName: String, instruction: String) {
         if (instruction.isBlank()) {
-            failCall(callId, "$toolName requires a non-empty instruction.")
+            failCall(voiceSessionId, callId, "$toolName requires a non-empty instruction.")
             return
         }
-        val task = QueuedLocalRealtimeTask(callId = callId, instruction = instruction)
+        val task = QueuedLocalRealtimeTask(voiceSessionId = voiceSessionId, callId = callId, instruction = instruction)
         if (activeTask != null) {
             queue.add(task)
-            sendTaskStatus()
+            sendTaskStatus(voiceSessionId)
             return
         }
         startTask(task)
     }
 
-    private fun handleSteer(call: RealtimeToolCall, intent: RealtimeToolIntent.SteerTask) {
+    private fun handleSteer(voiceSessionId: String, call: RealtimeToolCall, intent: RealtimeToolIntent.SteerTask) {
         if (intent.guidance.isBlank()) {
-            failCall(call.callId, "${call.name} requires non-empty guidance.")
+            failCall(voiceSessionId, call.callId, "${call.name} requires non-empty guidance.")
             return
         }
         if (activeTask != null) {
-            failCall(call.callId, "Local LiteRT-LM cannot steer an active realtime task yet. Stop it or wait for it to finish.")
+            failCall(voiceSessionId, call.callId, "Local LiteRT-LM cannot steer an active realtime task yet. Stop it or wait for it to finish.")
             return
         }
-        startTask(QueuedLocalRealtimeTask(callId = call.callId, instruction = intent.guidance))
+        startTask(QueuedLocalRealtimeTask(voiceSessionId = voiceSessionId, callId = call.callId, instruction = intent.guidance))
     }
 
     private fun startTask(task: QueuedLocalRealtimeTask) {
         val taskGeneration = generation
         activeTask = task
-        sendTaskStatus()
+        sendTaskStatus(task.voiceSessionId)
         val started = coordinator.startTurn(
             LocalTurnRequest(
                 text = task.instruction,
@@ -125,53 +127,54 @@ class LocalRealtimeVoiceDelegate(
                 onCompleted = { outcome ->
                     if (taskGeneration != generation || closed) return@LocalTurnRequest
                     completed += 1
-                    sendResult(task.callId, ok = true, status = "completed", output = outcome.text)
+                    sendResult(task.voiceSessionId, task.callId, ok = true, status = "completed", output = outcome.text)
                     finishTask(task)
                 },
                 onCancelled = { outcome ->
                     if (taskGeneration != generation || closed) return@LocalTurnRequest
                     failed += 1
-                    sendResult(task.callId, ok = false, status = "cancelled", error = outcome.text)
+                    sendResult(task.voiceSessionId, task.callId, ok = false, status = "cancelled", error = outcome.text)
                     finishTask(task)
                 },
                 onFailed = { outcome ->
                     if (taskGeneration != generation || closed) return@LocalTurnRequest
                     failed += 1
-                    sendResult(task.callId, ok = false, status = "failed", error = outcome.text)
+                    sendResult(task.voiceSessionId, task.callId, ok = false, status = "failed", error = outcome.text)
                     finishTask(task)
                 }
             )
         )
         if (!started) {
             failed += 1
-            sendResult(task.callId, ok = false, status = "failed", error = "Could not start local realtime task.")
+            sendResult(task.voiceSessionId, task.callId, ok = false, status = "failed", error = "Could not start local realtime task.")
             finishTask(task)
         }
     }
 
-    private fun stopActive(call: RealtimeToolCall, reason: String) {
+    private fun stopActive(voiceSessionId: String, call: RealtimeToolCall, reason: String) {
         stopAndJoin(reason)
         sendResult(
+            voiceSessionId = voiceSessionId,
             callId = call.callId,
             ok = true,
             status = "completed",
             output = "Stopped the active local task and cleared queued realtime tasks.",
             createResponse = false
         )
-        sendTaskStatus()
+        sendTaskStatus(voiceSessionId)
     }
 
-    private fun failCall(callId: String, error: String) {
+    private fun failCall(voiceSessionId: String, callId: String, error: String) {
         failed += 1
-        sendResult(callId, ok = false, status = "failed", error = error)
-        sendTaskStatus()
+        sendResult(voiceSessionId, callId, ok = false, status = "failed", error = error)
+        sendTaskStatus(voiceSessionId)
     }
 
     private fun finishTask(task: QueuedLocalRealtimeTask) {
         if (activeTask?.callId == task.callId) {
             activeTask = null
         }
-        sendTaskStatus()
+        sendTaskStatus(task.voiceSessionId)
         startNext()
     }
 
@@ -181,6 +184,7 @@ class LocalRealtimeVoiceDelegate(
     }
 
     private fun sendResult(
+        voiceSessionId: String,
         callId: String,
         ok: Boolean,
         status: String,
@@ -191,6 +195,7 @@ class LocalRealtimeVoiceDelegate(
         onRealtimeToolResult(JSONObject()
             .put("type", "realtime.tool_result")
             .put("deviceId", configProvider().deviceId)
+            .put("voiceSessionId", voiceSessionId)
             .put("callId", callId)
             .put("ok", ok)
             .put("status", status)
@@ -201,10 +206,11 @@ class LocalRealtimeVoiceDelegate(
             })
     }
 
-    private fun sendTaskStatus() {
+    private fun sendTaskStatus(voiceSessionId: String) {
         onRealtimeTaskStatus(JSONObject()
             .put("type", "realtime.task_status")
             .put("deviceId", configProvider().deviceId)
+            .put("voiceSessionId", voiceSessionId)
             .put("running", activeTask != null)
             .put("queued", queue.size)
             .put("currentTask", activeTask?.instruction ?: JSONObject.NULL)
@@ -213,6 +219,7 @@ class LocalRealtimeVoiceDelegate(
     }
 
     private data class QueuedLocalRealtimeTask(
+        val voiceSessionId: String,
         val callId: String,
         val instruction: String
     )
