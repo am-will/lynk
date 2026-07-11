@@ -6,6 +6,7 @@ import kotlinx.coroutines.withTimeout
 internal enum class TermuxCancellationReason {
     COROUTINE_CANCELLED,
     TIMEOUT,
+    START_FAILED,
     SESSION_STOPPED,
     SERVICE_DESTROYED
 }
