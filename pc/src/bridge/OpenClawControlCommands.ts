@@ -22,8 +22,8 @@ interface ControlCommandRouterOptions {
     status: string,
     successMessage?: string,
     options?: { ignoreRunEvents?: boolean }
-  ): Promise<void>;
-  patchSession(deviceId: string, sessionKey: string, patch: Record<string, unknown>, status?: string): Promise<void>;
+  ): Promise<boolean>;
+  patchSession(deviceId: string, sessionKey: string, patch: Record<string, unknown>, status?: string): Promise<boolean>;
   sendState(deviceId: string, status?: string): void;
   send(message: ChatSendMessage): Promise<void>;
   respondToPermission(sessionKey: string, permissionId: string, response: HarnessPermissionResponse): Promise<void>;

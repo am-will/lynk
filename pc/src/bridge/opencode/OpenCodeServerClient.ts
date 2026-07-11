@@ -3,8 +3,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk";
 import type { ResolvedChatAttachment } from "../../attachments/AttachmentTypes.js";
 import { inlineCompatibilityAttachments } from "../../attachments/AttachmentCompatibility.js";
-import type { AuditLog } from "../AuditLog.js";
 import { defaultWorkspaceRoot } from "../../host/HostPaths.js";
+import type { AuditLog } from "../AuditLog.js";
+import { translateAdapterError } from "../harness/AdapterFailure.js";
 
 export interface OpenCodeModelRef {
   providerID: string;
@@ -153,7 +154,17 @@ function errorMessage(error: unknown): string {
 
 function unwrap<T>(result: RequestResult<T>): T {
   if (result.error !== undefined) {
-    throw new Error(errorMessage(result.error));
+    const error = new Error(errorMessage(result.error));
+    Object.assign(error, {
+      status: result.response?.status,
+      response: result.response,
+      nativeError: result.error
+    });
+    throw translateAdapterError(error, {
+      harnessId: "opencode",
+      operation: "request",
+      fallbackCode: "rejected"
+    });
   }
   if (result.data === undefined) {
     throw new Error(`OpenCode request returned no data${result.response ? ` (${result.response.status})` : ""}`);

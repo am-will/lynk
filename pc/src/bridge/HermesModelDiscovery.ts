@@ -267,7 +267,8 @@ function loadHermesAuthenticatedProviderCatalog(home: string): Map<string, strin
       PYTHONPATH: hermesAgentDir
     },
     encoding: "utf8",
-    timeout: 15_000
+    timeout: 15_000,
+    maxBuffer: 1_048_576
   });
   if (result.status !== 0 || !result.stdout.trim()) {
     return new Map();
@@ -315,7 +316,8 @@ function loadHermesProviderCatalog(home: string, providers: string[]): Map<strin
       PYTHONPATH: hermesAgentDir
     },
     encoding: "utf8",
-    timeout: 10_000
+    timeout: 10_000,
+    maxBuffer: 1_048_576
   });
   if (result.status !== 0 || !result.stdout.trim()) {
     return new Map();

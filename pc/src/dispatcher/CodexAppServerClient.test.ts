@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { CodexAppServerClient } from "./CodexAppServerClient.js";
 import type { AgentStatusSink } from "./AgentClient.js";
+import { isAdapterFailure } from "../bridge/harness/AdapterFailure.js";
 
 const sink: AgentStatusSink = {
   info: () => undefined,
@@ -129,6 +130,94 @@ test("Codex app-server includes image attachments in turn input", async () => {
   }
 });
 
+test("Codex app-server shares one startup generation across concurrent RPCs", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "codex-lifecycle-test-"));
+  const logPath = join(dir, "requests.jsonl");
+  const scriptPath = join(dir, "lifecycle-app-server.mjs");
+  await writeFile(scriptPath, lifecycleAppServerScript());
+  const previousLogPath = process.env.CODEX_FAKE_LOG;
+  process.env.CODEX_FAKE_LOG = logPath;
+  const client = new CodexAppServerClient(undefined, `"${process.execPath}" "${scriptPath}"`, dir);
+  try {
+    await Promise.all([client.listModels(), client.listThreads()]);
+    const methods = (await readFile(logPath, "utf8")).trim().split(/\n/);
+    assert.equal(methods.filter((method) => method === "initialize").length, 1);
+    assert.equal(methods.filter((method) => method === "model/list").length, 1);
+    assert.equal(methods.filter((method) => method === "thread/list").length, 1);
+  } finally {
+    await client.close();
+    restoreEnv("CODEX_FAKE_LOG", previousLogPath);
+  }
+});
+
+test("Codex RPC timeout tears down the hung generation and permits clean restart", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "codex-timeout-test-"));
+  const scriptPath = join(dir, "timeout-app-server.mjs");
+  const counterPath = join(dir, "starts.txt");
+  await writeFile(scriptPath, restartableAppServerScript("hang"));
+  const previousCounter = process.env.CODEX_FAKE_COUNTER;
+  const previousTimeout = process.env.CODEX_RPC_TIMEOUT_MS;
+  process.env.CODEX_FAKE_COUNTER = counterPath;
+  process.env.CODEX_RPC_TIMEOUT_MS = "1000";
+  const client = new CodexAppServerClient(undefined, `"${process.execPath}" "${scriptPath}"`, dir);
+  try {
+    await assert.rejects(client.listModels(), (error) => isAdapterFailure(error, "timeout"));
+    const result = await client.listModels() as { models?: unknown[] };
+    assert.deepEqual(result.models, []);
+    assert.equal(Number(await readFile(counterPath, "utf8")), 2);
+  } finally {
+    await client.close();
+    restoreEnv("CODEX_FAKE_COUNTER", previousCounter);
+    restoreEnv("CODEX_RPC_TIMEOUT_MS", previousTimeout);
+  }
+});
+
+test("Codex child exit rejects pending RPC and stale callbacks cannot poison restart", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "codex-exit-test-"));
+  const scriptPath = join(dir, "exit-app-server.mjs");
+  const counterPath = join(dir, "starts.txt");
+  await writeFile(scriptPath, restartableAppServerScript("exit"));
+  const previousCounter = process.env.CODEX_FAKE_COUNTER;
+  process.env.CODEX_FAKE_COUNTER = counterPath;
+  const client = new CodexAppServerClient(undefined, `"${process.execPath}" "${scriptPath}"`, dir);
+  try {
+    await assert.rejects(client.listModels(), (error) => isAdapterFailure(error, "unavailable"));
+    const result = await client.listModels() as { models?: unknown[] };
+    assert.deepEqual(result.models, []);
+    assert.equal(Number(await readFile(counterPath, "utf8")), 2);
+  } finally {
+    await client.close();
+    restoreEnv("CODEX_FAKE_COUNTER", previousCounter);
+  }
+});
+
+test("Codex teardown escalates from TERM to bounded KILL for an unresponsive owned child", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "codex-kill-test-"));
+  const scriptPath = join(dir, "kill-app-server.mjs");
+  const pidPath = join(dir, "pid.txt");
+  const termPath = join(dir, "term.txt");
+  await writeFile(scriptPath, unresponsiveAppServerScript());
+  const previousPid = process.env.CODEX_FAKE_PID;
+  const previousTerm = process.env.CODEX_FAKE_TERM;
+  const previousTimeout = process.env.CODEX_RPC_TIMEOUT_MS;
+  process.env.CODEX_FAKE_PID = pidPath;
+  process.env.CODEX_FAKE_TERM = termPath;
+  process.env.CODEX_RPC_TIMEOUT_MS = "1000";
+  const client = new CodexAppServerClient(undefined, `"${process.execPath}" "${scriptPath}"`, dir);
+  try {
+    await assert.rejects(client.listModels(), (error) => isAdapterFailure(error, "timeout"));
+    const pid = Number(await readFile(pidPath, "utf8"));
+    await waitUntil(async () => !(await processExists(pid)), 2_500);
+    assert.equal((await readFile(termPath, "utf8")).trim(), "SIGTERM");
+    assert.equal(await processExists(pid), false);
+  } finally {
+    await client.close();
+    restoreEnv("CODEX_FAKE_PID", previousPid);
+    restoreEnv("CODEX_FAKE_TERM", previousTerm);
+    restoreEnv("CODEX_RPC_TIMEOUT_MS", previousTimeout);
+  }
+});
+
 function fakeAppServerScript(): string {
   return `
 import { appendFileSync } from "node:fs";
@@ -179,4 +268,80 @@ for await (const line of lines) {
   }
 }
 `;
+}
+
+function lifecycleAppServerScript(): string {
+  return `
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+const lines = createInterface({ input: process.stdin });
+const write = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+for await (const line of lines) {
+  const message = JSON.parse(line);
+  if (!message.id) continue;
+  appendFileSync(process.env.CODEX_FAKE_LOG, message.method + "\\n");
+  if (message.method === "initialize") write({ id: message.id, result: {} });
+  if (message.method === "model/list") write({ id: message.id, result: { models: [] } });
+  if (message.method === "thread/list") write({ id: message.id, result: { data: [] } });
+}
+`;
+}
+
+function restartableAppServerScript(firstBehavior: "hang" | "exit"): string {
+  return `
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+const counterPath = process.env.CODEX_FAKE_COUNTER;
+const start = existsSync(counterPath) ? Number(readFileSync(counterPath, "utf8")) + 1 : 1;
+writeFileSync(counterPath, String(start));
+const lines = createInterface({ input: process.stdin });
+const write = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+for await (const line of lines) {
+  const message = JSON.parse(line);
+  if (message.method === "initialize") write({ id: message.id, result: {} });
+  if (message.method === "model/list") {
+    if (start === 1 && ${JSON.stringify(firstBehavior)} === "exit") process.exit(23);
+    if (start === 1 && ${JSON.stringify(firstBehavior)} === "hang") continue;
+    write({ id: message.id, result: { models: [] } });
+  }
+}
+`;
+}
+
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
+
+function unresponsiveAppServerScript(): string {
+  return `
+import { writeFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+writeFileSync(process.env.CODEX_FAKE_PID, String(process.pid));
+process.on("SIGTERM", () => writeFileSync(process.env.CODEX_FAKE_TERM, "SIGTERM"));
+const lines = createInterface({ input: process.stdin });
+const write = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+for await (const line of lines) {
+  const message = JSON.parse(line);
+  if (message.method === "initialize") write({ id: message.id, result: {} });
+}
+`;
+}
+
+async function processExists(pid: number): Promise<boolean> {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitUntil(predicate: () => Promise<boolean>, timeoutMs: number): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.equal(await predicate(), true);
 }

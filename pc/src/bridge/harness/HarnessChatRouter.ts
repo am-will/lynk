@@ -32,6 +32,9 @@ import type {
 } from "../chat/ChatTransportTypes.js";
 import { OpenClawGatewayChatClient } from "../OpenClawGatewayChatClient.js";
 import { NormalizedHarnessAdapter, type HarnessChatAdapter, type HarnessCreatedSession } from "./HarnessChatAdapter.js";
+import { AdapterFailure, withAdapterDeadline } from "./AdapterFailure.js";
+
+const DEFAULT_DIAGNOSTIC_DEADLINE_MS = 3_000;
 
 const OPENCLAW_BRIDGE_COMMANDS: ChatCommandOption[] = [
   {
@@ -108,7 +111,8 @@ export class HarnessChatRouter implements GatewayChatClient {
   constructor(
     private readonly config: BridgeConfig,
     audit?: AuditLog,
-    adapters?: Iterable<HarnessChatAdapter>
+    adapters?: Iterable<HarnessChatAdapter>,
+    private readonly options: { diagnosticDeadlineMs?: number } = {}
   ) {
     if (adapters) {
       for (const adapter of adapters) {
@@ -160,20 +164,21 @@ export class HarnessChatRouter implements GatewayChatClient {
   }
 
   async listModels(): Promise<unknown> {
-    const models = [];
-    for (const descriptor of harnessDescriptors()) {
+    const enabled = harnessDescriptors().flatMap((descriptor) => {
       if (!descriptor.enabled(this.config)) {
-        continue;
+        return [];
       }
       const adapter = this.adapters.get(descriptor.id);
       if (!adapter) {
-        continue;
+        return [];
       }
-      const harnessModels = await adapter.listModels().catch(() => []);
-      for (const model of harnessModels) {
-        models.push(namespaceModelOption(model, descriptor.id));
-      }
-    }
+      return [{ descriptor, adapter }];
+    });
+    const discovered = await Promise.all(enabled.map(async ({ descriptor, adapter }) => {
+      const harnessModels = await this.diagnostic(adapter, "listModels", () => adapter.listModels()).catch(() => []);
+      return harnessModels.map((model) => namespaceModelOption(model, descriptor.id));
+    }));
+    const models = discovered.flat();
     return { models };
   }
 
@@ -238,13 +243,15 @@ export class HarnessChatRouter implements GatewayChatClient {
   }
 
   async health(): Promise<unknown> {
-    const health: Record<string, unknown> = {};
-    for (const [harnessId, adapter] of this.adapters.entries()) {
-      health[harnessId] = await adapter.health().catch((error) => ({
+    const entries = await Promise.all([...this.adapters.entries()].map(async ([harnessId, adapter]) => {
+      const result = await this.diagnostic(adapter, "health", () => adapter.health()).catch((error) => ({
         ok: false,
+        code: error instanceof AdapterFailure ? error.code : "unavailable",
         error: error instanceof Error ? error.message : String(error)
       }));
-    }
+      return [harnessId, result] as const;
+    }));
+    const health = Object.fromEntries(entries);
     return { harnesses: health };
   }
 
@@ -283,7 +290,7 @@ export class HarnessChatRouter implements GatewayChatClient {
     if (!openclaw) {
       return commands;
     }
-    const openclawCommands = await openclaw.listCommands().catch(() => []);
+    const openclawCommands = await this.diagnostic(openclaw, "listCommands", () => openclaw.listCommands()).catch(() => []);
     const existingSkillNames = new Set(
       commands
         .filter(isSkillCommand)
@@ -320,6 +327,14 @@ export class HarnessChatRouter implements GatewayChatClient {
       harnessId,
       harnessLabel: harnessDescriptor(harnessId).label
     };
+  }
+
+  private async diagnostic<T>(adapter: HarnessChatAdapter, operation: string, run: () => Promise<T>): Promise<T> {
+    return await withAdapterDeadline(run, {
+      timeoutMs: this.options.diagnosticDeadlineMs ?? DEFAULT_DIAGNOSTIC_DEADLINE_MS,
+      harnessId: adapter.harnessId,
+      operation: `${adapter.harnessId}.${operation}`
+    });
   }
 }
 

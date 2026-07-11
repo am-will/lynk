@@ -2,7 +2,66 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChatAttachmentReference } from "../protocol/messages.js";
 import { ChatClientError, CODEX_WORKSPACE_NOT_FOUND_CODE } from "./chat/ChatErrors.js";
+import { AdapterFailure, isAdapterFailure } from "./harness/AdapterFailure.js";
 import { createHarness, defaultSessionKey, deferred, waitFor } from "./OpenClawChatBridge.testSupport.js";
+
+test("selected send does not wait for aggregate harness health", async () => {
+  const { bridge, client } = createHarness();
+  client.healthGate = new Promise(() => undefined);
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    text: "Hello selected harness",
+    idempotencyKey: "direct-send"
+  });
+
+  assert.equal(client.sent.length, 1);
+  assert.equal(client.healthCalls, 0);
+});
+
+test("session ensure creates only on explicit not-found and is single-flight", async () => {
+  const { bridge, client } = createHarness();
+  client.historyError = new AdapterFailure("not_found", "missing session");
+  const gate = deferred<void>();
+  client.createGate = gate.promise;
+
+  const first = bridge.open({ type: "chat.open", deviceId: "pixel" });
+  const second = bridge.open({ type: "chat.open", deviceId: "pixel" });
+  await waitFor(() => client.created.length === 1);
+  gate.resolve();
+  await Promise.all([first, second]);
+
+  assert.equal(client.created.length, 1);
+});
+
+test("session ensure preserves auth errors without creating a replacement", async () => {
+  const { bridge, client } = createHarness();
+  client.historyError = new AdapterFailure("auth", "credentials rejected");
+
+  await assert.rejects(bridge.open({ type: "chat.open", deviceId: "pixel" }), (error) => isAdapterFailure(error, "auth"));
+
+  assert.equal(client.created.length, 0);
+});
+
+test("rejected remote patches do not commit selected model or reasoning", async () => {
+  const { bridge, client, chatMessages } = createHarness({ hermesApiKey: "key" });
+  await bridge.open({ type: "chat.open", deviceId: "pixel" });
+  const before = chatMessages.filter((message) => message.type === "chat.state").at(-1);
+  client.patchError = new AdapterFailure("rejected", "remote patch rejected");
+
+  await bridge.setModel({ type: "chat.set_model", deviceId: "pixel", model: "hermes:new-model" });
+  await bridge.setReasoning({ type: "chat.set_reasoning", deviceId: "pixel", reasoningEffort: "high" });
+
+  const after = chatMessages.filter((message) => message.type === "chat.state").at(-1);
+  assert.equal(after?.type, "chat.state");
+  assert.equal(before?.type, "chat.state");
+  if (after?.type === "chat.state" && before?.type === "chat.state") {
+    assert.equal(after.model, before.model);
+    assert.equal(after.reasoningEffort, before.reasoningEffort);
+  }
+  assert.equal(chatMessages.filter((message) => message.type === "chat.error" && message.code === "rejected").length, 2);
+});
 
 test("realtime requests start a fresh chat only outside the reuse window", async () => {
   const originalNow = Date.now;

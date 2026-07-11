@@ -23,6 +23,7 @@ import {
   normalizeSessions,
   normalizeTools
 } from "../chat/ChatNormalizers.js";
+import { translateAdapterError } from "./AdapterFailure.js";
 
 export interface HarnessChatHistory {
   sessionId?: string | null;
@@ -99,7 +100,9 @@ export class NormalizedHarnessAdapter implements HarnessChatAdapter {
   }
 
   async history(sessionKey: string): Promise<HarnessChatHistory> {
-    const payload = await this.client.history(sessionKey);
+    const payload = await this.client.history(sessionKey).catch((error) => {
+      throw translateAdapterError(error, { harnessId: this.harnessId, operation: "history", fallbackCode: "unavailable" });
+    });
     const record = asRecord(payload);
     return {
       sessionId: stringField(record, "sessionId") ?? null,
@@ -110,7 +113,9 @@ export class NormalizedHarnessAdapter implements HarnessChatAdapter {
   }
 
   async sendChat(options: HarnessChatSendOptions): Promise<GatewayChatSendResult> {
-    return await this.client.sendChat(options);
+    return await this.client.sendChat(options).catch((error) => {
+      throw translateAdapterError(error, { harnessId: this.harnessId, operation: "send", fallbackCode: "rejected" });
+    });
   }
 
   async steerChat(options: HarnessChatSteerOptions): Promise<GatewayChatSendResult> {
@@ -141,7 +146,9 @@ export class NormalizedHarnessAdapter implements HarnessChatAdapter {
   }
 
   async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string; createWorkspaceIfMissing?: boolean }): Promise<HarnessCreatedSession> {
-    const created = await this.client.createSession(options);
+    const created = await this.client.createSession(options).catch((error) => {
+      throw translateAdapterError(error, { harnessId: this.harnessId, operation: "createSession", fallbackCode: "rejected" });
+    });
     const record = asRecord(created) ?? {};
     return {
       key: stringField(record, "key"),
@@ -154,7 +161,9 @@ export class NormalizedHarnessAdapter implements HarnessChatAdapter {
   }
 
   async patchSession(sessionKey: string, patch: Record<string, unknown>): Promise<unknown> {
-    return await this.client.patchSession(sessionKey, patch);
+    return await this.client.patchSession(sessionKey, patch).catch((error) => {
+      throw translateAdapterError(error, { harnessId: this.harnessId, operation: "patchSession", fallbackCode: "rejected" });
+    });
   }
 
   async listCommands(sessionKey?: string): Promise<ChatCommandOption[]> {

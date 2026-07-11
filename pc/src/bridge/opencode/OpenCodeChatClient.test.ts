@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import type { ResolvedChatAttachment } from "../../attachments/AttachmentTypes.js";
 import { OpenCodeChatClient } from "./OpenCodeChatClient.js";
+import { AdapterFailure, isAdapterFailure } from "../harness/AdapterFailure.js";
 import { normalizeOpenCodeModels } from "./OpenCodeNormalizers.js";
 import { buildOpenCodePromptParts, OpenCodeServerClient, type OpenCodeSessionPromptOptions } from "./OpenCodeServerClient.js";
 
@@ -53,6 +54,30 @@ test("OpenCode attachment parts materialize without exposing host paths", () => 
   }
 });
 
+test("OpenCode timeout is an error terminal and releases the active run exactly once", async () => {
+  const fake = new FakeOpenCodeServerClient("/repo");
+  fake.statusPayload = { ses_1: { type: "running" } };
+  const client = new OpenCodeChatClient(undefined, fake as never, null, { timeoutMs: 30 });
+  const events: Array<{ event: string; payload: Record<string, unknown> }> = [];
+  client.addEventListener((event) => events.push(event as { event: string; payload: Record<string, unknown> }));
+
+  const created = await client.createSession({ label: "Timeout" }) as { key: string };
+  await client.sendChat({ sessionKey: created.key, message: "hang", idempotencyKey: "timeout_run" });
+  await waitFor(() => events.some((event) => event.payload.runId === "timeout_run" && event.payload.state === "error"));
+
+  const terminals = events.filter((event) => event.payload.runId === "timeout_run" && ["error", "final"].includes(String(event.payload.state)));
+  assert.equal(terminals.length, 1);
+  assert.equal(terminals[0]?.payload.state, "error");
+  assert.equal(terminals[0]?.payload.code, "timeout");
+
+  fake.messagesPayload = { messages: [{ info: { role: "assistant" }, parts: [{ type: "text", text: "recovered" }] }] };
+  fake.statusPayload = {};
+  await client.sendChat({ sessionKey: created.key, message: "retry", idempotencyKey: "retry_run" });
+  await waitFor(() => events.some((event) => event.payload.runId === "retry_run" && event.payload.state === "final"));
+  assert.equal(fake.prompts.length, 2);
+  client.close();
+});
+
 async function* streamEvents(events: unknown[]): AsyncGenerator<unknown> {
   for (const event of events) {
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -90,6 +115,7 @@ class FakeOpenCodeServerClient {
   commandsPayload: unknown = [{ name: "init", description: "Initialize project" }];
   toolsPayload: unknown = { bash: { name: "bash", description: "Run shell commands" } };
   messagesPayload: unknown = { messages: [] };
+  messagesError?: Error;
   statusPayload: unknown = {};
   statusPayloads: unknown[] = [];
   events: unknown[] = [];
@@ -134,7 +160,7 @@ class FakeOpenCodeServerClient {
   }
 
   async getSession(): Promise<unknown> {
-    throw new Error("missing session");
+    throw new AdapterFailure("not_found", "missing session");
   }
 
   async promptAsync(options: OpenCodeSessionPromptOptions): Promise<unknown> {
@@ -148,6 +174,7 @@ class FakeOpenCodeServerClient {
   }
 
   async messages(): Promise<unknown> {
+    if (this.messagesError) throw this.messagesError;
     if (this.aborted) {
       return { messages: [{ info: { role: "assistant" }, parts: [{ type: "text", text: "aborted" }] }] };
     }
@@ -185,6 +212,16 @@ class FakeOpenCodeServerClient {
 
   async close(): Promise<void> {}
 }
+
+test("OpenCode history preserves typed auth errors instead of treating them as missing", async () => {
+  const fake = new FakeOpenCodeServerClient();
+  fake.messagesError = new AdapterFailure("auth", "OpenCode credentials rejected");
+  const client = new OpenCodeChatClient(undefined, fake as never, null);
+
+  await assert.rejects(client.history("opencode:private"), (error) => isAdapterFailure(error, "auth"));
+  assert.equal(fake.created.length, 0);
+  client.close();
+});
 
 test("OpenCode model normalization namespaces provider/model ids", () => {
   const models = normalizeOpenCodeModels({
