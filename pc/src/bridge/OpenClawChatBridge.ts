@@ -37,7 +37,12 @@ import type {
 import type { AuditLog } from "./AuditLog.js";
 import type { BridgeConfig } from "./config.js";
 import type { HarnessPermissionResponse } from "./chat/ChatTransportTypes.js";
-import { HarnessDeviceStateStore } from "./harness/HarnessDeviceStateStore.js";
+import {
+  HarnessDeviceStateStore,
+  type HostChatRunReservation,
+  type HostChatRunState
+} from "./harness/HarnessDeviceStateStore.js";
+import { HarnessRunBusyError } from "./harness/HarnessRunLifecycle.js";
 import { HarnessChatRouter } from "./harness/HarnessChatRouter.js";
 import { OpenClawControlCommandRouter } from "./OpenClawControlCommands.js";
 import {
@@ -87,6 +92,13 @@ interface RealtimeChatOptions {
   callId?: string;
   model?: string;
   reasoningEffort?: string;
+}
+
+class ChatRunStartStoppedError extends Error {
+  constructor(readonly reason: string) {
+    super(reason);
+    this.name = "ChatRunStartStoppedError";
+  }
 }
 
 function sameChatUserMessage(a: ChatHistoryMessage, b: ChatHistoryMessage): boolean {
@@ -144,6 +156,9 @@ export class OpenClawChatBridge {
       sendState: (deviceId, status) => this.sendState(deviceId, status),
       sendReasoningClear: (deviceId, sessionKey, runId) => this.sendReasoningClear(deviceId, sessionKey, runId),
       settleRun: (message) => this.runWaiters.settleRun(message),
+      completeRun: (deviceId, state, sessionKey, runId) => {
+        this.states.settleRun(deviceId, state, sessionKey, runId);
+      },
       drainQueuedSends: (deviceId) => this.drainQueuedSends(deviceId),
       sendReplyAvailable: (deviceId, message, sessionKey, pendingRun) => this.sendReplyAvailable(deviceId, message, sessionKey, pendingRun),
       refreshMetadata: (deviceId) => this.refreshMetadata(deviceId),
@@ -153,6 +168,7 @@ export class OpenClawChatBridge {
       config: this.config,
       client: this.client,
       states: this.states,
+      activateSession: (deviceId, state, sessionKey) => this.states.activateSession(deviceId, state, sessionKey),
       sendState: (deviceId, status) => this.sendState(deviceId, status),
       refreshDevice: (deviceId) => this.refreshDevice(deviceId)
     });
@@ -162,7 +178,7 @@ export class OpenClawChatBridge {
   async open(message: ChatOpenMessage): Promise<void> {
     const state = this.stateFor(message.deviceId);
     if (message.sessionKey) {
-      this.states.activateSession(state, message.sessionKey);
+      this.states.activateSession(message.deviceId, state, message.sessionKey);
     }
     this.sendState(message.deviceId, `Loading ${harnessLabel(state.harnessId)} chat`);
     await this.refreshDevice(message.deviceId);
@@ -205,72 +221,113 @@ export class OpenClawChatBridge {
     const previousModel = state.model;
     this.states.applyModelSelection(message.deviceId, state, message.model);
     if (message.sessionKey && harnessForSessionKey(message.sessionKey) === state.harnessId) {
-      this.states.activateSession(state, message.sessionKey);
+      this.states.activateSession(message.deviceId, state, message.sessionKey);
     }
 
     const idempotencyKey = message.idempotencyKey ?? randomUUID();
-    if (text && attachments.length === 0 && await this.commandRouter.handleVisibleSlashCommand(message.deviceId, text, state.sessionKey)) {
+    if (
+      text &&
+      attachments.length === 0 &&
+      text.trimStart().startsWith("/") &&
+      await this.commandRouter.handleVisibleSlashCommand(message.deviceId, text, state.sessionKey)
+    ) {
       return;
     }
     const taskKind = isExplicitPhoneTask(requestText) ? "phone" : "general";
     const delivery = message.delivery ?? "normal";
-    if (delivery === "queue" && state.runId) {
-      state.queuedSends.push({
-        ...message,
-        idempotencyKey,
-        delivery: "normal"
-      });
-      this.audit?.record("chat_send_queued", message.deviceId, {
-        sessionKey: state.sessionKey,
-        runId: state.runId,
-        queued: state.queuedSends.length,
-        length: requestText.length,
-        attachments: attachments.length
-      });
-      this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} queued message for next turn`);
+    state.reasoningEffort = normalizeThinkingLevel(message.reasoningEffort, state.reasoningEffort);
+    const sessionKey = state.sessionKey;
+    const sessionId = message.sessionId ?? state.sessionId ?? null;
+    const harnessId = state.harnessId;
+    const reasoningEffort = state.reasoningEffort ?? undefined;
+    const requestedModel = this.states.rawModelForSelection(message.model);
+    const requestedSelectionId = this.states.selectionIdForModel(message.model) ?? requestedModel;
+    const admission = this.states.runStateFor(message.deviceId, state.sessionKey);
+    if (delivery === "queue" && admission.phase !== "idle") {
+      this.queueChatMessage(message, state, requestText, idempotencyKey, admission);
       return;
     }
-    if (delivery === "steer" && state.runId) {
-      await this.steerChatMessage(message, state, requestText, idempotencyKey, taskKind);
+    const activeRunId = runIdForState(admission);
+    if (delivery === "steer" && activeRunId) {
+      await this.steerChatMessage(message, state, requestText, idempotencyKey, taskKind, activeRunId);
       return;
     }
-    const healthError = await this.activeHarnessHealthError(state);
+    if (delivery === "steer" && admission.phase !== "idle") {
+      this.queueChatMessage(message, state, requestText, idempotencyKey, admission);
+      return;
+    }
+
+    let reservation: HostChatRunReservation;
+    try {
+      reservation = this.states.reserveRun(message.deviceId, sessionKey, { idempotencyKey, taskKind });
+    } catch (error) {
+      if (error instanceof HarnessRunBusyError) {
+        this.sendChat(message.deviceId, buildChatErrorMessage({
+          deviceId: message.deviceId,
+          sessionKey: state.sessionKey,
+          runId: idempotencyKey,
+          error
+        }));
+        this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} is already working in this session`);
+        return;
+      }
+      throw error;
+    }
+
+    const healthError = await this.harnessHealthError(harnessId);
     if (healthError) {
+      this.states.rollbackRun(message.deviceId, state, reservation);
       this.sendChat(message.deviceId, buildChatErrorMessage({
         deviceId: message.deviceId,
-        sessionKey: state.sessionKey,
+        sessionKey,
         runId: idempotencyKey,
         error: healthError
       }));
-      this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} is not reachable`);
+      this.sendState(message.deviceId, `${harnessLabel(harnessId)} is not reachable`);
       return;
     }
     try {
-      state.reasoningEffort = normalizeThinkingLevel(message.reasoningEffort, state.reasoningEffort);
-      const requestedModel = this.states.rawModelForSelection(message.model);
       if (requestedModel && !isSameModelSelection(message.model?.trim() ?? requestedModel, previousModel)) {
-        await this.patchSession(message.deviceId, state.sessionKey, { model: requestedModel });
-        this.states.setSelectedModel(state, this.states.selectionIdForModel(message.model) ?? requestedModel);
+        await this.client.patchSession(sessionKey, { model: requestedModel });
+        if (state.sessionKey === sessionKey && state.harnessId === harnessId) {
+          this.states.setSelectedModel(state, requestedSelectionId);
+        }
+      }
+      if (!this.states.canEnterHarness(message.deviceId, reservation)) {
+        throw new ChatRunStartStoppedError(stopReasonForReservation(this.states.stateForReservation(message.deviceId, reservation)));
       }
       const result = await this.client.sendChat({
-        sessionKey: state.sessionKey,
-        sessionId: message.sessionId,
+        sessionKey: reservation.sessionKey,
+        sessionId: sessionId ?? undefined,
         message: messageForGateway(requestText, taskKind),
         attachments,
-        thinking: state.reasoningEffort ?? undefined,
+        thinking: reasoningEffort,
         idempotencyKey
       });
+      const promotion = this.states.promoteRun(
+        message.deviceId,
+        state,
+        reservation,
+        result.sessionKey,
+        result.runId
+      );
+      if (promotion.stopRequested) {
+        await this.cancelPromotedRun(
+          message.deviceId,
+          state,
+          result.sessionKey,
+          result.runId,
+          stopReasonForState(promotion.run)
+        );
+        return;
+      }
       if (state.completedRunIds.has(result.runId)) {
-        state.sessionKey = result.sessionKey;
-        state.runId = null;
-        state.activeTaskKind = null;
-        this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} finished`);
+        this.states.settleRun(message.deviceId, state, result.sessionKey, result.runId);
+        this.sendState(message.deviceId, `${harnessLabel(harnessId)} finished`);
         void this.refreshDevice(message.deviceId);
         this.drainQueuedSends(message.deviceId);
         return;
       }
-      state.sessionKey = result.sessionKey;
-      state.runId = result.runId;
       const userMessage: ChatHistoryMessage = {
         id: `user_${result.runId}`,
         role: "user",
@@ -282,11 +339,11 @@ export class OpenClawChatBridge {
         state,
         result.runId,
         result.sessionKey,
-        message.sessionId ?? state.sessionId ?? null,
+        sessionId,
         taskKind,
         userMessage
       );
-      await this.maybeSetFirstMessageDisplayName(message.deviceId, requestText);
+      await this.maybeSetFirstMessageDisplayName(message.deviceId, result.sessionKey, requestText);
       this.audit?.record("openclaw_chat_send", message.deviceId, {
         sessionKey: result.sessionKey,
         runId: result.runId,
@@ -294,50 +351,126 @@ export class OpenClawChatBridge {
         attachments: attachments.length
       });
       this.sendPendingUserHistory(message.deviceId, state, result.sessionKey);
-      if (state.harnessId === "opencode") {
+      if (harnessId === "opencode") {
         void this.refreshMetadata(message.deviceId);
       }
-      this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} is working`);
+      this.sendState(message.deviceId, `${harnessLabel(harnessId)} is working`);
     } catch (error) {
-      await this.handleSendFailure(message, state, idempotencyKey, taskKind, error);
+      await this.handleSendFailure(message, state, reservation, idempotencyKey, taskKind, harnessId, sessionId, error);
     }
   }
 
   private async handleSendFailure(
     message: ChatSendMessage,
     state: DeviceChatState,
+    reservation: HostChatRunReservation,
     idempotencyKey: string,
     taskKind: "general" | "phone",
+    harnessId: HarnessId,
+    sessionId: string | null,
     error: unknown
   ): Promise<void> {
-    this.sendChat(message.deviceId, buildChatErrorMessage({
-      deviceId: message.deviceId,
-      sessionKey: state.sessionKey,
-      runId: idempotencyKey,
-      error
-    }));
-    if (state.harnessId !== "openclaw") {
+    const reservationState = this.states.stateForReservation(message.deviceId, reservation);
+    if (error instanceof ChatRunStartStoppedError || reservationState?.phase === "stopping") {
+      this.states.rollbackRun(message.deviceId, state, reservation);
+      this.sendTerminalErrorOnce(message.deviceId, reservation.sessionKey, idempotencyKey, error);
+      this.sendState(message.deviceId, "Stop requested");
+      this.drainQueuedSends(message.deviceId);
       return;
     }
-    await this.fallbackSender.send(message, idempotencyKey, taskKind);
+
+    if (harnessId === "openclaw" && this.states.canEnterHarness(message.deviceId, reservation)) {
+      this.states.promoteRun(message.deviceId, state, reservation, reservation.sessionKey, idempotencyKey);
+      try {
+        await this.fallbackSender.send(message, idempotencyKey, taskKind, {
+          sessionKey: reservation.sessionKey,
+          sessionId
+        });
+      } finally {
+        this.states.settleRun(message.deviceId, state, reservation.sessionKey, idempotencyKey);
+        this.drainQueuedSends(message.deviceId);
+      }
+      return;
+    }
+
+    this.states.rollbackRun(message.deviceId, state, reservation);
+    this.sendTerminalErrorOnce(message.deviceId, reservation.sessionKey, idempotencyKey, error);
   }
 
-  private async activeHarnessHealthError(state: DeviceChatState): Promise<ChatClientError | undefined> {
-    const label = harnessLabel(state.harnessId);
+  private async harnessHealthError(harnessId: HarnessId): Promise<ChatClientError | undefined> {
+    const label = harnessLabel(harnessId);
     let payload: unknown;
     try {
       payload = await this.client.health();
     } catch (error) {
-      return harnessUnavailableError(state.harnessId, label, error);
+      return harnessUnavailableError(harnessId, label, error);
     }
-    const health = healthForHarness(payload, state.harnessId);
+    const health = healthForHarness(payload, harnessId);
     if (!health) {
       return undefined;
     }
     if (health.ok === false) {
-      return harnessUnavailableError(state.harnessId, label, health.error ?? health.message ?? payload);
+      return harnessUnavailableError(harnessId, label, health.error ?? health.message ?? payload);
     }
     return undefined;
+  }
+
+  private queueChatMessage(
+    message: ChatSendMessage,
+    state: DeviceChatState,
+    requestText: string,
+    idempotencyKey: string,
+    runState: HostChatRunState
+  ): void {
+    state.queuedSends.push({
+      ...message,
+      idempotencyKey,
+      delivery: "normal"
+    });
+    this.audit?.record("chat_send_queued", message.deviceId, {
+      sessionKey: state.sessionKey,
+      runId: runIdForState(runState),
+      runPhase: runState.phase,
+      queued: state.queuedSends.length,
+      length: requestText.length,
+      attachments: message.attachments?.length ?? 0
+    });
+    this.sendState(message.deviceId, `${harnessLabel(state.harnessId)} queued message for next turn`);
+  }
+
+  private async cancelPromotedRun(
+    deviceId: string,
+    state: DeviceChatState,
+    sessionKey: string,
+    runId: string,
+    reason: string
+  ): Promise<void> {
+    this.sendTerminalErrorOnce(deviceId, sessionKey, runId, new Error(reason));
+    try {
+      await this.client.abort(sessionKey, runId);
+    } catch {
+      await this.dispatcher.stopActiveTurn(deviceId, reason).catch(() => undefined);
+    } finally {
+      state.pendingRuns.delete(runId);
+      this.states.settleRun(deviceId, state, sessionKey, runId);
+      this.sendState(deviceId, "Stop requested");
+      this.drainQueuedSends(deviceId);
+    }
+  }
+
+  private sendTerminalErrorOnce(
+    deviceId: string,
+    sessionKey: string,
+    runId: string,
+    error: unknown
+  ): boolean {
+    const state = this.stateFor(deviceId);
+    if (state.completedRunIds.has(runId)) {
+      return false;
+    }
+    state.completedRunIds.add(runId);
+    this.sendChat(deviceId, buildChatErrorMessage({ deviceId, sessionKey, runId, error }));
+    return true;
   }
 
   private applyRealtimeChatOptions(
@@ -355,21 +488,42 @@ export class OpenClawChatBridge {
   async stop(message: ChatStopMessage): Promise<void> {
     const state = this.stateFor(message.deviceId);
     const sessionKey = message.sessionKey ?? state.sessionKey;
-    const runId = message.runId ?? state.runId ?? undefined;
+    const selectedRunId = state.runId ?? undefined;
+    const runState = this.states.requestRunStop(
+      message.deviceId,
+      state,
+      sessionKey,
+      message.reason ?? "Stopped from Android chat",
+      message.runId
+    );
+    if (runState.phase === "stopping" && runState.runId === null) {
+      this.sendState(message.deviceId, "Stop requested");
+      return;
+    }
+    const runId = runIdForState(runState) ?? message.runId ?? selectedRunId;
     try {
       await this.client.abort(sessionKey, runId);
     } catch (error) {
       await this.dispatcher.stopActiveTurn(message.deviceId, message.reason ?? "Stopped from Android chat");
-      this.sendChat(message.deviceId, buildChatErrorMessage({
-        deviceId: message.deviceId,
-        sessionKey,
-        runId,
-        error
-      }));
+      if (runState.phase === "idle") {
+        this.sendChat(message.deviceId, buildChatErrorMessage({
+          deviceId: message.deviceId,
+          sessionKey,
+          runId,
+          error
+        }));
+      }
     } finally {
-      state.runId = null;
-      state.activeTaskKind = null;
       if (runId) {
+        if (runState.phase !== "idle") {
+          this.sendTerminalErrorOnce(
+            message.deviceId,
+            sessionKey,
+            runId,
+            new Error(message.reason ?? "Stopped from Android chat")
+          );
+          this.states.settleRun(message.deviceId, state, sessionKey, runId);
+        }
         state.pendingRuns.delete(runId);
       }
       this.sendState(message.deviceId, "Stop requested");
@@ -382,16 +536,18 @@ export class OpenClawChatBridge {
     state: DeviceChatState,
     text: string,
     idempotencyKey: string,
-    taskKind: AgentTaskKind
+    taskKind: AgentTaskKind,
+    activeRunId: string
   ): Promise<void> {
     const attachments = message.attachments ?? [];
+    const sessionKey = state.sessionKey;
     try {
       state.reasoningEffort = normalizeThinkingLevel(message.reasoningEffort, state.reasoningEffort);
       if (this.client.steerChat) {
         await this.client.steerChat({
-          sessionKey: state.sessionKey,
+          sessionKey,
           sessionId: message.sessionId ?? state.sessionId ?? undefined,
-          runId: state.runId ?? undefined,
+          runId: activeRunId,
           message: messageForGateway(text, taskKind),
           attachments,
           thinking: state.reasoningEffort ?? undefined,
@@ -399,7 +555,7 @@ export class OpenClawChatBridge {
         });
       } else {
         await this.client.sendChat({
-          sessionKey: state.sessionKey,
+          sessionKey,
           sessionId: message.sessionId ?? state.sessionId ?? undefined,
           message: `/steer ${messageForGateway(text, taskKind)}`,
           attachments,
@@ -408,20 +564,21 @@ export class OpenClawChatBridge {
         });
       }
       this.audit?.record("chat_send_steered", message.deviceId, {
-        sessionKey: state.sessionKey,
-        runId: state.runId,
+        sessionKey,
+        runId: activeRunId,
         length: text.length,
         attachments: attachments.length
       });
       this.sendState(message.deviceId, `Steered ${harnessLabel(state.harnessId)}`);
     } catch (error) {
-      this.sendChatError(message.deviceId, state.sessionKey, error);
+      this.sendChatError(message.deviceId, sessionKey, error);
     }
   }
 
   private drainQueuedSends(deviceId: string): void {
     const state = this.stateFor(deviceId);
-    if (state.drainingQueuedSends || state.runId || state.queuedSends.length === 0) {
+    const runState = this.states.runStateFor(deviceId, state.sessionKey);
+    if (state.drainingQueuedSends || runState.phase !== "idle" || state.runId || state.queuedSends.length === 0) {
       return;
     }
     const next = state.queuedSends.shift();
@@ -434,7 +591,7 @@ export class OpenClawChatBridge {
       delivery: "normal"
     }).finally(() => {
       state.drainingQueuedSends = false;
-      if (!state.runId) {
+      if (this.states.runStateFor(deviceId, state.sessionKey).phase === "idle" && !state.runId) {
         this.drainQueuedSends(deviceId);
       }
     });
@@ -523,11 +680,7 @@ export class OpenClawChatBridge {
 
   async selectSession(message: ChatSelectSessionMessage): Promise<void> {
     const state = this.stateFor(message.deviceId);
-    const pendingRunForTarget = [...state.pendingRuns.entries()]
-      .find(([, pending]) => pending.sessionKey === message.sessionKey);
-    this.states.activateSession(state, message.sessionKey);
-    state.runId = pendingRunForTarget?.[0] ?? null;
-    state.activeTaskKind = pendingRunForTarget?.[1].taskKind ?? null;
+    this.states.activateSession(message.deviceId, state, message.sessionKey);
     state.model = this.states.selectedModelForActiveHarness(state);
     state.pendingFirstMessageDisplayName = false;
     state.lastRealtimeRequestAt = null;
@@ -559,10 +712,12 @@ export class OpenClawChatBridge {
     });
     const record = created && typeof created === "object" ? created as Record<string, unknown> : {};
     const key = typeof record.key === "string" && record.key.trim() ? record.key.trim() : undefined;
-    state.sessionKey = key ?? defaultSessionKeyForHarness(state.harnessId, this.config, message.deviceId);
-    this.states.rememberActiveSession(state);
+    this.states.activateSession(
+      message.deviceId,
+      state,
+      key ?? defaultSessionKeyForHarness(state.harnessId, this.config, message.deviceId)
+    );
     state.sessionId = typeof record.sessionId === "string" ? record.sessionId : null;
-    state.runId = null;
     state.pendingFirstMessageDisplayName = explicitLabel ? false : true;
     state.lastRealtimeRequestAt = null;
     this.sendState(message.deviceId, "Started a new chat");
@@ -628,6 +783,7 @@ export class OpenClawChatBridge {
 
   close(): void {
     this.runWaiters.close();
+    this.states.closeRunLifecycles();
     this.client.close();
   }
 
@@ -661,7 +817,7 @@ export class OpenClawChatBridge {
       const created = await this.client.createSession({ key, label: defaultSessionLabelForDevice(deviceId) });
       const record = created && typeof created === "object" ? created as Record<string, unknown> : {};
       if (typeof record.key === "string" && record.key.trim()) {
-        state.sessionKey = record.key;
+        this.states.activateSession(deviceId, state, record.key);
       }
       state.pendingFirstMessageDisplayName = false;
     }
@@ -859,9 +1015,9 @@ export class OpenClawChatBridge {
     }
   }
 
-  private async maybeSetFirstMessageDisplayName(deviceId: string, text: string): Promise<void> {
+  private async maybeSetFirstMessageDisplayName(deviceId: string, sessionKey: string, text: string): Promise<void> {
     const state = this.stateFor(deviceId);
-    if (!state.pendingFirstMessageDisplayName) {
+    if (state.sessionKey !== sessionKey || !state.pendingFirstMessageDisplayName) {
       return;
     }
     const displayName = firstMessageDisplayName(text);
@@ -870,7 +1026,7 @@ export class OpenClawChatBridge {
     }
     state.pendingFirstMessageDisplayName = false;
     try {
-      await this.client.patchSession(state.sessionKey, { displayName });
+      await this.client.patchSession(sessionKey, { displayName });
       void this.refreshMetadata(deviceId);
     } catch (error) {
       console.warn(`[chat] ${deviceId}: failed to set session display name: ${error instanceof Error ? error.message : String(error)}`);
@@ -1001,4 +1157,18 @@ function workspacePathForNewSession(state: DeviceChatState, requestedWorkspacePa
   }
   const currentWorkspace = state.sessionSummaries.get(state.sessionKey)?.workspacePath?.trim();
   return currentWorkspace || undefined;
+}
+
+function runIdForState(state: HostChatRunState): string | null {
+  return state.phase === "running" || (state.phase === "stopping" && state.runId !== null)
+    ? state.runId
+    : null;
+}
+
+function stopReasonForState(state: HostChatRunState): string {
+  return state.phase === "stopping" ? state.reason : "Stopped from Android chat";
+}
+
+function stopReasonForReservation(state: HostChatRunState | undefined): string {
+  return state ? stopReasonForState(state) : "Stopped from Android chat";
 }

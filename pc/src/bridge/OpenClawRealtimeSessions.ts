@@ -15,6 +15,7 @@ interface RealtimeChatSessionsOptions {
   config: Pick<BridgeConfig, "openClawChatAgentId">;
   client: GatewayChatClient;
   states: DeviceChatStateStore;
+  activateSession?(deviceId: string, state: DeviceChatState, sessionKey: string): void;
   sendState(deviceId: string, status?: string): void;
   refreshDevice(deviceId: string): Promise<void>;
 }
@@ -34,9 +35,14 @@ export class OpenClawRealtimeSessions {
     const { created, keys } = await this.createRealtimeSessionWithUniqueLabel(deviceId, state, baseLabel, existingLabels);
     const record = created && typeof created === "object" ? created as Record<string, unknown> : {};
     const key = typeof record.key === "string" && record.key.trim() ? record.key.trim() : undefined;
-    state.sessionKey = key ?? keys.fallbackSessionKey;
+    const sessionKey = key ?? keys.fallbackSessionKey;
+    if (this.options.activateSession) {
+      this.options.activateSession(deviceId, state, sessionKey);
+    } else {
+      state.sessionKey = sessionKey;
+      state.runId = null;
+    }
     state.sessionId = typeof record.sessionId === "string" ? record.sessionId : null;
-    state.runId = null;
     state.pendingFirstMessageDisplayName = false;
     this.options.sendState(deviceId, "Started a new realtime chat");
     await this.options.refreshDevice(deviceId);

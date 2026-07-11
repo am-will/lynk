@@ -18,6 +18,7 @@ interface GatewayEventRouterOptions {
   sendState(deviceId: string, status?: string): void;
   sendReasoningClear(deviceId: string, sessionKey: string, runId?: string | null): void;
   settleRun(message: Extract<ChatOutboundMessage, { type: "chat.final" | "chat.error" }>): void;
+  completeRun?(deviceId: string, state: DeviceChatState, sessionKey: string, runId: string): void;
   drainQueuedSends(deviceId: string): void;
   sendReplyAvailable(
     deviceId: string,
@@ -79,6 +80,14 @@ export class OpenClawGatewayEventRouter {
       return true;
     }
 
+    if (isTerminalMessage && messageRunId && state.completedRunIds.has(messageRunId)) {
+      const completedSessionKey = messageSessionKey ?? pendingRun?.sessionKey ?? state.sessionKey;
+      this.completeRun(deviceId, state, completedSessionKey, messageRunId);
+      state.pendingRuns.delete(messageRunId);
+      this.options.drainQueuedSends(deviceId);
+      return true;
+    }
+
     if (isSelectedSession) {
       if (message.type === "chat.delta" || message.type === "chat.final" || message.type === "chat.error") {
         this.options.sendReasoningClear(deviceId, state.sessionKey, messageRunId ?? state.runId ?? null);
@@ -88,13 +97,12 @@ export class OpenClawGatewayEventRouter {
 
     if (isTerminalMessage) {
       this.options.settleRun(message);
-      if (messageRunId && state.runId === messageRunId) {
-        state.runId = null;
-        state.activeTaskKind = null;
-      }
       if (messageRunId) {
         state.completedRunIds.add(messageRunId);
         const replySessionKey = messageSessionKey ?? pendingRun?.sessionKey;
+        if (replySessionKey) {
+          this.completeRun(deviceId, state, replySessionKey, messageRunId);
+        }
         if (replySessionKey) {
           this.options.sendReplyAvailable(deviceId, message, replySessionKey, pendingRun);
         }
@@ -168,13 +176,26 @@ export class OpenClawGatewayEventRouter {
         this.options.sendChat(deviceId, toolEvent);
       }
       if (record.type === "run.completed") {
-        state.runId = null;
-        state.activeTaskKind = null;
+        const completedSessionKey = sessionKey ?? pendingRun?.sessionKey ?? state.sessionKey;
+        if (runId) {
+          this.completeRun(deviceId, state, completedSessionKey, runId);
+        }
         this.options.sendState(deviceId, "OpenClaw finished");
         void this.options.refreshMetadata(deviceId);
         void this.options.sendHistory(deviceId);
         this.options.drainQueuedSends(deviceId);
       }
+    }
+  }
+
+  private completeRun(deviceId: string, state: DeviceChatState, sessionKey: string, runId: string): void {
+    if (this.options.completeRun) {
+      this.options.completeRun(deviceId, state, sessionKey, runId);
+      return;
+    }
+    if (state.runId === runId) {
+      state.runId = null;
+      state.activeTaskKind = null;
     }
   }
 }

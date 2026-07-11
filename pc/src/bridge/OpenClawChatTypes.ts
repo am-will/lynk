@@ -112,7 +112,9 @@ export class DeviceChatStateStore {
       startedAt: Date.now(),
       ...(userMessage ? { userMessage } : {})
     });
-    state.activeTaskKind = taskKind;
+    if (state.sessionKey === sessionKey) {
+      state.activeTaskKind = taskKind;
+    }
   }
 }
 
