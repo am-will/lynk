@@ -104,7 +104,7 @@ export class HostBlobStore {
   async upload(input: Readable, request: HostBlobUploadRequest): Promise<HostBlobMetadata> {
     const normalized = this.normalizeUpload(request);
     const reservationBytes = normalized.declaredSizeBytes ?? this.maxItemBytes;
-    this.reserve(normalized.id, reservationBytes);
+    const existing = this.reserve(normalized, reservationBytes);
     const partialName = `.${normalized.id}-${process.pid}-${Date.now()}.partial`;
     const partialPath = join(this.directory, partialName);
     this.activePartialNames.add(partialName);
@@ -119,6 +119,7 @@ export class HostBlobStore {
       if (sha256 !== normalized.sha256) {
         throw new HostBlobStoreError(`Checksum mismatch for ${normalized.displayName}`, 422);
       }
+      if (existing) return existing;
       const metadata: HostBlobMetadata = {
         version: 1,
         id: normalized.id,
@@ -243,9 +244,18 @@ export class HostBlobStore {
     }
   }
 
-  private reserve(id: string, reservationBytes: number): void {
-    if (this.reservations.has(id) || existsSync(this.payloadPath(id)) || existsSync(this.metadataPath(id))) {
-      throw new HostBlobStoreError(`Blob ${id} already exists`, 409);
+  private reserve(request: HostBlobUploadRequest, reservationBytes: number): HostBlobMetadata | undefined {
+    if (this.reservations.has(request.id)) {
+      throw new HostBlobStoreError(`Blob ${request.id} is already being uploaded`, 409);
+    }
+    const existing = this.matchingPublishedBlob(request);
+    if (existsSync(this.payloadPath(request.id)) || existsSync(this.metadataPath(request.id))) {
+      if (!existing) throw new HostBlobStoreError(`Blob ${request.id} already exists`, 409);
+      if (this.usableSpaceBytes(this.directory) < this.freeSpaceReserveBytes + reservationBytes) {
+        throw new HostBlobStoreError("Insufficient free storage to verify blob retry", 507);
+      }
+      this.reservations.set(request.id, reservationBytes);
+      return existing;
     }
     const payloads = this.publishedPayloads();
     if (payloads.length + this.reservations.size >= this.maxBlobCount) {
@@ -259,7 +269,21 @@ export class HostBlobStore {
     if (this.usableSpaceBytes(this.directory) < this.freeSpaceReserveBytes + reservationBytes) {
       throw new HostBlobStoreError("Insufficient free storage for blob upload", 507);
     }
-    this.reservations.set(id, reservationBytes);
+    this.reservations.set(request.id, reservationBytes);
+    return undefined;
+  }
+
+  private matchingPublishedBlob(request: HostBlobUploadRequest): HostBlobMetadata | undefined {
+    const existing = this.resolve(request.id, request, request.sha256);
+    if (!existing
+      || existing.displayName !== request.displayName
+      || existing.mimeType !== request.mimeType
+      || existing.kind !== request.kind
+      || (request.declaredSizeBytes !== undefined && existing.sizeBytes !== request.declaredSizeBytes)) {
+      return undefined;
+    }
+    const { path: _path, ...metadata } = existing;
+    return metadata;
   }
 
   private publish(partialPath: string, metadata: HostBlobMetadata): void {

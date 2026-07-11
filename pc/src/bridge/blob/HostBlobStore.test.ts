@@ -88,6 +88,32 @@ test("HostBlobStore verifies checksum and enforces device and session ownership"
   }
 });
 
+test("HostBlobStore validates identical retries and rejects id collisions", async () => {
+  const fixture = createStore({ maxItemBytes: 8, maxAggregateBytes: 32 });
+  const bytes = Buffer.from("hello");
+  const upload = request("blob_idempotent", bytes, bytes.length);
+  try {
+    const first = await fixture.store.upload(Readable.from([bytes]), upload);
+    const retried = await fixture.store.upload(Readable.from([bytes]), upload);
+
+    assert.deepEqual(retried, first);
+    assert.deepEqual(readdirSync(fixture.root).sort(), ["blob_idempotent.blob", "blob_idempotent.json"]);
+    await assert.rejects(
+      fixture.store.upload(
+        Readable.from([Buffer.from("other")]),
+        { ...upload, sha256: createHash("sha256").update("other").digest("hex") }
+      ),
+      (error: unknown) => error instanceof HostBlobStoreError && error.statusCode === 409
+    );
+    await assert.rejects(
+      fixture.store.upload(Readable.from([bytes, Buffer.alloc(4)]), { ...upload, declaredSizeBytes: undefined }),
+      (error: unknown) => error instanceof HostBlobStoreError && error.statusCode === 413
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("HostBlobStore startup cleanup removes stale partials, orphans, and expired pairs", async () => {
   const root = mkdtempSync(join(tmpdir(), "lynk-host-blobs-"));
   const now = 100_000;
