@@ -1,15 +1,72 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chmod, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { chmod, lstat, lutimes, mkdtemp, readFile, readdir, stat, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   atomicWritePrivateFile,
+  cleanupAtomicLeftovers,
   DebouncedAtomicJsonWriter,
   enforcePrivateFileSync,
   migrateLegacyFile,
   readJsonWithRecovery
 } from "./PrivatePersistence.js";
+
+test("concurrent atomic writers never scavenge another writer's live temp", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "lynk-private-race-"));
+  t.after(() => import("node:fs/promises").then(({ rm }) => rm(root, { recursive: true, force: true })));
+  const path = join(root, "state.json");
+  const entered = deferred();
+  const release = deferred();
+  let firstTemp = "";
+
+  const first = atomicWritePrivateFile(path, "first\n", {
+    keepBackup: false,
+    beforeRename: async (temporaryPath) => {
+      firstTemp = temporaryPath;
+      entered.resolve();
+      await release.promise;
+    }
+  });
+  await entered.promise;
+  const second = atomicWritePrivateFile(path, "second\n", { keepBackup: false });
+  await second;
+
+  assert.equal((await lstat(firstTemp)).isFile(), true);
+  release.resolve();
+  await first;
+  assert.equal(await readFile(path, "utf8"), "first\n");
+});
+
+test("startup scavenging removes only bounded stale regular temp files", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "lynk-private-scavenge-"));
+  t.after(() => import("node:fs/promises").then(({ rm }) => rm(root, { recursive: true, force: true })));
+  const path = join(root, "state.json");
+  const fresh = join(root, ".state.json.1.fresh.tmp");
+  const stale = join(root, ".state.json.2.stale.tmp");
+  const unrelated = join(root, ".other.json.3.stale.tmp");
+  const symlinkTarget = join(root, "target.txt");
+  const linked = join(root, ".state.json.4.link.tmp");
+  await Promise.all([
+    writeFile(fresh, "fresh"),
+    writeFile(stale, "stale"),
+    writeFile(unrelated, "unrelated"),
+    writeFile(symlinkTarget, "target")
+  ]);
+  await symlink(symlinkTarget, linked);
+  const now = Date.now();
+  await utimes(stale, new Date(now - 86_400_000), new Date(now - 86_400_000));
+  await lutimes(linked, new Date(now - 86_400_000), new Date(now - 86_400_000));
+
+  await cleanupAtomicLeftovers(path, { staleAfterMs: 60_000, now });
+
+  const names = await readdir(root);
+  assert.equal(names.includes(".state.json.1.fresh.tmp"), true);
+  assert.equal(names.includes(".state.json.2.stale.tmp"), false);
+  assert.equal(names.includes(".other.json.3.stale.tmp"), true);
+  assert.equal(names.includes(".state.json.4.link.tmp"), true);
+  assert.equal(await readFile(symlinkTarget, "utf8"), "target");
+});
 
 test("private atomic writes enforce Unix permissions and preserve old content on failure", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "lynk-private-write-"));
@@ -96,4 +153,10 @@ test("existing sensitive files are tightened when adopted", async (t) => {
 
 function isValueRecord(value: unknown): value is { value: number } {
   return Boolean(value && typeof value === "object" && typeof (value as { value?: unknown }).value === "number");
+}
+
+function deferred(): { promise: Promise<void>; resolve(): void } {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
 }

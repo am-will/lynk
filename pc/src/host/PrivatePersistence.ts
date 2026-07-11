@@ -24,12 +24,15 @@ import {
   readdir,
   rename,
   rm,
-  stat
+  stat,
+  lstat
 } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
+const DEFAULT_STALE_TEMP_AGE_MS = 24 * 60 * 60 * 1_000;
+const MAX_TEMP_SCAVENGE_ENTRIES = 256;
 
 export interface AtomicWriteOptions {
   maxBytes?: number;
@@ -142,7 +145,6 @@ export async function atomicWritePrivateFile(
 
   const directory = dirname(path);
   await ensurePrivateDirectory(directory);
-  await cleanupAtomicLeftovers(path);
   const temporaryPath = join(directory, `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`);
   let handle;
   try {
@@ -268,13 +270,26 @@ export async function migrateLegacyFile(
   return { migrated: false };
 }
 
-export async function cleanupAtomicLeftovers(path: string): Promise<void> {
+/** Startup-only scavenging. Atomic writes deliberately never invoke this on their hot path. */
+export async function cleanupAtomicLeftovers(
+  path: string,
+  options: { staleAfterMs?: number; now?: number; maxEntries?: number } = {}
+): Promise<void> {
   const directory = dirname(path);
   const prefix = `.${basename(path)}.`;
+  const staleAfterMs = Math.max(0, options.staleAfterMs ?? DEFAULT_STALE_TEMP_AGE_MS);
+  const staleBefore = (options.now ?? Date.now()) - staleAfterMs;
+  const maxEntries = Math.max(0, Math.min(options.maxEntries ?? MAX_TEMP_SCAVENGE_ENTRIES, MAX_TEMP_SCAVENGE_ENTRIES));
   const entries = await readdir(directory).catch(() => []);
-  await Promise.all(entries
+  const candidates = entries
     .filter((entry) => entry.startsWith(prefix) && entry.endsWith(".tmp"))
-    .map((entry) => rm(join(directory, entry), { force: true })));
+    .slice(0, maxEntries);
+  await Promise.all(candidates.map(async (entry) => {
+    const temporaryPath = join(directory, entry);
+    const info = await lstat(temporaryPath).catch(() => undefined);
+    if (!info || info.isSymbolicLink() || !info.isFile() || info.mtimeMs > staleBefore) return;
+    await rm(temporaryPath, { force: true }).catch(() => undefined);
+  }));
 }
 
 async function readBoundedJson<T>(
