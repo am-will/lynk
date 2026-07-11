@@ -11,6 +11,45 @@ class ApprovalCapabilityStoreTest {
     private val store = ApprovalCapabilityStore({ now }, { "token-${++tokenIndex}" }, ttlMs = 100L)
 
     @Test
+    fun localSideEffectApprovalIsExactOwnerScopedAndSingleUse() {
+        val action = PhoneActionDescriptor.create(
+            "local_write_file",
+            JSONObject().put("path", "notes.txt").put("text", "hello")
+        )
+        val capability = store.issue("local-owner", action, observationContext = null)
+
+        assertEquals(
+            ApprovalValidation.WrongOwner,
+            store.validateAndConsume(capability.token, "other-owner", action, observationContext = null)
+        )
+        assertTrue(
+            store.validateAndConsume(capability.token, "local-owner", action, observationContext = null) is
+                ApprovalValidation.Approved
+        )
+        assertEquals(
+            ApprovalValidation.Replayed,
+            store.validateAndConsume(capability.token, "local-owner", action, observationContext = null)
+        )
+    }
+
+    @Test
+    fun localSideEffectApprovalRejectsChangedArgumentsAndCancellation() {
+        val approved = PhoneActionDescriptor.create("termux_command", JSONObject().put("command", "echo safe"))
+        val changed = PhoneActionDescriptor.create("termux_command", JSONObject().put("command", "rm -rf files"))
+        val capability = store.issue("local-owner", approved, observationContext = null)
+
+        assertEquals(
+            ApprovalValidation.WrongAction,
+            store.validateAndConsume(capability.token, "local-owner", changed, observationContext = null)
+        )
+        store.cancelOwner("local-owner")
+        assertEquals(
+            ApprovalValidation.Cancelled,
+            store.validateAndConsume(capability.token, "local-owner", approved, observationContext = null)
+        )
+    }
+
+    @Test
     fun descriptorDigestIsStableAcrossArgumentOrder() {
         val first = PhoneActionDescriptor.create("tap_xy", JSONObject().put("x", 1).put("y", 2))
         val second = PhoneActionDescriptor.create("tap_xy", JSONObject().put("y", 2).put("x", 1))

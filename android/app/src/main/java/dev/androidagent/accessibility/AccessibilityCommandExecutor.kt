@@ -96,6 +96,23 @@ class AccessibilityCommandExecutor internal constructor(
         approvalCapabilities.clear()
     }
 
+    /** Consumes an exact, owner-scoped approval immediately before a non-phone local side effect. */
+    fun authorizeLocalSideEffect(
+        command: String,
+        args: JSONObject,
+        requestOwner: String,
+        approvalCapability: String?
+    ): String? {
+        require(ApprovalActionPolicy.isLocalSideEffect(command)) { "$command is not a local side effect" }
+        val action = PhoneActionDescriptor.create(command, args)
+        return approvalCapabilities.validateAndConsume(
+            token = approvalCapability,
+            ownerId = requestOwner,
+            action = action,
+            observationContext = null
+        ).denialMessage(action.summary)
+    }
+
     fun close() {
         approvalCapabilities.clear()
         commandActor.close()
@@ -499,7 +516,7 @@ class AccessibilityCommandExecutor internal constructor(
     ): CommandResult {
         val targetCommand = args.optString("command").takeIf { it.isNotBlank() }
             ?: return CommandResult(false, observer.observationSnapshot(), "Confirmation requires the exact target command")
-        if (!PhoneCommandPolicy.requiresApproval(targetCommand)) {
+        if (!ApprovalActionPolicy.requiresApproval(targetCommand)) {
             return CommandResult(false, observer.observationSnapshot(), "$targetCommand does not require an approval capability")
         }
         val targetArgs = args.optJSONObject("args") ?: JSONObject()
@@ -527,11 +544,16 @@ class AccessibilityCommandExecutor internal constructor(
             overlayController?.dismissConfirmation()
             throw error
         }
+        val approvalContext = if (ApprovalActionPolicy.isLocalSideEffect(targetCommand)) {
+            null
+        } else {
+            approvalContextFromObservation(observation)
+        }
         val capability = approvalCapabilities.issueIfApproved(
             confirmed,
             requestOwner,
             action,
-            approvalContextFromObservation(observation)
+            approvalContext
         )
             ?: return CommandResult(false, observation, "User denied or cancelled the action")
         return CommandResult(

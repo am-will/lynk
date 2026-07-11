@@ -32,7 +32,7 @@ class LocalToolRegistry(
             "local_read_skill" -> readSkill(validated.args)
             "local_list_files" -> listFiles(validated.args)
             "local_read_file" -> readFile(validated.args)
-            "local_write_file" -> writeFile(validated.args)
+            "local_write_file" -> writeFile(validated.args, requestOwner)
             "local_search_files" -> searchFiles(validated.args)
             "termux_command" -> termuxCommand(validated.args, requestOwner)
             else -> JSONObject().put("ok", false).put("error", "Unknown local tool: ${validated.name}")
@@ -141,18 +141,25 @@ class LocalToolRegistry(
         return JSONObject().put("ok", true).put("path", workspaceRelativePath(file)).put("text", file.readText().take(80_000))
     }
 
-    private fun writeFile(args: JSONObject): JSONObject {
+    private fun writeFile(args: JSONObject, requestOwner: String): JSONObject {
         val config = configProvider()
         if (!config.localDeveloperToolsEnabled) {
             return JSONObject().put("ok", false).put("error", "Local developer tools are disabled in Connection & Config.")
         }
-        val text = args.optString("text")
+        val actionArgs = args.withoutApprovalCapability()
+        commandExecutor.authorizeLocalSideEffect(
+            command = "local_write_file",
+            args = actionArgs,
+            requestOwner = requestOwner,
+            approvalCapability = args.optString("approvalCapability").takeIf { it.isNotBlank() }
+        )?.let { error -> return JSONObject().put("ok", false).put("error", error) }
+        val text = actionArgs.getString("text")
         if (text.isBlank()) {
             return JSONObject()
                 .put("ok", false)
                 .put("error", "Refusing to create an empty file. Provide non-empty text content.")
         }
-        val file = resolveWorkspacePath(args.getString("path"))
+        val file = resolveWorkspacePath(actionArgs.getString("path"))
         file.parentFile?.mkdirs()
         file.writeText(text)
         return JSONObject().put("ok", true).put("path", workspaceRelativePath(file)).put("sizeBytes", file.length())
@@ -185,12 +192,22 @@ class LocalToolRegistry(
         if (!config.localDeveloperToolsEnabled) {
             return JSONObject().put("ok", false).put("error", "Termux-backed tools are disabled in Connection & Config.")
         }
-        val command = args.getString("command")
-        val workdir = args.optString("workdir")
+        val actionArgs = args.withoutApprovalCapability()
+        commandExecutor.authorizeLocalSideEffect(
+            command = "termux_command",
+            args = actionArgs,
+            requestOwner = requestOwner,
+            approvalCapability = args.optString("approvalCapability").takeIf { it.isNotBlank() }
+        )?.let { error -> return JSONObject().put("ok", false).put("error", error) }
+        val command = actionArgs.getString("command")
+        val workdir = actionArgs.optString("workdir")
             .ifBlank { "/data/data/com.termux/files/home" }
-        val timeoutMs = args.optLong("timeoutMs", 60_000L).coerceIn(1_000L, 300_000L)
+        val timeoutMs = actionArgs.optLong("timeoutMs", 60_000L).coerceIn(1_000L, 300_000L)
         return termuxRunner.run(command, workdir, timeoutMs, requestOwner)
     }
+
+    private fun JSONObject.withoutApprovalCapability(): JSONObject =
+        JSONObject(toString()).apply { remove("approvalCapability") }
 
     private fun workspaceRoot(): File = File(context.filesDir, "local-workspace").apply { mkdirs() }
 
