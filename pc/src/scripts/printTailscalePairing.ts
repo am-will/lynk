@@ -1,5 +1,6 @@
 import { discoverTailscaleEndpoints } from "../host/EndpointDiscovery.js";
 import { loadOrCreateHostBridgeConfig } from "../host/HostConfigStore.js";
+import { configuredSecureEndpoints } from "../host/PairingPayload.js";
 const DEFAULT_PORT = 8788;
 
 const port = Number.parseInt(process.env.PHONE_AGENT_PORT ?? String(DEFAULT_PORT), 10);
@@ -7,13 +8,17 @@ if (!Number.isFinite(port) || port <= 0) {
   throw new Error(`Invalid PHONE_AGENT_PORT: ${process.env.PHONE_AGENT_PORT}`);
 }
 
-const endpoints = await discoverTailscaleEndpoints(port);
+const configuredEndpoints = configuredSecureEndpoints(process.env.PHONE_AGENT_PAIRING_WSS_URLS);
+const endpoints = configuredEndpoints.length > 0 ? configuredEndpoints : await discoverTailscaleEndpoints(port);
 const endpoint = endpoints[0];
 if (!endpoint) {
   throw new Error("No usable Tailscale endpoint is enabled. Configure a TLS-terminating URL with PHONE_AGENT_PAIRING_WSS_URLS, or explicitly set PHONE_AGENT_PAIRING_ALLOW_INSECURE_TAILSCALE=1 for trusted-overlay development.");
 }
 const wsUrl = endpoint.url;
-const healthUrl = endpoint.url.replace(/^ws:/, "http:").replace(/\/phone$/, "/health");
+const healthUrl = endpoint.url
+  .replace(/^wss:/, "https:")
+  .replace(/^ws:/, "http:")
+  .replace(/\/phone$/, "/health");
 const hostConfig = loadOrCreateHostBridgeConfig();
 const token = process.env.PHONE_AGENT_TOKEN ?? hostConfig.config.phoneAgentToken;
 
