@@ -54,21 +54,6 @@ class LocalAgentController(
         var phoneActionCount = 0
         var noToolPhoneNudges = 0
 
-        if (phoneControlRequest && toolsAllowed) {
-            val skillResult = executeAndRecordTool(
-                sessionKey = sessionKey,
-                runId = runId,
-                round = -1,
-                call = LocalToolCall(
-                    "local_read_skill",
-                    JSONObject().put("name", LocalToolRegistry.ANDROID_CONTROL_SKILL_NAME)
-                ),
-                transcript = transcript
-            )
-            androidControlSkillLoaded = skillResult.optBoolean("ok", false) &&
-                skillResult.optString("name") == LocalToolRegistry.ANDROID_CONTROL_SKILL_NAME
-        }
-
         repeat(MAX_TOOL_ROUNDS) toolLoop@{ round ->
             Log.i(TAG, "local turn $runId round=${round + 1} starting")
             emit(reasoning(sessionKey, runId, if (round == 0) "Planning locally..." else "Continuing after tool result...", replace = round == 0))
