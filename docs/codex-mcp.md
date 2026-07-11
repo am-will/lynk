@@ -74,3 +74,5 @@ The server exposes:
 - `phone_wait`
 
 `phone_tap_*`, `phone_long_press_node`, `phone_type_text`, `phone_submit_text`, and `phone_take_screenshot` require an enforced Android approval. Call `phone_ask_user_confirmation` with the exact target command and arguments, then pass its returned `approvalCapability` to that unchanged target action. The capability expires after 60 seconds, is valid for one use by the same MCP client, and is invalidated if the observed screen changes.
+
+For `phone_tap_node` and `phone_long_press_node`, include both `observationId` and `nodeId` from the same `phone_observe` or action result in the approval request and action. Node IDs are never valid without their observation UUID.

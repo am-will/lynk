@@ -133,6 +133,11 @@ export const registerMessageSchema = z.object({
   capabilities: z.array(z.string())
 });
 
+export const observedNodeTargetSchema = z.object({
+  observationId: z.string().uuid(),
+  nodeId: z.string().regex(/^n[1-9][0-9]*$/)
+});
+
 export const commandMessageSchema = z.object({
   id: z.string().min(1),
   type: z.literal("command"),
@@ -140,6 +145,23 @@ export const commandMessageSchema = z.object({
   command: phoneCommandSchema,
   args: z.record(z.string(), z.unknown()).default({}),
   approvalCapability: z.string().min(20).max(256).optional()
+}).superRefine((message, context) => {
+  if (message.command !== "tap_node" && message.command !== "long_press_node") return;
+  const result = observedNodeTargetSchema.safeParse(message.args);
+  if (!result.success) {
+    context.addIssue({
+      code: "custom",
+      path: ["args"],
+      message: "Node commands require observationId and nodeId from the same observation"
+    });
+  }
+});
+
+export const commandCancelMessageSchema = z.object({
+  type: z.literal("command.cancel"),
+  commandId: z.string().min(1),
+  requestOwner: z.string().min(1).max(256),
+  reason: z.string().min(1).max(512)
 });
 
 export const resultMessageSchema = z.object({
@@ -335,6 +357,7 @@ export const inboundPhoneMessageSchema = z.discriminatedUnion("type", [
 
 export type RegisterMessage = z.infer<typeof registerMessageSchema>;
 export type CommandMessage = z.infer<typeof commandMessageSchema>;
+export type CommandCancelMessage = z.infer<typeof commandCancelMessageSchema>;
 export type ResultMessage = z.infer<typeof resultMessageSchema>;
 export type UserRequestMessage = z.infer<typeof userRequestMessageSchema>;
 export type PhoneLocation = z.infer<typeof phoneLocationSchema>;
@@ -678,7 +701,7 @@ export type ChatOutboundMessage =
   | ChatSessionsMessage
   | ChatUsageMessage;
 
-export type PhoneOutboundMessage = CommandMessage | AgentStatusMessage | RealtimeOutboundMessage | ChatOutboundMessage;
+export type PhoneOutboundMessage = CommandMessage | CommandCancelMessage | AgentStatusMessage | RealtimeOutboundMessage | ChatOutboundMessage;
 
 export const realtimeSdpMessageSchema = z.object({
   type: z.literal("realtime.sdp"),
@@ -1007,6 +1030,7 @@ export const chatOutboundMessageSchema = z.discriminatedUnion("type", [
 
 export const phoneOutboundMessageSchema = z.union([
   commandMessageSchema,
+  commandCancelMessageSchema,
   agentStatusMessageSchema,
   realtimeOutboundMessageSchema,
   chatOutboundMessageSchema

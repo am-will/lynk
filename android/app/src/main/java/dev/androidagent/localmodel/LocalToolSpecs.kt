@@ -22,10 +22,10 @@ internal object LocalToolSpecs {
     val all: List<LocalToolSpec> = listOf(
         LocalToolSpec("phone_observe", "Observe the current Android screen.", "phone", "observe_screen"),
         LocalToolSpec("phone_open_app", "Open an Android app. Args: packageName for an exact package, or appName for a launcher label.", "phone", "open_app"),
-        LocalToolSpec("phone_tap_node", "Tap an observed node. Args: nodeId and approvalCapability returned by approval for these exact args.", "phone", "tap_node"),
+        LocalToolSpec("phone_tap_node", "Tap an observed node. Args: observationId and nodeId from the same observation, plus approvalCapability returned for these exact args.", "phone", "tap_node"),
         LocalToolSpec("phone_tap_xy", "Tap pixels. Args: x, y, and approvalCapability returned by approval for these exact args.", "phone", "tap_xy"),
         LocalToolSpec("phone_tap_normalized", "Tap screenshot coordinates. Args: xPct, yPct, and approvalCapability returned by approval for these exact args.", "phone", "tap_normalized"),
-        LocalToolSpec("phone_long_press_node", "Long-press a node. Args: nodeId and approvalCapability returned by approval for these exact args.", "phone", "long_press_node"),
+        LocalToolSpec("phone_long_press_node", "Long-press a node. Args: observationId and nodeId from the same observation, plus approvalCapability returned for these exact args.", "phone", "long_press_node"),
         LocalToolSpec("phone_type_text", "Type text. Args: text and approvalCapability returned by approval for these exact args.", "phone", "type_text"),
         LocalToolSpec("phone_scroll", "Scroll the active screen up, down, left, or right.", "phone", "scroll"),
         LocalToolSpec("phone_swipe", "Swipe between absolute screen coordinates in pixels.", "phone", "swipe"),

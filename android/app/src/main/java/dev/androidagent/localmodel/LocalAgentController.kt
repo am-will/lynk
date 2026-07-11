@@ -307,7 +307,7 @@ class LocalAgentController(
         Log.i(TAG, "local turn $runId executing tool=${call.name} args=${call.args}")
         val eventId = "local_tool_${UUID.randomUUID()}"
         emit(toolEvent(sessionKey, runId, eventId, call, "running", "Running ${call.name}", null, null))
-        val requestOwner = localRequestOwner(sessionKey, runId)
+        val requestOwner = LocalPhoneCommandOwner.id(sessionKey, runId)
         val result = runCatching { tools.execute(call, requestOwner) }
             .getOrElse { JSONObject().put("ok", false).put("error", it.message ?: it.toString()) }
         Log.i(TAG, "local turn $runId tool=${call.name} ok=${result.optBoolean("ok", false)} error=${result.optString("error")}")
@@ -335,8 +335,6 @@ class LocalAgentController(
         transcript.add("tool ${call.name} result: ${transcriptToolResult(call, result)}")
         return result
     }
-
-    private fun localRequestOwner(sessionKey: String, runId: String): String = "local:$sessionKey:$runId"
 
     private fun transcriptToolResult(call: LocalToolCall, result: JSONObject): String {
         return if (call.name == "local_read_skill") {

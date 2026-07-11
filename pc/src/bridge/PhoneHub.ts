@@ -3,6 +3,7 @@ import {
   DEFAULT_TIMEOUT_MS,
   type AgentStatusMessage,
   type ChatOutboundMessage,
+  type CommandCancelMessage,
   type CommandMessage,
   type PhoneOutboundMessage,
   type PhoneCommandRequest,
@@ -29,6 +30,7 @@ export interface ConnectedPhoneSummary {
 
 interface PendingCommand {
   deviceId: string;
+  requestOwner: string;
   resolve: (result: PhoneCommandResult) => void;
   reject: (error: Error) => void;
   timer: NodeJS.Timeout;
@@ -116,12 +118,13 @@ export class PhoneHub {
     });
     return await new Promise<PhoneCommandResult>((resolve, reject) => {
       const timer = setTimeout(() => {
+        this.sendCommandCancellation(deviceId, id, message.requestOwner, `Timed out after ${timeoutMs}ms`);
         this.pending.delete(id);
         this.audit?.record("phone_command_timeout", deviceId, { id, command: request.command, timeoutMs });
         reject(new Error(`Timed out waiting ${timeoutMs}ms for ${request.command} on ${deviceId}`));
       }, timeoutMs);
 
-      this.pending.set(id, { deviceId, resolve, reject, timer });
+      this.pending.set(id, { deviceId, requestOwner: message.requestOwner, resolve, reject, timer });
       phone.socket.send(JSON.stringify(message), (error) => {
         if (error) {
           clearTimeout(timer);
@@ -139,8 +142,23 @@ export class PhoneHub {
       }
       clearTimeout(pending.timer);
       this.pending.delete(id);
+      this.sendCommandCancellation(deviceId, id, pending.requestOwner, reason);
       this.audit?.record("phone_command_cancelled", deviceId, { id, reason });
       pending.reject(new Error(reason));
+    }
+  }
+
+  private sendCommandCancellation(deviceId: string, commandId: string, requestOwner: string, reason: string): void {
+    const message: CommandCancelMessage = {
+      type: "command.cancel",
+      commandId,
+      requestOwner,
+      reason: reason.slice(0, 512) || "Command cancelled"
+    };
+    try {
+      this.sendMessage(deviceId, message);
+    } catch {
+      // A disconnected phone has already lost all host-owned command work.
     }
   }
 

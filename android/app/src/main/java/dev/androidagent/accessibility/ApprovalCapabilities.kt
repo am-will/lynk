@@ -179,10 +179,10 @@ internal class ApprovalCapabilityStore(
 
 internal object PhoneActionSummary {
     fun describe(command: String, args: JSONObject): String = when (command) {
-        "tap_node" -> "Tap observed node ${args.optString("nodeId", "<missing>")}"
+        "tap_node" -> "Tap observed node ${args.optString("nodeId", "<missing>")} from observation ${args.optString("observationId", "<missing>")}"
         "tap_xy" -> "Tap screen coordinates (${args.opt("x")}, ${args.opt("y")})"
         "tap_normalized" -> "Tap screen position (${args.opt("xPct")}, ${args.opt("yPct")})"
-        "long_press_node" -> "Long-press observed node ${args.optString("nodeId", "<missing>")}"
+        "long_press_node" -> "Long-press observed node ${args.optString("nodeId", "<missing>")} from observation ${args.optString("observationId", "<missing>")}"
         "type_text" -> "Type into the focused field: ${JSONObject.quote(args.optString("text"))}"
         "submit_text" -> "Submit the focused text field"
         "take_screenshot" -> "Capture the current screen"

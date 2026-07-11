@@ -29,8 +29,9 @@ test("PhoneToolClient keeps capability scoped to its stable request owner", asyn
   }) as typeof fetch;
   try {
     const client = new PhoneToolClient("http://bridge.test", "test-session");
-    await client.command("ask_user_confirmation", { command: "tap_node", args: { nodeId: "n1" } });
-    await client.command("tap_node", { nodeId: "n1" }, 30_000, "capability-secret-value");
+    const target = { observationId: "123e4567-e89b-12d3-a456-426614174000", nodeId: "n1" };
+    await client.command("ask_user_confirmation", { command: "tap_node", args: target });
+    await client.command("tap_node", target, 30_000, "capability-secret-value");
 
     assert.deepEqual(bodies.map((body) => body.requestOwner), ["test-session", "test-session"]);
     assert.equal(bodies[0].approvalCapability, undefined);

@@ -4,11 +4,10 @@ import android.content.Context
 import android.util.Base64
 import dev.androidagent.AgentConfig
 import dev.androidagent.accessibility.AccessibilityCommandExecutor
-import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import kotlin.coroutines.resume
+import java.util.UUID
 
 class LocalToolRegistry(
     private val context: Context,
@@ -36,28 +35,33 @@ class LocalToolRegistry(
         }
     }
 
-    private suspend fun executePhone(command: String, args: JSONObject, requestOwner: String): JSONObject =
-        suspendCancellableCoroutine { continuation ->
-            val normalizedArgs = normalizePhoneArgs(command, args)
-            val approvalCapability = normalizedArgs.optString("approvalCapability").takeIf { it.isNotBlank() }
-            val commandArgs = JSONObject(normalizedArgs.toString()).apply { remove("approvalCapability") }
-            commandExecutor.execute(command, commandArgs, requestOwner, approvalCapability) { result ->
-                val json = JSONObject()
-                    .put("ok", result.ok)
-                    .put("observation", result.observation)
-                    .put("error", result.error)
-                    .put("approvalCapability", result.approvalCapability)
-                    .put("approvalExpiresAtMs", result.approvalExpiresAtMs)
-                    .put("approvedAction", result.approvedAction)
+    private suspend fun executePhone(command: String, args: JSONObject, requestOwner: String): JSONObject {
+        val normalizedArgs = normalizePhoneArgs(command, args)
+        val approvalCapability = normalizedArgs.optString("approvalCapability").takeIf { it.isNotBlank() }
+        val commandArgs = JSONObject(normalizedArgs.toString()).apply { remove("approvalCapability") }
+        val result = commandExecutor.executeSuspending(
+            commandId = "local_cmd_${UUID.randomUUID()}",
+            command = command,
+            args = commandArgs,
+            requestOwner = requestOwner,
+            approvalCapability = approvalCapability
+        )
+        return JSONObject()
+            .put("ok", result.ok)
+            .put("observation", result.observation)
+            .put("error", result.error)
+            .put("approvalCapability", result.approvalCapability)
+            .put("approvalExpiresAtMs", result.approvalExpiresAtMs)
+            .put("approvedAction", result.approvedAction)
+            .also { json ->
                 result.screenshot?.let { json.put("screenshot", it) }
                 if (result.screenshotBase64 != null) {
                     val path = saveScreenshot(result.screenshotBase64)
                     json.put("screenshotPath", path)
                     json.put("screenshotBase64", "<omitted:${result.screenshotBase64.length} chars>")
                 }
-                continuation.resume(json)
             }
-        }
+    }
 
     fun cancelApprovals(requestOwner: String) {
         commandExecutor.cancelApprovals(requestOwner)

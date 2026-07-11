@@ -33,7 +33,10 @@ Registration permanently binds that socket to its `deviceId`. A second `register
   "type": "command",
   "requestOwner": "host:mcp:4ebf...",
   "command": "tap_node",
-  "args": { "nodeId": "n17" },
+  "args": {
+    "observationId": "123e4567-e89b-12d3-a456-426614174000",
+    "nodeId": "n17"
+  },
   "approvalCapability": "<opaque single-use capability>"
 }
 ```
@@ -48,13 +51,29 @@ Sensitive commands require a preceding `ask_user_confirmation` command from the 
   "command": "ask_user_confirmation",
   "args": {
     "command": "tap_node",
-    "args": { "nodeId": "n17" },
+    "args": {
+      "observationId": "123e4567-e89b-12d3-a456-426614174000",
+      "nodeId": "n17"
+    },
     "message": "Open the selected item"
   }
 }
 ```
 
 An approved result contains `approvalCapability`, `approvalExpiresAtMs`, and `approvedAction`. The capability authorizes only the exact command/arguments and observation shown to the user, expires after 60 seconds, and is consumed once. It is transported as a command-envelope field, never inside the target command's `args`.
+
+Android admits commands through one FIFO actor: one command can execute while at most 32 wait. Additional commands fail with `command_queue_full`. The bridge sends an owner-bound cancellation when a host request times out or its task stops:
+
+```json
+{
+  "type": "command.cancel",
+  "commandId": "cmd_123",
+  "requestOwner": "host:mcp:4ebf...",
+  "reason": "Timed out after 30000ms"
+}
+```
+
+Cancellation removes queued work or cancels the exact active coroutine. Disconnect cancels all host-owned commands, local turn cancellation cancels that run's commands, and service teardown settles every active/queued command.
 
 Coordinate taps use full-screen pixels, including the status and navigation bars. When a caller chooses a point from a screenshot that may have been shown at a scaled size, prefer `tap_normalized`:
 
@@ -77,6 +96,7 @@ Coordinate taps use full-screen pixels, including the status and navigation bars
   "type": "result",
   "ok": true,
   "observation": {
+    "observationId": "123e4567-e89b-12d3-a456-426614174000",
     "deviceId": "Galaxy",
     "package": "com.android.settings",
     "activity": "com.android.settings.Settings",
@@ -113,7 +133,7 @@ Coordinate taps use full-screen pixels, including the status and navigation bars
 
 Authorization failures use stable prefixes including `authorization_required`, `authorization_expired`, `authorization_replayed`, `authorization_wrong_owner`, `authorization_wrong_action`, `authorization_context_changed`, and `authorization_cancelled`.
 
-Observation node IDs such as `n17` are ephemeral and only valid until the next observation. Prefer `viewIdResourceName`, visible `text`, or `contentDescription` as stable selectors when available. Android exports OpenAgent resource IDs for meaningful controls under `app.lynk:id/...`; decorative artwork is intentionally hidden from accessibility so the tree stays focused on actionable UI.
+Observation node IDs such as `n17` are ordinal and scoped to the observation UUID returned with them. `tap_node` and `long_press_node` require the exact `(observationId, nodeId)` pair. Android rejects an older generation with `stale_observation` and an absent node in the current generation with `unknown_node`; it never refreshes and silently reuses `n17` on another screen. Prefer `viewIdResourceName`, visible `text`, or `contentDescription` when choosing a node, but still send the generation pair.
 
 `take_screenshot` results include `screenshotBase64` plus `screenshot.widthPx` and `screenshot.heightPx`. Those dimensions are the source of truth for mapping visual screenshot positions back to phone coordinates.
 

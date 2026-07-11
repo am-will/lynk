@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { PhoneToolClient, screenshotDirectory } from "./phoneToolClient.js";
-import { MCP_PHONE_TOOL_NAMES, SENSITIVE_PHONE_COMMANDS } from "../protocol/messages.js";
+import { MCP_PHONE_TOOL_NAMES, SENSITIVE_PHONE_COMMANDS, observedNodeTargetSchema } from "../protocol/messages.js";
 
 type ToolHandlerArgs = Record<string, unknown>;
 
@@ -71,7 +71,7 @@ export function registerPhoneTools(server: McpServer, client = new PhoneToolClie
     "open_app"
   );
 
-  register(server, client, MCP_PHONE_TOOL_NAMES.tapNode, "Tap an observed accessibility node after exact user approval. The result includes a fresh post-tap observation.", { nodeId: z.string(), ...approvalCapability }, "tap_node", (args) => args, true);
+  register(server, client, MCP_PHONE_TOOL_NAMES.tapNode, "Tap a node using observationId and nodeId from the same observation after exact user approval. The result includes a fresh observation.", { ...observedNodeTargetSchema.shape, ...approvalCapability }, "tap_node", (args) => args, true);
   register(server, client, MCP_PHONE_TOOL_NAMES.tapXy, "Tap screen coordinates after exact user approval. The result includes a fresh post-tap observation.", { x: z.number(), y: z.number(), ...approvalCapability }, "tap_xy", (args) => args, true);
   register(
     server,
@@ -83,7 +83,7 @@ export function registerPhoneTools(server: McpServer, client = new PhoneToolClie
     (args) => args,
     true
   );
-  register(server, client, MCP_PHONE_TOOL_NAMES.longPressNode, "Long press an observed accessibility node after exact user approval.", { nodeId: z.string(), ...approvalCapability }, "long_press_node", (args) => args, true);
+  register(server, client, MCP_PHONE_TOOL_NAMES.longPressNode, "Long press a node using observationId and nodeId from the same observation after exact user approval.", { ...observedNodeTargetSchema.shape, ...approvalCapability }, "long_press_node", (args) => args, true);
   register(
     server,
     client,

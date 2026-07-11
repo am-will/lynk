@@ -20,12 +20,15 @@ import android.view.accessibility.AccessibilityNodeInfo
 import dev.androidagent.OverlayController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.Executors
+import java.util.UUID
 import kotlin.coroutines.resume
 
 class AccessibilityCommandExecutor internal constructor(
@@ -37,36 +40,68 @@ class AccessibilityCommandExecutor internal constructor(
 ) {
     private val scope = CoroutineScope(Dispatchers.Main)
     private val observer = ScreenObserver()
+    private val commandActor = PhoneCommandActor { invocation ->
+        onPhoneControlCommandStarted(invocation.command)
+        try {
+            executeInternal(
+                invocation.command,
+                invocation.args,
+                invocation.ownerId,
+                invocation.approvalCapability
+            )
+        } finally {
+            onPhoneControlCommandFinished(invocation.command)
+        }
+    }
+
+    suspend fun executeSuspending(
+        commandId: String,
+        command: String,
+        args: JSONObject,
+        requestOwner: String = LEGACY_REQUEST_OWNER,
+        approvalCapability: String? = null
+    ): CommandResult = commandActor.execute(
+        PhoneCommandInvocation(commandId, requestOwner, command, args, approvalCapability)
+    )
 
     fun execute(
         command: String,
         args: JSONObject,
         requestOwner: String = LEGACY_REQUEST_OWNER,
         approvalCapability: String? = null,
+        commandId: String = "android_${UUID.randomUUID()}",
         callback: (CommandResult) -> Unit
     ) {
         scope.launch {
-            onPhoneControlCommandStarted(command)
-            val result = try {
-                runCatching { executeInternal(command, args, requestOwner, approvalCapability) }
-                    .getOrElse { CommandResult(false, currentObservationOrNull(), it.message ?: it.toString()) }
-            } finally {
-                onPhoneControlCommandFinished(command)
-            }
+            val result = executeSuspending(commandId, command, args, requestOwner, approvalCapability)
             callback(result)
         }
     }
 
     fun cancelApprovals(requestOwner: String) {
         approvalCapabilities.cancelOwner(requestOwner)
+        commandActor.cancelOwner(requestOwner)
     }
 
     fun cancelApprovalsForPrefix(prefix: String) {
         approvalCapabilities.cancelOwnerPrefix(prefix)
+        commandActor.cancelOwnerPrefix(prefix)
+    }
+
+    fun cancelCommand(commandId: String, requestOwner: String? = null, reason: String = PhoneCommandActor.COMMAND_CANCELLED) {
+        commandActor.cancelCommand(commandId, requestOwner, reason)
     }
 
     fun clearApprovals() {
         approvalCapabilities.clear()
+    }
+
+    fun close() {
+        approvalCapabilities.clear()
+        commandActor.close()
+        scope.cancel()
+        overlayController?.dismissConfirmation()
+        observer.clearNodes()
     }
 
     private suspend fun executeInternal(
@@ -97,7 +132,8 @@ class AccessibilityCommandExecutor internal constructor(
             "tap_node" -> {
                 service ?: return accessibilityMissing()
                 withAgentChromeSuppressed {
-                    val node = requireNode(args.getString("nodeId"))
+                    val target = ObservedNodeTarget.parse(args)
+                    val node = requireNode(target.observationId, target.nodeId)
                     tapNode(service, node)
                     waitMs(180)
                     CommandResult(true, observer.observe(service))
@@ -122,7 +158,8 @@ class AccessibilityCommandExecutor internal constructor(
             "long_press_node" -> {
                 service ?: return accessibilityMissing()
                 withAgentChromeSuppressed {
-                    val node = requireNode(args.getString("nodeId"))
+                    val target = ObservedNodeTarget.parse(args)
+                    val node = requireNode(target.observationId, target.nodeId)
                     longPressNode(service, node)
                     waitMs(250)
                     CommandResult(true, observer.observe(service))
@@ -357,11 +394,11 @@ class AccessibilityCommandExecutor internal constructor(
             val ok = suspendCancellableCoroutine<Boolean> { continuation ->
                 service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
                     override fun onCompleted(gestureDescription: GestureDescription?) {
-                        continuation.resume(true)
+                        if (continuation.isActive) continuation.resume(true)
                     }
 
                     override fun onCancelled(gestureDescription: GestureDescription?) {
-                        continuation.resume(false)
+                        if (continuation.isActive) continuation.resume(false)
                     }
                 }, Handler(Looper.getMainLooper()))
             }
@@ -466,6 +503,11 @@ class AccessibilityCommandExecutor internal constructor(
             return CommandResult(false, observer.observationSnapshot(), "$targetCommand does not require an approval capability")
         }
         val targetArgs = args.optJSONObject("args") ?: JSONObject()
+        if (targetCommand == "tap_node" || targetCommand == "long_press_node") {
+            runCatching { ObservedNodeTarget.parse(targetArgs) }.getOrElse { error ->
+                return CommandResult(false, observer.observationSnapshot(), error.message ?: "Invalid observed node target")
+            }
+        }
         val action = PhoneActionDescriptor.create(targetCommand, targetArgs)
         val observation = observer.observationSnapshot() ?: service?.let { observer.observe(it) }
         val rationale = args.optString("message").takeIf { it.isNotBlank() }
@@ -475,13 +517,16 @@ class AccessibilityCommandExecutor internal constructor(
                 action.summary,
                 listOfNotNull(rationale, preview).joinToString("\n\n").takeIf { it.isNotBlank() }
             )
-        val confirmed = deferred?.let {
-            val result = withTimeoutOrNull(CONFIRMATION_TIMEOUT_MS) { it.await() }
-            if (result == null) {
-                overlayController.dismissConfirmation()
-            }
-            result ?: false
-        } ?: false
+        val confirmed = try {
+            deferred?.let {
+                val result = withTimeoutOrNull(CONFIRMATION_TIMEOUT_MS) { it.await() }
+                if (result == null) overlayController.dismissConfirmation()
+                result ?: false
+            } ?: false
+        } catch (error: CancellationException) {
+            overlayController?.dismissConfirmation()
+            throw error
+        }
         val capability = approvalCapabilities.issueIfApproved(
             confirmed,
             requestOwner,
@@ -526,9 +571,16 @@ class AccessibilityCommandExecutor internal constructor(
 
     private fun currentObservationOrNull(): JSONObject? = PhoneAccessibilityService.instance?.let { observer.observe(it) }
 
-    private fun requireNode(nodeId: String): AccessibilityNodeInfo {
-        return observer.node(nodeId)
-            ?: throw IllegalArgumentException("Node $nodeId is not present in the approved observation. Observe and request approval again.")
+    private fun requireNode(observationId: String, nodeId: String): AccessibilityNodeInfo {
+        return when (val lookup = observer.node(observationId, nodeId)) {
+            is ObservationNodeLookup.Found -> lookup.value
+            is ObservationNodeLookup.StaleObservation -> throw IllegalArgumentException(
+                "stale_observation: requested $observationId but current observation is ${lookup.currentObservationId ?: "none"}"
+            )
+            ObservationNodeLookup.UnknownNode -> throw IllegalArgumentException(
+                "unknown_node: $nodeId is not present in observation $observationId"
+            )
+        }
     }
 
     private fun currentApprovalContext(service: PhoneAccessibilityService?): ApprovalContext? {
