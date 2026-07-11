@@ -190,7 +190,10 @@ class AgentForegroundService : Service() {
             context = this,
             sendStart = { sdp, config -> realtimeVoiceCoordinator?.sendStart(sdp, config) },
             sendStop = { reason -> realtimeVoiceCoordinator?.sendStop(reason) },
+            onSessionTerminated = { reason -> realtimeVoiceCoordinator?.cancelLocalWork(reason) },
             sendToolCall = { call -> realtimeVoiceCoordinator?.handleToolCall(call) },
+            acquireForegroundLease = ::promoteVoiceForegroundIfAllowed,
+            releaseForegroundLease = ::restoreBaseForeground,
             onStateChanged = ::handleVoiceRuntimeStateChanged
         )
         registerCloseSystemDialogsReceiver()
@@ -440,7 +443,6 @@ class AgentForegroundService : Service() {
             return false
         }
         connectAgentClient(model)
-        promoteVoiceForegroundIfAllowed()
         activateRealtimeVoicePet()
         voiceRuntimeController?.start()
         return true
@@ -454,7 +456,7 @@ class AgentForegroundService : Service() {
         commandExecutor?.close()
         voiceRuntimeController?.stopFromUi()
         voiceRuntimeController?.close()
-        realtimeVoiceCoordinator?.close()
+        val voiceCloseJob = realtimeVoiceCoordinator?.close()
         realtimeVoiceCoordinator = null
         voiceTranscriptionManager?.close()
         serviceScope.cancel()
@@ -463,6 +465,7 @@ class AgentForegroundService : Service() {
         localModelEngineManager = null
         if (engineManager != null) {
             CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                voiceCloseJob?.join()
                 engineManager.closeAndJoin("Lynk service destroyed")
             }
         }

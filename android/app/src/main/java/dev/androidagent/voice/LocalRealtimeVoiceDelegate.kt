@@ -7,12 +7,14 @@ import dev.androidagent.agentchat.LocalAgentTurnCoordinator
 import dev.androidagent.agentchat.LocalTurnRequest
 import dev.androidagent.localmodel.LocalModelEngineManager
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.util.ArrayDeque
 
 class LocalRealtimeVoiceDelegate(
     context: Context,
-    scope: CoroutineScope,
+    private val scope: CoroutineScope,
     commandExecutor: AccessibilityCommandExecutor,
     private val configProvider: () -> AgentConfig,
     onStatus: (String, String) -> Unit,
@@ -31,11 +33,23 @@ class LocalRealtimeVoiceDelegate(
         runtime = engineManager
     )
     private val queue = ArrayDeque<QueuedLocalRealtimeTask>()
+    private val admission = RealtimeTaskAdmission(MAX_QUEUED_TASKS, MAX_TRACKED_CALL_IDS)
     private var activeTask: QueuedLocalRealtimeTask? = null
+    private var generation = 0L
+    private var closed = false
     private var completed = 0
     private var failed = 0
 
     fun handleToolCall(call: RealtimeToolCall) {
+        if (closed) return
+        when (admission.admit(call.callId, activeTask != null, queue.size)) {
+            RealtimeTaskAdmission.Result.DUPLICATE -> return
+            RealtimeTaskAdmission.Result.QUEUE_FULL -> {
+                failCall(call.callId, "Local realtime task queue is full ($MAX_QUEUED_TASKS).")
+                return
+            }
+            RealtimeTaskAdmission.Result.ACCEPTED -> Unit
+        }
         when (val intent = RealtimeToolRouting.intentFor(call.name, call.arguments)) {
             is RealtimeToolIntent.StartTask -> enqueueTask(call.callId, call.name, intent.instruction)
             is RealtimeToolIntent.SteerTask -> handleSteer(call, intent)
@@ -45,10 +59,29 @@ class LocalRealtimeVoiceDelegate(
         }
     }
 
-    fun close() {
+    fun close(): Job {
+        closed = true
+        generation += 1
         coordinator.close()
         activeTask = null
         queue.clear()
+        sendTaskStatus()
+        return scope.launch { coordinator.closeAndJoin() }
+    }
+
+    fun stopAndJoin(reason: String): Job {
+        generation += 1
+        val cancelled = buildList {
+            activeTask?.let(::add)
+            addAll(generateSequence { queue.poll() }.toList())
+        }
+        activeTask = null
+        cancelled.forEach { task ->
+            failed += 1
+            sendResult(task.callId, ok = false, status = "cancelled", error = reason)
+        }
+        sendTaskStatus()
+        return scope.launch { coordinator.stopAndJoin(reason = reason) }
     }
 
     private fun enqueueTask(callId: String, toolName: String, instruction: String) {
@@ -78,6 +111,7 @@ class LocalRealtimeVoiceDelegate(
     }
 
     private fun startTask(task: QueuedLocalRealtimeTask) {
+        val taskGeneration = generation
         activeTask = task
         sendTaskStatus()
         val started = coordinator.startTurn(
@@ -89,16 +123,19 @@ class LocalRealtimeVoiceDelegate(
                 failedStatus = "Local model failed",
                 emitUserMessageOnStart = true,
                 onCompleted = { outcome ->
+                    if (taskGeneration != generation || closed) return@LocalTurnRequest
                     completed += 1
                     sendResult(task.callId, ok = true, status = "completed", output = outcome.text)
                     finishTask(task)
                 },
                 onCancelled = { outcome ->
+                    if (taskGeneration != generation || closed) return@LocalTurnRequest
                     failed += 1
                     sendResult(task.callId, ok = false, status = "cancelled", error = outcome.text)
                     finishTask(task)
                 },
                 onFailed = { outcome ->
+                    if (taskGeneration != generation || closed) return@LocalTurnRequest
                     failed += 1
                     sendResult(task.callId, ok = false, status = "failed", error = outcome.text)
                     finishTask(task)
@@ -113,14 +150,7 @@ class LocalRealtimeVoiceDelegate(
     }
 
     private fun stopActive(call: RealtimeToolCall, reason: String) {
-        val queuedTasks = generateSequence { queue.poll() }.toList()
-        queuedTasks.forEach { task ->
-            failed += 1
-            sendResult(task.callId, ok = false, status = "cancelled", error = reason)
-        }
-        if (activeTask != null) {
-            coordinator.stop(reason = reason)
-        }
+        stopAndJoin(reason)
         sendResult(
             callId = call.callId,
             ok = true,
@@ -186,4 +216,9 @@ class LocalRealtimeVoiceDelegate(
         val callId: String,
         val instruction: String
     )
+
+    companion object {
+        internal const val MAX_QUEUED_TASKS = 8
+        private const val MAX_TRACKED_CALL_IDS = 128
+    }
 }

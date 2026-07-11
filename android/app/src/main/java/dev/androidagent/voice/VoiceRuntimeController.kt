@@ -37,43 +37,97 @@ data class VoiceRuntimeState(
     val isActive: Boolean = status != VoiceRuntimeStatus.IDLE && status != VoiceRuntimeStatus.ERROR
 }
 
-class VoiceRuntimeController(
-    private val context: Context,
+class VoiceRuntimeController internal constructor(
+    @Suppress("UNUSED_PARAMETER") context: Context?,
     private val sendStart: (sdp: String, config: AgentConfig) -> Unit,
     private val sendStop: (reason: String) -> Unit,
+    private val onSessionTerminated: (reason: String) -> Unit,
     private val sendToolCall: (RealtimeToolCall) -> Unit = {},
-    private val onStateChanged: (VoiceRuntimeState) -> Unit
+    private val onStateChanged: (VoiceRuntimeState) -> Unit,
+    private val micPermissionGranted: () -> Boolean,
+    private val configProvider: () -> AgentConfig,
+    private val openPermissionScreen: () -> Unit,
+    private val acquireForegroundLease: () -> Unit,
+    private val releaseForegroundLease: () -> Unit,
+    private val sessionFactory: (
+        onDataChannelEvent: (String) -> Unit,
+        onConnectionState: (String) -> Unit
+    ) -> RealtimeVoiceSession,
+    private val scope: CoroutineScope
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    constructor(
+        context: Context,
+        sendStart: (sdp: String, config: AgentConfig) -> Unit,
+        sendStop: (reason: String) -> Unit,
+        sendToolCall: (RealtimeToolCall) -> Unit = {},
+        onSessionTerminated: (reason: String) -> Unit = {},
+        acquireForegroundLease: () -> Unit = {},
+        releaseForegroundLease: () -> Unit = {},
+        onStateChanged: (VoiceRuntimeState) -> Unit
+    ) : this(
+        context = context,
+        sendStart = sendStart,
+        sendStop = sendStop,
+        onSessionTerminated = onSessionTerminated,
+        sendToolCall = sendToolCall,
+        onStateChanged = onStateChanged,
+        micPermissionGranted = {
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        },
+        configProvider = { AgentConfigStore.load(context) },
+        openPermissionScreen = {
+            context.startActivity(
+                Intent(context, AppShellActivity::class.java)
+                    .putExtra(AppShellActivity.EXTRA_REQUEST_MIC_PERMISSION, true)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            )
+        },
+        acquireForegroundLease = acquireForegroundLease,
+        releaseForegroundLease = releaseForegroundLease,
+        sessionFactory = { onEvent, onConnection -> RealtimeWebRtcSession(context, onEvent, onConnection) },
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    )
+
     private val transcriptNormalizer = RealtimeTranscriptNormalizer()
     private val toolCallAccumulator = RealtimeToolCallAccumulator()
     private val toolOutputsSent = mutableSetOf<String>()
-    private var session: RealtimeWebRtcSession? = null
+    private val lifecycle = VoiceSessionLifecycle()
+    private var session: OwnedSession? = null
     private var state = VoiceRuntimeState()
     private var activeResponseId: String? = null
 
     fun start() {
-        if (state.isActive || state.status == VoiceRuntimeStatus.CONNECTING) {
-            return
-        }
-        if (!hasMicPermission()) {
+        if (!micPermissionGranted()) {
             updateState(
                 VoiceRuntimeState(
                     status = VoiceRuntimeStatus.ERROR,
                     error = "Microphone permission is required for voice mode."
                 )
             )
-            openMicPermissionScreen()
+            openPermissionScreen()
             return
         }
 
-        val config = AgentConfigStore.load(context)
-        val nextSession = RealtimeWebRtcSession(
-            context = context,
-            onDataChannelEvent = ::handleDataChannelEvent,
-            onConnectionState = ::handleConnectionState
-        )
-        session = nextSession
+        val generation = lifecycle.begin() ?: return
+        val config = configProvider()
+        val nextSession = runCatching {
+            sessionFactory(
+                { raw -> handleDataChannelEvent(generation, raw) },
+                { connectionState -> handleConnectionState(generation, connectionState) }
+            )
+        }.getOrElse { error ->
+            lifecycle.beginStop(generation)
+            lifecycle.finishStop(generation, error.message ?: error.toString())
+            updateState(VoiceRuntimeState(status = VoiceRuntimeStatus.ERROR, error = error.message ?: error.toString()))
+            return
+        }
+        val owner = OwnedSession(generation, nextSession)
+        session = owner
+        runCatching(acquireForegroundLease).onFailure { error ->
+            terminate(generation, sendBackendStop = false, failure = error.message ?: error.toString())
+            return
+        }
+        owner.foregroundLeaseAcquired = true
         transcriptNormalizer.reset()
         toolCallAccumulator.reset()
         toolOutputsSent.clear()
@@ -83,33 +137,28 @@ class VoiceRuntimeController(
         scope.launch {
             runCatching {
                 val offer = nextSession.createOffer()
+                if (!lifecycle.owns(generation)) return@runCatching
                 sendStart(offer, config)
                 updateState(state.copy(status = VoiceRuntimeStatus.CONNECTING, error = "Waiting for realtime answer."))
             }.onFailure { error ->
-                cleanup(sendBackendStop = false)
-                updateState(
-                    VoiceRuntimeState(
-                        status = VoiceRuntimeStatus.ERROR,
-                        error = error.message ?: error.toString()
-                    )
-                )
+                terminate(generation, sendBackendStop = false, failure = error.message ?: error.toString())
             }
         }
     }
 
     fun toggleMute() {
         val muted = !state.isMuted
-        session?.setMuted(muted)
+        session?.resource?.setMuted(muted)
         updateState(state.copy(isMuted = muted))
     }
 
     fun stopFromUi() {
-        cleanup(sendBackendStop = true, reason = "Stopped from Android voice UI")
+        session?.generation?.let { terminate(it, sendBackendStop = true, reason = "Stopped from Android voice UI") }
     }
 
     fun close() {
         scope.cancel()
-        cleanup(sendBackendStop = false)
+        session?.generation?.let { terminate(it, sendBackendStop = false) }
     }
 
     fun onRealtimeSdp(payload: JSONObject) {
@@ -121,18 +170,21 @@ class VoiceRuntimeController(
             return
         }
         scope.launch {
+            val owner = session ?: return@launch
             runCatching {
-                session?.applyAnswer(answerSdp)
-                    ?: throw IllegalStateException("No active voice session for SDP answer.")
+                owner.resource.applyAnswer(answerSdp)
+                if (!lifecycle.activate(owner.generation)) return@runCatching
                 updateState(state.copy(status = VoiceRuntimeStatus.LISTENING, error = null))
             }.onFailure { error ->
-                showBackendError(error.message ?: error.toString())
+                showBackendError(error.message ?: error.toString(), owner.generation)
             }
         }
     }
 
     fun onRealtimeTranscriptDelta(payload: JSONObject) {
+        val generation = session?.generation ?: return
         scope.launch {
+            if (!lifecycle.owns(generation)) return@launch
             val transcript = transcriptNormalizer.applyEvent("realtime.transcript_delta", payload)
             updateState(
                 state.copy(
@@ -145,7 +197,9 @@ class VoiceRuntimeController(
     }
 
     fun onRealtimeItemAdded(payload: JSONObject) {
+        val generation = session?.generation ?: return
         scope.launch {
+            if (!lifecycle.owns(generation)) return@launch
             val transcript = transcriptNormalizer.applyEvent("realtime.item_added", payload)
             updateState(
                 state.copy(
@@ -158,23 +212,31 @@ class VoiceRuntimeController(
     }
 
     fun onRealtimeSpeechStarted(payload: JSONObject) {
+        val generation = session?.generation ?: return
         scope.launch {
+            if (!lifecycle.owns(generation)) return@launch
             val transcript = transcriptNormalizer.applyEvent("realtime.speech_started", payload)
             updateState(state.copy(status = VoiceRuntimeStatus.LISTENING, transcript = transcript.displayText, error = null))
         }
     }
 
     fun onRealtimeError(payload: JSONObject) {
+        val generation = session?.generation ?: return
         scope.launch {
-            showBackendError(payload.optString("message").ifBlank { payload.optString("error").ifBlank { "Realtime voice failed." } })
+            if (!lifecycle.owns(generation)) return@launch
+            showBackendError(
+                payload.optString("message").ifBlank { payload.optString("error").ifBlank { "Realtime voice failed." } },
+                generation
+            )
         }
     }
 
     fun onRealtimeClosed(payload: JSONObject) {
+        val generation = session?.generation ?: return
         scope.launch {
+            if (!lifecycle.owns(generation)) return@launch
             val reason = payload.optString("reason").ifBlank { "Realtime voice closed." }
-            cleanup(sendBackendStop = false)
-            updateState(VoiceRuntimeState(status = VoiceRuntimeStatus.IDLE, transcript = state.transcript, error = reason))
+            terminate(generation, sendBackendStop = false, idleMessage = reason)
         }
     }
 
@@ -184,14 +246,15 @@ class VoiceRuntimeController(
             if (callId.isBlank() || !toolOutputsSent.add(callId)) {
                 return@launch
             }
-            if (session == null) {
+            val owner = session
+            if (owner == null) {
                 updateState(state.copy(latestTaskResult = taskResultSummary(payload)))
                 return@launch
             }
             val events = buildRealtimeToolOutputEvents(payload)
-            val sentOutput = session?.sendJsonEvent(events[0]) == true
+            val sentOutput = owner.resource.sendJsonEvent(events[0])
             if (sentOutput) {
-                events.drop(1).forEach { session?.sendJsonEvent(it) }
+                events.drop(1).forEach { owner.resource.sendJsonEvent(it) }
                 val nextStatus = if (payload.optBoolean("createResponse", true)) {
                     VoiceRuntimeStatus.THINKING
                 } else {
@@ -218,13 +281,14 @@ class VoiceRuntimeController(
         }
     }
 
-    private fun handleDataChannelEvent(raw: String) {
+    private fun handleDataChannelEvent(generation: Long, raw: String) {
         val event = runCatching { JSONObject(raw) }.getOrNull() ?: return
         val type = event.optString("type")
         if (type.isBlank()) {
             return
         }
         scope.launch {
+            if (!lifecycle.owns(generation)) return@launch
             toolCallAccumulator.apply(event)?.let { call ->
                 sendToolCall(call)
                 updateState(
@@ -304,23 +368,28 @@ class VoiceRuntimeController(
 
     private fun cancelActiveResponseForBargeIn() {
         val responseId = activeResponseId ?: return
-        session?.sendJsonEvent(
+        session?.resource?.sendJsonEvent(
             JSONObject()
                 .put("type", "response.cancel")
                 .put("response_id", responseId)
         )
-        session?.sendJsonEvent(JSONObject().put("type", "output_audio_buffer.clear"))
+        session?.resource?.sendJsonEvent(JSONObject().put("type", "output_audio_buffer.clear"))
         activeResponseId = null
     }
 
-    private fun handleConnectionState(connectionState: String) {
+    private fun handleConnectionState(generation: Long, connectionState: String) {
         scope.launch {
-            if (session == null) {
-                return@launch
-            }
+            if (!lifecycle.owns(generation)) return@launch
             when (connectionState) {
-                "connected", "completed" -> updateState(state.copy(status = VoiceRuntimeStatus.LISTENING, error = null))
-                "failed", "closed", "disconnected" -> updateState(state.copy(status = VoiceRuntimeStatus.ERROR, error = "WebRTC connection $connectionState."))
+                "connected", "completed" -> {
+                    lifecycle.activate(generation)
+                    updateState(state.copy(status = VoiceRuntimeStatus.LISTENING, error = null))
+                }
+                "failed", "closed", "disconnected" -> terminate(
+                    generation,
+                    sendBackendStop = connectionState != "closed",
+                    failure = "WebRTC connection $connectionState."
+                )
             }
         }
     }
@@ -351,20 +420,32 @@ class VoiceRuntimeController(
         }
     }
 
-    private fun showBackendError(message: String) {
-        cleanup(sendBackendStop = false)
-        updateState(VoiceRuntimeState(status = VoiceRuntimeStatus.ERROR, transcript = state.transcript, error = message))
+    private fun showBackendError(message: String, generation: Long? = session?.generation) {
+        generation?.let { terminate(it, sendBackendStop = false, failure = message) }
+            ?: updateState(VoiceRuntimeState(status = VoiceRuntimeStatus.ERROR, transcript = state.transcript, error = message))
     }
 
-    private fun cleanup(sendBackendStop: Boolean, reason: String = "Voice session stopped") {
-        val hadSession = session != null || state.status != VoiceRuntimeStatus.IDLE
-        session?.close()
-        session = null
+    private fun terminate(
+        generation: Long,
+        sendBackendStop: Boolean,
+        reason: String = "Voice session stopped",
+        failure: String? = null,
+        idleMessage: String? = null
+    ) {
+        if (!lifecycle.beginStop(generation)) return
+        val transcript = state.transcript
+        val owner = session?.takeIf { it.generation == generation }
+        owner?.resource?.close()
+        if (session?.generation == generation) session = null
         activeResponseId = null
-        if (sendBackendStop && hadSession) {
-            sendStop(reason)
-        }
-        updateState(VoiceRuntimeState(transcript = state.transcript))
+        if (sendBackendStop) sendStop(reason)
+        onSessionTerminated(reason)
+        if (owner?.foregroundLeaseAcquired == true) releaseForegroundLease()
+        lifecycle.finishStop(generation, failure)
+        updateState(
+            if (failure != null) VoiceRuntimeState(status = VoiceRuntimeStatus.ERROR, transcript = transcript, error = failure)
+            else VoiceRuntimeState(transcript = transcript, error = idleMessage)
+        )
     }
 
     private fun updateState(next: VoiceRuntimeState) {
@@ -372,15 +453,9 @@ class VoiceRuntimeController(
         onStateChanged(next)
     }
 
-    private fun hasMicPermission(): Boolean {
-        return ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-    }
-
-    private fun openMicPermissionScreen() {
-        context.startActivity(
-            Intent(context, AppShellActivity::class.java)
-                .putExtra(AppShellActivity.EXTRA_REQUEST_MIC_PERMISSION, true)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        )
-    }
+    private data class OwnedSession(
+        val generation: Long,
+        val resource: RealtimeVoiceSession,
+        var foregroundLeaseAcquired: Boolean = false
+    )
 }

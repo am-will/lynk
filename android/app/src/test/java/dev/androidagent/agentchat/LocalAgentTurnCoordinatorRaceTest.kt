@@ -11,6 +11,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -82,6 +83,21 @@ class LocalAgentTurnCoordinatorRaceTest {
         assertFalse(coordinator.startTurn(LocalTurnRequest("late")))
         runner.releaseFirst.complete(Unit)
         Unit
+    }
+
+    @Test
+    fun stopAndJoinDoesNotReturnUntilCancelledGenerationFinishesCleanup() = runBlocking {
+        val runner = SlowCancellationRunner()
+        val coordinator = coordinator(FakeSessionStore(), runner, mutableListOf())
+        assertTrue(coordinator.startTurn(LocalTurnRequest("first")))
+        runner.firstStarted.await()
+
+        val stopping = async { coordinator.stopAndJoin(reason = "Voice ended") }
+        runner.firstCancelling.await()
+        assertFalse(stopping.isCompleted)
+        runner.releaseFirst.complete(Unit)
+        stopping.await()
+        assertTrue(stopping.isCompleted)
     }
 
     private fun coordinator(

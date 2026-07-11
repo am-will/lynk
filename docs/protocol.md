@@ -590,7 +590,7 @@ Use `stop_phone_task` when the user says to stop, pause, cancel, or leave the ph
 
 Use `stop_agent_task` the same way for a general selected-harness task. `stop_openclaw_task` remains accepted as a compatibility alias.
 
-Use `hang_up_realtime` when the user says to hang up, end the call, or stop listening. By default it closes only the realtime voice session and lets any running phone task continue. Set `stopPhoneTask` only when the user explicitly asks to stop the phone task and hang up:
+Use `hang_up_realtime` when the user says to hang up, end the call, or stop listening. By default it closes only the realtime voice session and lets bridge-routed host or phone work continue. Android-local LiteRT-LM delegated work is owned by the voice session, so every local voice terminal path cancels and joins that work before the shared local engine is released. Set `stopPhoneTask` only when the user explicitly asks to stop bridge-routed phone work and hang up:
 
 ```json
 {
