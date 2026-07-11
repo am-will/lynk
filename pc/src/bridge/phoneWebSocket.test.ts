@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { createServer } from "node:http";
+import { once } from "node:events";
 import test from "node:test";
 import { WebSocket } from "ws";
 
-import { bindPhoneSocket } from "./phoneWebSocket.js";
+import { bindPhoneSocket, createPhoneWebSocketServer, type PhoneWebSocketDependencies } from "./phoneWebSocket.js";
 import { ChatClientError, CODEX_WORKSPACE_NOT_FOUND_CODE } from "./chat/ChatErrors.js";
 import type { RegisterMessage } from "../protocol/messages.js";
+import type { PhoneWebSocketIngressOptions } from "./webSocketIngress.js";
+import { createPhoneUpgradeHandler } from "./webSocketUpgrade.js";
 
 const token = "test-token";
 
@@ -76,13 +80,16 @@ class FakeDispatcher {
 
 class FakeChatBridge {
   readonly opens: unknown[] = [];
+  readonly sends: unknown[] = [];
   newSessionError?: Error;
 
   async open(message: unknown): Promise<void> {
     this.opens.push(message);
   }
 
-  async send(): Promise<void> {}
+  async send(message: unknown): Promise<void> {
+    this.sends.push(message);
+  }
   async stop(): Promise<void> {}
   async selectSession(): Promise<void> {}
   async newSession(): Promise<void> {
@@ -125,7 +132,7 @@ class FakeRealtimeTaskManager {
   }
 }
 
-function bindFakes() {
+function buildFakes() {
   const socket = new FakeSocket();
   const hub = new FakeHub();
   const audit = new FakeAudit();
@@ -134,7 +141,7 @@ function bindFakes() {
   const realtime = new FakeRealtime();
   const realtimeTaskManager = new FakeRealtimeTaskManager();
   const stops: Array<{ deviceId: string; reason: string }> = [];
-  bindPhoneSocket(socket as unknown as WebSocket, {
+  const dependencies: PhoneWebSocketDependencies = {
     config: { token },
     hub: hub as never,
     audit,
@@ -145,8 +152,14 @@ function bindFakes() {
     stopAgentWork: async (deviceId, reason) => {
       stops.push({ deviceId, reason });
     }
-  });
-  return { socket, hub, audit, dispatcher, chatBridge, realtime, realtimeTaskManager, stops };
+  };
+  return { socket, hub, audit, dispatcher, chatBridge, realtime, realtimeTaskManager, stops, dependencies };
+}
+
+function bindFakes(options: PhoneWebSocketIngressOptions = {}) {
+  const fakes = buildFakes();
+  bindPhoneSocket(fakes.socket as unknown as WebSocket, fakes.dependencies, options);
+  return fakes;
 }
 
 async function flushPromises(): Promise<void> {
@@ -240,4 +253,87 @@ test("phone websocket fails realtime work on disconnect", () => {
 
   assert.equal(hub.unregistered, true);
   assert.deepEqual(realtimeTaskManager.failed, [{ deviceId: "phone", reason: "Phone WebSocket disconnected" }]);
+});
+
+test("phone websocket closes clients that miss the registration deadline", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { socket } = bindFakes({ registrationTimeoutMs: 25 });
+
+  t.mock.timers.tick(25);
+
+  assert.deepEqual(socket.closed, { code: 4002, reason: "registration timeout" });
+});
+
+test("phone websocket enforces per-connection message rate budgets", () => {
+  const { socket } = bindFakes({
+    messageRateCapacity: 2,
+    messageRateRefillMs: 1_000,
+    now: () => 0
+  });
+  register(socket);
+  socket.receive({ type: "invalid" });
+  socket.receive({ type: "invalid" });
+
+  assert.deepEqual(socket.closed, { code: 4008, reason: "message rate limit" });
+});
+
+test("phone websocket bounds control frames while preserving inline attachments", async () => {
+  const bounded = bindFakes({ controlFrameMaxBytes: 128 });
+  register(bounded.socket);
+  bounded.socket.receive({
+    type: "agent_control",
+    deviceId: "phone",
+    action: "stop",
+    reason: "x".repeat(256)
+  });
+  assert.deepEqual(bounded.socket.closed, { code: 1009, reason: "control payload too large" });
+
+  const attachment = bindFakes({ controlFrameMaxBytes: 128 });
+  register(attachment.socket);
+  attachment.socket.receive({
+    type: "chat.send",
+    deviceId: "phone",
+    text: "inspect",
+    attachments: [{
+      id: "attachment-1",
+      kind: "image",
+      displayName: "image.png",
+      mimeType: "image/png",
+      sizeBytes: 192,
+      contentBase64: Buffer.alloc(192).toString("base64")
+    }]
+  });
+  await flushPromises();
+
+  assert.equal(attachment.socket.closed, undefined);
+  assert.equal(attachment.chatBridge.sends.length, 1);
+});
+
+test("websocket server closes an oversized frame without crashing", async (t) => {
+  const fakes = buildFakes();
+  const wss = createPhoneWebSocketServer(fakes.dependencies, {
+    maxPayloadBytes: 128,
+    registrationMaxBytes: 64,
+    controlFrameMaxBytes: 64,
+    heartbeatIntervalMs: 60_000
+  });
+  const server = createServer();
+  server.on("upgrade", createPhoneUpgradeHandler(wss));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(async () => {
+    wss.close();
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    });
+  });
+  const address = server.address();
+  assert(address && typeof address === "object");
+  const client = new WebSocket(`ws://127.0.0.1:${address.port}/phone`);
+  client.on("error", () => {});
+  await once(client, "open");
+
+  client.send("x".repeat(256));
+  const [code] = await once(client, "close");
+
+  assert.equal(code, 1009);
 });

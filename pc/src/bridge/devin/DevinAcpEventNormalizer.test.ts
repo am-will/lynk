@@ -61,6 +61,24 @@ describe("DevinAcpEventNormalizer", () => {
     assert.deepEqual(payloads[1]?.output, [{ content: "Second", priority: "low", status: "completed" }]);
   });
 
+  it("uses the ACP planId for experimental plan updates and removals", () => {
+    const payloads: Record<string, unknown>[] = [];
+    const normalizer = new DevinAcpEventNormalizer((_event, payload) => payloads.push(payload as Record<string, unknown>));
+    normalizer.handle(session, "r1", notice({
+      sessionUpdate: "plan_update",
+      plan: { type: "markdown", planId: "plan-1", content: "- inspect ingress" }
+    } as unknown as SessionNotification["update"]));
+    normalizer.handle(session, "r1", notice({
+      sessionUpdate: "plan_removed",
+      planId: "plan-1"
+    } as unknown as SessionNotification["update"]));
+
+    assert.equal(payloads[0]?.eventId, "devin_plan_plan-1");
+    assert.equal(payloads[0]?.output, "- inspect ingress");
+    assert.equal(payloads[1]?.eventId, "devin_plan_plan-1");
+    assert.equal(payloads[1]?.output, null);
+  });
+
   it("normalizes tool transitions and strips every _meta field", () => {
     const payloads: Record<string, unknown>[] = [];
     const normalizer = new DevinAcpEventNormalizer((_event, payload) => payloads.push(payload as Record<string, unknown>));

@@ -4,6 +4,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { homedir, platform } from "node:os";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
 
 export interface HostBridgeConfigFile {
   schemaVersion: 1;
@@ -54,6 +55,50 @@ export interface LoadedHostBridgeConfig {
   created: boolean;
 }
 
+const positiveSecondsSchema = z.number().int().positive().max(Math.floor(Number.MAX_SAFE_INTEGER / 1_000));
+const hostBridgeConfigFileSchema = z.object({
+  schemaVersion: z.literal(1),
+  phoneAgentToken: z.string().trim().min(1),
+  phoneAgentHost: z.string().min(1).optional(),
+  phoneAgentPort: z.number().int().min(1).max(65_535).optional(),
+  phoneAgentDefaultDevice: z.string().min(1).optional(),
+  phoneAgentBridgeUrl: z.string().min(1).optional(),
+  openClawGatewayUrl: z.string().min(1).optional(),
+  openClawGatewayToken: z.string().optional(),
+  openClawGatewayPassword: z.string().optional(),
+  openClawChatAgentId: z.string().min(1).optional(),
+  openClawChatSessionKey: z.string().min(1).optional(),
+  hermesApiBaseUrl: z.string().min(1).optional(),
+  hermesApiKey: z.string().optional(),
+  hermesModel: z.string().min(1).optional(),
+  hermesDefaultSessionId: z.string().min(1).optional(),
+  hermesRunTimeoutSeconds: positiveSecondsSchema.optional(),
+  openAiApiKey: z.string().optional(),
+  openAiRealtimeModel: z.string().min(1).optional(),
+  openAiRealtimeVoice: z.string().min(1).optional(),
+  openAiWebSearchModel: z.string().min(1).optional(),
+  codexAppServerCommand: z.string().min(1).optional(),
+  codexAgentCwd: z.string().min(1).optional(),
+  codexAppServerApprovalPolicy: z.string().min(1).optional(),
+  codexAppServerSandbox: z.string().min(1).optional(),
+  opencodeServerUrl: z.string().optional(),
+  opencodeServerCommand: z.string().min(1).optional(),
+  opencodeAgentCwd: z.string().min(1).optional(),
+  opencodeServerUsername: z.string().min(1).optional(),
+  opencodeServerPassword: z.string().optional(),
+  opencodeDefaultAgent: z.string().optional(),
+  opencodeRunTimeoutSeconds: positiveSecondsSchema.optional(),
+  piAgentCwd: z.string().min(1).optional(),
+  piAgentDir: z.string().optional(),
+  piDefaultModel: z.string().optional(),
+  piRunTimeoutSeconds: positiveSecondsSchema.optional(),
+  devinAcpCommand: z.string().min(1).optional(),
+  devinAgentCwd: z.string().min(1).optional(),
+  devinRunTimeoutSeconds: positiveSecondsSchema.optional(),
+  devinPermissionMode: z.string().optional(),
+  discoveredPaths: z.record(z.string(), z.string()).optional()
+}).strict();
+
 const DEFAULT_CONFIG_FILE = "config.json";
 const hostScriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultAgentCwd = resolve(hostScriptDir, "../..");
@@ -79,18 +124,22 @@ export function defaultHostBridgeConfigPath(): string {
 
 export function loadOrCreateHostBridgeConfig(path = defaultHostBridgeConfigPath()): LoadedHostBridgeConfig {
   if (existsSync(path)) {
-    const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<HostBridgeConfigFile>;
-    const token = firstNonEmpty(parsed.phoneAgentToken);
-    if (!token) {
-      throw new Error(`Host bridge config at ${path} does not include phoneAgentToken.`);
+    let decoded: unknown;
+    try {
+      decoded = JSON.parse(readFileSync(path, "utf8"));
+    } catch (error) {
+      throw new Error(`Host bridge config at ${path} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    const parsed = hostBridgeConfigFileSchema.safeParse(decoded);
+    if (!parsed.success) {
+      const details = parsed.error.issues
+        .map((issue) => `${issue.path.join(".") || "config"}: ${issue.message}`)
+        .join("; ");
+      throw new Error(`Host bridge config at ${path} is invalid: ${details}`);
     }
     return {
       path,
-      config: {
-        schemaVersion: 1,
-        ...parsed,
-        phoneAgentToken: token
-      },
+      config: parsed.data,
       created: false
     };
   }
@@ -159,10 +208,6 @@ export async function ensureHostBridgeConfigDir(): Promise<string> {
 
 function mkdirSyncRecursive(path: string): void {
   mkdirSync(path, { recursive: true });
-}
-
-function firstNonEmpty(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function redact(value: string | undefined): string | undefined {
