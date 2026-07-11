@@ -33,7 +33,7 @@ class LocalRealtimeVoiceDelegate(
         runtime = engineManager
     )
     private val queue = ArrayDeque<QueuedLocalRealtimeTask>()
-    private val acceptedCallIds = LinkedHashSet<String>()
+    private val admission = RealtimeTaskAdmission(MAX_QUEUED_TASKS, MAX_TRACKED_CALL_IDS)
     private var activeTask: QueuedLocalRealtimeTask? = null
     private var generation = 0L
     private var closed = false
@@ -42,9 +42,13 @@ class LocalRealtimeVoiceDelegate(
 
     fun handleToolCall(call: RealtimeToolCall) {
         if (closed) return
-        if (!acceptedCallIds.add(call.callId)) return
-        while (acceptedCallIds.size > MAX_TRACKED_CALL_IDS) {
-            acceptedCallIds.remove(acceptedCallIds.first())
+        when (admission.admit(call.callId, activeTask != null, queue.size)) {
+            RealtimeTaskAdmission.Result.DUPLICATE -> return
+            RealtimeTaskAdmission.Result.QUEUE_FULL -> {
+                failCall(call.callId, "Local realtime task queue is full ($MAX_QUEUED_TASKS).")
+                return
+            }
+            RealtimeTaskAdmission.Result.ACCEPTED -> Unit
         }
         when (val intent = RealtimeToolRouting.intentFor(call.name, call.arguments)) {
             is RealtimeToolIntent.StartTask -> enqueueTask(call.callId, call.name, intent.instruction)
@@ -87,10 +91,6 @@ class LocalRealtimeVoiceDelegate(
         }
         val task = QueuedLocalRealtimeTask(callId = callId, instruction = instruction)
         if (activeTask != null) {
-            if (queue.size >= MAX_QUEUED_TASKS) {
-                failCall(callId, "Local realtime task queue is full ($MAX_QUEUED_TASKS).")
-                return
-            }
             queue.add(task)
             sendTaskStatus()
             return

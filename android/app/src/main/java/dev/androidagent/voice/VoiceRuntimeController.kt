@@ -38,7 +38,7 @@ data class VoiceRuntimeState(
 }
 
 class VoiceRuntimeController internal constructor(
-    private val context: Context,
+    @Suppress("UNUSED_PARAMETER") context: Context?,
     private val sendStart: (sdp: String, config: AgentConfig) -> Unit,
     private val sendStop: (reason: String) -> Unit,
     private val sendToolCall: (RealtimeToolCall) -> Unit = {},
