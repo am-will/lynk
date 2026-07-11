@@ -155,6 +155,13 @@ export class PhoneHub {
     if (!pending) {
       return;
     }
+    if (pending.deviceId !== deviceId) {
+      this.audit?.record("phone_command_result_rejected", deviceId, {
+        id: result.id,
+        expectedDeviceId: pending.deviceId
+      });
+      return;
+    }
     clearTimeout(pending.timer);
     this.pending.delete(result.id);
     this.audit?.record("phone_command_result", deviceId, {

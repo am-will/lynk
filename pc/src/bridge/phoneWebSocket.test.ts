@@ -189,6 +189,28 @@ test("phone websocket rejects wrong tokens and pre-register messages", () => {
   assert.deepEqual(preRegister.socket.closed, { code: 4002, reason: "register first" });
 });
 
+test("phone websocket rejects re-registration and cross-device claims centrally", async () => {
+  const repeated = bindFakes();
+  register(repeated.socket, "phone-a");
+  register(repeated.socket, "phone-b");
+  assert.deepEqual(repeated.socket.closed, { code: 4004, reason: "already registered" });
+  assert.equal(repeated.hub.registered?.deviceId, "phone-a");
+
+  const spoofedChat = bindFakes();
+  register(spoofedChat.socket, "phone-a");
+  spoofedChat.socket.receive({ type: "chat.open", deviceId: "phone-b" });
+  await flushPromises();
+  assert.deepEqual(spoofedChat.socket.closed, { code: 4004, reason: "device identity mismatch" });
+  assert.equal(spoofedChat.chatBridge.opens.length, 0);
+
+  const spoofedLegacy = bindFakes();
+  register(spoofedLegacy.socket, "phone-a");
+  spoofedLegacy.socket.receive({ type: "user_request", inputType: "text", deviceId: "phone-b", text: "hello" });
+  await flushPromises();
+  assert.deepEqual(spoofedLegacy.socket.closed, { code: 4004, reason: "device identity mismatch" });
+  assert.equal(spoofedLegacy.dispatcher.requests.length, 0);
+});
+
 test("phone websocket routes chat.open and agent stop controls", async () => {
   const { socket, chatBridge, stops } = bindFakes();
   register(socket);
@@ -226,7 +248,7 @@ test("phone websocket preserves structured chat errors", async () => {
   });
 });
 
-test("phone websocket reports realtime device mismatches and malformed realtime messages", () => {
+test("phone websocket rejects realtime device spoofing and reports malformed realtime messages", () => {
   const { socket, realtime } = bindFakes();
   register(socket, "registered-phone");
 
@@ -237,12 +259,14 @@ test("phone websocket reports realtime device mismatches and malformed realtime 
     name: "run_phone_task",
     arguments: { instruction: "Open Settings" }
   });
-  socket.receive({ type: "realtime.start", deviceId: "registered-phone" });
+  assert.deepEqual(socket.closed, { code: 4004, reason: "device identity mismatch" });
+  assert.equal(realtime.errors.length, 0);
 
-  assert.equal(realtime.errors.length, 2);
-  assert.match(realtime.errors[0].message, /does not match registered device/);
-  assert.equal(realtime.errors[1].deviceId, "registered-phone");
-  assert.match(realtime.errors[1].message, /sdp/);
+  const malformed = bindFakes();
+  register(malformed.socket, "registered-phone");
+  malformed.socket.receive({ type: "realtime.start", deviceId: "registered-phone" });
+  assert.equal(malformed.realtime.errors[0].deviceId, "registered-phone");
+  assert.match(malformed.realtime.errors[0].message, /sdp/);
 });
 
 test("phone websocket fails realtime work on disconnect", () => {
