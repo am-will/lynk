@@ -133,6 +133,48 @@ test("debounced writes serialize concurrent updates without blocking the event l
   assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { value: 999 });
 });
 
+test("debounced writer serializes generations and reports close failures truthfully", async () => {
+  const entered = deferred();
+  const release = deferred();
+  const writes: number[] = [];
+  let active = 0;
+  let maxActive = 0;
+  const writer = new DebouncedAtomicJsonWriter<{ value: number }>("/unused/state.json", 1, 1024, async (_path, data) => {
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    const value = JSON.parse(String(data)) as { value: number };
+    writes.push(value.value);
+    if (value.value === 1) {
+      entered.resolve();
+      await release.promise;
+    }
+    active -= 1;
+  });
+
+  writer.schedule({ value: 1 });
+  const firstFlush = writer.flush();
+  await entered.promise;
+  writer.schedule({ value: 2 });
+  const secondFlush = writer.flush();
+  release.resolve();
+  await Promise.all([firstFlush, secondFlush]);
+  await writer.close();
+
+  assert.deepEqual(writes, [1, 2]);
+  assert.equal(maxActive, 1);
+
+  let fail = true;
+  const failing = new DebouncedAtomicJsonWriter<{ value: number }>("/unused/failing.json", 1, 1024, async () => {
+    if (fail) throw new Error("injected disk failure");
+  });
+  failing.schedule({ value: 1 });
+  await assert.rejects(failing.close(), /injected disk failure/u);
+  fail = false;
+  failing.schedule({ value: 2 });
+  await failing.close();
+  assert.throws(() => failing.schedule({ value: 3 }), /closed/u);
+});
+
 test("legacy migration is verified, private, retained at source, and idempotent", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "lynk-migrate-"));
   t.after(() => import("node:fs/promises").then(({ rm }) => rm(root, { recursive: true, force: true })));

@@ -198,15 +198,18 @@ export async function readJsonWithRecovery<T>(
 export class DebouncedAtomicJsonWriter<T> {
   private timer?: NodeJS.Timeout;
   private pending?: T;
-  private chain: Promise<void> = Promise.resolve();
+  private chain: Promise<void>;
   private closed = false;
   private lastError?: unknown;
 
   constructor(
     private readonly path: string,
     private readonly debounceMs = 25,
-    private readonly maxBytes = 16 * 1024 * 1024
-  ) {}
+    private readonly maxBytes = 16 * 1024 * 1024,
+    private readonly writeFile: typeof atomicWritePrivateFile = atomicWritePrivateFile
+  ) {
+    this.chain = cleanupAtomicLeftovers(path);
+  }
 
   schedule(value: T): void {
     if (this.closed) throw new Error("Persistence writer is closed.");
@@ -245,7 +248,7 @@ export class DebouncedAtomicJsonWriter<T> {
     const encoded = `${JSON.stringify(value, null, 2)}\n`;
     this.chain = this.chain
       .catch(() => undefined)
-      .then(() => atomicWritePrivateFile(this.path, encoded, { maxBytes: this.maxBytes }))
+      .then(() => this.writeFile(this.path, encoded, { maxBytes: this.maxBytes }))
       .catch((error) => { this.lastError = error; });
   }
 }
