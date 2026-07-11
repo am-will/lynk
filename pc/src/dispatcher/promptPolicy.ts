@@ -1,5 +1,5 @@
 import type { AgentTaskKind } from "./AgentClient.js";
-import { GENERATED_DEFAULT_SYSTEM_PROMPT } from "../generated/defaultSystemPrompt.js";
+import { GENERATED_DEFAULT_SYSTEM_PROMPT } from "./defaultSystemPrompt.generated.js";
 
 export const PHONE_TURN_HINT = [
   "Phone-control turn hint:",

@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, "../..");
 const sourcePath = resolve(repoRoot, "shared/default-system-prompt.txt");
-const typescriptPath = resolve(repoRoot, "pc/src/generated/defaultSystemPrompt.ts");
+const typescriptPath = resolve(repoRoot, "pc/src/dispatcher/defaultSystemPrompt.generated.ts");
 const kotlinPath = resolve(repoRoot, "android/app/src/main/java/dev/androidagent/DefaultSystemPrompt.kt");
 
 const prompt = (await readFile(sourcePath, "utf8")).replace(/\r\n/g, "\n").trim();
