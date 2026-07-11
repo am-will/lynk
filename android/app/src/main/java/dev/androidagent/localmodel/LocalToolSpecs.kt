@@ -39,9 +39,9 @@ internal object LocalToolSpecs {
         LocalToolSpec("local_read_skill", "Read a packaged local skill file by name. Args: name. Use name android-control before Android phone-control tools.", "skill"),
         LocalToolSpec("local_list_files", "List files in the local app workspace.", "workspace"),
         LocalToolSpec("local_read_file", "Read a UTF-8 text file from the local app-private workspace. Args: path.", "workspace"),
-        LocalToolSpec("local_write_file", "Write a UTF-8 text file in the local app-private workspace. Args: path and non-empty text. Do not use this for files the user wants to open in another phone app or browser.", "workspace"),
+        LocalToolSpec("local_write_file", "Write a UTF-8 text file in the local app-private workspace. Args: path (string, max 4096), text (non-empty string, max 80000), approvalCapability (from approval for the exact path and text). Do not use this for files the user wants to open in another phone app or browser.", "workspace"),
         LocalToolSpec("local_search_files", "Search UTF-8 files in the local app workspace.", "workspace"),
-        LocalToolSpec("termux_command", "Run a shell command in Termux. Args: command, optional workdir/cwd, optional timeoutMs. Use this for browser-openable files and phone-accessible projects; choose the shell command yourself.", "developer")
+        LocalToolSpec("termux_command", "Run a shell command in Termux. Args: command (non-empty string, max 20000), optional workdir (string, max 4096), optional timeoutMs (integer 1000..300000), approvalCapability (from approval for these exact args). Use this for browser-openable files and phone-accessible projects; choose the shell command yourself.", "developer")
     )
 
     val phoneCommandsByToolId: Map<String, String> =

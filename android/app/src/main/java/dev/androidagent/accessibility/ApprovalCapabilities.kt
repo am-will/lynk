@@ -53,6 +53,15 @@ internal sealed interface ApprovalValidation {
     data object ChangedObservation : ApprovalValidation
 }
 
+internal object ApprovalActionPolicy {
+    private val localSideEffects = setOf("local_write_file", "termux_command")
+
+    fun requiresApproval(command: String): Boolean =
+        PhoneCommandPolicy.requiresApproval(command) || command in localSideEffects
+
+    fun isLocalSideEffect(command: String): Boolean = command in localSideEffects
+}
+
 internal fun ApprovalValidation.denialMessage(actionSummary: String): String? = when (this) {
     is ApprovalValidation.Approved -> null
     ApprovalValidation.Missing -> "authorization_required: request user approval for $actionSummary"
@@ -76,7 +85,7 @@ internal class ApprovalCapabilityStore(
     @Synchronized
     fun issue(ownerId: String, action: PhoneActionDescriptor, observationContext: ApprovalContext?): ApprovalCapability {
         require(ownerId.isNotBlank()) { "Approval owner is required" }
-        require(PhoneCommandPolicy.requiresApproval(action.command)) { "${action.command} does not require approval" }
+        require(ApprovalActionPolicy.requiresApproval(action.command)) { "${action.command} does not require approval" }
         cleanup()
         val capability = ApprovalCapability(
             token = tokenGenerator(),

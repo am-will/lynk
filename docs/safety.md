@@ -37,6 +37,14 @@ Higher-level policy should still explain why an action is needed, especially for
 
 The Android app displays the normalized action and optional rationale in a confirmation overlay above the current app. Cancellation issues no capability and returns `ok: false`.
 
+## Local model tool boundary
+
+LiteRT-LM produces a text stream rather than native function calls. Lynk therefore treats output as executable only when the model's entire response is one versioned control frame: the literal `<|lynk_control|>` marker, one strict JSON object with exactly `version`, `type`, `tool`, and `args`, then `<|/lynk_control|>`. The version must be `1`, the type must be `tool_call`, and the named tool's argument schema must validate exactly. Prose, Markdown fences, raw JSON, quoted examples, legacy templates, duplicate keys, unknown tools or fields, multiple frames, malformed output, and oversized values are never repaired into calls.
+
+Admission also depends on the current user's explicit request. Tool names, JSON, or control markers quoted in user prose do not grant authority. Each admitted call is validated again in the registry before dispatch.
+
+`local_write_file` and `termux_command` use the same exact-action capability flow as sensitive phone actions. Approval binds the local session/run owner and every argument, expires after 60 seconds, and is consumed immediately before the write or process launch. Stop/cancellation revokes pending capabilities and terminates owned Termux process groups.
+
 ## Devin ACP permissions
 
 Devin runs as a local stdio child of the bridge. The ACP process, CLI credentials, and its stdio transport are never exposed to Android or opened as a network listener. Only the token-authenticated Lynk `/phone` bridge is phone-facing; for remote use, expose that bridge through a trusted private network such as Tailscale and keep Devin host-local.
