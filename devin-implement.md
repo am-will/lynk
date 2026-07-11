@@ -760,23 +760,23 @@ Co-Authored-By: Devin <158243242+devin-ai-integration[bot]@users.noreply.github.
 
 ## 8. Acceptance Checklist
 
-- [ ] Refresh detects installed and authenticated Devin CLI.
-- [ ] Devin appears in Android only when runtime model availability is established.
-- [ ] User can select Devin, choose/create a folder, and create a session.
-- [ ] Session stays bound to its folder for every turn and load.
-- [ ] Multiple sessions in different folders have no state leakage.
-- [ ] Text, thought/status, plans, tools, usage, and finals use normal Lynk timeline events.
-- [ ] Stop works.
-- [ ] Permission requests display exact advertised options and replies correlate correctly.
-- [ ] Session/workspace metadata survives bridge restart.
-- [ ] `session/list` and `session/load` restore authoritative history/context.
-- [ ] Health/diagnostics distinguish installation, auth, protocol/startup, and unexpected-exit failures without secrets.
-- [ ] PC checks pass.
-- [ ] Android tests and assemble pass.
-- [ ] Real authenticated restart/load/context smoke test passes and is documented.
-- [ ] Device smoke checks pass or exact blockers are recorded.
-- [ ] Seven focused commits exist.
-- [ ] Final diff/worktree is clean except explicitly preserved pre-existing user paths.
+- [x] Refresh detects installed and authenticated Devin CLI.
+- [x] Devin appears in Android only when runtime model availability is established.
+- [x] User can select Devin, choose/create a folder, and create a session.
+- [x] Session stays bound to its folder for every turn and load.
+- [x] Multiple sessions in different folders have no state leakage.
+- [x] Text, thought/status, plans, tools, usage, and finals use normal Lynk timeline events.
+- [x] Stop works.
+- [x] Permission requests display exact advertised options and replies correlate correctly.
+- [x] Session/workspace metadata survives bridge restart.
+- [x] `session/list` and `session/load` restore authoritative history/context.
+- [x] Health/diagnostics distinguish installation, auth, protocol/startup, and unexpected-exit failures without secrets.
+- [x] PC checks pass.
+- [x] Android tests and assemble pass.
+- [x] Real authenticated restart/load/context smoke test passes and is documented.
+- [x] Device smoke checks pass or exact blockers are recorded.
+- [x] Seven focused commits exist.
+- [x] Final diff/worktree is clean except explicitly preserved pre-existing user paths.
 
 ## 9. Implementation Log
 
@@ -811,58 +811,58 @@ The orchestrator updates this section after reviewing each subagent. Parallel su
 - Review/fixes: Fixed pre-start capability gating, additional-directory presence checks, async teardown/restart races, invalid startup-sharing coverage, spawn-error classification, bounded sensitive stderr streaming, safe health metadata, barrel import cycles, deterministic SIGTERM/SIGKILL shutdown, and unrelated lockfile normalization.
 - Commit: `feat(devin): add ACP client transport`.
 
-### Wave 3 — pending
+### Wave 3 — completed
 
-- Agent ID:
-- Files:
-- Tests:
-- Review/fixes:
-- Commit:
+- Agent ID: `wave3_session_adapter` with TDD child `tdd_test_writer` (requested 5.6 Sol, High reasoning, Fast mode; launcher did not expose model selection).
+- Files: Reconciled the interrupted dual Wave 3 drafts into the canonical `DevinSessionAdapter`; added workspace-scoped ACP session creation/list/load, durable metadata adjacent to host config, authoritative replay/catalog merging, model/reasoning/command discovery, capability gating, and the production router factory. Removed the redundant untracked `DevinSessionService` draft.
+- Tests: TDD RED passed 60/62 and exposed the missing replay collector and production router factory; GREEN passed 95/95 focused tests and an independent orchestrator rerun passed all 319 PC tests, `npm run check`, `npm run build`, and `git diff --check`.
+- Review/fixes: Preserved exact ACP-returned session IDs, persisted empty workspace associations, used fresh-process `session/load` for authoritative history restoration, kept unsupported Wave 4 live-run methods explicit, and left Android plus `.devin/` untouched.
+- Commit: `c7a62df feat(devin): add workspace-scoped session adapter`.
 
-### Wave 4 — pending
+### Wave 4 — completed
 
-- Agent ID:
-- Files:
-- Tests:
-- Review/fixes:
-- Commit:
+- Agent ID: `wave4_streaming_permissions` (requested 5.6 Sol, High reasoning, Fast mode; generic GPT-5.4 test writer was stopped at user request and produced no test cases).
+- Files: Added exhaustive ACP event normalization, a per-session `HarnessRunLifecycle` driver, live metadata/config/command/tool caches, an exact opaque ACP permission broker, exact-session cancellation, terminal-race cleanup, and unexpected-exit fanout/recovery. Generalized permission decisions while preserving OpenCode behavior.
+- Tests: The Wave 4 owner personally produced RED evidence against `c7a62df` (0/1 with the expected live-streaming boundary failure), then GREEN at 98/98 focused and 335/335 full PC tests. Independent orchestrator reruns passed the focused suite, full PC suite, `npm run check`, and `npm run build`; `git diff --check` remained clean.
+- Review/fixes: Stripped arbitrary `_meta` recursively, rejected stale/duplicate/cross-session permission replies, kept concurrent session streams isolated, emitted one terminal event across cancellation/final races, and explicitly left active steering unsupported because ACP does not advertise it. A separate adversarial review then found and fixed byte-changing opaque option trimming, same-run-ID cross-session lifecycle collisions, phantom history on busy rejection, and rich-usage replacement; all four received failing regression tests before the fixes and were autosquashed into this wave.
+- Commit: `a776886 feat(devin): route streamed updates and permissions`.
 
-### Wave 5 — pending
+### Wave 5 — completed
 
-- Agent ID:
-- Files:
-- Tests:
-- Review/fixes:
-- Commit:
+- Agent ID: `wave5_android_reconcile` (requested 5.6 Sol, High reasoning, Fast mode; no generic TDD agent used).
+- Files: Finalized Devin model/session selection and branding, generic host-workspace persistence/UI, missing-folder confirmation, exact permission action args, active-harness session grouping, and live-model visibility. Renamed Codex-specific generic workspace helpers instead of duplicating them.
+- Tests: Personally authored RED coverage exposed unresolved active-harness grouping and confirmation contracts; GREEN passed the focused suite and all 191 Android unit tests. Independent orchestrator reruns passed `:app:testDebugUnitTest`, `:app:assembleDebug`, and commit/diff checks.
+- Review/fixes: Preserved Codex/OpenCode/Pi SharedPreferences keys and workspace behavior, kept unavailable Devin models out of the picker, and reconciled Android action payloads against the stable PC Wave 4 wire format.
+- Commit: `5250f2b feat(android): add Devin harness and workspace controls`.
 
-### Wave 6A — pending
+### Wave 6A — completed
 
-- Agent ID:
-- Files:
-- Tests:
-- Review/fixes:
-- Commit:
+- Agent ID: `wave6a_pc_acceptance` (requested 5.6 Sol, High reasoning, Fast mode; no generic TDD agent used).
+- Files: Added a stateful fake ACP process-restart acceptance test plus an opt-in authenticated Devin test and `npm run test:devin:real` entry point.
+- Tests: Fake restart/list/load/history/context flow passed. The direct full suite reports the real test as an explicit skip, while the opt-in command passed against authenticated Devin CLI `3000.1.27`. Independent orchestrator run created session `dazzling-detail`, restarted ACP, found it through `session/list`, loaded two replay messages through `session/load`, recovered a unique marker in a follow-up, and removed the local temporary workspace. Full PC result: 341 tests, 340 passed, one expected opt-in skip; typecheck and build passed.
+- Review/fixes: Verified negotiated `list=true` and `load=true`, printed only safe stage/session/workspace data, avoided terminal scraping and remote deletion, and distinguished skip from pass.
+- Commit: combined with Wave 6B as `3bf464c test(devin): cover ACP lifecycle and workspace behavior`.
 
-### Wave 6B — pending
+### Wave 6B — completed
 
-- Agent ID:
-- Files:
-- Tests:
-- Review/fixes:
-- Commit:
+- Agent ID: `wave6b_android_regressions` (requested 5.6 Sol, High reasoning, Fast mode; no generic TDD agent used).
+- Files: Android test-only coverage for Devin prefix selection, isolated per-harness workspace defaults/migration, folder grouping across all workspace harnesses, harness-specific creation confirmation, and opaque ACP permission option preservation.
+- Tests: Coverage audit found the main behavior already implemented; six new edge regressions passed. Independent orchestrator forced a clean rerun of `:app:testDebugUnitTest :app:assembleDebug --rerun-tasks`; all tasks completed successfully.
+- Review/fixes: No production Android changes were required and Codex/OpenCode/Pi behavior remained covered.
+- Commit: combined with Wave 6A as `3bf464c test(devin): cover ACP lifecycle and workspace behavior`.
 
-### Wave 7 — pending
+### Wave 7 — completed
 
-- Agent ID:
-- Files:
-- Tests:
-- Review/fixes:
-- Commit:
+- Agent ID: `wave7_documentation` (requested 5.6 Sol, High reasoning, Fast mode; no generic TDD agent used).
+- Files: Synchronized README, setup, protocol, safety, limitations, and host-installer documentation with the implemented Devin ACP harness, authenticated `3000.1.27` baseline, safe permission behavior, restart recovery, and honest limitations.
+- Tests: Documentation-only slice; local Markdown links, documented command/script existence, installed CLI help/version/default behavior, required-content coverage, secret/LAN/session-ID scans, staged checks, and `git diff --check` passed.
+- Review/fixes: Documented CLI normal mode as `auto` and never `dangerous`, ephemeral session IDs, no `session/resume`, no active steering, no attachments, and the opt-in authenticated acceptance command without fabricating parity.
+- Commit: `docs(devin): document setup, safety, and limitations` (final hash is recorded in repository history).
 
-### Wave 8 — pending
+### Wave 8 — completed with exact device blocker recorded
 
-- PC verification:
-- Authenticated Devin test:
-- Android verification:
-- Host/device smoke:
-- Final review:
+- PC verification: Final-history `npm run check`, `npm test`, and `npm run build` passed. The suite reported 341 tests: 340 passed, zero failed, and the opt-in real test was one explicit skip in the normal suite.
+- Authenticated Devin test: Final `npm run test:devin:real` passed against CLI `3000.1.27`; session `marshy-jitterbug` survived a fresh ACP process, appeared through `session/list`, replayed two history messages through `session/load`, recalled its unique marker, and removed its local temporary workspace.
+- Android verification: Forced `:app:testDebugUnitTest :app:assembleDebug --rerun-tasks` completed successfully; the debug APK was produced. Existing deprecation warnings and native-library strip notices were unchanged and non-fatal.
+- Host/device smoke: `host:refresh` reported installed/authenticated Devin ready; the LaunchAgent was restarted; `/health` returned OK; authenticated readiness reported Devin ready with 143 live model choices; inspected Devin ACP processes had no TCP listeners. Physical-phone installation/UI smoke could not run because the USB-connected phone repeatedly remained ADB `unauthorized` after daemon restart; Android requires the user to unlock the device and accept the computer's USB-debugging trust prompt. No device identifier is recorded here.
+- Final review: The requested seven focused implementation commits exist in order, the Wave 4 adversarial-review fixes were autosquashed into their owning commit, staged/diff checks passed, no secrets or machine-specific runtime data were committed, `.devin/` remains the sole preserved untracked path, and nothing was pushed.

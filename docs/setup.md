@@ -11,6 +11,7 @@ Requirements:
 - Codex CLI with `codex app-server` if selecting the Codex harness or exercising the hand-written legacy dispatcher
 - OpenCode CLI with `opencode serve` if selecting the OpenCode harness, or a private `OPENCODE_SERVER_URL`
 - Pi SDK configuration if selecting the Pi harness
+- Devin CLI installed and authenticated if selecting the Devin harness
 - Hermes API server access if selecting the Hermes harness
 - Same network reachability from phone to PC, either local Wi-Fi or Tailscale for off-LAN use
 - Gradle or Android Studio for Android builds
@@ -64,9 +65,39 @@ The Android model picker can select multiple harnesses through this same bridge:
 - **Codex** appears through the bundled Codex app-server adapter. Configure `CODEX_APP_SERVER_COMMAND` and `CODEX_AGENT_CWD` if the defaults do not match your machine.
 - **OpenCode** appears through OpenCode's server API. Configure `OPENCODE_SERVER_URL` to reuse a private server, or configure `OPENCODE_SERVER_COMMAND`, `OPENCODE_AGENT_CWD`, `OPENCODE_SERVER_USERNAME`, `OPENCODE_SERVER_PASSWORD`, `OPENCODE_DEFAULT_AGENT`, and `OPENCODE_RUN_TIMEOUT_SECONDS` if Lynk should start and manage `opencode serve`.
 - **Pi** appears through the bundled Pi SDK adapter. Configure `PI_AGENT_CWD`, `PI_AGENT_DIR`, `PI_DEFAULT_MODEL`, and `PI_RUN_TIMEOUT_SECONDS` if the defaults do not match your machine. Pi credentials and sessions stay in Pi's agent directory.
+- **Devin** appears when the Devin CLI is installed and its ACP runtime can publish a model. Install the CLI, run `devin auth login`, and confirm `devin auth status` succeeds. Lynk starts the structured stdio server with `devin acp`; it does not scrape Devin's terminal UI.
 - **Local LiteRT-LLM** appears only when enabled in Android and a `.litertlm` model is installed.
 
-Harnesses are selected from the same Android model picker as normal models. Histories are scoped by harness, so selecting Hermes shows Hermes sessions, selecting Codex shows Codex sessions, selecting OpenCode shows OpenCode sessions, selecting Pi shows Pi sessions, and selecting OpenClaw shows OpenClaw Gateway sessions. Android's **Models & Harness** settings can hide harnesses from the phone's model picker without changing the PC bridge configuration.
+Harnesses are selected from the same Android model picker as normal models. Histories are scoped by harness, so selecting Hermes shows Hermes sessions, selecting Codex shows Codex sessions, selecting OpenCode shows OpenCode sessions, selecting Pi shows Pi sessions, selecting Devin shows Devin sessions, and selecting OpenClaw shows OpenClaw Gateway sessions. Android's **Models & Harness** settings can hide harnesses from the phone's model picker without changing the PC bridge configuration.
+
+### Devin host setup
+
+After authenticating the CLI, refresh host discovery and restart the bridge if the command path changed:
+
+```bash
+curl -fsSL https://cli.devin.ai/install.sh | bash
+devin --version
+devin auth login
+devin auth status
+cd pc
+npm run host:refresh
+npm run host:diagnostics
+```
+
+The installer command is the one published in the [Devin CLI getting-started documentation](https://docs.devin.ai/get-started/devin-intro). Review downloaded installers according to your host security policy before running them. Refresh records the discovered absolute Devin executable for background services with a restricted `PATH`. Its integration status distinguishes not installed, installed but unauthenticated, authentication timeout/spawn failure, and authenticated/ready. Runtime harness readiness also requires the ACP adapter to initialize and return a live model selector; Android does not show a non-working Devin entry merely because the executable exists.
+
+The defaults are `DEVIN_ACP_COMMAND="devin acp"`, `DEVIN_AGENT_CWD` set to the bridge package root, and `DEVIN_RUN_TIMEOUT_SECONDS=600`. Override them in the persistent host config or a gitignored `pc/.env.local` when the executable, base workspace, or timeout differs. `DEVIN_AGENT_CWD` is the fallback workspace; a new Android chat can select a different existing host folder or confirm creation of a missing folder. Previous Devin sessions are grouped by workspace on Android.
+
+The integration has been exercised against authenticated Devin CLI `3000.1.27`. That runtime advertises ACP `session/list`, `session/load`, and additional directories. It does not advertise `session/resume`, and Lynk does not call it. ACP list/load and history replay are authoritative after bridge restart; the bridge's adjacent `devin-sessions.json` stores Lynk's durable workspace/model association and is not a replacement for ACP history. Session IDs returned by this tested CLI are ephemeral identifiers and should not be treated as permanent user-facing handles.
+
+For an opt-in authenticated process-restart acceptance check, run:
+
+```bash
+cd pc
+npm run test:devin:real
+```
+
+The observed `3000.1.27` run passed fresh-process `session/list`, `session/load`, history replay, and context recovery. The test creates and removes only a temporary local workspace. It may print the temporary workspace and session ID for diagnostics; that ID is not promised to be stable.
 
 For off-LAN use, keep `OPENCLAW_GATEWAY_URL=ws://127.0.0.1:18789` and put only the phone-facing bridge on Tailscale. Run:
 
@@ -75,7 +106,7 @@ cd pc
 npm run phone:tailscale
 ```
 
-Then use the printed `ws://<pc-tailnet-name-or-ip>:8788/phone` URL in Android. Pairing payloads include both MagicDNS and tailnet IP candidates when Tailscale reports both. On Android, the `100.x.y.z` tailnet IP is the safest manual value unless **Use Tailscale DNS** is enabled in the Tailscale app. Do not expose OpenClaw Gateway, Hermes, Codex app-server, OpenCode server, Pi SDK internals, or bridge transports directly to the public internet.
+Then use the printed `ws://<pc-tailnet-name-or-ip>:8788/phone` URL in Android. Pairing payloads include both MagicDNS and tailnet IP candidates when Tailscale reports both. On Android, the `100.x.y.z` tailnet IP is the safest manual value unless **Use Tailscale DNS** is enabled in the Tailscale app. Do not expose OpenClaw Gateway, Hermes, Codex app-server, OpenCode server, Pi SDK internals, Devin ACP stdio, or other host-agent transports directly to the public internet.
 
 The realtime voice path is separate from the task dispatcher: Android starts the WebRTC call, the PC bridge creates the OpenAI Realtime session, and completed general realtime intents route to the currently selected backend. Host selections use the PC harness router; Local LiteRT-LM selections run delegated work on Android. Phone-control tool calls remain a separate phone-task path.
 
@@ -92,7 +123,7 @@ Open `android/` in Android Studio or run Gradle from that directory. Install the
 
 While OpenAgent is running, tap the bubble to open a large chat modal. The modal loads Gateway session history, streams active replies, shows model/reasoning/session controls behind the `+` button, and keeps phone-control tool activity collapsed until expanded. The foreground notification includes a **Stop Turn** action for active chat, dispatcher, and realtime voice work, including moments when the floating bubble is temporarily hidden during taps, swipes, or screenshots.
 
-The model picker controls the active harness. Host models use the PC bridge and may include OpenClaw, Hermes, Codex, OpenCode, and Pi entries. Use **Models & Harness** to toggle which harness sections appear in the picker, and use **System Prompt** to edit the default prompt. **Local LiteRT-LLM** appears when its harness toggle is on and a `.litertlm` file is installed; local phone mode stores its chat sessions under the app's private storage and emits the same `chat.*` timeline events as Host mode. It can call Android accessibility tools directly and can read/search/write files in its app-private local workspace when local developer tools are enabled. Termux command execution is reserved for a dedicated helper and reports a configuration error until that helper exists.
+The model picker controls the active harness. Host models use the PC bridge and may include OpenClaw, Hermes, Codex, OpenCode, Pi, and Devin entries. Use **Models & Harness** to toggle which harness sections appear in the picker, and use **System Prompt** to edit the default prompt. **Local LiteRT-LLM** appears when its harness toggle is on and a `.litertlm` file is installed; local phone mode stores its chat sessions under the app's private storage and emits the same `chat.*` timeline events as Host mode. It can call Android accessibility tools directly and can read/search/write files in its app-private local workspace when local developer tools are enabled. Termux command execution is reserved for a dedicated helper and reports a configuration error until that helper exists.
 
 For adb installs, build `android/app/build/outputs/apk/debug/app-debug.apk` and run:
 

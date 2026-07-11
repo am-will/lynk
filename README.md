@@ -4,7 +4,7 @@ https://github.com/user-attachments/assets/9878e172-5ada-433c-8500-e84ccbef0aa2
 
 Lynk turns an Android phone into a persistent chat and voice endpoint for AI agents running on your computer. The Android app is the bubble, notification, voice, and optional phone-control surface. The PC bridge is the local companion that pairs the phone, routes chat to host agents, starts realtime voice sessions, and exposes Android tools when a selected agent needs to touch the phone.
 
-Host mode can route to **OpenClaw**, **Hermes**, **Pi Agent, Opencode** or **Codex** from the same Android model picker. Local phone mode can run an imported **LiteRT-LM** model on-device and use Android/local app-private tools without a PC agent for every request.
+Host mode can route to **OpenClaw**, **Hermes**, **Pi**, **OpenCode**, **Codex**, or **Devin** from the same Android model picker. Local phone mode can run an imported **LiteRT-LM** model on-device and use Android/local app-private tools without a PC agent for every request.
 
 ## How It Works
 
@@ -14,6 +14,7 @@ Host mode can route to **OpenClaw**, **Hermes**, **Pi Agent, Opencode** or **Cod
    - OpenClaw through the Gateway-backed host harness.
    - Hermes through the installed `hermes` CLI by default, or through its runs API harness when configured.
    - Codex through the bundled app-server harness when configured.
+   - OpenCode through its private server API, Pi through its bundled SDK adapter, and Devin through authenticated `devin acp` stdio.
    - Local LiteRT-LM directly on Android when a `.litertlm` model is imported.
 4. Replies, tool activity, status, usage, session history, and errors stream back to the Android timeline.
 5. Phone-control tools are optional. When enabled, host agents can call the bridge MCP server and Lynk executes Android accessibility commands on the paired device.
@@ -28,6 +29,7 @@ Required for the host bridge:
   - OpenClaw CLI/Gateway for the default OpenClaw harness.
   - Hermes CLI on `PATH` for the default Hermes path, or Hermes runs API access plus `HERMES_API_KEY` for advanced Hermes sessions/streaming.
   - Codex CLI with `codex app-server` for Codex.
+  - Authenticated Devin CLI with `devin acp` for Devin.
 
 Required for the Android app:
 
@@ -97,7 +99,7 @@ If the user is using Tailscale:
 2. On the PC, run: tailscale status
 3. Use the Tailscale endpoint from the pairing payload. It should look like ws://<pc-magicdns-name>:8788/phone or ws://100.x.y.z:8788/phone.
 4. In a source checkout, you may also print the Tailscale URL with: npm run phone:tailscale
-5. Keep only the Lynk phone-facing bridge reachable over Tailscale. Do not expose OpenClaw Gateway, Hermes, Codex app-server, or other host-agent transports publicly.
+5. Keep only the Lynk phone-facing bridge reachable over Tailscale. Do not expose OpenClaw Gateway, Hermes, Codex app-server, Devin ACP stdio, or other host-agent transports publicly.
 
 If the user is using Hermes:
 1. Standard Hermes installs should work by default when the `hermes` CLI is on PATH. Lynk falls back to `hermes -z` if no runs API is reachable.
@@ -241,7 +243,7 @@ The phone must use the same token as the bridge. The easiest path is the QR/deep
 
 ## Tailscale Pairing
 
-Use Tailscale when the Android phone and PC are not on the same LAN. This keeps the phone-facing bridge private to your tailnet. Keep OpenClaw Gateway, Hermes, Codex app-server, and other host-agent transports on localhost or trusted private networks.
+Use Tailscale when the Android phone and PC are not on the same LAN. This keeps the phone-facing bridge private to your tailnet. Keep OpenClaw Gateway, Hermes, Codex app-server, Devin ACP stdio, and other host-agent transports on localhost or trusted private networks.
 
 For VPS or SSH-only Linux hosts, use `docs/vps-headless-linux.md`. The short version is: install the bridge as a user systemd service, run `sudo loginctl enable-linger "$USER"` so it starts after reboot without an SSH session, pair over the `100.x.y.z` Tailscale URL, and keep cloud firewall/security-group rules closed to public bridge traffic.
 
@@ -387,6 +389,7 @@ Android may still require user approval for overlay permission, Accessibility, r
 - Hermes appears in the Android model picker when the `hermes` CLI is installed or when `HERMES_API_KEY` is configured. CLI fallback supports normal chat turns with no extra server; configure the runs API only for richer session history, active-turn steering, and SSE streaming.
 - Codex appears when the `codex app-server` command is available.
 - Local LiteRT-LM appears when local mode is enabled in Android and a `.litertlm` model is installed.
-- Keep OpenClaw Gateway, Hermes, Codex app-server, and similar host-agent transports on localhost or trusted private networks. Expose only the phone-facing bridge through Tailscale for off-LAN use.
+- Devin appears after `devin auth login` and host integration refresh. Lynk uses ACP `session/list` and `session/load` for restart recovery; tested CLI `3000.1.27` does not advertise `session/resume`.
+- Keep OpenClaw Gateway, Hermes, Codex app-server, Devin ACP stdio, and similar host-agent transports on localhost or trusted private networks. Expose only the phone-facing bridge through Tailscale for off-LAN use.
 
 See `docs/setup.md`, `docs/pairing.md`, `docs/protocol.md`, and `docs/host-installer.md` for deeper setup and protocol details.

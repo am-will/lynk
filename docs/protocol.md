@@ -145,13 +145,13 @@ Android can ask the bridge to stop the active phone-control turn. The same messa
 
 ## Harness Chat
 
-The large Android overlay uses explicit `chat.*` messages for harness-backed session chat. OpenClaw Gateway remains the default harness, while Hermes, Codex, OpenCode, and Pi can be selected through model-picker entries when they are configured on the bridge. The legacy `user_request` message remains available for compatibility, but normal typed overlay submissions use `chat.send`.
+The large Android overlay uses explicit `chat.*` messages for harness-backed session chat. OpenClaw Gateway remains the default harness, while Hermes, Codex, OpenCode, Pi, and Devin can be selected through model-picker entries when they are configured and live on the bridge. The legacy `user_request` message remains available for compatibility, but normal typed overlay submissions use `chat.send`.
 
 Prompt policy is session-oriented where the selected harness supports it. Normal `chat.send` messages do not carry the Android settings `systemPrompt`; the bridge sends only user text plus a short phone-task hint when the request is explicitly about phone control. Legacy `user_request` callers may still include `systemPrompt`, but Android does not send it by default.
 
 Local phone mode mirrors these outbound event types locally: `chat.models`, `chat.sessions`, `chat.history`, `chat.state`, `chat.delta`, `chat.final`, `chat.error`, `chat.tool_event`, and `chat.tools`. Local session keys use the `local:` prefix, and the local model id is currently `local-litertlm`.
 
-Host harnesses are selected by model id. OpenClaw keeps its existing bare model ids for backward compatibility, while non-default harness models are namespaced as `<harness>:<model>`, for example `hermes:gpt-5.5`, `codex:gpt-5.3-codex`, `opencode:anthropic/claude-sonnet-4-5`, or `pi:anthropic/claude-sonnet-4-5`. The bridge emits optional `harnessId`, `harnessLabel`, and `modelId` metadata on model, session, and state messages so Android can group the picker and keep previous chats scoped to the active harness. The harness prefix is a Lynk selection prefix; the bridge strips `hermes:`, `codex:`, `opencode:`, and `pi:` before calling those backends.
+Host harnesses are selected by model id. OpenClaw keeps its existing bare model ids for backward compatibility, while non-default harness models are namespaced as `<harness>:<model>`, for example `hermes:gpt-5.5`, `codex:gpt-5.3-codex`, `opencode:anthropic/claude-sonnet-4-5`, `pi:anthropic/claude-sonnet-4-5`, or `devin:default`. Devin session keys are `devin:<ACP-session-id>`. The bridge emits optional `harnessId`, `harnessLabel`, and `modelId` metadata on model, session, and state messages so Android can group the picker and keep previous chats scoped to the active harness. The harness prefix is a Lynk selection prefix; the bridge strips the non-default harness prefix before calling that backend.
 
 For multi-provider Hermes deployments, `/models` should include provider metadata when a bare model name is ambiguous. A Hermes model row such as `{ "id": "grok-4.3", "provider": "xai" }` is presented as `hermes:xai:grok-4.3`; the Hermes runs endpoint receives `xai:grok-4.3` and can split it for provider routing.
 
@@ -189,11 +189,13 @@ Android sends user text, optional model, optional reasoning selection, and optio
 }
 ```
 
-Attachment `kind` is `"image"` or `"file"`. Android sends selected files inline as base64 in `contentBase64`; each attachment is capped at 50 MiB before base64 encoding, and both Android and the PC protocol reject larger payloads. Host harnesses receive the attachment payload with the turn: OpenClaw receives the bridge attachment array, Hermes forwards the same array to run creation, and Codex converts image attachments to app-server image user input data URLs. Hermes adapters may drop unsupported attachment kinds, but they should not reinterpret the fields. `delivery` is optional and defaults to `"normal"`. Android uses `"queue"` or `"steer"` when the user sends text while a turn is already active:
+Attachment `kind` is `"image"` or `"file"`. Android sends selected files inline as base64 in `contentBase64`; each attachment is capped at 50 MiB before base64 encoding, and both Android and the PC protocol reject larger payloads. Host harnesses receive the attachment payload with the turn: OpenClaw receives the bridge attachment array, Hermes forwards the same array to run creation, and Codex converts image attachments to app-server image user input data URLs. Hermes adapters may drop unsupported attachment kinds, but they should not reinterpret the fields. Devin currently rejects attachments before starting a turn. `delivery` is optional and defaults to `"normal"`. Android uses `"queue"` or `"steer"` when the user sends text while a turn is already active:
 
 - `"queue"` keeps the message FIFO and starts it as the next turn after the active run settles.
 - `"steer"` sends the message into the active run at the next supported harness boundary. OpenClaw uses its explicit `/steer` path, Hermes uses active session steering, and Codex app-server uses `turn/steer` with the active turn id.
 - Slash overrides `/queue <prompt>` and `/steer <prompt>` force the delivery for that prompt, regardless of the Android default toggle.
+
+Devin supports active-turn cancellation through ACP `session/cancel`, but its tested ACP capabilities do not advertise active-turn steering. Stop the current turn and send a follow-up instead of using `delivery: "steer"` for Devin.
 
 Hermes fast mode maps to `service_tier: "priority"` on `POST /runs`. When fast mode is off, Lynk omits `service_tier`; no other tier values are currently sent.
 
@@ -211,7 +213,7 @@ Android can stop active chat work, switch or create sessions, update model/reaso
 { "type": "chat.new_session", "deviceId": "openclaw-agent", "label": "Android bubble", "workspacePath": "/Users/me/project" }
 ```
 
-`workspacePath` is optional and applies to Codex, OpenCode, and Pi. When present on a Codex `chat.new_session`, the bridge passes it as the app-server thread `cwd` so the new thread starts in that workspace. When present on an OpenCode `chat.new_session`, the bridge passes it as OpenCode's `directory` query/header so the new session starts in that workspace. When present on a Pi `chat.new_session`, the bridge creates the Pi SDK session for that working directory. Android may include `createWorkspaceIfMissing: true` after user confirmation to create a missing host workspace folder before starting the thread. Other harnesses ignore these workspace fields.
+`workspacePath` is optional and applies to Codex, OpenCode, Pi, and Devin. When present on a Codex `chat.new_session`, the bridge passes it as the app-server thread `cwd`; OpenCode receives it as the `directory` query/header; Pi creates its SDK session for that working directory; and Devin receives the absolute folder as ACP `session/new.cwd`. Android may include `createWorkspaceIfMissing: true` only after the user confirms creation of a missing host folder. A Devin miss uses `code: "devin.workspace_not_found"`. Android groups workspace-aware sessions by their returned `workspacePath`/`workspaceName`.
 
 ```json
 { "type": "chat.set_model", "deviceId": "openclaw-agent", "sessionKey": "agent:main:main", "model": "codex:gpt-5.3-codex" }
@@ -314,7 +316,7 @@ Reasoning stream deltas are temporary UI blocks. Android renders them while a ru
 }
 ```
 
-Structured chat failures use `chat.error`. `message` is the user-readable fallback, while optional `code` and detail fields drive client UI flows without parsing text. Missing workspace prompts use `code: "codex.workspace_not_found"`, `code: "opencode.workspace_not_found"`, or `code: "pi.workspace_not_found"` with `workspacePath`:
+Structured chat failures use `chat.error`. `message` is the user-readable fallback, while optional `code` and detail fields drive client UI flows without parsing text. Missing workspace prompts use `code: "codex.workspace_not_found"`, `code: "opencode.workspace_not_found"`, `code: "pi.workspace_not_found"`, or `code: "devin.workspace_not_found"` with `workspacePath`:
 
 ```json
 {
@@ -362,7 +364,21 @@ Android treats unread state as local and per session. Opening the modal while th
 }
 ```
 
-Metadata messages are `chat.models`, `chat.commands`, `chat.tools`, `chat.sessions`, and `chat.usage`. The Android UI treats all of them as replaceable snapshots for its local chat state. `chat.models` may contain duplicate human-readable model names across harnesses; use `id` as the selection value and show `harnessLabel` next to the model. `chat.sessions` is scoped to the active harness, so histories do not mix between OpenClaw, Hermes, Codex, OpenCode, Pi, and Local LiteRT. Codex, OpenCode, and Pi session rows may additionally include `workspacePath`, `workspaceName`, `threadPath`, `preview`, and `source`; Android uses those optional fields for previous-session pickers so desktop threads can be grouped by workspace folder.
+Metadata messages are `chat.models`, `chat.commands`, `chat.tools`, `chat.sessions`, and `chat.usage`. The Android UI treats all of them as replaceable snapshots for its local chat state. `chat.models` may contain duplicate human-readable model names across harnesses; use `id` as the selection value and show `harnessLabel` next to the model. `chat.sessions` is scoped to the active harness, so histories do not mix between OpenClaw, Hermes, Codex, OpenCode, Pi, Devin, and Local LiteRT. Workspace-aware session rows include `workspacePath`, `workspaceName`, and `source`; some harnesses also supply `threadPath` or `preview`. Android uses the workspace fields to group previous sessions by host folder.
+
+### Devin ACP mapping
+
+The bridge runs `devin acp` as a private stdio child process and maps stable ACP updates onto the shared Lynk contract:
+
+- `agent_message_chunk` becomes `chat.delta`; the accumulated response becomes one `chat.final`.
+- `agent_thought_chunk` becomes `chat.reasoning_delta`, which Android renders as temporary thought/status text.
+- `tool_call` and `tool_call_update` become stable-ID `chat.tool_event` rows; ACP plan updates are represented as informational plan tool events.
+- `usage_update` carries consumed context, context-window size, and USD cost when supplied. Final ACP prompt usage is merged into the final/session usage snapshot.
+- ACP available-command, config-option, current-mode, and session-info updates refresh Lynk's command, model/reasoning, title, and session metadata.
+
+ACP permission requests become blocked `chat.tool_event` rows whose `actions` preserve every exact ACP `optionId`, name, and allow/reject kind. Android replies with the selected option through `devin.permission`; the bridge rejects stale, cross-session, or unoffered option IDs. It never invents an approval result.
+
+For authenticated Devin CLI `3000.1.27`, Lynk uses ACP `session/list` as the authoritative catalog and `session/load` for complete history replay after a process or bridge restart. Local `devin-sessions.json` metadata only preserves Lynk workspace/model associations and empty Lynk-created sessions. `session/resume` is not advertised by that runtime and is not called. Session IDs observed in the real acceptance test are ephemeral and must not be presented as stable identifiers.
 
 `chat.usage` and the matching token fields on `chat.sessions` use `totalTokens` as the current consumed-token numerator and `contextTokens` as the model's effective context-window denominator. `contextTokens` is not a second consumed-token count; it should reflect the configured or discovered model window for the active harness/model, such as Hermes `context_length`, Codex app-server provider bounds, or the local LiteRT-LM context setting. Android renders context percentage as `totalTokens / contextTokens` when both values are present.
 

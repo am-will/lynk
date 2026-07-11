@@ -40,18 +40,18 @@ Pairing candidates are ordered for the common paths:
 USB reverse is not included in normal pairing because it depends on `adb reverse`. For development-only USB pairing, set `PHONE_AGENT_PAIRING_INCLUDE_USB=1` before printing the pairing QR.
 Loopback is also omitted from normal Android pairing because `127.0.0.1` points at the phone, not the host. For host-local diagnostics, set `PHONE_AGENT_PAIRING_INCLUDE_LOOPBACK=1`.
 
-Only the phone-facing bridge should be reachable over Tailscale. OpenClaw Gateway, Hermes, Codex app-server, and other host-agent transports should stay on localhost or trusted private networks. On Android, MagicDNS may require enabling **Use Tailscale DNS** in the Tailscale app; the `100.x.y.z` candidate remains the reliable fallback.
+Only the token-authenticated phone-facing bridge should be reachable over Tailscale. OpenClaw Gateway, Hermes, Codex app-server, Devin ACP stdio, and other host-agent transports should stay on localhost or trusted private networks. On Android, MagicDNS may require enabling **Use Tailscale DNS** in the Tailscale app; the `100.x.y.z` candidate remains the reliable fallback.
 
 ## Refresh Integrations
 
-If a user installs Hermes, Codex, OpenClaw, Tailscale, or ADB after installing the bridge, run:
+If a user installs Hermes, Codex, OpenClaw, Devin, Tailscale, or ADB after installing the bridge, run:
 
 ```bash
 cd pc
 npm run host:refresh
 ```
 
-The installed companion should expose the same action as **Refresh Integrations**. Refresh rescans known tools, stores discovered absolute paths, and reports whether a bridge restart is recommended.
+The installed companion should expose the same action as **Refresh Integrations**. Refresh rescans known tools, stores discovered absolute paths, and reports whether a bridge restart is recommended. For Devin it also runs a bounded, output-redacted `devin auth status` check. The result distinguishes missing CLI, unauthenticated CLI, timeout/spawn failure, and authenticated readiness without including identity or token output. Authenticate with `devin auth login`, rerun refresh, and restart the service when refresh recommends it.
 
 ## Optional MCP Registration
 
@@ -73,7 +73,7 @@ cd pc
 npm run host:diagnostics
 ```
 
-The diagnostics bundle redacts secrets and includes OS details, config shape, endpoint discovery, service plan, and integration status. The bridge also exposes authenticated diagnostics at `/api/diagnostics`.
+The diagnostics bundle redacts secrets and includes OS details, config shape, endpoint discovery, service plan, and integration status. Devin diagnostics report only safe configuration/auth/readiness fields. The bridge also exposes authenticated diagnostics at `/api/diagnostics`; live harness state is available from the authenticated `/api/harnesses/health` and `/api/harnesses/readiness` routes.
 
 ## Release Checklist
 
@@ -83,4 +83,4 @@ The diagnostics bundle redacts secrets and includes OS details, config shape, en
 - Code sign and notarize macOS artifacts.
 - Sign Windows installer artifacts.
 - Smoke test clean macOS, Windows, and Ubuntu VMs.
-- Verify LAN pairing, Tailscale pairing, wrong-token recovery, refresh after installing Codex/Hermes, optional `host:mcp` registration, and uninstall/upgrade token preservation.
+- Verify LAN pairing, Tailscale pairing, wrong-token recovery, refresh after installing Codex/Hermes/Devin, Devin auth failure and live ACP readiness, optional `host:mcp` registration, and uninstall/upgrade token preservation.
