@@ -82,8 +82,6 @@ export interface DevinAcpProcess {
 export interface DevinAcpProcessFactory {
   create(options: {
     command: string;
-    executable: string;
-    args: readonly string[];
     cwd: string;
   }): DevinAcpProcess | Promise<DevinAcpProcess>;
 }

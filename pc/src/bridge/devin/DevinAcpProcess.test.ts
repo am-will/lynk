@@ -124,8 +124,6 @@ describe("DevinAcpClient process lifecycle", () => {
       const factory = createDefaultDevinAcpProcessFactory();
       const proc = await factory.create({
         command: fakeBin,
-        executable: fakeBin,
-        args: [],
         cwd: tempDir
       });
 
@@ -184,8 +182,6 @@ describe("DevinAcpClient process lifecycle", () => {
       const factory = createDefaultDevinAcpProcessFactory();
       const proc = await factory.create({
         command: fakeBin,
-        executable: fakeBin,
-        args: [],
         cwd: tempDir
       });
 

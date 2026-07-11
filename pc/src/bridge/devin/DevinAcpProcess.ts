@@ -30,8 +30,9 @@ export function resolveDevinAcpCommand(command: string): DevinAcpCommandResoluti
 
 export function createDefaultDevinAcpProcessFactory(): DevinAcpProcessFactory {
   return {
-    create({ command, executable, args, cwd }): DevinAcpProcess {
-      return new NodeDevinAcpProcess(command, executable, args, cwd);
+    create({ command, cwd }): DevinAcpProcess {
+      const resolution = resolveDevinAcpCommand(command);
+      return new NodeDevinAcpProcess(command, resolution.resolvedPath, resolution.args, cwd);
     }
   };
 }

@@ -141,6 +141,21 @@ describe("DevinAcpClient", () => {
       assert.equal(a.agentName, b.agentName);
     });
 
+    it("lets an injected process factory run without a host Devin executable", async () => {
+      const { process } = createFakeDevinProcess();
+      const client = new DevinAcpClient({
+        command: "definitely-not-installed-devin acp",
+        cwd: "/test",
+        startupTimeoutMs: LONG_TIMEOUT_MS,
+        requestTimeoutMs: LONG_TIMEOUT_MS,
+        processFactory: { create: async () => process }
+      });
+
+      const caps = await client.ensureStarted();
+      assert.equal(caps.agentName, "Devin");
+      await client.close();
+    });
+
     it("recovers from unexpected exit with a new process on ensureStarted", async () => {
       const processes: ReturnType<typeof createFakeDevinProcess>[] = [];
       let creates = 0;

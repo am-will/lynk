@@ -34,7 +34,7 @@ import {
   type DevinAcpProcessFactory,
   type DevinAcpState
 } from "./DevinAcpTypes.js";
-import { createDefaultDevinAcpProcessFactory, resolveDevinAcpCommand } from "./DevinAcpProcess.js";
+import { createDefaultDevinAcpProcessFactory } from "./DevinAcpProcess.js";
 import {
   classifyAcpError,
   positiveMs,
@@ -132,11 +132,8 @@ export class DevinAcpClient {
     this.closeError = undefined;
     this.setState("starting");
     try {
-      const resolution = resolveDevinAcpCommand(this.command);
       this.process = await this.processFactory.create({
         command: this.command,
-        executable: resolution.resolvedPath,
-        args: resolution.args,
         cwd: this.cwd
       });
 
