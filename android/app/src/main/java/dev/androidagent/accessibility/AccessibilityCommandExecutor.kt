@@ -76,7 +76,7 @@ class AccessibilityCommandExecutor internal constructor(
         approvalCapability: String?
     ): CommandResult {
         val service = PhoneAccessibilityService.instance
-        authorizationFailure(command, args, requestOwner, approvalCapability)?.let { return it }
+        authorizationFailure(command, args, requestOwner, approvalCapability, service)?.let { return it }
 
         return when (command) {
             "observe_screen" -> withAgentChromeSuppressed {
@@ -184,7 +184,8 @@ class AccessibilityCommandExecutor internal constructor(
         command: String,
         args: JSONObject,
         requestOwner: String,
-        approvalCapability: String?
+        approvalCapability: String?,
+        service: PhoneAccessibilityService?
     ): CommandResult? {
         if (!PhoneCommandPolicy.requiresApproval(command)) return null
         val action = PhoneActionDescriptor.create(command, args)
@@ -192,7 +193,7 @@ class AccessibilityCommandExecutor internal constructor(
             token = approvalCapability,
             ownerId = requestOwner,
             action = action,
-            observationId = observer.currentObservationId
+            observationContext = currentApprovalContext(service)
         )
         val error = validation.denialMessage(action.summary) ?: return null
         return CommandResult(false, observer.observationSnapshot(), error)
@@ -467,7 +468,6 @@ class AccessibilityCommandExecutor internal constructor(
         val targetArgs = args.optJSONObject("args") ?: JSONObject()
         val action = PhoneActionDescriptor.create(targetCommand, targetArgs)
         val observation = observer.observationSnapshot() ?: service?.let { observer.observe(it) }
-        val observationId = observation?.optString("observationId")?.takeIf { it.isNotBlank() }
         val rationale = args.optString("message").takeIf { it.isNotBlank() }
         val preview = args.optString("preview").takeIf { it.isNotBlank() }
         val deferred = overlayController
@@ -482,7 +482,12 @@ class AccessibilityCommandExecutor internal constructor(
             }
             result ?: false
         } ?: false
-        val capability = approvalCapabilities.issueIfApproved(confirmed, requestOwner, action, observationId)
+        val capability = approvalCapabilities.issueIfApproved(
+            confirmed,
+            requestOwner,
+            action,
+            approvalContextFromObservation(observation)
+        )
             ?: return CommandResult(false, observation, "User denied or cancelled the action")
         return CommandResult(
             ok = true,
@@ -522,10 +527,33 @@ class AccessibilityCommandExecutor internal constructor(
     private fun currentObservationOrNull(): JSONObject? = PhoneAccessibilityService.instance?.let { observer.observe(it) }
 
     private fun requireNode(nodeId: String): AccessibilityNodeInfo {
-        return observer.node(nodeId) ?: PhoneAccessibilityService.instance?.let {
-            observer.observe(it)
-            observer.node(nodeId)
-        } ?: throw IllegalArgumentException("Node $nodeId not found. Call observe_screen first.")
+        return observer.node(nodeId)
+            ?: throw IllegalArgumentException("Node $nodeId is not present in the approved observation. Observe and request approval again.")
+    }
+
+    private fun currentApprovalContext(service: PhoneAccessibilityService?): ApprovalContext? {
+        val observationId = observer.currentObservationId ?: return null
+        val root = service?.rootInActiveWindow
+        return try {
+            ApprovalContext(
+                observationId = observationId,
+                packageName = root?.packageName?.toString().orEmpty(),
+                activityName = service?.lastActivityClassName.orEmpty(),
+                windowId = root?.windowId
+            )
+        } finally {
+            root?.recycle()
+        }
+    }
+
+    private fun approvalContextFromObservation(observation: JSONObject?): ApprovalContext? {
+        val observationId = observation?.optString("observationId")?.takeIf { it.isNotBlank() } ?: return null
+        return ApprovalContext(
+            observationId = observationId,
+            packageName = observation.optString("package"),
+            activityName = observation.optString("activity"),
+            windowId = observation.optInt("windowId").takeIf { observation.has("windowId") && !observation.isNull("windowId") }
+        )
     }
 
     private suspend fun waitMs(ms: Long) {

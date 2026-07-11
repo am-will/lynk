@@ -22,14 +22,14 @@ class ApprovalCapabilityStoreTest {
     @Test
     fun capabilityIsSingleUseAndBoundToOwnerActionAndObservation() {
         val action = action("n1")
-        val capability = store.issue("session-a", action, "observation-1")
+        val capability = store.issue("session-a", action, context("observation-1"))
 
-        assertTrue(store.validateAndConsume(capability.token, "session-b", action, "observation-1") is ApprovalValidation.WrongOwner)
-        assertTrue(store.validateAndConsume(capability.token, "session-a", action("n2"), "observation-1") is ApprovalValidation.WrongAction)
+        assertTrue(store.validateAndConsume(capability.token, "session-b", action, context("observation-1")) is ApprovalValidation.WrongOwner)
+        assertTrue(store.validateAndConsume(capability.token, "session-a", action("n2"), context("observation-1")) is ApprovalValidation.WrongAction)
         val wrongCommand = PhoneActionDescriptor.create("type_text", JSONObject().put("text", "n1"))
-        assertTrue(store.validateAndConsume(capability.token, "session-a", wrongCommand, "observation-1") is ApprovalValidation.WrongAction)
-        assertTrue(store.validateAndConsume(capability.token, "session-a", action, "observation-1") is ApprovalValidation.Approved)
-        assertEquals(ApprovalValidation.Replayed, store.validateAndConsume(capability.token, "session-a", action, "observation-1"))
+        assertTrue(store.validateAndConsume(capability.token, "session-a", wrongCommand, context("observation-1")) is ApprovalValidation.WrongAction)
+        assertTrue(store.validateAndConsume(capability.token, "session-a", action, context("observation-1")) is ApprovalValidation.Approved)
+        assertEquals(ApprovalValidation.Replayed, store.validateAndConsume(capability.token, "session-a", action, context("observation-1")))
     }
 
     @Test
@@ -43,10 +43,10 @@ class ApprovalCapabilityStoreTest {
     @Test
     fun changedObservationInvalidatesCapability() {
         val action = action("n1")
-        val capability = store.issue("session-a", action, "observation-1")
+        val capability = store.issue("session-a", action, context("observation-1"))
 
-        assertEquals(ApprovalValidation.ChangedObservation, store.validateAndConsume(capability.token, "session-a", action, "observation-2"))
-        assertEquals(ApprovalValidation.Cancelled, store.validateAndConsume(capability.token, "session-a", action, "observation-1"))
+        assertEquals(ApprovalValidation.ChangedObservation, store.validateAndConsume(capability.token, "session-a", action, context("observation-2")))
+        assertEquals(ApprovalValidation.Cancelled, store.validateAndConsume(capability.token, "session-a", action, context("observation-1")))
     }
 
     @Test
@@ -89,4 +89,5 @@ class ApprovalCapabilityStoreTest {
     }
 
     private fun action(node: String) = PhoneActionDescriptor.create("tap_node", JSONObject().put("nodeId", node))
+    private fun context(id: String) = ApprovalContext(id, "com.example", "MainActivity", 7)
 }

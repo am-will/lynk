@@ -26,6 +26,7 @@ class ScreenObserver {
         val nodes = JSONArray()
         val summary = mutableListOf<String>()
         val packageName = root?.packageName?.toString().orEmpty()
+        val windowId = root?.windowId
         try {
             if (root != null) {
                 walk(root, nodes, summary, 0)
@@ -38,6 +39,7 @@ class ScreenObserver {
             .put("deviceId", android.os.Build.MODEL)
             .put("package", packageName)
             .put("activity", service.lastActivityClassName ?: "")
+            .put("windowId", windowId ?: JSONObject.NULL)
             .put("display", displayJson(service))
             .put("screenSummary", summary.take(12).joinToString(" | "))
             .put("nodes", nodes)

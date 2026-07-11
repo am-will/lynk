@@ -30,8 +30,15 @@ internal data class ApprovalCapability(
     val token: String,
     val ownerId: String,
     val action: PhoneActionDescriptor,
-    val observationId: String?,
+    val observationContext: ApprovalContext?,
     val expiresAtMs: Long
+)
+
+internal data class ApprovalContext(
+    val observationId: String,
+    val packageName: String,
+    val activityName: String,
+    val windowId: Int?
 )
 
 internal sealed interface ApprovalValidation {
@@ -67,7 +74,7 @@ internal class ApprovalCapabilityStore(
     private val terminal = linkedMapOf<String, TerminalState>()
 
     @Synchronized
-    fun issue(ownerId: String, action: PhoneActionDescriptor, observationId: String?): ApprovalCapability {
+    fun issue(ownerId: String, action: PhoneActionDescriptor, observationContext: ApprovalContext?): ApprovalCapability {
         require(ownerId.isNotBlank()) { "Approval owner is required" }
         require(PhoneCommandPolicy.requiresApproval(action.command)) { "${action.command} does not require approval" }
         cleanup()
@@ -75,7 +82,7 @@ internal class ApprovalCapabilityStore(
             token = tokenGenerator(),
             ownerId = ownerId,
             action = action,
-            observationId = observationId,
+            observationContext = observationContext,
             expiresAtMs = nowMs() + ttlMs
         )
         active[capability.token] = capability
@@ -87,15 +94,15 @@ internal class ApprovalCapabilityStore(
         approved: Boolean,
         ownerId: String,
         action: PhoneActionDescriptor,
-        observationId: String?
-    ): ApprovalCapability? = if (approved) issue(ownerId, action, observationId) else null
+        observationContext: ApprovalContext?
+    ): ApprovalCapability? = if (approved) issue(ownerId, action, observationContext) else null
 
     @Synchronized
     fun validateAndConsume(
         token: String?,
         ownerId: String,
         action: PhoneActionDescriptor,
-        observationId: String?
+        observationContext: ApprovalContext?
     ): ApprovalValidation {
         if (token.isNullOrBlank()) return ApprovalValidation.Missing
         when (terminal[token]) {
@@ -112,7 +119,7 @@ internal class ApprovalCapabilityStore(
         }
         if (capability.ownerId != ownerId) return ApprovalValidation.WrongOwner
         if (capability.action.digest != action.digest) return ApprovalValidation.WrongAction
-        if (capability.observationId != null && capability.observationId != observationId) {
+        if (capability.observationContext != null && capability.observationContext != observationContext) {
             active.remove(token)
             remember(token, TerminalState.Cancelled)
             return ApprovalValidation.ChangedObservation
@@ -172,10 +179,10 @@ internal class ApprovalCapabilityStore(
 
 internal object PhoneActionSummary {
     fun describe(command: String, args: JSONObject): String = when (command) {
-        "tap_node" -> "Tap observed node ${args.optString("nodeId", "<missing>")}" 
+        "tap_node" -> "Tap observed node ${args.optString("nodeId", "<missing>")}"
         "tap_xy" -> "Tap screen coordinates (${args.opt("x")}, ${args.opt("y")})"
         "tap_normalized" -> "Tap screen position (${args.opt("xPct")}, ${args.opt("yPct")})"
-        "long_press_node" -> "Long-press observed node ${args.optString("nodeId", "<missing>")}" 
+        "long_press_node" -> "Long-press observed node ${args.optString("nodeId", "<missing>")}"
         "type_text" -> "Type into the focused field: ${JSONObject.quote(args.optString("text"))}"
         "submit_text" -> "Submit the focused text field"
         "take_screenshot" -> "Capture the current screen"
