@@ -16,8 +16,9 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.RequestBody.Companion.asRequestBody
 import org.json.JSONObject
+import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -37,11 +38,13 @@ class VoiceTranscriptionManager(
         .writeTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
-    private val buffers = mutableListOf<ShortArray>()
+    private val captureLock = Any()
+    private val capturePolicy = TranscriptionCapturePolicy()
     private val stateLock = Any()
     private var state = VoiceTranscriptionState()
     private var audioRecord: AudioRecord? = null
     private var recordingThread: Thread? = null
+    private var capture: StreamingPcmCapture? = null
     private var deviceSampleRate = TranscriptionAudio.DEFAULT_DEVICE_SAMPLE_RATE
     private var silenceStopRequested = false
 
@@ -96,7 +99,18 @@ class VoiceTranscriptionManager(
             return false
         }
 
-        synchronized(buffers) { buffers.clear() }
+        val nextCapture = runCatching {
+            StreamingPcmCapture(
+                file = File.createTempFile("lynk-transcription-", ".pcm", context.cacheDir),
+                sampleRate = deviceSampleRate,
+                policy = capturePolicy
+            )
+        }.getOrElse { error ->
+            recorder.release()
+            updateState(VoiceTranscriptionState(error = "Could not create bounded transcription capture: ${error.message ?: error}"))
+            return false
+        }
+        synchronized(captureLock) { capture = nextCapture }
         audioRecord = recorder
         silenceStopRequested = false
         heardSpeechDuringSession = false
@@ -107,6 +121,7 @@ class VoiceTranscriptionManager(
                 recording = false
                 audioRecord = null
                 recorder.release()
+                synchronized(captureLock) { capture?.abort(); capture = null }
                 updateState(VoiceTranscriptionState(error = "Could not start microphone recording: ${error.message ?: error}"))
                 return false
             }
@@ -115,6 +130,7 @@ class VoiceTranscriptionManager(
             recording = false
             audioRecord = null
             recorder.release()
+            synchronized(captureLock) { capture?.abort(); capture = null }
             updateState(VoiceTranscriptionState(error = "Microphone recorder did not start."))
             return false
         }
@@ -128,30 +144,37 @@ class VoiceTranscriptionManager(
     }
 
     suspend fun stopAndTranscribe(openAiApiKey: String): String? {
-        val samples = stopRecordingAndCollect()
+        val captured = stopRecordingAndTake()
         val heardSpeech = heardSpeechDuringSession
         heardSpeechDuringSession = false
         updateState(currentState().copy(isRecording = false, audioLevel = 0f))
 
-        if (samples.isEmpty() || !heardSpeech) {
+        if (captured == null || captured.byteCount == 0L || !heardSpeech) {
+            captured?.file?.delete()
             updateState(VoiceTranscriptionState())
             return null
         }
-        if (TranscriptionAudio.isTooShort(samples.size, deviceSampleRate)) {
+        if (captured.isTooShort()) {
+            captured.file.delete()
             updateState(VoiceTranscriptionState())
             return null
         }
 
         val token = openAiApiKey.trim()
         if (token.isBlank()) {
+            captured.file.delete()
             updateState(VoiceTranscriptionState(error = "OpenAI API key is required for transcription."))
             return null
         }
 
-        val wav = withContext(Dispatchers.Default) {
-            val resampled = TranscriptionAudio.resamplePcm16(samples, deviceSampleRate, TranscriptionAudio.TARGET_SAMPLE_RATE)
-            TranscriptionAudio.encodeWavMonoPcm16(resampled, TranscriptionAudio.TARGET_SAMPLE_RATE)
+        val wav = try {
+            withContext(Dispatchers.IO) { captured.createWavFile(requireNotNull(captured.file.parentFile)) }
+        } catch (error: Exception) {
+            captured.file.delete()
+            updateState(VoiceTranscriptionState(error = error.message ?: error.toString()))
+            return null
         }
+        captured.file.delete()
 
         updateState(VoiceTranscriptionState(isTranscribing = true))
         return try {
@@ -167,6 +190,8 @@ class VoiceTranscriptionManager(
         } catch (error: Exception) {
             updateState(VoiceTranscriptionState(error = error.message ?: error.toString()))
             null
+        } finally {
+            wav.delete()
         }
     }
 
@@ -191,7 +216,7 @@ class VoiceTranscriptionManager(
     }
 
     fun cancelRecording() {
-        stopRecordingAndCollect()
+        stopRecordingAndDiscard()
         updateState(VoiceTranscriptionState())
     }
 
@@ -202,33 +227,37 @@ class VoiceTranscriptionManager(
 
     private fun readAudioLoop(recorder: AudioRecord, minBufferSize: Int, onSilenceDetected: () -> Unit) {
         val buffer = ShortArray((minBufferSize / 2).coerceAtLeast(1))
-        var heardSpeech = false
-        var lastAboveSilenceFloorAt = System.currentTimeMillis()
         while (recording) {
             val read = runCatching { recorder.read(buffer, 0, buffer.size) }.getOrDefault(0)
+            val activeCapture = synchronized(captureLock) { capture } ?: break
             if (read <= 0) {
+                if (activeCapture.noProgress().stopReason != null) requestCaptureStop(onSilenceDetected)
                 continue
             }
 
-            synchronized(buffers) {
-                buffers.add(buffer.copyOfRange(0, read))
-            }
             val level = TranscriptionAudio.rmsLevel(buffer, read)
-            updateState(currentState().copy(isRecording = true, audioLevel = level, error = null))
-
-            val now = System.currentTimeMillis()
-            if (level > SILENCE_LEVEL_FLOOR) {
-                heardSpeech = true
-                heardSpeechDuringSession = true
-                lastAboveSilenceFloorAt = now
-            } else if (heardSpeech && now - lastAboveSilenceFloorAt >= SILENCE_AUTO_STOP_MS && !silenceStopRequested) {
-                silenceStopRequested = true
-                mainHandler.post(onSilenceDetected)
+            val update = runCatching { activeCapture.append(buffer, read, level) }.getOrElse { error ->
+                updateState(currentState().copy(error = "Transcription capture failed: ${error.message ?: error}"))
+                requestCaptureStop(onSilenceDetected)
+                break
             }
+            update.levelToPublish?.let {
+                updateState(currentState().copy(isRecording = true, audioLevel = it, error = null))
+            }
+            if (level > capturePolicy.silenceFloor) {
+                heardSpeechDuringSession = true
+            }
+            if (update.stopReason != null) requestCaptureStop(onSilenceDetected)
         }
     }
 
-    private fun stopRecordingAndCollect(): ShortArray {
+    private fun requestCaptureStop(onStopRequested: () -> Unit) {
+        if (silenceStopRequested) return
+        silenceStopRequested = true
+        mainHandler.post(onStopRequested)
+    }
+
+    private fun stopRecorder() {
         recording = false
         audioRecord?.let { recorder ->
             runCatching {
@@ -242,20 +271,29 @@ class VoiceTranscriptionManager(
         recordingThread?.join(1_000)
         recordingThread = null
         silenceStopRequested = false
+    }
 
-        return synchronized(buffers) {
-            TranscriptionAudio.concatenate(buffers).also { buffers.clear() }
+    private fun stopRecordingAndTake(): CapturedPcm? {
+        stopRecorder()
+        return synchronized(captureLock) { capture?.finish().also { capture = null } }
+    }
+
+    private fun stopRecordingAndDiscard() {
+        stopRecorder()
+        synchronized(captureLock) {
+            capture?.abort()
+            capture = null
         }
     }
 
-    private fun transcribeOpenAi(wav: ByteArray, token: String): String? {
+    private fun transcribeOpenAi(wav: File, token: String): String? {
         val requestBody = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("model", OPENAI_TRANSCRIPTION_MODEL)
             .addFormDataPart(
                 "file",
                 "audio.wav",
-                wav.toRequestBody(WAV_MEDIA_TYPE)
+                wav.asRequestBody(WAV_MEDIA_TYPE)
             )
             .build()
 
@@ -290,8 +328,6 @@ class VoiceTranscriptionManager(
     companion object {
         private const val OPENAI_TRANSCRIPTION_URL = "https://api.openai.com/v1/audio/transcriptions"
         private const val OPENAI_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
-        private const val SILENCE_AUTO_STOP_MS = 1_500L
-        private const val SILENCE_LEVEL_FLOOR = 0.02f
         private val WAV_MEDIA_TYPE = "audio/wav".toMediaType()
     }
 }
