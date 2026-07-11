@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -13,6 +13,7 @@ const owner = { deviceId: "phone-1", sessionKey: "codex:session-1" };
 test("HostBlobStore streams unknown-length inputs through the hard cap and removes partials", async () => {
   const fixture = createStore({ maxItemBytes: 8, maxAggregateBytes: 32 });
   try {
+    if (process.platform !== "win32") assert.equal(statSync(fixture.root).mode & 0o777, 0o700);
     await assert.rejects(
       fixture.store.upload(Readable.from([Buffer.alloc(4), Buffer.alloc(5)]), request("blob_oversized", Buffer.alloc(9), undefined)),
       (error: unknown) => error instanceof HostBlobStoreError && error.statusCode === 413

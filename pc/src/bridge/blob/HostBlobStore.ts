@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   closeSync,
   createReadStream,
   existsSync,
@@ -97,7 +98,12 @@ export class HostBlobStore {
     }
     this.now = options.now ?? Date.now;
     this.usableSpaceBytes = options.usableSpaceBytes ?? availableBytes;
-    mkdirSync(directory, { recursive: true });
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    try {
+      chmodSync(directory, 0o700);
+    } catch (error) {
+      if (process.platform !== "win32") throw error;
+    }
     this.cleanup();
   }
 
@@ -297,8 +303,10 @@ export class HostBlobStore {
       renameSync(partialPath, payloadPath);
       writeDurableFile(partialMetadataPath, JSON.stringify(metadata));
       renameSync(partialMetadataPath, metadataPath);
+      syncDirectory(this.directory);
     } catch (error) {
       rmSync(payloadPath, { force: true });
+      rmSync(metadataPath, { force: true });
       throw error;
     } finally {
       rmSync(partialMetadataPath, { force: true });
@@ -437,6 +445,16 @@ function writeDurableFile(path: string, contents: string): void {
   const descriptor = openSync(path, "wx", 0o600);
   try {
     writeFileSync(descriptor, contents, "utf8");
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function syncDirectory(path: string): void {
+  if (process.platform === "win32") return;
+  const descriptor = openSync(path, "r");
+  try {
     fsyncSync(descriptor);
   } finally {
     closeSync(descriptor);

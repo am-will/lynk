@@ -88,7 +88,7 @@ describe("InMemoryHarnessSessionStore", () => {
     cleanup();
   });
 
-  it("persists attachment metadata without runtime paths or inline payloads", () => {
+  it("persists attachment metadata without runtime paths or inline payloads", async () => {
     const { store, storagePath, cleanup } = createStore();
     const session = store.ensureSession("devin:attachments");
     const attachment: ResolvedChatAttachment = {
@@ -101,6 +101,7 @@ describe("InMemoryHarnessSessionStore", () => {
       localPath: "/private/host/blob"
     };
     store.appendUserMessage(session, "inspect", "run-1", [attachment]);
+    await store.flushPersistence();
 
     const persistedText = readFileSync(storagePath, "utf8");
     const history = store.history("devin:attachments");

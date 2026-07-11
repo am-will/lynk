@@ -1,5 +1,4 @@
 import { createServer } from "node:http";
-import { dirname, join } from "node:path";
 import { AuditLog } from "./AuditLog.js";
 import { Dispatcher } from "../dispatcher/dispatcher.js";
 import { OpenClawChatBridge } from "./OpenClawChatBridge.js";
@@ -14,12 +13,14 @@ import { createPhoneWebSocketServer } from "./phoneWebSocket.js";
 import { startAdbReverseMonitor } from "./AdbReverseMonitor.js";
 import { createPhoneUpgradeHandler } from "./webSocketUpgrade.js";
 import { HostBlobStore } from "./blob/HostBlobStore.js";
+import { hostPathsForConfigPath } from "../host/HostPaths.js";
 
 const config = getBridgeConfig();
-const audit = new AuditLog();
+const hostPaths = hostPathsForConfigPath(config.configPath);
+const audit = new AuditLog(1_000, hostPaths.auditRoot);
 const hub = new PhoneHub(config.defaultDeviceId, audit);
 const dispatcher = new Dispatcher(hub, audit);
-const blobs = new HostBlobStore(join(dirname(config.configPath), "blobs"));
+const blobs = new HostBlobStore(hostPaths.blobRoot);
 const chatBridge = new OpenClawChatBridge(config, hub, dispatcher, audit, undefined, blobs);
 const realtimeClient = new OpenAiRealtimeClient(config);
 const webSearchClient = new OpenAiWebSearchClient(config);
