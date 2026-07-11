@@ -1,5 +1,6 @@
 package dev.androidagent.localmodel
 
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -39,9 +40,9 @@ class LocalToolBoundaryCharacterizationTest {
     }
 
     @Test
-    fun benignKeywordMentionsEnableLegacyToolMode() {
-        assertTrue(LocalToolPolicy.shouldAllowTools("Explain what the word file means."))
-        assertTrue(LocalToolPolicy.shouldAllowTools("Show a JSON example of a shell command."))
-        assertTrue(LocalToolPolicy.shouldLoadAndroidControlSkill("What does the Android settings screen mean?"))
+    fun benignKeywordMentionsDoNotGrantToolAccess() {
+        assertFalse(LocalToolPolicy.accessFor("Explain what the word file means.").allowsAny)
+        assertFalse(LocalToolPolicy.accessFor("Show a JSON example of a shell command.").allowsAny)
+        assertFalse(LocalToolPolicy.accessFor("What does the Android settings screen mean?").allowsAny)
     }
 }

@@ -26,8 +26,9 @@ class LocalAgentController(
     ): String {
         val transcript = history.takeLast(16).map { "${it.role}: ${it.text}" }.toMutableList()
         transcript.add("user: $userText")
-        val phoneControlRequest = LocalToolPolicy.shouldLoadAndroidControlSkill(userText)
-        val toolsAllowed = phoneControlRequest || LocalToolPolicy.shouldAllowTools(userText)
+        val toolAccess = LocalToolPolicy.accessFor(userText)
+        val phoneControlRequest = toolAccess.phoneControl
+        val toolsAllowed = toolAccess.allowsAny
         val multiStepPhoneRequest = phoneControlRequest && LocalPhoneControlTurnPolicy.isMultiStepRequest(userText)
         emit(state(
             sessionKey = sessionKey,
@@ -46,7 +47,6 @@ class LocalAgentController(
             toolDescriptionsJson = tools.toolDescriptions().toString()
         )
         var rejectedUnneededTool = false
-        var rejectedCommandRequest = false
         var rejectedEmptyTermuxCommand = false
         var repeatedObserveCount = 0
         var latestScreenshotPath: String? = null
@@ -144,12 +144,6 @@ class LocalAgentController(
                     emitAssistant(sessionKey, runId, message)
                     return message
                 }
-                if (toolsAllowed && LocalToolPolicy.shouldRejectCommandRequest(userText, finalText) && !rejectedCommandRequest) {
-                    rejectedCommandRequest = true
-                    transcript.add("assistant: $finalText")
-                    transcript.add("system: Do not ask the user for a shell command. The user asked you to perform the task. Choose the Termux command yourself and call termux_command now.")
-                    return@toolLoop
-                }
                 emit(JSONObject()
                     .put("type", "chat.reasoning_clear")
                     .put("sessionKey", sessionKey)
@@ -170,6 +164,14 @@ class LocalAgentController(
 
             for (call in calls) {
                 var callToExecute = call
+                if (!toolAccess.allows(call.name)) {
+                    val rejected = JSONObject()
+                        .put("ok", false)
+                        .put("error", "Tool ${call.name} is not authorized for this user request.")
+                    transcript.add("assistant tool request rejected: ${JSONObject().put("tool", call.name).put("args", call.args)}")
+                    transcript.add("tool ${call.name} result: $rejected")
+                    continue
+                }
                 if (phoneControlRequest && LocalToolPolicy.isPhoneTool(call.name) && !androidControlSkillLoaded) {
                     val rejected = JSONObject()
                         .put("ok", false)
@@ -207,7 +209,7 @@ class LocalAgentController(
                     transcript.add("system: ${replacementFallback.reason}")
                     callToExecute = LocalToolCall("termux_command", replacementFallback.args)
                     demoFallbackTargetPath = replacementFallback.targetPath
-                } else if (call.name == "termux_command" && LocalToolPolicy.termuxCommandText(call.args).isBlank()) {
+                } else if (call.name == "termux_command" && call.args.optString("command").isBlank()) {
                     val emptyCommandFallback = DemoHtmlTermuxFallbackPolicy.fallbackForEmptyCommand(userText)
                     if (emptyCommandFallback != null) {
                         transcript.add("assistant tool request: ${JSONObject().put("tool", call.name).put("args", call.args)}")
