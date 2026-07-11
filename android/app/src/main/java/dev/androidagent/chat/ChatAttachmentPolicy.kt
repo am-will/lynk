@@ -36,7 +36,13 @@ object ChatAttachmentPolicy {
         }
         var aggregateBytes = 0L
         attachments.forEach { attachment ->
-            val size = File(attachment.localPath).length().takeIf { it > 0L } ?: attachment.sizeBytes
+            val file = File(attachment.localPath)
+            require(BLOB_ID.matches(attachment.id)) { "${attachment.displayName} has an invalid attachment id." }
+            require(SHA256.matches(attachment.sha256)) { "${attachment.displayName} has no valid checksum. Reattach the file." }
+            require(file.isFile && file.canRead()) { "${attachment.displayName} is no longer available. Reattach the file." }
+            val size = file.length()
+            require(size > 0L) { "${attachment.displayName} is empty and cannot be sent." }
+            require(size == attachment.sizeBytes) { "${attachment.displayName} changed after it was attached. Reattach the file." }
             validateImport(size, attachment.displayName)
             if (aggregateBytes > MAX_MESSAGE_ATTACHMENT_BYTES - size) {
                 throw IllegalArgumentException("Attachments exceed the ${MAX_MESSAGE_ATTACHMENT_BYTES / (1024 * 1024)} MB message limit.")
@@ -56,4 +62,7 @@ object ChatAttachmentPolicy {
         val name = attachment.displayName.lowercase()
         return localTextAttachmentExtensions.any { name.endsWith(it) }
     }
+
+    private val BLOB_ID = Regex("^blob_[a-zA-Z0-9-]{8,80}$")
+    private val SHA256 = Regex("^[a-f0-9]{64}$")
 }

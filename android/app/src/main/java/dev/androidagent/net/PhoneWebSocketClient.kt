@@ -17,6 +17,13 @@ import dev.androidagent.agentchat.ChatSendDelivery
 import dev.androidagent.chat.ChatAttachmentWireEncoder
 import dev.androidagent.chat.StoredChatAttachment
 import dev.androidagent.voice.RealtimeToolCall
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
@@ -50,6 +57,9 @@ class PhoneWebSocketClient(
     private val client = OkHttpClient.Builder()
         .pingInterval(20, TimeUnit.SECONDS)
         .build()
+    private val attachmentUploader = HostAttachmentUploader(client)
+    private val attachmentUploadJob = SupervisorJob()
+    private val attachmentUploadScope = CoroutineScope(attachmentUploadJob + Dispatchers.IO)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var socket: WebSocket? = null
     private var manuallyClosed = false
@@ -91,6 +101,7 @@ class PhoneWebSocketClient(
         socket = null
         cancelScheduledReconnect()
         cancelRegisterTimeout()
+        attachmentUploadScope.cancel("Phone WebSocket client closed")
         commandExecutor.cancelApprovalsForPrefix(HOST_OWNER_PREFIX)
         client.dispatcher.executorService.shutdown()
     }
@@ -134,21 +145,88 @@ class PhoneWebSocketClient(
         delivery: ChatSendDelivery = ChatSendDelivery.Normal,
         attachments: List<StoredChatAttachment> = emptyList()
     ): Boolean {
+        val normalizedSessionKey = sessionKey?.trim()?.takeIf { it.isNotEmpty() }
+        if (attachments.isNotEmpty() && normalizedSessionKey == null) {
+            reportAttachmentSendFailure("Select a chat session before sending an attachment.")
+            return false
+        }
         val message = JSONObject()
             .put("type", "chat.send")
             .put("deviceId", config.deviceId)
             .put("text", text)
             .put("delivery", delivery.key)
-        sessionKey?.takeIf { it.isNotBlank() }?.let { message.put("sessionKey", it) }
+        normalizedSessionKey?.let { message.put("sessionKey", it) }
         model?.takeIf { it.isNotBlank() }?.let { message.put("model", it) }
         reasoningEffort?.takeIf { it.isNotBlank() }?.let { message.put("reasoningEffort", it) }
         if (attachments.isNotEmpty()) {
-            message.put(
-                "attachments",
-                ChatAttachmentWireEncoder.toJsonArray(attachments)
-            )
+            val attachmentSessionKey = requireNotNull(normalizedSessionKey)
+            val encoded = runCatching { ChatAttachmentWireEncoder.toJsonArray(attachments) }.getOrElse { error ->
+                reportAttachmentSendFailure(error.message ?: "Selected attachment cannot be sent.")
+                return false
+            }
+            message.put("attachments", encoded)
+            return queueAttachmentMessage(message, attachmentSessionKey, attachments)
         }
         return sendJson(message, reportChatError = true)
+    }
+
+    private fun queueAttachmentMessage(
+        message: JSONObject,
+        sessionKey: String,
+        attachments: List<StoredChatAttachment>
+    ): Boolean {
+        if (!connected || !registered || socket == null) {
+            return sendJson(message, reportChatError = true)
+        }
+        val expectedSocket = socket ?: return false
+        val uploadEndpoint = activeHostUrl()
+        attachmentUploadScope.launch {
+            try {
+                uploadAttachments(uploadEndpoint, sessionKey, attachments)
+                runOnMain {
+                    if (socket !== expectedSocket || !connected || !registered) {
+                        reportBridgeChatError("Attachments uploaded, but the bridge connection changed before the message was sent. Try again.")
+                    } else {
+                        sendJson(message, reportChatError = true)
+                    }
+                }
+            } catch (_: CancellationException) {
+                // Connection teardown already reports the actionable error.
+            } catch (error: Exception) {
+                reportAttachmentSendFailure(error.message ?: "Attachment upload failed.")
+            }
+        }
+        return true
+    }
+
+    private suspend fun uploadAttachments(
+        uploadEndpoint: String,
+        sessionKey: String,
+        attachments: List<StoredChatAttachment>
+    ) {
+        attachments.forEachIndexed { index, attachment ->
+            var lastReportedBucket = -1
+            attachmentUploader.upload(
+                hostUrl = uploadEndpoint,
+                allowInsecureTrustedOverlay = config.allowInsecureTrustedOverlay,
+                token = config.token,
+                deviceId = config.deviceId,
+                sessionKey = sessionKey,
+                attachment = attachment
+            ) { sentBytes, totalBytes ->
+                val percent = ((sentBytes * 100L) / totalBytes).toInt().coerceIn(0, 100)
+                val bucket = percent / 10
+                if (bucket > lastReportedBucket) {
+                    lastReportedBucket = bucket
+                    runOnMain {
+                        onStatus(
+                            "Uploading ${index + 1}/${attachments.size}: ${attachment.displayName} ($percent%)",
+                            "info"
+                        )
+                    }
+                }
+            }
+        }
     }
 
     fun sendChatStop(sessionKey: String? = null, runId: String? = null, reason: String = "Stopped from Android chat") {
@@ -374,6 +452,7 @@ class PhoneWebSocketClient(
         socket = null
         connected = false
         registered = false
+        attachmentUploadJob.cancelChildren(CancellationException("Bridge connection failed"))
         cancelRegisterTimeout()
         commandExecutor.cancelApprovalsForPrefix(HOST_OWNER_PREFIX)
         val statusText = "WebSocket error: ${t.message}"
@@ -393,6 +472,7 @@ class PhoneWebSocketClient(
         socket = null
         connected = false
         registered = false
+        attachmentUploadJob.cancelChildren(CancellationException("Bridge connection closed"))
         cancelRegisterTimeout()
         commandExecutor.cancelApprovalsForPrefix(HOST_OWNER_PREFIX)
         val (statusText, longBackoff) = when (code) {
@@ -442,6 +522,13 @@ class PhoneWebSocketClient(
         }
     }
 
+    private fun reportAttachmentSendFailure(message: String) {
+        runOnMain {
+            onStatus(message, "error")
+        }
+        reportBridgeChatError(message)
+    }
+
     private fun scheduleReconnect(longBackoff: Boolean = false) {
         if (manuallyClosed || reconnectRunnable != null) {
             return
@@ -484,6 +571,7 @@ class PhoneWebSocketClient(
         socket = null
         connected = false
         registered = false
+        attachmentUploadJob.cancelChildren(CancellationException("Bridge registration failed"))
         cancelRegisterTimeout()
         webSocket.cancel()
         onStatus(statusText, "error")
