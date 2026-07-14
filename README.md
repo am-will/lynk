@@ -4,7 +4,7 @@ https://github.com/user-attachments/assets/9878e172-5ada-433c-8500-e84ccbef0aa2
 
 Lynk turns an Android phone into a persistent chat and voice endpoint for AI agents running on your computer. The Android app is the bubble, notification, voice, and optional phone-control surface. The PC bridge is the local companion that pairs the phone, routes chat to host agents, starts realtime voice sessions, and exposes Android tools when a selected agent needs to touch the phone.
 
-Host mode can route to **OpenClaw**, **Hermes**, **Pi**, **OpenCode**, **Codex**, or **Devin** from the same Android model picker. Local phone mode can run an imported **LiteRT-LM** model on-device and use Android/local app-private tools without a PC agent for every request.
+Host mode can route to **OpenClaw**, **Hermes**, **Pi**, **OpenCode**, **Codex**, or **Devin** from the same Android model picker. Local phone mode can run an imported **LiteRT-LM** (`.litertlm`) or **GGUF** (`.gguf`) model on-device and use Android/local app-private tools without a PC agent for every request.
 
 ## How It Works
 
@@ -15,7 +15,7 @@ Host mode can route to **OpenClaw**, **Hermes**, **Pi**, **OpenCode**, **Codex**
    - Hermes through the installed `hermes` CLI by default, or through its runs API harness when configured.
    - Codex through the bundled app-server harness when configured.
    - OpenCode through its private server API, Pi through its bundled SDK adapter, and Devin through authenticated `devin acp` stdio.
-   - Local LiteRT-LM directly on Android when a `.litertlm` model is imported.
+   - Local LiteRT-LM or GGUF directly on Android when a `.litertlm` or `.gguf` model is imported. GGUF inference uses `llama.cpp` with CPU ARM fallback and optional Vulkan acceleration.
 4. Replies, tool activity, status, usage, session history, and errors stream back to the Android timeline.
 5. Phone-control tools are optional. When enabled, host agents can call the bridge MCP server and Lynk executes Android accessibility commands on the paired device.
 
@@ -41,7 +41,7 @@ Optional:
 
 - Tailscale for off-LAN pairing without exposing the bridge publicly.
 - OpenAI API key for realtime voice and bridge-side web search.
-- A `.litertlm` model file for Local phone mode.
+- A `.litertlm` or `.gguf` model file for Local phone mode.
 - MCP registration if you want OpenClaw, Hermes, or Codex to call Android phone tools.
 
 ## Install The Bridge
@@ -335,9 +335,10 @@ Internal testing opt-in URL:
 https://play.google.com/apps/internaltest/4701424159971104219
 ```
 
-Build and install from `android/` with Android Studio or Gradle:
+Build and install from `android/` with Android Studio or Gradle. The repo pins `llama.cpp` as a submodule for GGUF support; initialize it before building:
 
 ```bash
+git submodule update --init --recursive
 cd android
 ./gradlew :app:assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
@@ -387,7 +388,7 @@ Android may still require user approval for overlay permission, Accessibility, r
 - OpenClaw is the default host harness and uses Gateway sessions for normal chat history.
 - Hermes appears in the Android model picker when the `hermes` CLI is installed or when `HERMES_API_KEY` is configured. CLI fallback supports normal chat turns with no extra server; configure the runs API only for richer session history, active-turn steering, and SSE streaming.
 - Codex appears when the `codex app-server` command is available.
-- Local LiteRT-LM appears when local mode is enabled in Android and a `.litertlm` model is installed.
+- Local LiteRT-LM or GGUF appears when local mode is enabled in Android and a `.litertlm` or `.gguf` model is installed. GGUF uses pinned `llama.cpp` with ARM CPU fallback and optional Vulkan. The first GGUF path is text-only (no mmproj); context up to 262K is requested, not guaranteed, and the runtime may reduce it based on memory. `Bonsai-27B-Q1_0.gguf` (3,803,452,480 bytes) loads and generates on the tested 16 GB SM-S948U, but 27B CPU generation is slow and Vulkan is disabled on its Adreno 840 after reproducible device-loss errors.
 - Devin appears after `devin auth login` and host integration refresh. Lynk uses ACP `session/list` and `session/load` for restart recovery; tested CLI `3000.1.27` does not advertise `session/resume`.
 - Keep OpenClaw Gateway, Hermes, Codex app-server, Devin ACP stdio, and similar host-agent transports on localhost or trusted private networks. Expose only the phone-facing bridge through Tailscale for off-LAN use.
 

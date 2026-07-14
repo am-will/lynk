@@ -106,7 +106,7 @@ class LocalRealtimeVoiceDelegate(
             return
         }
         if (activeTask != null) {
-            failCall(voiceSessionId, call.callId, "Local LiteRT-LM cannot steer an active realtime task yet. Stop it or wait for it to finish.")
+            failCall(voiceSessionId, call.callId, "The local model cannot steer an active realtime task yet. Stop it or wait for it to finish.")
             return
         }
         startTask(QueuedLocalRealtimeTask(voiceSessionId = voiceSessionId, callId = call.callId, instruction = intent.guidance))

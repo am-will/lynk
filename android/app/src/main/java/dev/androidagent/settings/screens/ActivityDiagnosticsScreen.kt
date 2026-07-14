@@ -67,11 +67,11 @@ object ActivityDiagnosticsScreen {
             iconRes = R.drawable.ic_chip,
             tone = BadgeTone.Violet,
             title = "Local model",
-            subtitle = "LiteRT-LM",
+            subtitle = "On-device model",
             details = when {
                 !config.experimentalLocalModelsEnabled -> "Local phone mode is disabled in Models & Harness."
                 localReady -> "Imported model is available on ${config.localModelBackend.label}."
-                else -> "Local phone mode is enabled, but no .litertlm model is imported."
+                else -> "Local phone mode is enabled, but no .litertlm or .gguf model is imported."
             },
             statusText = if (localReady) "Ready" else "Missing",
             tone2 = if (localReady) StatusLevel.Good else StatusLevel.Warning

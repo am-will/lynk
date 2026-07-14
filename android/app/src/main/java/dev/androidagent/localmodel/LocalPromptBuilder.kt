@@ -26,6 +26,14 @@ internal object LocalPromptBuilder {
             "Tools are not needed for this message. Answer directly in natural language. Do not call phone_observe, phone_take_screenshot, Termux, or file tools."
         }
 
+        if (!toolsAllowed) {
+            return """
+                $basePrompt
+
+                Local mode: Answer directly as a conversational assistant. Tools are not needed for this message. Do not emit tool-control markers.
+            """.trimIndent()
+        }
+
         return """
             $basePrompt
 

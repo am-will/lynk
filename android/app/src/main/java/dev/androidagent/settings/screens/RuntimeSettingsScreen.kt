@@ -51,7 +51,7 @@ object RuntimeSettingsScreen {
                 )
             )
         }
-        val local = SettingsUi.harnessCheckBox(activity, "Local LiteRT-LM (experimental)", config.experimentalLocalModelsEnabled, "Enable local harness", tokens, R.id.openclaw_harness_local_litert_checkbox)
+        val local = SettingsUi.harnessCheckBox(activity, "Local model (experimental)", config.experimentalLocalModelsEnabled, "Enable local harness", tokens, R.id.openclaw_harness_local_litert_checkbox)
 
         root.addView(SettingsUi.card(activity, tokens).apply {
             addView(SettingsUi.sectionHeader(activity, "Backends", "Disabled harnesses are hidden from the model picker.", tokens))
@@ -81,7 +81,7 @@ object RuntimeSettingsScreen {
         val workspaceControls = root.addWorkspaceCards(activity, tokens, config)
 
         val localModelPathInput = SettingsUi.configField(activity, "Model file", config.localModelPath, tokens).apply {
-            exposeToAccessibility(R.id.openclaw_local_model_path_field, "Local LiteRT model path")
+            exposeToAccessibility(R.id.openclaw_local_model_path_field, "Local model path")
         }
         val localBackends = LocalModelBackend.values().toList()
         val localBackendSpinner = SettingsUi.styledSpinner(
@@ -109,12 +109,12 @@ object RuntimeSettingsScreen {
         )
 
         root.addView(SettingsUi.card(activity, tokens).apply {
-            addView(SettingsUi.sectionHeader(activity, "Local Models", "Import and tune the on-device LiteRT-LM harness.", tokens))
+            addView(SettingsUi.sectionHeader(activity, "Local Models", "Import and tune the on-device model harness.", tokens))
             addView(SettingsUi.labeledField(activity, "Model file", localModelPathInput, tokens, DesignTokens.Spacing.md))
             addView(
                 SettingsUi.actionButton(activity, "Import Local Model", SettingsButtonTone.Secondary, tokens) {
                     callbacks.onImportRequested(localModelPathInput)
-                }.exposeToAccessibility(R.id.openclaw_local_model_import_button, "Import local LiteRT model"),
+                }.exposeToAccessibility(R.id.openclaw_local_model_import_button, "Import local model"),
                 SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm + 2)
             )
             addView(SettingsUi.labeledField(activity, "Backend", localBackendSpinner, tokens))
@@ -160,7 +160,7 @@ object RuntimeSettingsScreen {
                     experimentalLocalModelsEnabled = local.isChecked,
                     localModelPath = localModelPathInput.text.toString().trim(),
                     localModelBackend = localBackends.getOrElse(localBackendSpinner.selectedItemPosition) { LocalModelBackend.Cpu },
-                    localContextTokens = localContextInput.text.toString().toIntOrNull()?.coerceIn(512, 131_072)
+                    localContextTokens = localContextInput.text.toString().toIntOrNull()?.coerceIn(512, 262_144)
                         ?: config.localContextTokens,
                     localDeveloperToolsEnabled = localDeveloperTools.isChecked,
                     workspacePaths = workspaceControls.associate { control ->

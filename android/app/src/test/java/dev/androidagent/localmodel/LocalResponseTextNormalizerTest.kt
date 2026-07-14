@@ -37,6 +37,14 @@ class LocalResponseTextNormalizerTest {
     }
 
     @Test
+    fun hidesThinkingUntilClosingTagAndStreamsVisibleText() {
+        assertEquals("", LocalResponseTextNormalizer.visibleStreamingText("<think>planning"))
+        assertEquals("Hel", LocalResponseTextNormalizer.visibleStreamingText("<think>planning</think>\nHel"))
+        assertEquals("Hello", LocalResponseTextNormalizer.visibleStreamingText("Hello"))
+        assertEquals("Hello", LocalResponseTextNormalizer.normalize("<think>planning</think>\nHello"))
+    }
+
+    @Test
     fun removesLocalCompletionPrefixes() {
         assertEquals("All set.", LocalResponseTextNormalizer.normalize("TASK_COMPLETE: All set."))
         assertEquals("Need permission.", LocalResponseTextNormalizer.normalize("BLOCKED Need permission."))

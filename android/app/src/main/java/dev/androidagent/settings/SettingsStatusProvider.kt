@@ -57,9 +57,9 @@ object SettingsStatusProvider {
             "Local".takeIf { config.experimentalLocalModelsEnabled }
         ).ifEmpty { listOf("none") }.joinToString(", ")
         val localLine = when {
-            !config.experimentalLocalModelsEnabled -> "Local LiteRT-LM: off"
-            localModelReady -> "Local LiteRT-LLM: ready (${config.localModelBackend.label})"
-            else -> "Local LiteRT-LLM: enabled, model missing"
+            !config.experimentalLocalModelsEnabled -> "Local model: off"
+            localModelReady -> "Local model: ready (${config.localModelBackend.label})"
+            else -> "Local model: enabled, model missing"
         }
 
         val endpointSummary = """
@@ -73,7 +73,7 @@ object SettingsStatusProvider {
             !bridgeTokenReady -> "Paste the PC PHONE_AGENT_TOKEN in Connection before starting the bridge session."
             overlay && microphone && accessibility -> {
                 if (config.experimentalLocalModelsEnabled && !localModelReady) {
-                    "Ready for host models. Import a LiteRT-LM .litertlm model before Local appears in the picker."
+                    "Ready for host models. Import a .litertlm or .gguf model before Local appears in the picker."
                 } else {
                     "Ready. Start the bubble when your bridge is listening."
                 }

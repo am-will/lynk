@@ -2,7 +2,7 @@ package dev.androidagent.localmodel
 
 object LocalResponseTextNormalizer {
     fun normalize(text: String): String {
-        return text.trim()
+        return visibleStreamingText(text).trim()
             .replace(Regex("""(?i)^TASK_COMPLETE\s*:?\s*"""), "")
             .replace(Regex("""(?i)^BLOCKED\s*:?\s*"""), "")
             .replace("\r\n", "\n")
@@ -31,5 +31,12 @@ object LocalResponseTextNormalizer {
             .replace(Regex("""\n{3,}"""), "\n\n")
             .trim()
             .ifBlank { "Done." }
+    }
+
+    fun visibleStreamingText(text: String): String {
+        val closing = text.lastIndexOf("</think>", ignoreCase = true)
+        if (closing >= 0) return text.substring(closing + "</think>".length).trimStart()
+        if (text.contains("<think>", ignoreCase = true)) return ""
+        return text
     }
 }

@@ -46,7 +46,7 @@ object ChatModelCatalog {
                 )
                 ?: ChatModelOption(
                     id = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
-                    label = "Local LiteRT-LM",
+                    label = "Local model",
                     provider = "android",
                     harnessId = AgentConfig.HARNESS_LOCAL,
                     harnessLabel = "Local",

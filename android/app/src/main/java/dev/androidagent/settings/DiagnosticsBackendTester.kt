@@ -50,12 +50,12 @@ object DiagnosticsBackendTester {
 
     private fun testLocal(config: AgentConfig): DiagnosticsBackendTestResult {
         if (!config.experimentalLocalModelsEnabled) {
-            return warning(DiagnosticsBackendId.Local, "Local LiteRT-LM is disabled in Models & Harness.")
+            return warning(DiagnosticsBackendId.Local, "Local model support is disabled in Models & Harness.")
         }
         if (!LocalModelStore.exists(config.localModelPath)) {
-            return warning(DiagnosticsBackendId.Local, "Local LiteRT-LM is enabled, but no .litertlm model is imported.")
+            return warning(DiagnosticsBackendId.Local, "Local model support is enabled, but no .litertlm or .gguf model is imported.")
         }
-        return success(DiagnosticsBackendId.Local, "Local LiteRT-LM is ready on ${config.localModelBackend.label}.")
+        return success(DiagnosticsBackendId.Local, "Local model is ready on ${config.localModelBackend.label}.")
     }
 
     private fun testHost(config: AgentConfig, backend: DiagnosticsBackendId): DiagnosticsBackendTestResult {

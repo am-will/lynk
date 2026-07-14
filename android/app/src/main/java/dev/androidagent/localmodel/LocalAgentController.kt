@@ -11,6 +11,29 @@ import org.json.JSONObject
 import java.util.UUID
 import dev.androidagent.agentchat.LocalTurnRunner
 
+internal fun selectNewestHistory(
+    history: List<LocalChatMessage>,
+    localContextTokens: Int,
+    systemPrompt: String,
+    currentUserText: String
+): List<LocalChatMessage> {
+    val contextTokens = localContextTokens.coerceAtLeast(512)
+    val outputReserve = (contextTokens / 4).coerceIn(512, 8_192)
+    val toolRoundReserve = (contextTokens / 4).coerceIn(512, 8_192)
+    val fixedTokens = LocalPromptBuilder.estimateTokenCount(systemPrompt) +
+        LocalPromptBuilder.estimateTokenCount("user: $currentUserText") +
+        LocalPromptBuilder.estimateTokenCount(LocalPromptBuilder.roundPrompt(emptyList(), null))
+    var remainingTokens = (contextTokens - outputReserve - toolRoundReserve - fixedTokens).coerceAtLeast(0)
+    val selectedNewestFirst = mutableListOf<LocalChatMessage>()
+    for (message in history.asReversed()) {
+        val messageTokens = LocalPromptBuilder.estimateTokenCount("${message.role}: ${message.text}")
+        if (messageTokens > remainingTokens) break
+        selectedNewestFirst += message
+        remainingTokens -= messageTokens
+    }
+    return selectedNewestFirst.asReversed()
+}
+
 class LocalAgentController(
     private val runtime: LocalModelRuntime,
     private val tools: LocalToolRegistry,
@@ -24,12 +47,23 @@ class LocalAgentController(
         history: List<LocalChatMessage>,
         imagePaths: List<String>
     ): String {
-        val transcript = history.takeLast(16).map { "${it.role}: ${it.text}" }.toMutableList()
-        transcript.add("user: $userText")
         val toolAccess = LocalToolPolicy.accessFor(userText)
         val phoneControlRequest = toolAccess.phoneControl
         val toolsAllowed = toolAccess.allowsAny
         val multiStepPhoneRequest = phoneControlRequest && LocalPhoneControlTurnPolicy.isMultiStepRequest(userText)
+        val config = configProvider()
+        val systemPrompt = LocalPromptBuilder.systemPrompt(
+            basePrompt = config.systemPrompt,
+            toolsAllowed = toolsAllowed,
+            toolDescriptionsJson = tools.toolDescriptions().toString()
+        )
+        val transcript = selectNewestHistory(
+            history = history,
+            localContextTokens = config.localContextTokens,
+            systemPrompt = systemPrompt,
+            currentUserText = userText
+        ).map { "${it.role}: ${it.text}" }.toMutableList()
+        transcript.add("user: $userText")
         emit(state(
             sessionKey = sessionKey,
             runId = runId,
@@ -40,12 +74,6 @@ class LocalAgentController(
         if (phoneControlRequest) {
             transcript.add("system: This is an Android phone-control request. Before any phone_* tool, call local_read_skill with name android-control and follow the returned skill.")
         }
-        val config = configProvider()
-        val systemPrompt = LocalPromptBuilder.systemPrompt(
-            basePrompt = config.systemPrompt,
-            toolsAllowed = toolsAllowed,
-            toolDescriptionsJson = tools.toolDescriptions().toString()
-        )
         var rejectedUnneededTool = false
         var repeatedObserveCount = 0
         var latestScreenshotPath: String? = null
@@ -60,6 +88,7 @@ class LocalAgentController(
             val prompt = LocalPromptBuilder.roundPrompt(transcript, latestScreenshotPath)
             Log.i(TAG, "local turn $runId prompt metrics round=${round + 1} systemChars=${systemPrompt.length} systemTokens=${LocalPromptBuilder.estimateTokenCount(systemPrompt)} promptChars=${prompt.length} promptTokens=${LocalPromptBuilder.estimateTokenCount(prompt)}")
             val response = try {
+                val streamed = StringBuilder()
                 withTimeout(MODEL_RESPONSE_TIMEOUT_MS) {
                     runtime.generate(
                         LocalModelRequest(
@@ -68,7 +97,15 @@ class LocalAgentController(
                             config = config,
                             imagePaths = latestScreenshotPath?.let(::listOf) ?: imagePaths.take(1)
                         ),
-                        onDelta = {},
+                        onDelta = { delta ->
+                            streamed.append(delta)
+                            if (!toolsAllowed) {
+                                val visible = LocalResponseTextNormalizer.visibleStreamingText(streamed.toString())
+                                if (visible.isNotEmpty()) {
+                                    emitAssistantDelta(sessionKey, runId, visible, replace = true)
+                                }
+                            }
+                        },
                         onStatus = { status ->
                             emit(state(sessionKey, runId, isRunning = true, status = status))
                         }
@@ -131,7 +168,11 @@ class LocalAgentController(
                     .put("type", "chat.reasoning_clear")
                     .put("sessionKey", sessionKey)
                     .put("runId", runId))
-                emitAssistant(sessionKey, runId, finalText)
+                if (toolsAllowed) {
+                    emitAssistant(sessionKey, runId, finalText)
+                } else {
+                    emitAssistantFinal(sessionKey, runId, finalText)
+                }
                 return finalText
             }
             if (!toolsAllowed) {

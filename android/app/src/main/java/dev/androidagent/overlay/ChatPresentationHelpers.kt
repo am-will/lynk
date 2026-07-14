@@ -203,9 +203,9 @@ object ChatPresentationHelpers {
             )
             ClientBrand.Local -> ClientBrandPresentation(
                 brand = brand,
-                title = "LiteRT-LLM",
+                title = "Local model",
                 logoRes = R.drawable.huggingface_logo,
-                copyName = "LiteRT"
+                copyName = "local model"
             )
         }
     }
@@ -293,7 +293,7 @@ object ChatPresentationHelpers {
 
     fun modelProviderSublabel(model: ChatModelOption, groupLabel: String): String? {
         val providerLabel = when (modelHarnessId(model)) {
-            "local" -> "LiteRT-LLM"
+            "local" -> "On-device"
             "opencode" -> model.provider?.takeIf { it.isNotBlank() }?.substringBefore("/")
             "pi" -> model.provider?.takeIf { it.isNotBlank() }?.substringBefore("/")
             else -> model.provider?.takeIf { it.isNotBlank() }

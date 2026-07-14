@@ -218,7 +218,7 @@ object AgentConfigStore {
             experimentalLocalModelsEnabled = experimentalLocalModelsEnabled,
             localModelPath = prefs.getString(LOCAL_MODEL_PATH, "") ?: "",
             localModelBackend = LocalModelBackend.fromKey(prefs.getString(LOCAL_MODEL_BACKEND, LocalModelBackend.Cpu.key)),
-            localContextTokens = prefs.getInt(LOCAL_CONTEXT_TOKENS, DEFAULT_LOCAL_CONTEXT_TOKENS).coerceIn(512, 131_072),
+            localContextTokens = prefs.getInt(LOCAL_CONTEXT_TOKENS, DEFAULT_LOCAL_CONTEXT_TOKENS).coerceIn(512, 262_144),
             localDeveloperToolsEnabled = prefs.getBoolean(LOCAL_DEVELOPER_TOOLS_ENABLED, false),
             openClawHarnessEnabled = prefs.getBoolean(OPENCLAW_HARNESS_ENABLED, true),
             hermesHarnessEnabled = prefs.getBoolean(HERMES_HARNESS_ENABLED, true),
@@ -259,7 +259,7 @@ object AgentConfigStore {
             .putBoolean(EXPERIMENTAL_LOCAL_MODELS_ENABLED, config.experimentalLocalModelsEnabled)
             .putString(LOCAL_MODEL_PATH, config.localModelPath)
             .putString(LOCAL_MODEL_BACKEND, config.localModelBackend.key)
-            .putInt(LOCAL_CONTEXT_TOKENS, config.localContextTokens.coerceIn(512, 131_072))
+            .putInt(LOCAL_CONTEXT_TOKENS, config.localContextTokens.coerceIn(512, 262_144))
             .putBoolean(LOCAL_DEVELOPER_TOOLS_ENABLED, config.localDeveloperToolsEnabled)
             .putBoolean(OPENCLAW_HARNESS_ENABLED, config.openClawHarnessEnabled)
             .putBoolean(HERMES_HARNESS_ENABLED, config.hermesHarnessEnabled)

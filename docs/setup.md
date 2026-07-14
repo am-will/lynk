@@ -14,7 +14,7 @@ Requirements:
 - Devin CLI installed and authenticated if selecting the Devin harness
 - Hermes API server access if selecting the Hermes harness
 - Secure network reachability from phone to a TLS terminator in front of the bridge, or loopback/ADB for local development
-- Gradle or Android Studio for Android builds
+- Gradle or Android Studio for Android builds; run `git submodule update --init --recursive` to initialize the pinned `llama.cpp` submodule for GGUF support
 
 Install and start the bridge:
 
@@ -68,7 +68,7 @@ The Android model picker can select multiple harnesses through this same bridge:
 - **OpenCode** appears through OpenCode's server API. Configure `OPENCODE_SERVER_URL` to reuse a private server, or configure `OPENCODE_SERVER_COMMAND`, `OPENCODE_AGENT_CWD`, `OPENCODE_SERVER_USERNAME`, `OPENCODE_SERVER_PASSWORD`, `OPENCODE_DEFAULT_AGENT`, and `OPENCODE_RUN_TIMEOUT_SECONDS` if Lynk should start and manage `opencode serve`.
 - **Pi** appears through the bundled Pi SDK adapter. Configure `PI_AGENT_CWD`, `PI_AGENT_DIR`, `PI_DEFAULT_MODEL`, and `PI_RUN_TIMEOUT_SECONDS` if the defaults do not match your machine. Pi credentials and sessions stay in Pi's agent directory.
 - **Devin** appears when the Devin CLI is installed and its ACP runtime can publish a model. Install the CLI, run `devin auth login`, and confirm `devin auth status` succeeds. Lynk starts the structured stdio server with `devin acp`; it does not scrape Devin's terminal UI.
-- **Local LiteRT-LLM** appears only when enabled in Android and a `.litertlm` model is installed.
+- **Local LiteRT-LLM** appears only when enabled in Android and a `.litertlm` or `.gguf` model is installed.
 
 Harnesses are selected from the same Android model picker as normal models. Histories are scoped by harness, so selecting Hermes shows Hermes sessions, selecting Codex shows Codex sessions, selecting OpenCode shows OpenCode sessions, selecting Pi shows Pi sessions, selecting Devin shows Devin sessions, and selecting OpenClaw shows OpenClaw Gateway sessions. Android's **Models & Harness** settings can hide harnesses from the phone's model picker without changing the PC bridge configuration.
 
@@ -116,11 +116,11 @@ npm run phone:tailscale
 
 For normal use, configure a certificate-valid TLS endpoint and set `PHONE_AGENT_PAIRING_WSS_URLS`; the bridge does not fabricate WSS URLs for its plain listener. `PHONE_AGENT_PAIRING_ALLOW_INSECURE_TAILSCALE=1` is an explicit trusted-overlay development exception and disables Android provider-key forwarding. Do not expose OpenClaw Gateway, Hermes, Codex app-server, OpenCode server, Pi SDK internals, Devin ACP stdio, or other host-agent transports directly to the public internet.
 
-The realtime voice path is separate from the task dispatcher: Android starts the WebRTC call, the PC bridge creates the OpenAI Realtime session, and completed general realtime intents route to the currently selected backend. Host selections use the PC harness router; Local LiteRT-LM selections run delegated work on Android. Phone-control tool calls remain a separate phone-task path. Realtime retries release their microphone, audio-focus, WebRTC, and foreground-service resources before a new generation starts. Composer transcription streams into app-private temporary PCM/WAV files and stops at hard byte, duration, initial-silence, or no-progress limits instead of retaining the whole recording in memory.
+The realtime voice path is separate from the task dispatcher: Android starts the WebRTC call, the PC bridge creates the OpenAI Realtime session, and completed general realtime intents route to the currently selected backend. Host selections use the PC harness router; Local LiteRT-LM or GGUF selections run delegated work on Android. Phone-control tool calls remain a separate phone-task path. Realtime retries release their microphone, audio-focus, WebRTC, and foreground-service resources before a new generation starts. Composer transcription streams into app-private temporary PCM/WAV files and stops at hard byte, duration, initial-silence, or no-progress limits instead of retaining the whole recording in memory.
 
 ## Android
 
-Open `android/` in Android Studio or run Gradle from that directory. Install the app on the device, then:
+Open `android/` in Android Studio or run Gradle from that directory. If you are building the GGUF path, first run `git submodule update --init --recursive` from the repo root to initialize the pinned `llama.cpp` submodule. Install the app on the device, then:
 
 1. Open **Connection & Config**. Save the **WebSocket URL**, **Device ID**, **Auth token**, and **OpenAI API key for realtime voice** if you want realtime voice or composer transcription.
 2. Grant overlay permission.
@@ -131,9 +131,11 @@ Open `android/` in Android Studio or run Gradle from that directory. Install the
 
 While OpenAgent is running, tap the bubble to open a large chat modal. The modal loads Gateway session history, streams active replies, shows model/reasoning/session controls behind the `+` button, and keeps phone-control tool activity collapsed until expanded. The foreground notification includes a **Stop Turn** action for active chat, dispatcher, and realtime voice work, including moments when the floating bubble is temporarily hidden during taps, swipes, or screenshots.
 
-The model picker controls the active harness. Host models use the PC bridge and may include OpenClaw, Hermes, Codex, OpenCode, Pi, and Devin entries. Use **Models & Harness** to toggle which harness sections appear in the picker, and use **System Prompt** to edit the default prompt. **Local LiteRT-LLM** appears when its harness toggle is on and a `.litertlm` file is installed; local phone mode stores its chat sessions under the app's private storage and emits the same `chat.*` timeline events as Host mode. It can call Android accessibility tools directly and can read/search/write files in its app-private local workspace when local developer tools are enabled. Termux command execution is reserved for a dedicated helper and reports a configuration error until that helper exists.
+The model picker controls the active harness. Host models use the PC bridge and may include OpenClaw, Hermes, Codex, OpenCode, Pi, and Devin entries. Use **Models & Harness** to toggle which harness sections appear in the picker, and use **System Prompt** to edit the default prompt. **Local LiteRT-LLM** appears when its harness toggle is on and a `.litertlm` or `.gguf` file is installed; local phone mode stores its chat sessions under the app's private storage and emits the same `chat.*` timeline events as Host mode. It can call Android accessibility tools directly and can read/search/write files in its app-private local workspace when local developer tools are enabled. Termux command execution is reserved for a dedicated helper and reports a configuration error until that helper exists.
 
-Chat attachments and `.litertlm` imports stream into app-private temporary files on background I/O workers, then publish atomically after size and checksum validation. Chat attachments are limited to 50 MiB each, eight / 100 MiB per message, and 32 / 256 MiB in the Android attachment store. Local models must be `.litertlm`, range from 1 MiB to 4 GiB, and are limited to three / 8 GiB; the previously working model is not replaced until the new import is complete. Both stores preserve a free-space reserve and clean abandoned partial files at startup.
+GGUF models use the pinned `llama.cpp` submodule and fall back to ARM CPU if Vulkan is unavailable or fails. Vulkan is disabled on Snapdragon SM8850 because Q1_0 generation caused `VK_ERROR_DEVICE_LOST` on the tested Adreno 840. The first GGUF path is text-only and does not load mmproj files. Context up to 262K is requested, not guaranteed, and the runtime may reduce it based on available memory. Bonsai 27B Q1_0 loaded at 262K on the tested 16 GB SM-S948U, but CPU generation was slow enough that 64K is the practical starting preset for tool-capable use.
+
+Chat attachments and local model imports stream into app-private temporary files on background I/O workers, then publish atomically after size and checksum validation. Chat attachments are limited to 50 MiB each, eight / 100 MiB per message, and 32 / 256 MiB in the Android attachment store. `.litertlm` models range from 1 MiB to 4 GiB and are limited to three / 8 GiB. `.gguf` files can be much larger; for example, `Bonsai-27B-Q1_0.gguf` is 3,803,452,480 bytes. Device storage, download bandwidth, and extraction space must be verified before importing. The previously working model is not replaced until the new import is complete. Both stores preserve a free-space reserve and clean abandoned partial files at startup.
 
 For adb installs, build `android/app/build/outputs/apk/debug/app-debug.apk` and run:
 

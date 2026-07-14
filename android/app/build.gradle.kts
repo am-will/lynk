@@ -15,6 +15,7 @@ val uploadSigningProperties = Properties().apply {
 android {
     namespace = "dev.androidagent"
     compileSdk = 36
+    ndkVersion = "29.0.14206865"
 
     defaultConfig {
         applicationId = "app.lynk"
@@ -22,6 +23,40 @@ android {
         targetSdk = 36
         versionCode = 6
         versionName = "0.1.5"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters += listOf("arm64-v8a")
+        }
+
+        externalNativeBuild {
+            cmake {
+                arguments(
+                    "-DANDROID_STL=c++_shared",
+                    "-DANDROID_PLATFORM=android-28",
+                    "-DGGML_VULKAN=ON",
+                    "-DGGML_CPU_KLEIDIAI=ON",
+                    "-DGGML_LLAMAFILE=OFF",
+                    "-DLLAMA_BUILD_COMMON=OFF",
+                    "-DLLAMA_BUILD_TESTS=OFF",
+                    "-DLLAMA_BUILD_TOOLS=OFF",
+                    "-DLLAMA_BUILD_EXAMPLES=OFF",
+                    "-DLLAMA_BUILD_SERVER=OFF",
+                    "-DLLAMA_BUILD_APP=OFF",
+                    "-DLLAMA_BUILD_UI=OFF",
+                    "-DGGML_OPENMP=OFF"
+                )
+                cFlags += listOf("-O3", "-march=armv8.2-a+dotprod")
+                cppFlags += listOf("-O3", "-march=armv8.2-a+dotprod")
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            version = "3.22.1"
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
     }
 
     signingConfigs {
@@ -65,4 +100,6 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250517")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
 }

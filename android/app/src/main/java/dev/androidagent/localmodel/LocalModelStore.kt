@@ -16,16 +16,16 @@ import java.io.InputStream
 import java.util.UUID
 
 object LocalModelStore {
-    private const val MODEL_DIR = "local-model-blobs"
+    private const val LITERTLM_MODEL_DIR = "local-model-blobs"
+    private const val GGUF_MODEL_DIR = "local-gguf-model-blobs"
     private const val MIN_MODEL_BYTES = 1024L * 1024L
-    private const val MAX_MODEL_BYTES = 4L * 1024L * 1024L * 1024L
-    private val MODEL_LIMITS = BlobStoreLimits(
-        minItemBytes = MIN_MODEL_BYTES,
-        maxItemBytes = MAX_MODEL_BYTES,
-        maxBlobCount = 3,
-        maxAggregateBytes = 8L * 1024L * 1024L * 1024L,
-        freeSpaceReserveBytes = 512L * 1024L * 1024L,
-        retentionMillis = Long.MAX_VALUE
+    private val LITERTLM_LIMITS = modelLimits(
+        maxItemBytes = 4L * 1024L * 1024L * 1024L,
+        maxAggregateBytes = 8L * 1024L * 1024L * 1024L
+    )
+    private val GGUF_LIMITS = modelLimits(
+        maxItemBytes = 12L * 1024L * 1024L * 1024L,
+        maxAggregateBytes = 24L * 1024L * 1024L * 1024L
     )
 
     suspend fun importModel(
@@ -49,12 +49,15 @@ object LocalModelStore {
             declaredSizeBytes = null,
             mimeType = resolver.getType(uri)
         )
+        val format = formatForDisplayName(metadata.displayName)
+            ?: throw IllegalArgumentException("Select a .litertlm or .gguf model file")
         importStream(
-            directory = File(context.filesDir, MODEL_DIR),
+            directory = File(context.filesDir, format.directoryName),
             metadata = metadata,
             openInput = { resolver.openInputStream(uri) ?: throw IOException("Could not open selected model file") },
             shouldCancel = { !isActive },
-            onProgress = onProgress
+            onProgress = onProgress,
+            limits = format.limits
         ).file.absolutePath
     }
 
@@ -64,16 +67,15 @@ object LocalModelStore {
         openInput: () -> InputStream,
         shouldCancel: () -> Boolean = { false },
         onProgress: (copiedBytes: Long, totalBytes: Long?) -> Unit = { _, _ -> },
-        limits: BlobStoreLimits = MODEL_LIMITS
+        limits: BlobStoreLimits? = null
     ): StoredBlob {
         val displayName = metadata.displayName?.trim().orEmpty()
-        if (!displayName.endsWith(".litertlm", ignoreCase = true)) {
-            throw IllegalArgumentException("Select a .litertlm model file")
-        }
+        val format = formatForDisplayName(displayName)
+            ?: throw IllegalArgumentException("Select a .litertlm or .gguf model file")
         val store = AppPrivateBlobStore(
             directory = directory,
-            limits = limits,
-            payloadSuffix = ".litertlm"
+            limits = limits ?: format.limits,
+            payloadSuffix = format.extension
         )
         return store.import(
             request = BlobImportRequest(
@@ -88,11 +90,34 @@ object LocalModelStore {
         )
     }
 
+    internal fun formatForDisplayName(displayName: String?): ModelFormat? {
+        val normalized = displayName?.trim().orEmpty()
+        return ModelFormat.values().firstOrNull { normalized.endsWith(it.extension, ignoreCase = true) }
+    }
+
     fun exists(path: String): Boolean = path.isNotBlank() && File(path).isFile
+
+    internal enum class ModelFormat(
+        val extension: String,
+        val directoryName: String,
+        val limits: BlobStoreLimits
+    ) {
+        LiteRtLm(".litertlm", LITERTLM_MODEL_DIR, LITERTLM_LIMITS),
+        Gguf(".gguf", GGUF_MODEL_DIR, GGUF_LIMITS)
+    }
 
     internal data class ModelMetadata(
         val displayName: String?,
         val declaredSizeBytes: Long?,
         val mimeType: String?
+    )
+
+    private fun modelLimits(maxItemBytes: Long, maxAggregateBytes: Long) = BlobStoreLimits(
+        minItemBytes = MIN_MODEL_BYTES,
+        maxItemBytes = maxItemBytes,
+        maxBlobCount = 3,
+        maxAggregateBytes = maxAggregateBytes,
+        freeSpaceReserveBytes = 512L * 1024L * 1024L,
+        retentionMillis = Long.MAX_VALUE
     )
 }

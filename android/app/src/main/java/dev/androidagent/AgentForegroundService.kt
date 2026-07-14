@@ -805,7 +805,7 @@ class AgentForegroundService : Service() {
             return
         }
         if (model == AgentModelOptions.LOCAL_LITERT_MODEL_ID && !isExperimentalLocalModelAvailable(config)) {
-            overlayController?.setStatus("Enable Local LiteRT-LLM and import a LiteRT model first.")
+            overlayController?.setStatus("Enable Local model and import a .litertlm or .gguf file first.")
             return
         }
         val route = routeForModel(model, config)
@@ -838,7 +838,7 @@ class AgentForegroundService : Service() {
     }
 
     private fun chatModelDisplayLabel(model: String, route: ChatClientRoute): String {
-        if (route == ChatClientRoute.Local) return "Local LiteRT-LM"
+        if (route == ChatClientRoute.Local) return "Local model"
         val option = availableChatModels().firstOrNull { it.id == model }
         val harness = option?.let { ChatPresentationHelpers.modelHarnessLabel(it) }
         val label = option?.label ?: AgentModelOptions.modelLabel(model)

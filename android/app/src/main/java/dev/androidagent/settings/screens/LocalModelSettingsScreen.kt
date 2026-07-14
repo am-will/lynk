@@ -36,7 +36,7 @@ object LocalModelSettingsScreen {
         root.addView(SettingsComponents.subscreenHeader(
             context = activity,
             tokens = tokens,
-            titleText = "Local LiteRT-LM",
+            titleText = "Local model",
             onBack = callbacks::onBack
         ))
 
@@ -72,7 +72,7 @@ object LocalModelSettingsScreen {
             setText(config.localModelPath)
             setSingleLine(true)
             visibility = View.GONE
-            exposeToAccessibility(R.id.openclaw_local_model_path_field, "Local LiteRT model path")
+            exposeToAccessibility(R.id.openclaw_local_model_path_field, "Local model path")
         }
 
         // Import model card
@@ -94,11 +94,11 @@ object LocalModelSettingsScreen {
         // Context window card
         val contextStepper = SettingsComponents.stepper(
             activity, tokens,
-            min = 512, max = 131_072, step = 512,
+            min = 512, max = 262_144, step = 512,
             initial = config.localContextTokens
         ) { saveCurrent() }
         contextStepper.view.exposeToAccessibility(R.id.openclaw_local_context_field, "Local context window")
-        val chipPresets = listOf("2K" to 2048, "4K" to 4096, "8K" to 8192, "16K" to 16_384, "32K" to 32_768)
+        val chipPresets = listOf("2K" to 2048, "4K" to 4096, "8K" to 8192, "16K" to 16_384, "32K" to 32_768, "64K" to 65_536, "128K" to 131_072, "256K" to 262_144)
         val chipRow = SettingsComponents.chipRow(
             activity, tokens,
             chipPresets.map { it.first },
@@ -178,7 +178,7 @@ object LocalModelSettingsScreen {
             includeFontPadding = false
         })
         copy.addView(android.widget.TextView(activity).apply {
-            text = "Add a .task or .litertlm model file"
+            text = "Add a .litertlm or .gguf model file"
             setTextColor(tokens.secondaryText)
             textSize = DesignTokens.Text.footnote
             includeFontPadding = false
@@ -188,7 +188,7 @@ object LocalModelSettingsScreen {
 
         row.addView(SettingsComponents.primaryButton(activity, tokens, "Import", tone = ButtonTone.Primary) {
             callbacks.onImportRequested(pathInput)
-        }.exposeToAccessibility(R.id.openclaw_local_model_import_button, "Import local LiteRT model"))
+        }.exposeToAccessibility(R.id.openclaw_local_model_import_button, "Import local model"))
 
         card.addView(row)
         // Hidden text field driver

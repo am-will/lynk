@@ -30,7 +30,7 @@ data class LocalModelEngineSnapshot(
 class LocalModelEngineManager(
     private val runtimeFactory: () -> LocalModelRuntime
 ) : LocalModelRuntime {
-    constructor(context: Context) : this({ LiteRtLmRuntime(context.applicationContext) })
+    constructor(context: Context) : this({ LocalModelRuntimeRouter(context.applicationContext) })
 
     private val stateMutex = Mutex()
     private val lifecycleTransition = Mutex()

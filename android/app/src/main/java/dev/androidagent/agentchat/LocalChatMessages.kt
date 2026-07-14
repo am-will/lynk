@@ -17,7 +17,7 @@ object LocalChatMessages {
             .put("source", "local")
             .put("models", JSONArray().put(JSONObject()
                 .put("id", AgentModelOptions.LOCAL_LITERT_MODEL_ID)
-                .put("label", "Local LiteRT-LM")
+                .put("label", "Local model")
                 .put("provider", "android")
                 .put("harnessId", AgentConfig.HARNESS_LOCAL)
                 .put("harnessLabel", "Local")

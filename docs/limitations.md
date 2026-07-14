@@ -28,3 +28,13 @@
 - Hermes local model discovery runs in an isolated worker, is single-flight, and caches successful results for 5 minutes. A refresh has a 30-second outer deadline; its authenticated and curated CLI probes are limited to 15 and 10 seconds respectively with 1 MiB output caps. Failed refreshes expose a typed stale result when a prior catalog exists, otherwise unavailable. Restarting the bridge clears the cache.
 - Codex app-server RPCs default to a 30-second deadline (`CODEX_RPC_TIMEOUT_MS` can override it), JSON-lines are capped at 1 MiB, and turns retain the existing 10-minute default deadline. A failed generation rejects all owned pending work. Teardown sends `SIGTERM`, waits 1.5 seconds, then sends `SIGKILL` and waits another 0.5 seconds; only the child process spawned by Lynk is signalled.
 - OpenCode uses `OPENCODE_RUN_TIMEOUT_MS` for prompt, polling, and overall run completion. Timeout, cancellation, and hung-stream paths emit an error terminal and never a successful final response.
+
+## Local model and GGUF limitations
+
+- Local phone mode requires a user-imported `.litertlm` or `.gguf` model and device resources vary widely by RAM, GPU/NPU/Vulkan support, and thermals.
+- `.gguf` support uses a pinned `llama.cpp` submodule. Initialize it with `git submodule update --init --recursive` before building the Android app.
+- The first GGUF path is text-only; multimodal projection (`mmproj`) files are not supported yet.
+- GGUF inference falls back to ARM CPU when GPU acceleration is unavailable. Vulkan is compiled in but is disabled for Snapdragon SM8850 because Q1_0 generation reproducibly caused `VK_ERROR_DEVICE_LOST` on the Adreno 840; other GPUs still fall back after a Vulkan error.
+- Context up to 262K is requested, not guaranteed, and the runtime reduces it based on available memory. The 262K allocation was verified with Bonsai 27B on a 16 GB SM-S948U, but sustained generation has a larger working-set and thermal cost.
+- Model files can be large. `Bonsai-27B-Q1_0.gguf` is 3,803,452,480 bytes and its SHA-256 is `17ef842e47450caeb8eaa3ebfbbab5d2f2278b62b79be107985fb69a2f819aa0`; verify device storage and download bandwidth before importing.
+- CPU inference is functional but slow for Bonsai 27B on the tested SM-S948U: a short eight-token native smoke generation took about 10.5 minutes. Bonsai 1.7B Q1_0 completed a normal Lynk `hi` turn in about 3.3 seconds after direct prompts were compacted.

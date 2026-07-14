@@ -202,7 +202,7 @@ class LocalAgentTurnCoordinator internal constructor(
             sessionKey = sessionKey ?: activeSessionKey,
             runId = null,
             isRunning = false,
-            status = "Local mode uses the imported LiteRT-LM model",
+            status = "Local mode uses the imported on-device model",
             model = AgentModelOptions.LOCAL_LITERT_MODEL_ID
         ))
     }

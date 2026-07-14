@@ -1,0 +1,8 @@
+set(SPIRV-Headers_FOUND TRUE)
+set(SPIRV-Headers_INCLUDE_DIRS "@SPIRV_HEADERS_SOURCE_DIR@/include")
+
+if(NOT TARGET SPIRV-Headers::SPIRV-Headers)
+  add_library(SPIRV-Headers::SPIRV-Headers INTERFACE IMPORTED)
+  set_target_properties(SPIRV-Headers::SPIRV-Headers PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "@SPIRV_HEADERS_SOURCE_DIR@/include")
+endif()

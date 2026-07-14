@@ -3,12 +3,12 @@
 ## Product Shape
 
 - This repo is currently **Lynk**: an Android bubble/chat/voice endpoint that can route work to host-side agents or an on-device local model. Do not describe the product as OpenAgent or OpenClaw-only even though many classes and docs still carry older migration names.
-- The supported backends are **OpenClaw**, **Hermes**, **Codex**, and **Local LiteRT-LM**. Android phone control is an optional tool target across these paths, not the default purpose of every request.
+- The supported backends are **OpenClaw**, **Hermes**, **Codex**, **Local LiteRT-LM**, and **Local GGUF** (via `llama.cpp`). Android phone control is an optional tool target across these paths, not the default purpose of every request.
 - The app has two user modes:
   - **Host bridge**: Android connects to the PC bridge over `/phone`; the bridge exposes a harness router for OpenClaw, Hermes, and Codex chat sessions.
-  - **Local phone**: Android runs an imported `.litertlm` model on-device, emits the same `chat.*` timeline events locally, and can call Android/local app-private tools.
+  - **Local phone**: Android runs an imported `.litertlm` or `.gguf` model on-device, emits the same `chat.*` timeline events locally, and can call Android/local app-private tools.
 - OpenClaw is currently the default host harness and has the most Gateway-specific code. Hermes and Codex are real supported harnesses, not merely documentation footnotes. `PHONE_AGENT_USE_FALLBACK=1` is a deliberate bridge fallback path for testing.
-- Local phone mode uses `local-litertlm`, supports Android phone tools and app-private workspace tools, and gates write/Termux developer tools behind settings. It is not yet a full desktop shell/git/build environment.
+- Local phone mode uses `local-litertlm` for LiteRT-LM imports and `llama.cpp` for GGUF imports, supports Android phone tools and app-private workspace tools, and gates write/Termux developer tools behind settings. It is not yet a full desktop shell/git/build environment.
 
 ## Repo Map
 
@@ -23,7 +23,7 @@
 - `android/app/src/main/java/dev/androidagent/accessibility/`: Android command executor and screen observation.
 - `android/app/src/main/java/dev/androidagent/overlay/`, `chat/`, `agentchat/`, `ui/`: bubble, panel, timeline, model/session controls, markdown/status rendering.
 - `android/app/src/main/java/dev/androidagent/voice/`: OpenAI Realtime WebRTC state, tool-call accumulation, transcript normalization, tool-result events, transcription helpers.
-- `android/app/src/main/java/dev/androidagent/localmodel/`: LiteRT-LM local mode, local sessions, local tool specs, app-private workspace tooling, Termux placeholder policy.
+- `android/app/src/main/java/dev/androidagent/localmodel/`: LiteRT-LM and GGUF local mode, local sessions, local tool specs, app-private workspace tooling, Termux placeholder policy.
 - `docs/`: setup, pairing, protocol, safety, OpenClaw migration notes, Codex docs, demo notes, and limitations. Some docs are still OpenClaw-skewed; verify source before copying that framing into new agent guidance.
 
 ## Commands
@@ -56,7 +56,7 @@
 - Demo text request: `cd pc && npm run demo:agent -- "Open Settings"`
 - Demo direct command: `cd pc && npm run demo:open-settings`
 - Legacy Codex schemas: `cd pc && npm run codex:schemas`
-- Android build/test from repo root when Gradle is available: `cd android && ./gradlew :app:assembleDebug :app:testDebugUnitTest`
+- Android build/test from repo root when Gradle is available: `git submodule update --init --recursive && cd android && ./gradlew :app:assembleDebug :app:testDebugUnitTest`
 - Android Studio remains acceptable for build/install/debug because local Gradle availability can vary.
 - npm package metadata for the host bridge lives in `pc/package.json`; keep it publishable as `lynk-bridge` with Node 24+ engines, built `dist/` files, installer scaffolding, bin entries for bridge/host CLI/MCP server, and a guarded global-install `postinstall` that registers the bridge to start at login.
 
@@ -70,7 +70,7 @@
 - Gateway auth can come from `OPENCLAW_GATEWAY_TOKEN`, `OPENCLAW_GATEWAY_PASSWORD`, `OPENCLAW_CONFIG_PATH`, or `~/.openclaw/openclaw.json`.
 - Hermes appears in Android model selection only when `HERMES_API_KEY` is set. Relevant env: `HERMES_API_BASE_URL`, `HERMES_MODEL`, `HERMES_DEFAULT_SESSION_ID`, `HERMES_RUN_TIMEOUT_SECONDS`.
 - Codex appears as a host harness through the bundled app-server adapter. Relevant env: `CODEX_APP_SERVER_COMMAND`, `CODEX_AGENT_CWD`; generated schemas remain optional inspection output only.
-- Local models are Android-side settings, not PC env. Import a `.litertlm` file, choose CPU/GPU/NPU, and switch **Run on** to **Local phone**. The local model id is `local-litertlm`.
+- Local models are Android-side settings, not PC env. Import a `.litertlm` or `.gguf` file and switch **Run on** to **Local phone**. LiteRT-LM uses CPU/GPU/NPU; GGUF uses `llama.cpp` with ARM CPU fallback and optional Vulkan. Both preserve the shipped `local-litertlm` protocol model id. Vulkan is disabled for Snapdragon SM8850 after reproducible Q1_0 device-loss errors on Adreno 840.
 - Realtime voice needs an OpenAI key from either PC `OPENAI_API_KEY` or Android settings. Bridge-side knobs: `OPENAI_REALTIME_MODEL`, `OPENAI_REALTIME_VOICE`, `OPENAI_WEB_SEARCH_MODEL`.
 - Android stores config in `app.lynk` shared prefs named `open_claw_agent_config`; the saved token must match `PHONE_AGENT_TOKEN` exactly.
 

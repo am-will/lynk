@@ -42,7 +42,7 @@ class ChatPresentationHelpersTest {
 
         assertEquals("GPT 5.5 Gateway", merged.first { it.id == "gpt-5.5" }.label)
         assertEquals(false, merged.first { it.id == "gpt-5.5" }.available)
-        assertEquals("Local LiteRT-LM", merged.first { it.id == AgentModelOptions.LOCAL_LITERT_MODEL_ID }.label)
+        assertEquals("Local model", merged.first { it.id == AgentModelOptions.LOCAL_LITERT_MODEL_ID }.label)
     }
 
     @Test
@@ -198,7 +198,7 @@ class ChatPresentationHelpersTest {
         assertEquals(listOf("hermes:gpt-5.5", AgentModelOptions.LOCAL_LITERT_MODEL_ID), merged.map { it.id })
         assertEquals("hermes:gpt-5.5", ChatPresentationHelpers.selectedModelId("gpt-5.5", localLiteRtAvailable = true, models = merged))
         assertEquals("hermes:gpt-5.5", ChatPresentationHelpers.formatModelLabel("gpt-5.5", merged, localLiteRtAvailable = true))
-        assertEquals("LiteRT-LLM", ChatPresentationHelpers.modelProviderSublabel(merged.last(), "Local"))
+        assertEquals("On-device", ChatPresentationHelpers.modelProviderSublabel(merged.last(), "Local"))
     }
 
     @Test
@@ -411,7 +411,7 @@ class ChatPresentationHelpersTest {
         assertEquals(R.drawable.devin_wiskers, devin.logoRes)
         assertEquals(BrandTitleTreatment.PLAIN, devin.titleTreatment)
         assertEquals(ClientBrand.Local, local.brand)
-        assertEquals("LiteRT-LLM", local.title)
+        assertEquals("Local model", local.title)
         assertEquals(R.drawable.huggingface_logo, local.logoRes)
     }
 
@@ -500,7 +500,7 @@ class ChatPresentationHelpersTest {
     }
 
     @Test
-    fun localChatCopyUsesLiteRtBrand() {
+    fun localChatCopyUsesGenericBrand() {
         val local = ChatPresentationHelpers.clientBrandPresentation(
             selectedModel = AgentModelOptions.LOCAL_LITERT_MODEL_ID,
             models = listOf(model(AgentModelOptions.LOCAL_LITERT_MODEL_ID, harnessId = "local", provider = "android")),
@@ -508,10 +508,10 @@ class ChatPresentationHelpersTest {
             localLiteRtAvailable = true
         )
 
-        assertEquals("LiteRT-LLM", local.title)
-        assertEquals("Message LiteRT", local.copy.composerPlaceholder)
-        assertEquals("LiteRT is thinking", ChatPresentationHelpers.chatStatusText("Local model is working", isRunning = true, local))
-        assertEquals("Sent to LiteRT", ChatPresentationHelpers.chatStatusText("Sent to OpenClaw", isRunning = false, local))
+        assertEquals("Local model", local.title)
+        assertEquals("Message local model", local.copy.composerPlaceholder)
+        assertEquals("local model is thinking", ChatPresentationHelpers.chatStatusText("Local model is working", isRunning = true, local))
+        assertEquals("Sent to local model", ChatPresentationHelpers.chatStatusText("Sent to OpenClaw", isRunning = false, local))
     }
 
     @Test
