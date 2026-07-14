@@ -74,6 +74,28 @@ class LocalAgentController(
             status = "Local model is working",
             taskKind = if (phoneControlRequest) "phone" else null
         ))
+        LocalPhoneControlTurnPolicy.directOpenAppName(userText)?.let { appName ->
+            val call = LocalToolCall("phone_open_app", JSONObject().put("appName", appName))
+            val result = executeAndRecordTool(
+                sessionKey,
+                runId,
+                0,
+                call,
+                mutableListOf("user: $userText"),
+                preflightProfile
+            )
+            val message = if (result.optBoolean("ok", false)) {
+                "Opened $appName."
+            } else {
+                "BLOCKED: ${result.optString("error").ifBlank { "Could not open $appName." }}"
+            }
+            emit(JSONObject()
+                .put("type", "chat.reasoning_clear")
+                .put("sessionKey", sessionKey)
+                .put("runId", runId))
+            emitAssistant(sessionKey, runId, message)
+            return message
+        }
         val runtimeProfile = try {
             withTimeout(MODEL_RESPONSE_TIMEOUT_MS) {
                 runtime.resolveProfile(config) { status ->
@@ -104,21 +126,6 @@ class LocalAgentController(
         transcript.add("user: $userText")
         if (phoneControlRequest) {
             transcript.add("system: This is an Android phone-control request. Use the available phone tools directly, then verify the requested result before answering.")
-        }
-        LocalPhoneControlTurnPolicy.directOpenAppName(userText)?.let { appName ->
-            val call = LocalToolCall("phone_open_app", JSONObject().put("appName", appName))
-            val result = executeAndRecordTool(sessionKey, runId, 0, call, transcript)
-            val message = if (result.optBoolean("ok", false)) {
-                "Opened $appName."
-            } else {
-                "BLOCKED: ${result.optString("error").ifBlank { "Could not open $appName." }}"
-            }
-            emit(JSONObject()
-                .put("type", "chat.reasoning_clear")
-                .put("sessionKey", sessionKey)
-                .put("runId", runId))
-            emitAssistant(sessionKey, runId, message)
-            return message
         }
         var rejectedUnneededTool = false
         var repeatedObserveCount = 0
