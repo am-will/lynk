@@ -22,12 +22,48 @@ object GgufNative {
     }
 
     @JvmStatic
-    external fun create(
+    external fun beginCreateOperation(): Long
+
+    @JvmStatic
+    external fun createWithOperation(
+        operationHandle: Long,
         modelPath: String,
         contextTokens: Int,
         gpuLayers: Int,
         backendKey: String
     ): Long
+
+    @JvmStatic
+    external fun cancelCreateOperation(operationHandle: Long)
+
+    @JvmStatic
+    external fun closeCreateOperation(operationHandle: Long)
+
+    /**
+     * Convenience entry point for diagnostics that do not have a coroutine lifecycle.
+     * Production loading uses [GgufCreateOperation] so cancellation can reach native
+     * code before a session handle exists.
+     */
+    @JvmStatic
+    fun create(
+        modelPath: String,
+        contextTokens: Int,
+        gpuLayers: Int,
+        backendKey: String
+    ): Long {
+        val operationHandle = beginCreateOperation()
+        return try {
+            createWithOperation(
+                operationHandle,
+                modelPath,
+                contextTokens,
+                gpuLayers,
+                backendKey
+            )
+        } finally {
+            closeCreateOperation(operationHandle)
+        }
+    }
 
     @JvmStatic
     external fun generate(
@@ -40,6 +76,9 @@ object GgufNative {
         topK: Int,
         callback: Callback
     ): String
+
+    @JvmStatic
+    external fun prepareGeneration(handle: Long)
 
     @JvmStatic
     external fun close(handle: Long)

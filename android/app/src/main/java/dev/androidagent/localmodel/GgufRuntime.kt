@@ -4,10 +4,12 @@ import android.app.ActivityManager
 import android.content.Context
 import dev.androidagent.AgentConfig
 import dev.androidagent.LocalModelBackend
+import dev.androidagent.localmodel.gguf.GgufCreateOperation
 import dev.androidagent.localmodel.gguf.GgufModelKey
 import dev.androidagent.localmodel.gguf.GgufNative
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.DisposableHandle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.Job
@@ -19,6 +21,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 
@@ -116,11 +119,10 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
         )
         val handle = session.handle
 
+        GgufNative.prepareGeneration(handle)
         val job = currentCoroutineContext()[Job]
-        val cancelHandle = job?.invokeOnCompletion(onCancelling = true, invokeImmediately = true) { cause ->
-            if (cause is CancellationException) {
-                GgufNative.cancel(handle)
-            }
+        val cancelHandle = job?.signalNativeOnCancellation {
+            GgufNative.cancel(handle)
         }
 
         try {
@@ -194,31 +196,60 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
 
             cache.replace(requestedKey, candidateKey, 0L)
 
-            val handle = try {
-                GgufNative.create(
-                    candidateKey.path,
-                    candidateKey.contextTokens,
-                    candidateKey.gpuLayers,
-                    candidateKey.backendKey
-                )
+            val loadedSession = try {
+                createAndCacheSession(requestedKey, candidateKey)
             } catch (e: Throwable) {
+                currentCoroutineContext().ensureActive()
                 lastError = e
-                0L
+                null
             }
 
-            if (handle != 0L) {
-                val contextSize = GgufNative.getContextSize(handle)
-                val backendName = GgufNative.getBackendName(handle)
-                val effectiveKey = candidateKey.copy(contextTokens = contextSize)
-                cache.replace(requestedKey, effectiveKey, handle)
-                onStatus("GGUF model loaded ($contextSize tokens, $backendName)")
-                return GgufSession(handle, effectiveKey)
+            if (loadedSession != null) {
+                onStatus(
+                    "GGUF model loaded (${loadedSession.session.key.contextTokens} tokens, " +
+                        "${loadedSession.backendName})"
+                )
+                return loadedSession.session
             }
 
             onStatus("GGUF context ${candidateKey.contextTokens} failed; retrying")
         }
 
         throw lastError ?: IllegalStateException("Failed to load GGUF model")
+    }
+
+    private suspend fun createAndCacheSession(
+        requestedKey: GgufModelKey,
+        candidateKey: GgufModelKey
+    ): LoadedGgufSession {
+        val operation = GgufCreateOperation()
+        val pendingHandle = GgufPendingHandle(::safeClose)
+        val job = currentCoroutineContext()[Job]
+        val cancelHandle = job?.signalNativeOnCancellation {
+            operation.cancel()
+            pendingHandle.cancel()
+        }
+        try {
+            currentCoroutineContext().ensureActive()
+            pendingHandle.attach(operation.create(candidateKey))
+            currentCoroutineContext().ensureActive()
+            val handle = pendingHandle.handleOrThrow()
+            val contextSize = GgufNative.getContextSize(handle)
+            val backendName = GgufNative.getBackendName(handle)
+            val effectiveKey = candidateKey.copy(contextTokens = contextSize)
+            currentCoroutineContext().ensureActive()
+            check(pendingHandle.transfer { ownedHandle ->
+                cache.replace(requestedKey, effectiveKey, ownedHandle)
+            }) { "GGUF create operation was cancelled before cache handoff" }
+            return LoadedGgufSession(GgufSession(handle, effectiveKey), backendName)
+        } catch (e: Throwable) {
+            currentCoroutineContext().ensureActive()
+            throw e
+        } finally {
+            cancelHandle?.dispose()
+            operation.close()
+            pendingHandle.discard()
+        }
     }
 
     private fun validateRequest(request: LocalModelRequest) {
@@ -269,7 +300,77 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
     }
 }
 
+@OptIn(InternalCoroutinesApi::class)
+internal fun Job.signalNativeOnCancellation(cancelNative: () -> Unit): DisposableHandle {
+    val signalled = AtomicBoolean(false)
+    return invokeOnCompletion(onCancelling = true, invokeImmediately = true) { cause ->
+        if (cause != null && signalled.compareAndSet(false, true)) {
+            try {
+                cancelNative()
+            } catch (_: Throwable) {
+                // Native cancellation is best-effort and must not disrupt Job cancellation.
+            }
+        }
+    }
+}
+
 internal data class GgufSession(val handle: Long, val key: GgufModelKey)
+
+private data class LoadedGgufSession(val session: GgufSession, val backendName: String)
+
+/** Serializes cancellation against the one-time handoff of a new handle to the cache. */
+internal class GgufPendingHandle(private val closeHandle: (Long) -> Unit) {
+    private val lock = Any()
+    private var handle = 0L
+    private var cancelled = false
+    private var transferred = false
+
+    fun attach(newHandle: Long) {
+        var closeImmediately = false
+        synchronized(lock) {
+            check(handle == 0L && !transferred) { "GGUF handle is already attached" }
+            if (cancelled) {
+                closeImmediately = true
+            } else {
+                handle = newHandle
+            }
+        }
+        if (closeImmediately && newHandle != 0L) closeHandle(newHandle)
+    }
+
+    fun handleOrThrow(): Long = synchronized(lock) {
+        check(!cancelled && handle != 0L) { "GGUF handle is unavailable" }
+        handle
+    }
+
+    fun transfer(accept: (Long) -> Unit): Boolean = synchronized(lock) {
+        if (cancelled || handle == 0L) return@synchronized false
+        val ownedHandle = handle
+        handle = 0L
+        transferred = true
+        accept(ownedHandle)
+        true
+    }
+
+    fun cancel() {
+        val ownedHandle = synchronized(lock) {
+            cancelled = true
+            takeHandle()
+        }
+        if (ownedHandle != 0L) closeHandle(ownedHandle)
+    }
+
+    fun discard() {
+        val ownedHandle = synchronized(lock) { takeHandle() }
+        if (ownedHandle != 0L) closeHandle(ownedHandle)
+    }
+
+    private fun takeHandle(): Long {
+        val ownedHandle = handle
+        handle = 0L
+        return ownedHandle
+    }
+}
 
 internal class GgufSessionCache(private val closeHandle: (Long) -> Unit) {
     private val lock = ReentrantLock()

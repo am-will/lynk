@@ -10,9 +10,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
+#include <memory>
 #include <string>
 #include <sstream>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #ifdef GGML_USE_VULKAN
@@ -31,11 +33,54 @@ struct GgufSession {
     std::mutex mutex;
 };
 
+struct GgufCreateOperation {
+    std::atomic<bool> abort_flag{false};
+};
+
 static std::once_flag g_backend_once;
+static std::atomic<jlong> g_next_create_operation{1};
+static std::mutex g_create_operations_mutex;
+static std::unordered_map<jlong, std::shared_ptr<GgufCreateOperation>> g_create_operations;
+static std::atomic<jlong> g_next_session{1};
+static std::mutex g_sessions_mutex;
+static std::unordered_map<jlong, std::shared_ptr<GgufSession>> g_sessions;
 
 static bool abort_callback(void* data) {
     auto* flag = reinterpret_cast<std::atomic<bool>*>(data);
     return flag != nullptr && flag->load(std::memory_order_relaxed);
+}
+
+static bool load_progress_callback(float, void* data) {
+    return !abort_callback(data);
+}
+
+static std::shared_ptr<GgufCreateOperation> find_create_operation(jlong handle) {
+    std::lock_guard<std::mutex> lock(g_create_operations_mutex);
+    auto it = g_create_operations.find(handle);
+    return it != g_create_operations.end() ? it->second : nullptr;
+}
+
+static jlong register_session(GgufSession* session) {
+    auto owned_session = std::shared_ptr<GgufSession>(session);
+    jlong handle = g_next_session.fetch_add(1, std::memory_order_relaxed);
+    std::lock_guard<std::mutex> lock(g_sessions_mutex);
+    g_sessions.emplace(handle, std::move(owned_session));
+    return handle;
+}
+
+static std::shared_ptr<GgufSession> find_session(jlong handle) {
+    std::lock_guard<std::mutex> lock(g_sessions_mutex);
+    auto it = g_sessions.find(handle);
+    return it != g_sessions.end() ? it->second : nullptr;
+}
+
+static std::shared_ptr<GgufSession> remove_session(jlong handle) {
+    std::lock_guard<std::mutex> lock(g_sessions_mutex);
+    auto it = g_sessions.find(handle);
+    if (it == g_sessions.end()) return nullptr;
+    auto session = it->second;
+    g_sessions.erase(it);
+    return session;
 }
 
 static void throw_runtime_exception(JNIEnv* env, const char* message) {
@@ -220,7 +265,8 @@ static void init_backend() {
     llama_backend_init();
 }
 
-static GgufSession* try_create_session(const char* path, int n_gpu_layers, int n_ctx_tokens) {
+static GgufSession* try_create_session(const char* path, int n_gpu_layers, int n_ctx_tokens,
+                                       GgufCreateOperation* operation) {
     llama_model* model = nullptr;
     llama_context* ctx = nullptr;
     ggml_backend_dev_t cpu_devices[] = {
@@ -231,6 +277,8 @@ static GgufSession* try_create_session(const char* path, int n_gpu_layers, int n
         llama_model_params mparams = llama_model_default_params();
         mparams.n_gpu_layers = n_gpu_layers;
         mparams.use_mmap = true;
+        mparams.progress_callback = load_progress_callback;
+        mparams.progress_callback_user_data = &operation->abort_flag;
         if (n_gpu_layers == 0) {
             if (cpu_devices[0] == nullptr) return nullptr;
             mparams.devices = cpu_devices;
@@ -240,11 +288,17 @@ static GgufSession* try_create_session(const char* path, int n_gpu_layers, int n
         if (model == nullptr) {
             return nullptr;
         }
+        if (operation->abort_flag.load(std::memory_order_relaxed)) {
+            llama_model_free(model);
+            return nullptr;
+        }
 
         llama_context_params cparams = llama_context_default_params();
         cparams.n_ctx = static_cast<uint32_t>(std::max(n_ctx_tokens, 512));
         cparams.n_batch = static_cast<uint32_t>(std::min(2048, n_ctx_tokens));
         cparams.n_ubatch = static_cast<uint32_t>(std::min(512, n_ctx_tokens));
+        cparams.abort_callback = abort_callback;
+        cparams.abort_callback_data = &operation->abort_flag;
         if (n_gpu_layers > 0) {
             cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
             cparams.type_k = GGML_TYPE_F16;
@@ -262,6 +316,14 @@ static GgufSession* try_create_session(const char* path, int n_gpu_layers, int n
             llama_model_free(model);
             return nullptr;
         }
+        if (operation->abort_flag.load(std::memory_order_relaxed)) {
+            llama_free(ctx);
+            llama_model_free(model);
+            return nullptr;
+        }
+        // llama_context retains the callback pointer. The create-operation token is
+        // released after this JNI call, so clear it before publishing the session.
+        llama_set_abort_callback(ctx, nullptr, nullptr);
 
         auto* session = new GgufSession();
         session->model = model;
@@ -281,7 +343,8 @@ static GgufSession* try_create_session(const char* path, int n_gpu_layers, int n
     }
 }
 
-static GgufSession* create_session(const char* path, int n_ctx_tokens, int requested_gpu_layers) {
+static GgufSession* create_session(const char* path, int n_ctx_tokens, int requested_gpu_layers,
+                                   GgufCreateOperation* operation) {
     std::call_once(g_backend_once, init_backend);
 
     bool try_gpu = requested_gpu_layers > 0;
@@ -301,11 +364,12 @@ static GgufSession* create_session(const char* path, int n_ctx_tokens, int reque
 #endif
 
     if (try_gpu) {
-        GgufSession* session = try_create_session(path, requested_gpu_layers, n_ctx_tokens);
+        GgufSession* session = try_create_session(path, requested_gpu_layers, n_ctx_tokens, operation);
         if (session != nullptr) return session;
+        if (operation->abort_flag.load(std::memory_order_relaxed)) return nullptr;
     }
 
-    return try_create_session(path, 0, n_ctx_tokens);
+    return try_create_session(path, 0, n_ctx_tokens, operation);
 }
 
 static bool check_cancellation(JNIEnv* env, jobject callback, jmethodID is_cancelled) {
@@ -327,14 +391,46 @@ static void emit_delta(JNIEnv* env, jobject callback, jmethodID on_delta,
 }
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_dev_androidagent_localmodel_gguf_GgufNative_create(
+Java_dev_androidagent_localmodel_gguf_GgufNative_beginCreateOperation(
+        JNIEnv*, jclass) {
+    auto operation = std::make_shared<GgufCreateOperation>();
+    jlong handle = g_next_create_operation.fetch_add(1, std::memory_order_relaxed);
+    std::lock_guard<std::mutex> lock(g_create_operations_mutex);
+    g_create_operations.emplace(handle, std::move(operation));
+    return handle;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_androidagent_localmodel_gguf_GgufNative_cancelCreateOperation(
+        JNIEnv*, jclass, jlong operation_handle) {
+    auto operation = find_create_operation(operation_handle);
+    if (operation != nullptr) {
+        operation->abort_flag.store(true, std::memory_order_relaxed);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_dev_androidagent_localmodel_gguf_GgufNative_closeCreateOperation(
+        JNIEnv*, jclass, jlong operation_handle) {
+    std::lock_guard<std::mutex> lock(g_create_operations_mutex);
+    g_create_operations.erase(operation_handle);
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_dev_androidagent_localmodel_gguf_GgufNative_createWithOperation(
         JNIEnv* env,
         jclass,
+        jlong operation_handle,
         jstring model_path,
         jint context_tokens,
         jint gpu_layers,
         jstring) {
     try {
+        auto operation = find_create_operation(operation_handle);
+        if (operation == nullptr) {
+            throw_runtime_exception(env, "invalid GGUF create operation");
+            return 0;
+        }
         JniString path(env, model_path);
         if (path.c_str() == nullptr || path.c_str()[0] == '\0') {
             throw_runtime_exception(env, "model path is empty");
@@ -342,12 +438,17 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_create(
         }
 
         GgufSession* session = create_session(path.c_str(), static_cast<int>(context_tokens),
-                                              static_cast<int>(gpu_layers));
+                                              static_cast<int>(gpu_layers), operation.get());
         if (session == nullptr) {
-            throw_runtime_exception(env, "failed to load GGUF model");
+            throw_runtime_exception(
+                env,
+                operation->abort_flag.load(std::memory_order_relaxed)
+                    ? "GGUF create operation cancelled"
+                    : "failed to load GGUF model"
+            );
             return 0;
         }
-        return reinterpret_cast<jlong>(session);
+        return register_session(session);
     } catch (const std::exception& e) {
         throw_runtime_exception(env, e.what());
         return 0;
@@ -360,7 +461,7 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_create(
 extern "C" JNIEXPORT void JNICALL
 Java_dev_androidagent_localmodel_gguf_GgufNative_close(
         JNIEnv*, jclass, jlong handle) {
-    auto* session = reinterpret_cast<GgufSession*>(handle);
+    auto session = remove_session(handle);
     if (session == nullptr) return;
     try {
         std::lock_guard<std::mutex> lock(session->mutex);
@@ -373,24 +474,34 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_close(
             session->model = nullptr;
         }
     } catch (...) {}
-    delete session;
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_dev_androidagent_localmodel_gguf_GgufNative_cancel(
         JNIEnv*, jclass, jlong handle) {
-    auto* session = reinterpret_cast<GgufSession*>(handle);
+    auto session = find_session(handle);
     if (session == nullptr) return;
     try {
         session->abort_flag.store(true, std::memory_order_relaxed);
     } catch (...) {}
 }
 
+extern "C" JNIEXPORT void JNICALL
+Java_dev_androidagent_localmodel_gguf_GgufNative_prepareGeneration(
+        JNIEnv* env, jclass, jlong handle) {
+    auto session = find_session(handle);
+    if (session == nullptr) {
+        throw_runtime_exception(env, "invalid GGUF session");
+        return;
+    }
+    session->abort_flag.store(false, std::memory_order_relaxed);
+}
+
 extern "C" JNIEXPORT jint JNICALL
 Java_dev_androidagent_localmodel_gguf_GgufNative_getContextSize(
         JNIEnv* env, jclass, jlong handle) {
     try {
-        auto* session = reinterpret_cast<GgufSession*>(handle);
+        auto session = find_session(handle);
         return session != nullptr ? session->n_ctx : 0;
     } catch (const std::exception& e) {
         throw_runtime_exception(env, e.what());
@@ -405,7 +516,7 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_dev_androidagent_localmodel_gguf_GgufNative_getBackendName(
         JNIEnv* env, jclass, jlong handle) {
     try {
-        auto* session = reinterpret_cast<GgufSession*>(handle);
+        auto session = find_session(handle);
         const char* name = (session != nullptr && session->using_gpu) ? "vulkan" : "cpu";
         jstring result = new_string_from_utf8(env, name, std::strlen(name));
         if (result == nullptr) {
@@ -433,7 +544,7 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
         jfloat top_p,
         jint top_k,
         jobject callback) {
-    auto* session = reinterpret_cast<GgufSession*>(handle);
+    auto session = find_session(handle);
     if (session == nullptr) {
         throw_runtime_exception(env, "invalid GGUF session");
         return nullptr;
@@ -446,7 +557,6 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
             return nullptr;
         }
 
-        session->abort_flag.store(false, std::memory_order_relaxed);
         llama_set_abort_callback(session->ctx, abort_callback, &session->abort_flag);
         llama_memory_clear(llama_get_memory(session->ctx), true);
 
@@ -459,6 +569,10 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
                 is_cancelled = env->GetMethodID(clazz, "isCancelled", "()Z");
                 env->DeleteLocalRef(clazz);
             }
+        }
+        if (abort_callback(&session->abort_flag) ||
+                check_cancellation(env, callback, is_cancelled)) {
+            return new_string_from_utf8(env, "", 0);
         }
 
         JniString system(env, system_prompt);
@@ -482,9 +596,16 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
 
         int n_batch = static_cast<int>(llama_n_batch(session->ctx));
         if (n_batch <= 0) n_batch = 2048;
+        // CPU backends support llama's in-flight abort callback. Vulkan currently
+        // does not, so use bounded prefill chunks to keep cancellation responsive.
+        if (session->using_gpu) n_batch = std::min(n_batch, 256);
 
         int n_past = 0;
         for (size_t i = 0; i < tokens.size(); i += static_cast<size_t>(n_batch)) {
+            if (abort_callback(&session->abort_flag) ||
+                    check_cancellation(env, callback, is_cancelled)) {
+                return new_string_from_utf8(env, "", 0);
+            }
             int chunk = static_cast<int>(std::min<size_t>(tokens.size() - i, static_cast<size_t>(n_batch)));
             BatchGuard batch_guard;
             batch_guard.batch = llama_batch_init(chunk, 0, 1);
@@ -506,6 +627,10 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
             if (ret != 0) {
                 throw_runtime_exception(env, "prefill decode failed");
                 return nullptr;
+            }
+            if (abort_callback(&session->abort_flag) ||
+                    check_cancellation(env, callback, is_cancelled)) {
+                return new_string_from_utf8(env, "", 0);
             }
             n_past += chunk;
         }
@@ -539,7 +664,8 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
                 if (env->ExceptionCheck()) break;
             }
 
-            if (check_cancellation(env, callback, is_cancelled)) break;
+            if (abort_callback(&session->abort_flag) ||
+                    check_cancellation(env, callback, is_cancelled)) break;
 
             BatchGuard batch_guard;
             batch_guard.batch = llama_batch_init(1, 0, 1);
