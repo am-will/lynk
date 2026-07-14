@@ -51,7 +51,7 @@ class LocalPromptBuilderTest {
 
         val selected = selectNewestHistory(
             history = history,
-            localContextTokens = 4096,
+            runtimeProfile = profile(4096),
             systemPrompt = "system",
             currentUserText = "current"
         )
@@ -71,7 +71,7 @@ class LocalPromptBuilderTest {
 
         val selected = selectNewestHistory(
             history = history,
-            localContextTokens = 2048,
+            runtimeProfile = profile(2048),
             systemPrompt = "system",
             currentUserText = "current"
         )
@@ -83,7 +83,7 @@ class LocalPromptBuilderTest {
     fun newestHistorySelectionReservesSystemCurrentToolAndOutputRoom() {
         val selected = selectNewestHistory(
             history = listOf(message(1, "old")),
-            localContextTokens = 512,
+            runtimeProfile = profile(512),
             systemPrompt = "s".repeat(800),
             currentUserText = "u".repeat(800)
         )
@@ -102,6 +102,54 @@ class LocalPromptBuilderTest {
         assertTrue(roundPrompt.contains("phone_tap_normalized"))
         assertTrue(roundPrompt.contains("user: tap that"))
     }
+
+    @Test
+    fun historyBudgetUsesEffectiveRuntimeContext() {
+        val history = listOf(
+            message(1, "a".repeat(2000)),
+            message(2, "b".repeat(2000)),
+            message(3, "c".repeat(2000))
+        )
+
+        val selected = selectNewestHistory(
+            history = history,
+            runtimeProfile = profile(512),
+            systemPrompt = "system",
+            currentUserText = "current"
+        )
+
+        assertTrue(selected.isEmpty())
+    }
+
+    @Test
+    fun textOnlyRuntimeNeverReceivesInitialOrToolScreenshotImages() {
+        assertEquals(
+            emptyList<String>(),
+            imagePathsForRound(
+                runtimeProfile = profile(4096, supportsImageInput = false),
+                initialImagePaths = listOf("/tmp/user.png"),
+                latestScreenshotPath = "/tmp/screen.png"
+            )
+        )
+    }
+
+    @Test
+    fun imageCapableRuntimePrefersLatestToolScreenshot() {
+        assertEquals(
+            listOf("/tmp/screen.png"),
+            imagePathsForRound(
+                runtimeProfile = profile(4096),
+                initialImagePaths = listOf("/tmp/user.png"),
+                latestScreenshotPath = "/tmp/screen.png"
+            )
+        )
+    }
+
+    private fun profile(contextTokens: Int, supportsImageInput: Boolean = true) = LocalModelRuntimeProfile(
+        kind = LocalModelRuntimeKind.LiteRtLm,
+        effectiveContextTokens = contextTokens,
+        supportsImageInput = supportsImageInput
+    )
 
     private fun message(index: Int, text: String) = LocalChatMessage(
         id = "message-$index",

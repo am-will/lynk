@@ -1,6 +1,7 @@
 package dev.androidagent.localmodel
 
 import android.content.Context
+import dev.androidagent.AgentConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -38,13 +39,28 @@ class LocalModelEngineManager(
     private var phase = LocalModelEnginePhase.Open
     private var generationSequence = 0L
     private var activeGeneration: ActiveGeneration? = null
+    @Volatile
     private var runtime: LocalModelRuntime = runtimeFactory()
+
+    override fun profile(config: AgentConfig): LocalModelRuntimeProfile =
+        runtime.profile(config)
+
+    override suspend fun resolveProfile(
+        config: AgentConfig,
+        onStatus: suspend (String) -> Unit
+    ): LocalModelRuntimeProfile = withRuntimeOperation {
+        runtime.resolveProfile(config, onStatus)
+    }
 
     override suspend fun generate(
         request: LocalModelRequest,
         onDelta: suspend (String) -> Unit,
         onStatus: suspend (String) -> Unit
-    ): String = generationPermit.withLock {
+    ): String = withRuntimeOperation {
+        runtime.generate(request, onDelta, onStatus)
+    }
+
+    private suspend fun <T> withRuntimeOperation(operation: suspend () -> T): T = generationPermit.withLock {
         val owner = stateMutex.withLock {
             check(phase == LocalModelEnginePhase.Open) { "Local model engine is ${phase.name.lowercase()}." }
             ActiveGeneration(
@@ -54,7 +70,7 @@ class LocalModelEngineManager(
             ).also { activeGeneration = it }
         }
         try {
-            runtime.generate(request, onDelta, onStatus)
+            operation()
         } finally {
             stateMutex.withLock {
                 if (activeGeneration?.token == owner.token) {

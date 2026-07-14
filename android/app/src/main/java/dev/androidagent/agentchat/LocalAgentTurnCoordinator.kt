@@ -11,6 +11,7 @@ import dev.androidagent.localmodel.LocalChatSessionStore
 import dev.androidagent.localmodel.LocalChatSessionRepository
 import dev.androidagent.localmodel.LocalChatMessage
 import dev.androidagent.localmodel.LocalModelRuntime
+import dev.androidagent.localmodel.LocalModelRuntimeProfile
 import dev.androidagent.localmodel.LocalPhoneCommandOwner
 import dev.androidagent.localmodel.LocalToolRegistry
 import dev.androidagent.localmodel.TermuxCommandCancellationException
@@ -32,7 +33,8 @@ class LocalAgentTurnCoordinator internal constructor(
     private val onStatus: (String, String) -> Unit,
     private val onChatMessage: (JSONObject) -> Unit,
     private val store: LocalChatSessionRepository,
-    private val toolDescriptions: () -> JSONArray,
+    private val runtimeProfile: (AgentConfig) -> LocalModelRuntimeProfile,
+    private val toolDescriptions: (LocalModelRuntimeProfile) -> JSONArray,
     private val runner: LocalTurnRunner,
     private val cancelCommandOwner: (String) -> Unit = {},
     private val closeTools: () -> Unit = {}
@@ -65,6 +67,7 @@ class LocalAgentTurnCoordinator internal constructor(
         onStatus,
         onChatMessage,
         dependencies.store,
+        dependencies.runtimeProfile,
         dependencies.tools::toolDescriptions,
         dependencies.runner,
         dependencies.cancelCommandOwner,
@@ -87,8 +90,10 @@ class LocalAgentTurnCoordinator internal constructor(
         if (closed) return false
         val trimmed = request.text.trim()
         if (trimmed.isBlank() && request.attachments.isEmpty()) return false
+        val config = configProvider()
+        val profile = runtimeProfile(config)
         val preparedAttachments = try {
-            LocalAttachmentInputPreparer.prepare(trimmed, request.attachments)
+            LocalAttachmentInputPreparer.prepare(trimmed, request.attachments, profile)
         } catch (error: IllegalArgumentException) {
             emit(LocalChatMessages.error(activeSessionKey, error.message ?: "Local attachments are not supported."))
             return false
@@ -246,12 +251,13 @@ class LocalAgentTurnCoordinator internal constructor(
     private fun refresh(sessionKey: String, status: String) {
         val session = store.session(sessionKey)
         val config = configProvider()
-        val toolDescriptions = toolDescriptions()
+        val profile = runtimeProfile(config)
+        val toolDescriptions = toolDescriptions(profile)
         val toolDescriptionsJson = toolDescriptions.toString()
-        emit(LocalChatMessages.models(config))
+        emit(LocalChatMessages.models(profile))
         emit(LocalChatMessages.tools(activeSessionKey, toolDescriptions))
-        emit(LocalChatMessages.sessions(session.key, store.all(), config, toolDescriptionsJson))
-        emit(LocalChatMessages.usage(session, config, toolDescriptionsJson))
+        emit(LocalChatMessages.sessions(session.key, store.all(), config, profile, toolDescriptionsJson))
+        emit(LocalChatMessages.usage(session, config, profile, toolDescriptionsJson))
         emit(LocalChatMessages.history(session))
         emit(LocalChatMessages.state(config, session.key, null, activeTurn?.job?.isActive == true, status))
     }
@@ -329,6 +335,7 @@ class LocalAgentTurnCoordinator internal constructor(
             }
             return LocalTurnDependencies(
                 store = LocalChatSessionStore(appContext),
+                runtimeProfile = runtime::profile,
                 tools = tools,
                 runner = LocalAgentController(runtime, tools, configProvider, emit),
                 cancelCommandOwner = { owner ->
@@ -354,6 +361,7 @@ interface LocalTurnRunner {
 
 private data class LocalTurnDependencies(
     val store: LocalChatSessionRepository,
+    val runtimeProfile: (AgentConfig) -> LocalModelRuntimeProfile,
     val tools: LocalToolRegistry,
     val runner: LocalTurnRunner,
     val cancelCommandOwner: (String) -> Unit,

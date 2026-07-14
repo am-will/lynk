@@ -19,6 +19,12 @@ class LiteRtLmRuntime(
     private var loadedKey: String? = null
     private var engine: Engine? = null
 
+    override fun profile(config: AgentConfig): LocalModelRuntimeProfile = LocalModelRuntimeProfile(
+        kind = LocalModelRuntimeKind.LiteRtLm,
+        effectiveContextTokens = config.localContextTokens.coerceAtLeast(LocalModelRuntimeProfile.MIN_CONTEXT_TOKENS),
+        supportsImageInput = true
+    )
+
     override suspend fun generate(
         request: LocalModelRequest,
         onDelta: suspend (String) -> Unit,

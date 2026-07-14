@@ -17,7 +17,10 @@ class LocalToolSpecsTest {
 
     @Test
     fun phoneDescriptionsExcludeUnrelatedAndSkillTools() {
-        val descriptions = LocalToolSpecs.descriptions(LocalToolAccess(phoneControl = true))
+        val descriptions = LocalToolSpecs.descriptions(
+            profile(supportsImageInput = true),
+            LocalToolAccess(phoneControl = true)
+        )
         val ids = (0 until descriptions.length())
             .map { descriptions.getJSONObject(it).getString("id") }
             .toSet()
@@ -29,7 +32,7 @@ class LocalToolSpecsTest {
 
     @Test
     fun toolDescriptionsAreDerivedFromSpecs() {
-        val descriptions = LocalToolSpecs.descriptions()
+        val descriptions = LocalToolSpecs.descriptions(profile(supportsImageInput = true))
         val ids = (0 until descriptions.length())
             .map { descriptions.getJSONObject(it).getString("id") }
             .toSet()
@@ -39,4 +42,23 @@ class LocalToolSpecsTest {
         assertTrue(ids.contains("phone_wait"))
         assertTrue(ids.contains("local_read_skill"))
     }
+
+    @Test
+    fun textOnlyRuntimeDoesNotAdvertiseImageDependentTools() {
+        val descriptions = LocalToolSpecs.descriptions(profile(supportsImageInput = false))
+        val ids = (0 until descriptions.length())
+            .map { descriptions.getJSONObject(it).getString("id") }
+            .toSet()
+
+        assertTrue("phone_take_screenshot" !in ids)
+        assertTrue("phone_tap_normalized" !in ids)
+        assertTrue("phone_observe" in ids)
+        assertTrue("phone_tap_node" in ids)
+    }
+
+    private fun profile(supportsImageInput: Boolean) = LocalModelRuntimeProfile(
+        kind = LocalModelRuntimeKind.LiteRtLm,
+        effectiveContextTokens = 4096,
+        supportsImageInput = supportsImageInput
+    )
 }

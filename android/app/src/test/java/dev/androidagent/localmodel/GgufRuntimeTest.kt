@@ -97,8 +97,8 @@ class GgufRuntimeTest {
         val requested = GgufModelKey("/models/model.gguf", 65536, "gpu", 999)
         val effective = GgufModelKey("/models/model.gguf", 32768, "gpu", 999)
         cache.replace(requested, effective, 123L)
-        assertEquals(123L, cache.get(requested))
-        assertEquals(0L, cache.get(effective))
+        assertEquals(GgufSession(123L, effective), cache.get(requested))
+        assertEquals(null, cache.get(effective))
     }
 
     @Test
@@ -109,7 +109,7 @@ class GgufRuntimeTest {
         cache.replace(key, key, 1L)
         cache.replace(key, key, 2L)
         assertEquals(1L, closed)
-        assertEquals(2L, cache.get(key))
+        assertEquals(GgufSession(2L, key), cache.get(key))
     }
 
     @Test
@@ -138,7 +138,7 @@ class GgufRuntimeTest {
         cache.replace(key, key, 5L)
         cache.invalidate()
         assertEquals(5L, closed)
-        assertEquals(0L, cache.get(key))
+        assertEquals(null, cache.get(key))
     }
 
     @Test

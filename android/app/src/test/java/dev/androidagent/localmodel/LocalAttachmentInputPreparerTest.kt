@@ -16,7 +16,7 @@ class LocalAttachmentInputPreparerTest {
             deleteOnExit()
         }
 
-        val prepared = LocalAttachmentInputPreparer.prepare("Review this", listOf(textAttachment(file)))
+        val prepared = LocalAttachmentInputPreparer.prepare("Review this", listOf(textAttachment(file)), liteRtProfile)
 
         assertTrue(prepared.promptText.startsWith("Review this"))
         assertTrue(prepared.promptText.contains("Attached file (notes.txt, text/plain):"))
@@ -35,7 +35,7 @@ class LocalAttachmentInputPreparerTest {
             localPath = "/tmp/photo.png"
         )
 
-        val prepared = LocalAttachmentInputPreparer.prepare("", listOf(image))
+        val prepared = LocalAttachmentInputPreparer.prepare("", listOf(image), liteRtProfile)
 
         assertEquals("Describe the attached image.", prepared.promptText)
         assertEquals(listOf("/tmp/photo.png"), prepared.imagePaths)
@@ -56,8 +56,29 @@ class LocalAttachmentInputPreparerTest {
                 mimeType = "application/octet-stream",
                 sizeBytes = file.length(),
                 localPath = file.absolutePath
-            )))
+            )), liteRtProfile)
         }
+    }
+
+    @Test
+    fun rejectsImagesBeforeStartingTextOnlyGgufTurn() {
+        val image = StoredChatAttachment(
+            id = "att_1",
+            kind = ChatAttachmentKind.IMAGE,
+            displayName = "photo.png",
+            mimeType = "image/png",
+            sizeBytes = 12,
+            localPath = "/tmp/photo.png"
+        )
+
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            LocalAttachmentInputPreparer.prepare("Describe this", listOf(image), ggufProfile)
+        }
+
+        assertEquals(
+            "The selected GGUF model does not support image attachments. Use a LiteRT-LM model for image input.",
+            error.message
+        )
     }
 
     private fun textAttachment(file: File): StoredChatAttachment =
@@ -69,4 +90,16 @@ class LocalAttachmentInputPreparerTest {
             sizeBytes = file.length(),
             localPath = file.absolutePath
         )
+
+    private val liteRtProfile = LocalModelRuntimeProfile(
+        LocalModelRuntimeKind.LiteRtLm,
+        effectiveContextTokens = 4096,
+        supportsImageInput = true
+    )
+
+    private val ggufProfile = LocalModelRuntimeProfile(
+        LocalModelRuntimeKind.Gguf,
+        effectiveContextTokens = 4096,
+        supportsImageInput = false
+    )
 }

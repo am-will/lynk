@@ -18,9 +18,13 @@ class LocalToolRegistry(
 
     private val phoneTools = LocalToolSpecs.phoneCommandsByToolId
 
-    fun toolDescriptions() = LocalToolSpecs.descriptions()
+    fun toolDescriptions(runtimeProfile: LocalModelRuntimeProfile) =
+        LocalToolSpecs.descriptions(runtimeProfile)
 
-    internal fun toolDescriptions(access: LocalToolAccess) = LocalToolSpecs.descriptions(access)
+    internal fun toolDescriptions(
+        runtimeProfile: LocalModelRuntimeProfile,
+        access: LocalToolAccess
+    ) = LocalToolSpecs.descriptions(runtimeProfile, access)
 
     suspend fun execute(call: LocalToolCall, requestOwner: String): JSONObject {
         val validated = when (val validation = LocalToolContracts.validate(call)) {

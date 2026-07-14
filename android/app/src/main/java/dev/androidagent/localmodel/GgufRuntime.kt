@@ -26,32 +26,34 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
     private val context = context.applicationContext
     private val cache = GgufSessionCache { handle -> safeClose(handle) }
 
+    override fun profile(config: AgentConfig): LocalModelRuntimeProfile {
+        val requestedKey = plannedKey(config) ?: return ggufProfile(config.localContextTokens)
+        return cache.get(requestedKey)?.let { ggufProfile(it.key.contextTokens) }
+            ?: ggufProfile(requestedKey.contextTokens)
+    }
+
+    override suspend fun resolveProfile(
+        config: AgentConfig,
+        onStatus: suspend (String) -> Unit
+    ): LocalModelRuntimeProfile = withContext(Dispatchers.IO) {
+        withSelectedBackend(config, onStatus) { selectedConfig ->
+            val requestedKey = requirePlannedKey(selectedConfig)
+            val session = sessionFor(
+                requestedKey = requestedKey,
+                wasNpu = selectedConfig.localModelBackend == LocalModelBackend.Npu,
+                onStatus = onStatus
+            )
+            ggufProfile(session.key.contextTokens)
+        }
+    }
+
     override suspend fun generate(
         request: LocalModelRequest,
         onDelta: suspend (String) -> Unit,
         onStatus: suspend (String) -> Unit
     ): String = withContext(Dispatchers.IO) {
-        val originalBackend = request.config.localModelBackend
-        val vulkanDisabled = GgufVulkanFallbackState.isGpuDisabled ||
-            GgufDevicePolicy.shouldDisableVulkan()
-        val initialRequest = if (originalBackend == LocalModelBackend.Gpu && vulkanDisabled) {
-            onStatus("Vulkan is unstable on this device; using CPU")
-            request.copy(config = request.config.copy(localModelBackend = LocalModelBackend.Cpu))
-        } else {
-            request
-        }
-
-        try {
-            generateOnce(initialRequest, onDelta, onStatus)
-        } catch (e: Throwable) {
-            if (originalBackend != LocalModelBackend.Gpu || initialRequest.config.localModelBackend != LocalModelBackend.Gpu) throw e
-            if (GgufVulkanFallbackState.isGpuDisabled) throw e
-            if (isCancellation(e)) throw e
-            onStatus("GPU generation failed; switching to CPU")
-            GgufVulkanFallbackState.isGpuDisabled = true
-            try { cache.invalidate() } catch (_: Throwable) {}
-            val cpuRequest = request.copy(config = request.config.copy(localModelBackend = LocalModelBackend.Cpu))
-            generateOnce(cpuRequest, onDelta, onStatus)
+        withSelectedBackend(request.config, onStatus) { selectedConfig ->
+            generateOnce(request.copy(config = selectedConfig), onDelta, onStatus)
         }
     }
 
@@ -68,6 +70,34 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
     private fun isCancellation(e: Throwable): Boolean =
         e is CancellationException || e.cause is CancellationException
 
+    private suspend fun <T> withSelectedBackend(
+        config: AgentConfig,
+        onStatus: suspend (String) -> Unit,
+        operation: suspend (AgentConfig) -> T
+    ): T {
+        val originalBackend = config.localModelBackend
+        val vulkanDisabled = GgufVulkanFallbackState.isGpuDisabled ||
+            GgufDevicePolicy.shouldDisableVulkan()
+        val initialConfig = if (originalBackend == LocalModelBackend.Gpu && vulkanDisabled) {
+            onStatus("Vulkan is unstable on this device; using CPU")
+            config.copy(localModelBackend = LocalModelBackend.Cpu)
+        } else {
+            config
+        }
+
+        return try {
+            operation(initialConfig)
+        } catch (e: Throwable) {
+            if (originalBackend != LocalModelBackend.Gpu || initialConfig.localModelBackend != LocalModelBackend.Gpu) throw e
+            if (GgufVulkanFallbackState.isGpuDisabled) throw e
+            if (isCancellation(e)) throw e
+            onStatus("GPU generation failed; switching to CPU")
+            GgufVulkanFallbackState.isGpuDisabled = true
+            try { cache.invalidate() } catch (_: Throwable) {}
+            operation(config.copy(localModelBackend = LocalModelBackend.Cpu))
+        }
+    }
+
     @OptIn(InternalCoroutinesApi::class)
     private suspend fun CoroutineScope.generateOnce(
         request: LocalModelRequest,
@@ -77,26 +107,14 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
         validateRequest(request)
 
         val config = request.config
-        val path = config.localModelPath.trim()
-        require(File(path).isFile) { "GGUF model not found: $path" }
+        val requestedKey = requirePlannedKey(config)
 
-        val backend = config.localModelBackend
-        val requestedContext = config.localContextTokens.coerceAtLeast(512)
-        val modelBytes = File(path).length()
-        val availableBytes = availableMemoryBytes()
-        val gpuLayers = gpuLayersFor(backend)
-        val backendKey = if (backend == LocalModelBackend.Npu) LocalModelBackend.Cpu.key else backend.key
-
-        val requestedKey = GgufContextPlanner.planKey(
-            path = path,
-            requestedContext = requestedContext,
-            backendKey = backendKey,
-            gpuLayers = gpuLayers,
-            modelBytes = modelBytes,
-            availableBytes = availableBytes
+        val session = sessionFor(
+            requestedKey,
+            config.localModelBackend == LocalModelBackend.Npu,
+            onStatus
         )
-
-        val handle = sessionFor(requestedKey, backend == LocalModelBackend.Npu, onStatus)
+        val handle = session.handle
 
         val job = currentCoroutineContext()[Job]
         val cancelHandle = job?.invokeOnCompletion(onCancelling = true, invokeImmediately = true) { cause ->
@@ -157,8 +175,8 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
         requestedKey: GgufModelKey,
         wasNpu: Boolean,
         onStatus: suspend (String) -> Unit
-    ): Long {
-        cache.get(requestedKey).let { if (it != 0L) return it }
+    ): GgufSession {
+        cache.get(requestedKey)?.let { return it }
 
         onStatus("Loading GGUF model")
         if (wasNpu) {
@@ -189,11 +207,12 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
             }
 
             if (handle != 0L) {
-                cache.replace(requestedKey, candidateKey, handle)
                 val contextSize = GgufNative.getContextSize(handle)
                 val backendName = GgufNative.getBackendName(handle)
+                val effectiveKey = candidateKey.copy(contextTokens = contextSize)
+                cache.replace(requestedKey, effectiveKey, handle)
                 onStatus("GGUF model loaded ($contextSize tokens, $backendName)")
-                return handle
+                return GgufSession(handle, effectiveKey)
             }
 
             onStatus("GGUF context ${candidateKey.contextTokens} failed; retrying")
@@ -207,6 +226,32 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
             throw IllegalArgumentException("GGUF runtime does not support image inputs")
         }
     }
+
+    private fun plannedKey(config: AgentConfig): GgufModelKey? {
+        val path = config.localModelPath.trim()
+        val model = File(path)
+        if (!model.isFile) return null
+        val backend = config.localModelBackend
+        return GgufContextPlanner.planKey(
+            path = path,
+            requestedContext = config.localContextTokens.coerceAtLeast(LocalModelRuntimeProfile.MIN_CONTEXT_TOKENS),
+            backendKey = if (backend == LocalModelBackend.Npu) LocalModelBackend.Cpu.key else backend.key,
+            gpuLayers = gpuLayersFor(backend),
+            modelBytes = model.length(),
+            availableBytes = availableMemoryBytes()
+        )
+    }
+
+    private fun requirePlannedKey(config: AgentConfig): GgufModelKey =
+        plannedKey(config) ?: throw IllegalArgumentException(
+            "GGUF model not found: ${config.localModelPath.trim()}"
+        )
+
+    private fun ggufProfile(contextTokens: Int): LocalModelRuntimeProfile = LocalModelRuntimeProfile(
+        kind = LocalModelRuntimeKind.Gguf,
+        effectiveContextTokens = contextTokens.coerceAtLeast(LocalModelRuntimeProfile.MIN_CONTEXT_TOKENS),
+        supportsImageInput = false
+    )
 
     private fun maxOutputTokens(request: LocalModelRequest): Int =
         if (request.systemPrompt.contains("Tools are not needed for this message")) 256 else 128
@@ -224,6 +269,8 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
     }
 }
 
+internal data class GgufSession(val handle: Long, val key: GgufModelKey)
+
 internal class GgufSessionCache(private val closeHandle: (Long) -> Unit) {
     private val lock = ReentrantLock()
     private var requestedKey: GgufModelKey? = null
@@ -231,9 +278,13 @@ internal class GgufSessionCache(private val closeHandle: (Long) -> Unit) {
     private var handle: Long = 0L
     private var closed = false
 
-    fun get(requested: GgufModelKey): Long = locked {
+    fun get(requested: GgufModelKey): GgufSession? = locked {
         check(!closed) { "GGUF runtime is closed" }
-        if (handle != 0L && requestedKey == requested) handle else 0L
+        if (handle != 0L && requestedKey == requested) {
+            GgufSession(handle, checkNotNull(effectiveKey))
+        } else {
+            null
+        }
     }
 
     fun replace(requested: GgufModelKey, effective: GgufModelKey, newHandle: Long) = locked {

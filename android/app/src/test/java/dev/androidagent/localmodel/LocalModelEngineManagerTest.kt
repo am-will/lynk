@@ -107,6 +107,8 @@ class LocalModelEngineManagerTest {
         var concurrent = 0
         var maxConcurrent = 0
 
+        override fun profile(config: AgentConfig): LocalModelRuntimeProfile = testProfile(config)
+
         override suspend fun generate(
             request: LocalModelRequest,
             onDelta: suspend (String) -> Unit,
@@ -135,6 +137,8 @@ class LocalModelEngineManagerTest {
         val releaseCleanup = CompletableDeferred<Unit>()
         var closed = false
 
+        override fun profile(config: AgentConfig): LocalModelRuntimeProfile = testProfile(config)
+
         override suspend fun generate(
             request: LocalModelRequest,
             onDelta: suspend (String) -> Unit,
@@ -155,5 +159,13 @@ class LocalModelEngineManagerTest {
             check(cancelling.isCompleted && releaseCleanup.isCompleted)
             closed = true
         }
+    }
+
+    private companion object {
+        fun testProfile(config: AgentConfig) = LocalModelRuntimeProfile(
+            kind = LocalModelRuntimeKind.LiteRtLm,
+            effectiveContextTokens = config.localContextTokens.coerceAtLeast(512),
+            supportsImageInput = true
+        )
     }
 }

@@ -10,13 +10,20 @@ data class PreparedLocalModelInput(
 )
 
 object LocalAttachmentInputPreparer {
-    fun prepare(text: String, attachments: List<StoredChatAttachment>): PreparedLocalModelInput {
+    fun prepare(
+        text: String,
+        attachments: List<StoredChatAttachment>,
+        runtimeProfile: LocalModelRuntimeProfile
+    ): PreparedLocalModelInput {
         if (attachments.isEmpty()) {
             return PreparedLocalModelInput(promptText = text, imagePaths = emptyList())
         }
 
         val imageAttachments = attachments.filter { it.isImage }
         ChatAttachmentPolicy.validateSingleLocalImage(attachments)
+        if (imageAttachments.isNotEmpty()) {
+            runtimeProfile.requireImageInputSupport()
+        }
         val fileSections = attachments
             .filterNot { it.isImage }
             .map { attachment -> localTextFileSection(attachment) }

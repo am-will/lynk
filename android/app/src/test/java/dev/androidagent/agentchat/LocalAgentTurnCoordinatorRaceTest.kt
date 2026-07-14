@@ -5,6 +5,8 @@ import dev.androidagent.chat.ChatAttachmentPreview
 import dev.androidagent.localmodel.LocalChatMessage
 import dev.androidagent.localmodel.LocalChatSession
 import dev.androidagent.localmodel.LocalChatSessionRepository
+import dev.androidagent.localmodel.LocalModelRuntimeKind
+import dev.androidagent.localmodel.LocalModelRuntimeProfile
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -110,6 +112,7 @@ class LocalAgentTurnCoordinatorRaceTest {
         onStatus = { _, _ -> },
         onChatMessage = messages::add,
         store = store,
+        runtimeProfile = { LocalModelRuntimeProfile(LocalModelRuntimeKind.LiteRtLm, 4096, true) },
         toolDescriptions = { JSONArray() },
         runner = runner
     )

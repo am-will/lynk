@@ -77,6 +77,19 @@ class LocalModelRuntimeRouterTest {
         assertEquals(0, ggufCreated)
     }
 
+    @Test
+    fun profileComesFromSelectedRuntime() {
+        val liteRt = RecordingRuntime(LocalModelRuntimeKind.LiteRtLm, supportsImageInput = true)
+        val gguf = RecordingRuntime(LocalModelRuntimeKind.Gguf, supportsImageInput = false)
+        val router = LocalModelRuntimeRouter({ liteRt }, { gguf })
+
+        val profile = router.profile(request("x", "model.gguf").config)
+
+        assertEquals(LocalModelRuntimeKind.Gguf, profile.kind)
+        assertEquals(2048, profile.effectiveContextTokens)
+        assertEquals(false, profile.supportsImageInput)
+    }
+
     private fun request(prompt: String, path: String) = LocalModelRequest(
         prompt = prompt,
         systemPrompt = "system",
@@ -92,7 +105,10 @@ class LocalModelRuntimeRouterTest {
         )
     )
 
-    private class RecordingRuntime : LocalModelRuntime {
+    private class RecordingRuntime(
+        private val kind: LocalModelRuntimeKind = LocalModelRuntimeKind.LiteRtLm,
+        private val supportsImageInput: Boolean = true
+    ) : LocalModelRuntime {
         val prompts = mutableListOf<String>()
         var closed = false
         var created = 0
@@ -100,6 +116,12 @@ class LocalModelRuntimeRouterTest {
         init {
             created++
         }
+
+        override fun profile(config: AgentConfig): LocalModelRuntimeProfile = LocalModelRuntimeProfile(
+            kind = kind,
+            effectiveContextTokens = 2048,
+            supportsImageInput = supportsImageInput
+        )
 
         override suspend fun generate(
             request: LocalModelRequest,

@@ -7,7 +7,8 @@ internal data class LocalToolSpec(
     val id: String,
     val description: String,
     val group: String,
-    val phoneCommand: String? = null
+    val phoneCommand: String? = null,
+    val requiresImageInput: Boolean = false
 ) {
     fun toJson(): JSONObject =
         JSONObject()
@@ -24,7 +25,7 @@ internal object LocalToolSpecs {
         LocalToolSpec("phone_open_app", "Open an Android app. Args: packageName for an exact package, or appName for a launcher label.", "phone", "open_app"),
         LocalToolSpec("phone_tap_node", "Tap an observed node. Args: observationId and nodeId from the same observation, plus approvalCapability returned for these exact args.", "phone", "tap_node"),
         LocalToolSpec("phone_tap_xy", "Tap pixels. Args: x, y, and approvalCapability returned by approval for these exact args.", "phone", "tap_xy"),
-        LocalToolSpec("phone_tap_normalized", "Tap screenshot coordinates. Args: xPct, yPct, and approvalCapability returned by approval for these exact args.", "phone", "tap_normalized"),
+        LocalToolSpec("phone_tap_normalized", "Tap screenshot coordinates. Args: xPct, yPct, and approvalCapability returned by approval for these exact args.", "phone", "tap_normalized", requiresImageInput = true),
         LocalToolSpec("phone_long_press_node", "Long-press a node. Args: observationId and nodeId from the same observation, plus approvalCapability returned for these exact args.", "phone", "long_press_node"),
         LocalToolSpec("phone_type_text", "Type text. Args: text and approvalCapability returned by approval for these exact args.", "phone", "type_text"),
         LocalToolSpec("phone_scroll", "Scroll the active screen up, down, left, or right.", "phone", "scroll"),
@@ -32,7 +33,7 @@ internal object LocalToolSpecs {
         LocalToolSpec("phone_press_back", "Press Android Back.", "phone", "press_back"),
         LocalToolSpec("phone_press_home", "Press Android Home.", "phone", "press_home"),
         LocalToolSpec("phone_open_recents", "Open Android Recents.", "phone", "open_recents"),
-        LocalToolSpec("phone_take_screenshot", "Capture the screen. Args: approvalCapability returned by approval for take_screenshot with empty args.", "phone", "take_screenshot"),
+        LocalToolSpec("phone_take_screenshot", "Capture the screen. Args: approvalCapability returned by approval for take_screenshot with empty args.", "phone", "take_screenshot", requiresImageInput = true),
         LocalToolSpec("phone_submit_text", "Submit focused text. Args: approvalCapability returned by approval for submit_text with empty args.", "phone", "submit_text"),
         LocalToolSpec("phone_ask_user_confirmation", "Request one approval. Args: command, exact args object for the next sensitive action, and optional message/preview. Pass returned approvalCapability unchanged to that exact action.", "phone", "ask_user_confirmation"),
         LocalToolSpec("phone_wait", "Wait for the requested number of milliseconds. Args: ms.", "phone", "wait"),
@@ -47,9 +48,16 @@ internal object LocalToolSpecs {
     val phoneCommandsByToolId: Map<String, String> =
         all.mapNotNull { spec -> spec.phoneCommand?.let { spec.id to it } }.toMap()
 
-    fun descriptions(access: LocalToolAccess? = null): JSONArray = JSONArray().also { array ->
+    fun descriptions(
+        runtimeProfile: LocalModelRuntimeProfile,
+        access: LocalToolAccess? = null
+    ): JSONArray = JSONArray().also { array ->
         all.filter { spec -> access == null || access.allows(spec.id) }
             .filterNot { spec -> access?.phoneControl == true && spec.id == "local_read_skill" }
+            .filter { spec -> runtimeProfile.supportsImageInput || !spec.requiresImageInput }
             .forEach { array.put(it.toJson()) }
     }
+
+    fun requiresImageInput(toolId: String): Boolean =
+        all.firstOrNull { it.id == toolId }?.requiresImageInput == true
 }

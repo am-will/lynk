@@ -7,11 +7,12 @@ import dev.androidagent.localmodel.LocalChatMessage
 import dev.androidagent.localmodel.LocalChatSession
 import dev.androidagent.localmodel.LocalPromptBuilder
 import dev.androidagent.localmodel.LocalResponseTextNormalizer
+import dev.androidagent.localmodel.LocalModelRuntimeProfile
 import org.json.JSONArray
 import org.json.JSONObject
 
 object LocalChatMessages {
-    fun models(config: AgentConfig): JSONObject =
+    fun models(runtimeProfile: LocalModelRuntimeProfile): JSONObject =
         JSONObject()
             .put("type", "chat.models")
             .put("source", "local")
@@ -22,7 +23,7 @@ object LocalChatMessages {
                 .put("harnessId", AgentConfig.HARNESS_LOCAL)
                 .put("harnessLabel", "Local")
                 .put("modelId", AgentModelOptions.LOCAL_LITERT_MODEL_ID)
-                .put("contextWindow", config.localContextTokens)
+                .put("contextWindow", runtimeProfile.effectiveContextTokens)
                 .put("available", true)))
             .put("reasoningOptions", JSONArray()
                 .put(JSONObject().put("id", "low").put("label", "low"))
@@ -39,6 +40,7 @@ object LocalChatMessages {
         selectedKey: String,
         sessions: List<LocalChatSession>,
         config: AgentConfig,
+        runtimeProfile: LocalModelRuntimeProfile,
         toolDescriptionsJson: String
     ): JSONObject =
         JSONObject()
@@ -46,7 +48,7 @@ object LocalChatMessages {
             .put("selectedSessionKey", selectedKey)
             .put("sessions", JSONArray().also { array ->
                 sessions.forEach { session ->
-                    val usage = tokenUsage(session, config, toolDescriptionsJson)
+                    val usage = tokenUsage(session, config, runtimeProfile, toolDescriptionsJson)
                     array.put(JSONObject()
                         .put("key", session.key)
                         .put("label", session.label)
@@ -64,8 +66,13 @@ object LocalChatMessages {
                 }
             })
 
-    fun usage(session: LocalChatSession, config: AgentConfig, toolDescriptionsJson: String): JSONObject {
-        val usage = tokenUsage(session, config, toolDescriptionsJson)
+    fun usage(
+        session: LocalChatSession,
+        config: AgentConfig,
+        runtimeProfile: LocalModelRuntimeProfile,
+        toolDescriptionsJson: String
+    ): JSONObject {
+        val usage = tokenUsage(session, config, runtimeProfile, toolDescriptionsJson)
         return JSONObject()
             .put("type", "chat.usage")
             .put("sessionKey", session.key)
@@ -144,7 +151,12 @@ object LocalChatMessages {
             .put("timestamp", message.timestamp)
             .put("attachments", ChatAttachmentPreviewJson.toJsonArray(message.attachments))
 
-    private fun tokenUsage(session: LocalChatSession, config: AgentConfig, toolDescriptionsJson: String): LocalUsage {
+    private fun tokenUsage(
+        session: LocalChatSession,
+        config: AgentConfig,
+        runtimeProfile: LocalModelRuntimeProfile,
+        toolDescriptionsJson: String
+    ): LocalUsage {
         val promptTokens = estimateTokenCount(LocalPromptBuilder.systemPrompt(
             basePrompt = config.systemPrompt,
             toolsAllowed = true,
@@ -164,7 +176,7 @@ object LocalChatMessages {
             inputTokens = inputTokens,
             outputTokens = outputTokens,
             totalTokens = inputTokens + outputTokens,
-            contextTokens = config.localContextTokens.toLong()
+            contextTokens = runtimeProfile.effectiveContextTokens.toLong()
         )
     }
 

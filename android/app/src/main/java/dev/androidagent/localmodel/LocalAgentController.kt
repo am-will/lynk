@@ -13,11 +13,11 @@ import dev.androidagent.agentchat.LocalTurnRunner
 
 internal fun selectNewestHistory(
     history: List<LocalChatMessage>,
-    localContextTokens: Int,
+    runtimeProfile: LocalModelRuntimeProfile,
     systemPrompt: String,
     currentUserText: String
 ): List<LocalChatMessage> {
-    val contextTokens = localContextTokens.coerceAtLeast(512)
+    val contextTokens = runtimeProfile.effectiveContextTokens
     val outputReserve = (contextTokens / 4).coerceIn(512, 8_192)
     val toolRoundReserve = (contextTokens / 4).coerceIn(512, 8_192)
     val fixedTokens = LocalPromptBuilder.estimateTokenCount(systemPrompt) +
@@ -32,6 +32,15 @@ internal fun selectNewestHistory(
         remainingTokens -= messageTokens
     }
     return selectedNewestFirst.asReversed()
+}
+
+internal fun imagePathsForRound(
+    runtimeProfile: LocalModelRuntimeProfile,
+    initialImagePaths: List<String>,
+    latestScreenshotPath: String?
+): List<String> {
+    if (!runtimeProfile.supportsImageInput) return emptyList()
+    return latestScreenshotPath?.let(::listOf) ?: initialImagePaths.take(1)
 }
 
 class LocalAgentController(
@@ -52,18 +61,12 @@ class LocalAgentController(
         val toolsAllowed = toolAccess.allowsAny
         val multiStepPhoneRequest = phoneControlRequest && LocalPhoneControlTurnPolicy.isMultiStepRequest(userText)
         val config = configProvider()
-        val systemPrompt = LocalPromptBuilder.systemPrompt(
-            basePrompt = config.systemPrompt,
-            toolsAllowed = toolsAllowed,
-            toolDescriptionsJson = tools.toolDescriptions(toolAccess).toString()
-        )
-        val transcript = selectNewestHistory(
-            history = history,
-            localContextTokens = config.localContextTokens,
-            systemPrompt = systemPrompt,
-            currentUserText = userText
-        ).map { "${it.role}: ${it.text}" }.toMutableList()
-        transcript.add("user: $userText")
+        val preflightProfile = runtime.profile(config)
+        if (imagePaths.isNotEmpty() && !preflightProfile.supportsImageInput) {
+            val message = checkNotNull(preflightProfile.imageInputUnsupportedMessage)
+            emitAssistant(sessionKey, runId, message)
+            return message
+        }
         emit(state(
             sessionKey = sessionKey,
             runId = runId,
@@ -71,6 +74,34 @@ class LocalAgentController(
             status = "Local model is working",
             taskKind = if (phoneControlRequest) "phone" else null
         ))
+        val runtimeProfile = try {
+            withTimeout(MODEL_RESPONSE_TIMEOUT_MS) {
+                runtime.resolveProfile(config) { status ->
+                    emit(state(sessionKey, runId, isRunning = true, status = status))
+                }
+            }
+        } catch (_: TimeoutCancellationException) {
+            val message = "Local model timed out while loading."
+            emitAssistant(sessionKey, runId, message)
+            return message
+        } catch (error: Throwable) {
+            if (error is CancellationException) throw error
+            val message = "Local model failed while loading: ${error.message ?: error::class.java.simpleName}"
+            emitAssistant(sessionKey, runId, message)
+            return message
+        }
+        val systemPrompt = LocalPromptBuilder.systemPrompt(
+            basePrompt = config.systemPrompt,
+            toolsAllowed = toolsAllowed,
+            toolDescriptionsJson = tools.toolDescriptions(runtimeProfile, toolAccess).toString()
+        )
+        val transcript = selectNewestHistory(
+            history = history,
+            runtimeProfile = runtimeProfile,
+            systemPrompt = systemPrompt,
+            currentUserText = userText
+        ).map { "${it.role}: ${it.text}" }.toMutableList()
+        transcript.add("user: $userText")
         if (phoneControlRequest) {
             transcript.add("system: This is an Android phone-control request. Use the available phone tools directly, then verify the requested result before answering.")
         }
@@ -110,7 +141,7 @@ class LocalAgentController(
                             prompt = prompt,
                             systemPrompt = systemPrompt,
                             config = config,
-                            imagePaths = latestScreenshotPath?.let(::listOf) ?: imagePaths.take(1)
+                            imagePaths = imagePathsForRound(runtimeProfile, imagePaths, latestScreenshotPath)
                         ),
                         onDelta = { delta ->
                             streamed.append(delta)
@@ -210,6 +241,14 @@ class LocalAgentController(
                     transcript.add("tool ${call.name} result: $rejected")
                     continue
                 }
+                if (!runtimeProfile.supportsImageInput && LocalToolSpecs.requiresImageInput(call.name)) {
+                    val rejected = JSONObject()
+                        .put("ok", false)
+                        .put("error", "Tool ${call.name} requires image input, which is not supported by the selected local model.")
+                    transcript.add("assistant tool request rejected: ${JSONObject().put("tool", call.name).put("args", call.args)}")
+                    transcript.add("tool ${call.name} result: $rejected")
+                    continue
+                }
                 if (phoneControlRequest && LocalToolPolicy.isPhoneTool(call.name) && !androidControlSkillLoaded) {
                     val rejected = JSONObject()
                         .put("ok", false)
@@ -236,7 +275,7 @@ class LocalAgentController(
                 } else {
                     repeatedObserveCount = 0
                 }
-                val result = executeAndRecordTool(sessionKey, runId, round, call, transcript)
+                val result = executeAndRecordTool(sessionKey, runId, round, call, transcript, runtimeProfile)
                 if (LocalToolPolicy.isPhoneTool(call.name)) {
                     phoneToolExecuted = true
                     if (LocalPhoneControlTurnPolicy.isPhoneActionTool(call.name)) {
@@ -248,8 +287,10 @@ class LocalAgentController(
                 ) {
                     androidControlSkillLoaded = true
                 }
-                result.optString("screenshotPath").takeIf { it.isNotBlank() }?.let { path ->
-                    latestScreenshotPath = path
+                if (runtimeProfile.supportsImageInput) {
+                    result.optString("screenshotPath").takeIf { it.isNotBlank() }?.let { path ->
+                        latestScreenshotPath = path
+                    }
                 }
             }
         }
@@ -294,7 +335,8 @@ class LocalAgentController(
         runId: String,
         round: Int,
         call: LocalToolCall,
-        transcript: MutableList<String>
+        transcript: MutableList<String>,
+        runtimeProfile: LocalModelRuntimeProfile
     ): JSONObject {
         Log.i(TAG, "local turn $runId executing tool=${call.name} args=${call.args}")
         val eventId = "local_tool_${UUID.randomUUID()}"
@@ -329,21 +371,25 @@ class LocalAgentController(
             }
         ))
         transcript.add("assistant tool request: ${JSONObject().put("tool", call.name).put("args", call.args)}")
-        transcript.add("tool ${call.name} result: ${transcriptToolResult(call, result)}")
+        transcript.add("tool ${call.name} result: ${transcriptToolResult(call, result, runtimeProfile)}")
         return result
     }
 
-    private fun transcriptToolResult(call: LocalToolCall, result: JSONObject): String {
+    private fun transcriptToolResult(
+        call: LocalToolCall,
+        result: JSONObject,
+        runtimeProfile: LocalModelRuntimeProfile
+    ): String {
         return if (call.name == "local_read_skill") {
             result.toString().take(MAX_SKILL_RESULT_CHARS)
         } else if (LocalToolPolicy.isPhoneTool(call.name)) {
-            compactPhoneToolResult(result).toString()
+            compactPhoneToolResult(result, includeScreenshotPath = runtimeProfile.supportsImageInput).toString()
         } else {
             result.toString().take(MAX_GENERIC_TOOL_RESULT_CHARS)
         }
     }
 
-    private fun compactPhoneToolResult(result: JSONObject): JSONObject {
+    private fun compactPhoneToolResult(result: JSONObject, includeScreenshotPath: Boolean): JSONObject {
         val compact = JSONObject()
             .put("ok", result.optBoolean("ok", false))
             .put("error", result.optString("error").takeIf { it.isNotBlank() } ?: JSONObject.NULL)
@@ -356,8 +402,10 @@ class LocalAgentController(
         if (observation != null) {
             compact.put("observation", compactObservation(observation))
         }
-        result.optString("screenshotPath").takeIf { it.isNotBlank() }?.let { path ->
-            compact.put("screenshotPath", path)
+        if (includeScreenshotPath) {
+            result.optString("screenshotPath").takeIf { it.isNotBlank() }?.let { path ->
+                compact.put("screenshotPath", path)
+            }
         }
         return compact
     }
