@@ -47,7 +47,9 @@ internal object LocalToolSpecs {
     val phoneCommandsByToolId: Map<String, String> =
         all.mapNotNull { spec -> spec.phoneCommand?.let { spec.id to it } }.toMap()
 
-    fun descriptions(): JSONArray = JSONArray().also { array ->
-        all.forEach { array.put(it.toJson()) }
+    fun descriptions(access: LocalToolAccess? = null): JSONArray = JSONArray().also { array ->
+        all.filter { spec -> access == null || access.allows(spec.id) }
+            .filterNot { spec -> access?.phoneControl == true && spec.id == "local_read_skill" }
+            .forEach { array.put(it.toJson()) }
     }
 }

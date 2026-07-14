@@ -5,6 +5,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import dev.androidagent.AgentConfig
 import dev.androidagent.LocalModelBackend
 import dev.androidagent.localmodel.gguf.GgufNative
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertTrue
@@ -14,6 +16,33 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class GgufDeviceSmokeTest {
+    @Test
+    fun cancellationInterruptsNativeGeneration() = runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("modelPath") != null)
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val arguments = InstrumentationRegistry.getArguments()
+        val modelPath = requireNotNull(arguments.getString("modelPath"))
+        val runtime = GgufRuntime(instrumentation.targetContext)
+        val generation = launch {
+            runtime.generate(
+                LocalModelRequest(
+                    prompt = "Write a detailed thousand-word explanation of electromagnetism.",
+                    systemPrompt = "Answer directly.",
+                    config = config(modelPath, LocalModelBackend.Cpu, 4096)
+                ),
+                onDelta = {},
+                onStatus = {}
+            )
+        }
+        delay(250)
+        withTimeout(10_000) {
+            generation.cancel()
+            generation.join()
+        }
+        runtime.close()
+        assertTrue(generation.isCancelled)
+    }
+
     @Test
     fun loadsConfiguredModel() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("modelPath") != null)

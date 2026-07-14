@@ -13,7 +13,7 @@ internal object LocalPromptBuilder {
             - A tool request must be the entire response and contain exactly three concatenated parts: the literal opening marker <|lynk_control|>, one JSON object, and the literal closing marker <|/lynk_control|>. Never add prose, Markdown fences, or a second frame.
             - The JSON object must have exactly these keys: version (integer 1), type (string tool_call), tool (an available tool ID), and args (an object matching that tool's documented schema). Unknown or extra keys are rejected.
             - Non-executable shape illustration (the placeholder tool ID is intentionally invalid): {"version":1,"type":"tool_call","tool":"TOOL_ID","args":{}}
-            - For Android phone-control tasks, first request local_read_skill with args containing name android-control, then follow the returned skill before any phone_* tool.
+            - For Android phone-control tasks, use the available phone_* tools directly and verify the visible result before answering.
             - Sensitive phone actions, local_write_file, and termux_command require a prior phone_ask_user_confirmation request for the exact command and args. Copy the returned approvalCapability into the otherwise identical action args. Capabilities are owner-bound, short-lived, and single-use.
             - If the user explicitly asks you to create files, websites, projects, or anything that should open in the phone browser, request approval for the exact termux_command and save it somewhere phone-accessible such as /sdcard/Download/lynk-project. Choose the shell commands yourself.
             - Do not observe the phone just to answer a normal text question. Do not call phone_observe repeatedly.

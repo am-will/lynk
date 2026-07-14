@@ -55,7 +55,7 @@ class LocalAgentController(
         val systemPrompt = LocalPromptBuilder.systemPrompt(
             basePrompt = config.systemPrompt,
             toolsAllowed = toolsAllowed,
-            toolDescriptionsJson = tools.toolDescriptions().toString()
+            toolDescriptionsJson = tools.toolDescriptions(toolAccess).toString()
         )
         val transcript = selectNewestHistory(
             history = history,
@@ -72,7 +72,7 @@ class LocalAgentController(
             taskKind = if (phoneControlRequest) "phone" else null
         ))
         if (phoneControlRequest) {
-            transcript.add("system: This is an Android phone-control request. Before any phone_* tool, call local_read_skill with name android-control and follow the returned skill.")
+            transcript.add("system: This is an Android phone-control request. Use the available phone tools directly, then verify the requested result before answering.")
         }
         LocalPhoneControlTurnPolicy.directOpenAppName(userText)?.let { appName ->
             val call = LocalToolCall("phone_open_app", JSONObject().put("appName", appName))
@@ -92,7 +92,7 @@ class LocalAgentController(
         var rejectedUnneededTool = false
         var repeatedObserveCount = 0
         var latestScreenshotPath: String? = null
-        var androidControlSkillLoaded = false
+        var androidControlSkillLoaded = phoneControlRequest
         var phoneToolExecuted = false
         var phoneActionCount = 0
         var noToolPhoneNudges = 0

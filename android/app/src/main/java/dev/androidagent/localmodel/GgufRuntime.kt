@@ -10,6 +10,7 @@ import dev.androidagent.localmodel.gguf.GgufNative
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -70,6 +71,7 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
     private fun isKnownUnstableVulkanDevice(): Boolean =
         Build.SOC_MODEL.equals("SM8850", ignoreCase = true)
 
+    @OptIn(InternalCoroutinesApi::class)
     private suspend fun CoroutineScope.generateOnce(
         request: LocalModelRequest,
         onDelta: suspend (String) -> Unit,
@@ -100,7 +102,7 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
         val handle = sessionFor(requestedKey, backend == LocalModelBackend.Npu, onStatus)
 
         val job = currentCoroutineContext()[Job]
-        val cancelHandle = job?.invokeOnCompletion { cause ->
+        val cancelHandle = job?.invokeOnCompletion(onCancelling = true, invokeImmediately = true) { cause ->
             if (cause is CancellationException) {
                 GgufNative.cancel(handle)
             }
@@ -210,7 +212,7 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
     }
 
     private fun maxOutputTokens(request: LocalModelRequest): Int =
-        if (request.systemPrompt.contains("Tools are not needed for this message")) 256 else 512
+        if (request.systemPrompt.contains("Tools are not needed for this message")) 256 else 128
 
     private fun availableMemoryBytes(): Long {
         val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager

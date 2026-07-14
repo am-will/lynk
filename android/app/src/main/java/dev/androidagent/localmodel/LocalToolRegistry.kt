@@ -20,6 +20,8 @@ class LocalToolRegistry(
 
     fun toolDescriptions() = LocalToolSpecs.descriptions()
 
+    internal fun toolDescriptions(access: LocalToolAccess) = LocalToolSpecs.descriptions(access)
+
     suspend fun execute(call: LocalToolCall, requestOwner: String): JSONObject {
         val validated = when (val validation = LocalToolContracts.validate(call)) {
             is LocalToolValidation.Valid -> validation.call
