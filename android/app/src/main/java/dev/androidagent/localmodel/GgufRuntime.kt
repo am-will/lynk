@@ -2,7 +2,6 @@ package dev.androidagent.localmodel
 
 import android.app.ActivityManager
 import android.content.Context
-import android.os.Build
 import dev.androidagent.AgentConfig
 import dev.androidagent.LocalModelBackend
 import dev.androidagent.localmodel.gguf.GgufModelKey
@@ -33,7 +32,8 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
         onStatus: suspend (String) -> Unit
     ): String = withContext(Dispatchers.IO) {
         val originalBackend = request.config.localModelBackend
-        val vulkanDisabled = GgufVulkanFallbackState.isGpuDisabled || isKnownUnstableVulkanDevice()
+        val vulkanDisabled = GgufVulkanFallbackState.isGpuDisabled ||
+            GgufDevicePolicy.shouldDisableVulkan()
         val initialRequest = if (originalBackend == LocalModelBackend.Gpu && vulkanDisabled) {
             onStatus("Vulkan is unstable on this device; using CPU")
             request.copy(config = request.config.copy(localModelBackend = LocalModelBackend.Cpu))
@@ -67,9 +67,6 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
 
     private fun isCancellation(e: Throwable): Boolean =
         e is CancellationException || e.cause is CancellationException
-
-    private fun isKnownUnstableVulkanDevice(): Boolean =
-        Build.SOC_MODEL.equals("SM8850", ignoreCase = true)
 
     @OptIn(InternalCoroutinesApi::class)
     private suspend fun CoroutineScope.generateOnce(
