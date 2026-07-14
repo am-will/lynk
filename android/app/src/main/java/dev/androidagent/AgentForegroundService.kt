@@ -851,7 +851,7 @@ class AgentForegroundService : Service() {
         val localLiteRtAvailable = isExperimentalLocalModelAvailable(config)
         val session = state.sessions.firstOrNull { it.key == sessionKey }
         val unread = sessionKey?.let { state.unreadReplies[it] }
-        return ChatPresentationHelpers.clientBrandPresentation(
+        val presentation = ChatPresentationHelpers.clientBrandPresentation(
             selectedModel = ChatPresentationHelpers.selectedModelId(
                 session?.model
                 ?: unread?.source?.model
@@ -869,6 +869,9 @@ class AgentForegroundService : Service() {
                 )?.takeIf { config.isModelHarnessEnabled(it) },
             localLiteRtAvailable = localLiteRtAvailable
         )
+        if (presentation.brand != dev.androidagent.overlay.ClientBrand.Local) return presentation
+        val modelName = LocalModelStore.displayName(config.localModelPath)
+        return presentation.copy(title = modelName, copyName = modelName)
     }
 
     private fun harnessFromSessionKey(sessionKey: String?): String? {
@@ -969,21 +972,14 @@ class AgentForegroundService : Service() {
     private fun beginNewChatAttempt(request: PendingNewChatRequest, createWorkspaceIfMissing: Boolean) {
         markChatSessionRead(chatState.sessionKey, force = true)
         newChatCoordinator.begin(request)
-        val now = System.currentTimeMillis()
         chatState = chatState.copy(
             sessionKey = null,
             sessionId = null,
             activeRunId = null,
             isRunning = false,
-            status = "Started a new chat",
+            status = "Ready",
             error = null,
-            timeline = listOf(ChatTimelineItem(
-                id = "system_${UUID.randomUUID()}",
-                kind = ChatTimelineKind.MESSAGE,
-                role = "system",
-                text = "Started a new chat",
-                timestamp = now
-            )),
+            timeline = emptyList(),
             usage = ChatUsageSummary()
         )
         overlayController?.setChatState(chatState)

@@ -12,6 +12,7 @@ export type DevinAcpErrorCode =
   | "startup_timeout"
   | "protocol_mismatch"
   | "auth_required"
+  | "not_found"
   | "malformed_transport"
   | "unexpected_exit"
   | "explicit_close"

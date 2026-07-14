@@ -43,6 +43,12 @@ class LocalModelStoreTest {
     }
 
     @Test
+    fun derivesDisplayNameFromInstalledModelPath() {
+        assertEquals("Bonsai-1.7B-Q1_0", LocalModelStore.displayName("/models/Bonsai-1.7B-Q1_0.gguf"))
+        assertEquals("gemma", LocalModelStore.displayName("/models/gemma.litertlm"))
+    }
+
+    @Test
     fun detectsSupportedFormatsByExtension() {
         assertEquals(LocalModelStore.ModelFormat.LiteRtLm, LocalModelStore.formatForDisplayName("model.LITERTLM"))
         assertEquals(LocalModelStore.ModelFormat.Gguf, LocalModelStore.formatForDisplayName("model.gguf"))

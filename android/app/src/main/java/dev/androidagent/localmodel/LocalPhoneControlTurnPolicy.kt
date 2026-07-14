@@ -1,6 +1,15 @@
 package dev.androidagent.localmodel
 
 internal object LocalPhoneControlTurnPolicy {
+    fun directOpenAppName(userText: String): String? {
+        val text = userText.trim()
+        if (isMultiStepRequest(text)) return null
+        val match = Regex(
+            """(?i)^(?:please\s+)?(?:open|launch)\s+(?:the\s+)?(.+?)(?:\s+app)?(?:\s+on\s+(?:my\s+|the\s+)?phone)?[.!]?$"""
+        ).matchEntire(text) ?: return null
+        return match.groupValues[1].trim().takeIf { it.isNotBlank() }
+    }
+
     fun isMultiStepRequest(userText: String): Boolean {
         val text = userText.lowercase()
         return Regex("""\b(first|second|third|next|then|after that|finally)\b""").containsMatchIn(text) ||

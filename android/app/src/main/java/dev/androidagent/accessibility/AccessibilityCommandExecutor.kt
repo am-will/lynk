@@ -134,7 +134,7 @@ class AccessibilityCommandExecutor internal constructor(
             "observe_screen" -> withAgentChromeSuppressed {
                 CommandResult(true, observer.observe(requireService(service)))
             }
-            "open_app" -> withAgentChromeSuppressed {
+            "open_app" -> {
                 val targetPackage = openApp(args)
                 waitMs(900)
                 val observation = service?.let { observer.observe(it) }

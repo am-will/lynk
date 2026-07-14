@@ -97,6 +97,11 @@ object LocalModelStore {
 
     fun exists(path: String): Boolean = path.isNotBlank() && File(path).isFile
 
+    fun displayName(path: String): String {
+        val name = File(path.trim()).name
+        return name.removeSuffix(".litertlm").removeSuffix(".gguf").ifBlank { "Local model" }
+    }
+
     internal enum class ModelFormat(
         val extension: String,
         val directoryName: String,

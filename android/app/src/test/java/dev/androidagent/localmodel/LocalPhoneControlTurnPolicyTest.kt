@@ -62,6 +62,13 @@ class LocalPhoneControlTurnPolicyTest {
     }
 
     @Test
+    fun detectsDirectOpenAppRequestsWithoutMatchingWorkflows() {
+        assertTrue(LocalPhoneControlTurnPolicy.directOpenAppName("open the X app on my phone") == "X")
+        assertTrue(LocalPhoneControlTurnPolicy.directOpenAppName("Launch YouTube") == "YouTube")
+        assertTrue(LocalPhoneControlTurnPolicy.directOpenAppName("Open Settings and tap Apps") == null)
+    }
+
+    @Test
     fun detectsCommonMultiStepPhoneRequests() {
         assertTrue(LocalPhoneControlTurnPolicy.isMultiStepRequest("Open YouTube, then search for lo-fi."))
         assertTrue(LocalPhoneControlTurnPolicy.isMultiStepRequest("Open Settings and tap Apps."))

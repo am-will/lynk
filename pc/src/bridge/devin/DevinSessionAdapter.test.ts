@@ -20,6 +20,7 @@ import {
   type FakeControls
 } from "./DevinAcpFixtures.js";
 import { DevinSessionAdapter } from "./DevinSessionAdapter.js";
+import { DevinAcpError } from "./DevinAcpTypes.js";
 
 function tmpStorage(): { storagePath: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), "devin-session-"));
@@ -540,6 +541,35 @@ describe("DevinSessionAdapter", () => {
       await assert.rejects(adapter.history("devin:load-fail"));
       const history = store.history("devin:load-fail");
       assert.equal(history.messages[0]?.text, "keep me");
+      cleanup();
+    });
+
+    it("classifies a stale remote session when ACP reports session not found", async () => {
+      const { storagePath, cleanup } = tmpStorage();
+      const creatorControls = createConfigurableDevinProcess({
+        handlers: {
+          sessionNew: () => ({ sessionId: "stale-session", configOptions: defaultModelOptions() })
+        }
+      });
+      const creator = buildAdapter(creatorControls, storagePath);
+      await creator.createSession({});
+      await creator.flushPersistence();
+      creator.close();
+
+      const loaderControls = createConfigurableDevinProcess({
+        handlers: {
+          sessionLoad: () => {
+            throw new RequestError(-32602, "Session not found");
+          }
+        }
+      });
+      const adapter = buildAdapter(loaderControls, storagePath);
+
+      await assert.rejects(
+        adapter.history("devin:stale-session"),
+        (error) => error instanceof DevinAcpError && error.code === "not_found"
+      );
+
       cleanup();
     });
 

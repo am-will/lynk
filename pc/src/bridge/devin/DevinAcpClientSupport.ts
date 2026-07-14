@@ -12,6 +12,9 @@ export function classifyAcpError(error: unknown): DevinAcpError {
       return new DevinAcpError("auth_required", "Devin ACP requires authentication.");
     }
     const message = sanitizeDiagnosticText(`ACP request failed: ${error.message}`);
+    if (/\bsession\b.*\bnot found\b/i.test(error.message)) {
+      return new DevinAcpError("not_found", message);
+    }
     return new DevinAcpError("malformed_transport", message);
   }
   if (error instanceof Error) {
@@ -34,6 +37,9 @@ function classifyErrorCode(message: string): DevinAcpErrorCode {
     lower.includes("invalid request")
   ) {
     return "malformed_transport";
+  }
+  if (/\bsession\b.*\bnot found\b/.test(lower)) {
+    return "not_found";
   }
   if (lower.includes("enoent") || lower.includes("eacces") || lower.includes("spawn")) {
     return "spawn_failure";

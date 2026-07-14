@@ -1366,12 +1366,15 @@ class OverlayController(
             localLiteRtAvailable,
             config.enabledModelHarnessIds()
         )
-        return ChatPresentationHelpers.clientBrandPresentation(
+        val presentation = ChatPresentationHelpers.clientBrandPresentation(
             selectedModel = ChatPresentationHelpers.selectedModelId(state.selectedModel, localLiteRtAvailable, modelOptions),
             models = modelOptions,
             harnessId = state.harnessId?.takeIf { config.isModelHarnessEnabled(it) },
             localLiteRtAvailable = localLiteRtAvailable
         )
+        if (presentation.brand != dev.androidagent.overlay.ClientBrand.Local) return presentation
+        val modelName = LocalModelStore.displayName(config.localModelPath)
+        return presentation.copy(title = modelName, copyName = modelName)
     }
 
     private fun chatStatusText(rawStatus: String?, state: ChatState): String {

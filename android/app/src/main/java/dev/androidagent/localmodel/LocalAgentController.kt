@@ -74,6 +74,21 @@ class LocalAgentController(
         if (phoneControlRequest) {
             transcript.add("system: This is an Android phone-control request. Before any phone_* tool, call local_read_skill with name android-control and follow the returned skill.")
         }
+        LocalPhoneControlTurnPolicy.directOpenAppName(userText)?.let { appName ->
+            val call = LocalToolCall("phone_open_app", JSONObject().put("appName", appName))
+            val result = executeAndRecordTool(sessionKey, runId, 0, call, transcript)
+            val message = if (result.optBoolean("ok", false)) {
+                "Opened $appName."
+            } else {
+                "BLOCKED: ${result.optString("error").ifBlank { "Could not open $appName." }}"
+            }
+            emit(JSONObject()
+                .put("type", "chat.reasoning_clear")
+                .put("sessionKey", sessionKey)
+                .put("runId", runId))
+            emitAssistant(sessionKey, runId, message)
+            return message
+        }
         var rejectedUnneededTool = false
         var repeatedObserveCount = 0
         var latestScreenshotPath: String? = null
