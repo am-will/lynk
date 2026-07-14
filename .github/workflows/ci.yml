@@ -35,6 +35,14 @@ jobs:
         working-directory: android
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - name: Verify llama.cpp submodule checkout
+        run: |
+          if [[ ! -f third_party/llama.cpp/CMakeLists.txt ]]; then
+            echo "::error::Pinned llama.cpp submodule is missing; verify the Android checkout initializes recursive submodules."
+            exit 1
+          fi
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
