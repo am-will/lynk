@@ -5,9 +5,10 @@ import android.content.Context
 import dev.androidagent.AgentConfig
 import dev.androidagent.LocalModelBackend
 import dev.androidagent.localmodel.gguf.GgufCreateOperation
+import dev.androidagent.localmodel.gguf.GgufFailureCategory
 import dev.androidagent.localmodel.gguf.GgufModelKey
 import dev.androidagent.localmodel.gguf.GgufNative
-import kotlinx.coroutines.CancellationException
+import dev.androidagent.localmodel.gguf.GgufNativeException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DisposableHandle
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +29,7 @@ import java.util.concurrent.locks.ReentrantLock
 class GgufRuntime(context: Context) : LocalModelRuntime {
     private val context = context.applicationContext
     private val cache = GgufSessionCache { handle -> safeClose(handle) }
+    private val vulkanFallback = GgufVulkanFallbackPolicy()
 
     override fun profile(config: AgentConfig): LocalModelRuntimeProfile {
         val requestedKey = plannedKey(config) ?: return ggufProfile(config.localContextTokens)
@@ -55,9 +57,13 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
         onDelta: suspend (String) -> Unit,
         onStatus: suspend (String) -> Unit
     ): String = withContext(Dispatchers.IO) {
-        withSelectedBackend(request.config, onStatus) { selectedConfig ->
-            generateOnce(request.copy(config = selectedConfig), onDelta, onStatus)
+        val completed = withSelectedBackend(request.config, onStatus) { selectedConfig ->
+            val deltas = GgufAttemptDeltaBuffer()
+            val output = generateOnce(request.copy(config = selectedConfig), deltas::append, onStatus)
+            GgufCompletedAttempt(output, deltas.snapshot())
         }
+        completed.deltas.forEach { delta -> onDelta(delta) }
+        completed.output
     }
 
     override fun close() {
@@ -70,35 +76,30 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
         }
     }
 
-    private fun isCancellation(e: Throwable): Boolean =
-        e is CancellationException || e.cause is CancellationException
-
     private suspend fun <T> withSelectedBackend(
         config: AgentConfig,
         onStatus: suspend (String) -> Unit,
         operation: suspend (AgentConfig) -> T
     ): T {
-        val originalBackend = config.localModelBackend
-        val vulkanDisabled = GgufVulkanFallbackState.isGpuDisabled ||
-            GgufDevicePolicy.shouldDisableVulkan()
-        val initialConfig = if (originalBackend == LocalModelBackend.Gpu && vulkanDisabled) {
-            onStatus("Vulkan is unstable on this device; using CPU")
-            config.copy(localModelBackend = LocalModelBackend.Cpu)
-        } else {
-            config
-        }
-
-        return try {
-            operation(initialConfig)
-        } catch (e: Throwable) {
-            if (originalBackend != LocalModelBackend.Gpu || initialConfig.localModelBackend != LocalModelBackend.Gpu) throw e
-            if (GgufVulkanFallbackState.isGpuDisabled) throw e
-            if (isCancellation(e)) throw e
-            onStatus("GPU generation failed; switching to CPU")
-            GgufVulkanFallbackState.isGpuDisabled = true
-            try { cache.invalidate() } catch (_: Throwable) {}
-            operation(config.copy(localModelBackend = LocalModelBackend.Cpu))
-        }
+        return vulkanFallback.execute(
+            requestedBackend = config.localModelBackend,
+            onCpuSelected = { reason ->
+                when (reason) {
+                    GgufCpuSelection.DevicePolicy ->
+                        onStatus("Vulkan is disabled for this device; using CPU")
+                    GgufCpuSelection.RuntimeDisabled ->
+                        onStatus("Vulkan failed earlier in this runtime; using CPU")
+                    GgufCpuSelection.RuntimeFailure ->
+                        onStatus("Vulkan backend failed; retrying on CPU")
+                }
+            },
+            beforeCpuRetry = {
+                try { cache.invalidate() } catch (_: Throwable) {}
+            },
+            operation = { backend ->
+                operation(config.copy(localModelBackend = backend))
+            }
+        )
     }
 
     @OptIn(InternalCoroutinesApi::class)
@@ -200,6 +201,7 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
                 createAndCacheSession(requestedKey, candidateKey)
             } catch (e: Throwable) {
                 currentCoroutineContext().ensureActive()
+                if (!e.allowsContextDownshift()) throw e
                 lastError = e
                 null
             }
@@ -480,7 +482,71 @@ internal fun gpuLayersFor(backend: LocalModelBackend): Int = when (backend) {
     LocalModelBackend.Cpu -> 0
 }
 
-internal object GgufVulkanFallbackState {
-    @Volatile
-    var isGpuDisabled: Boolean = false
+private fun Throwable.allowsContextDownshift(): Boolean =
+    this is GgufNativeException && category == GgufFailureCategory.Context
+
+internal enum class GgufCpuSelection {
+    DevicePolicy,
+    RuntimeDisabled,
+    RuntimeFailure
 }
+
+/** Vulkan health is scoped to one runtime rather than contaminating the process. */
+internal class GgufVulkanFallbackPolicy(
+    private val deviceDisablesVulkan: () -> Boolean = GgufDevicePolicy::shouldDisableVulkan
+) {
+    private val runtimeDisabled = AtomicBoolean(false)
+
+    val isRuntimeDisabled: Boolean
+        get() = runtimeDisabled.get()
+
+    suspend fun <T> execute(
+        requestedBackend: LocalModelBackend,
+        onCpuSelected: suspend (GgufCpuSelection) -> Unit = {},
+        beforeCpuRetry: suspend () -> Unit = {},
+        operation: suspend (LocalModelBackend) -> T
+    ): T {
+        val deviceDisabled = requestedBackend == LocalModelBackend.Gpu && deviceDisablesVulkan()
+        val runtimeFailureDisabled = requestedBackend == LocalModelBackend.Gpu && runtimeDisabled.get()
+        val initialBackend = if (deviceDisabled || runtimeFailureDisabled) {
+            onCpuSelected(
+                if (deviceDisabled) GgufCpuSelection.DevicePolicy
+                else GgufCpuSelection.RuntimeDisabled
+            )
+            LocalModelBackend.Cpu
+        } else {
+            requestedBackend
+        }
+
+        try {
+            return operation(initialBackend)
+        } catch (error: Throwable) {
+            if (!canRetryOnCpu(requestedBackend, initialBackend, error)) throw error
+            runtimeDisabled.set(true)
+            beforeCpuRetry()
+            onCpuSelected(GgufCpuSelection.RuntimeFailure)
+            return operation(LocalModelBackend.Cpu)
+        }
+    }
+
+    private fun canRetryOnCpu(
+        requestedBackend: LocalModelBackend,
+        attemptedBackend: LocalModelBackend,
+        error: Throwable
+    ): Boolean = requestedBackend == LocalModelBackend.Gpu &&
+        attemptedBackend == LocalModelBackend.Gpu &&
+        error is GgufNativeException &&
+        error.category == GgufFailureCategory.VulkanBackend
+}
+
+internal class GgufAttemptDeltaBuffer {
+    private val deltas = mutableListOf<String>()
+
+    fun append(delta: String) {
+        deltas += delta
+    }
+
+    fun snapshot(): List<String> = deltas.toList()
+}
+
+private data class GgufCompletedAttempt(val output: String, val deltas: List<String>)

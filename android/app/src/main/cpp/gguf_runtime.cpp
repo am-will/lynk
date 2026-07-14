@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -90,6 +91,85 @@ static void throw_runtime_exception(JNIEnv* env, const char* message) {
         env->ThrowNew(clazz, message);
         env->DeleteLocalRef(clazz);
     }
+}
+
+enum class GgufFailure {
+    VulkanBackend,
+    Model,
+    Context,
+    Prompt,
+    Cancellation,
+    Session,
+    Decode,
+    Configuration,
+};
+
+static const char* failure_code(GgufFailure failure) {
+    switch (failure) {
+        case GgufFailure::VulkanBackend: return "vulkan_backend";
+        case GgufFailure::Model: return "model";
+        case GgufFailure::Context: return "context";
+        case GgufFailure::Prompt: return "prompt";
+        case GgufFailure::Cancellation: return "cancellation";
+        case GgufFailure::Session: return "session";
+        case GgufFailure::Decode: return "decode";
+        case GgufFailure::Configuration: return "configuration";
+    }
+    return "configuration";
+}
+
+static void throw_gguf_exception(JNIEnv* env, GgufFailure failure, const char* message) {
+    if (env->ExceptionCheck()) return;
+    jclass clazz = env->FindClass(
+        "dev/androidagent/localmodel/gguf/GgufNativeException"
+    );
+    if (clazz == nullptr) {
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        throw_runtime_exception(env, message);
+        return;
+    }
+    jmethodID constructor = env->GetMethodID(
+        clazz,
+        "<init>",
+        "(Ljava/lang/String;Ljava/lang/String;)V"
+    );
+    if (constructor == nullptr) {
+        env->DeleteLocalRef(clazz);
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        throw_runtime_exception(env, message);
+        return;
+    }
+    jstring code = env->NewStringUTF(failure_code(failure));
+    jstring detail = env->NewStringUTF(message != nullptr ? message : "GGUF native failure");
+    if (code == nullptr || detail == nullptr) {
+        if (code != nullptr) env->DeleteLocalRef(code);
+        if (detail != nullptr) env->DeleteLocalRef(detail);
+        env->DeleteLocalRef(clazz);
+        if (env->ExceptionCheck()) env->ExceptionClear();
+        throw_runtime_exception(env, message);
+        return;
+    }
+    jobject exception = env->NewObject(clazz, constructor, code, detail);
+    if (exception != nullptr) {
+        env->Throw(static_cast<jthrowable>(exception));
+        env->DeleteLocalRef(exception);
+    }
+    env->DeleteLocalRef(detail);
+    env->DeleteLocalRef(code);
+    env->DeleteLocalRef(clazz);
+}
+
+static bool is_explicit_vulkan_error(const char* message) {
+    if (message == nullptr) return false;
+    std::string normalized(message);
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return normalized.find("vulkan") != std::string::npos ||
+           normalized.find("vk_error") != std::string::npos ||
+           normalized.find("vk::") != std::string::npos ||
+           normalized.find("device lost") != std::string::npos ||
+           normalized.find("errordevicelost") != std::string::npos ||
+           normalized.find("ggml_vk") != std::string::npos;
 }
 
 class JniString {
@@ -265,7 +345,13 @@ static void init_backend() {
     llama_backend_init();
 }
 
-static GgufSession* try_create_session(const char* path, int n_gpu_layers, int n_ctx_tokens,
+struct CreateResult {
+    GgufSession* session = nullptr;
+    GgufFailure failure = GgufFailure::Configuration;
+    std::string detail;
+};
+
+static CreateResult try_create_session(const char* path, int n_gpu_layers, int n_ctx_tokens,
                                        GgufCreateOperation* operation) {
     llama_model* model = nullptr;
     llama_context* ctx = nullptr;
@@ -273,24 +359,32 @@ static GgufSession* try_create_session(const char* path, int n_gpu_layers, int n
         ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU),
         nullptr,
     };
+    const bool using_gpu = n_gpu_layers > 0;
     try {
+        if (operation->abort_flag.load(std::memory_order_relaxed)) {
+            return {nullptr, GgufFailure::Cancellation, "GGUF create operation cancelled"};
+        }
         llama_model_params mparams = llama_model_default_params();
         mparams.n_gpu_layers = n_gpu_layers;
         mparams.use_mmap = true;
         mparams.progress_callback = load_progress_callback;
         mparams.progress_callback_user_data = &operation->abort_flag;
         if (n_gpu_layers == 0) {
-            if (cpu_devices[0] == nullptr) return nullptr;
+            if (cpu_devices[0] == nullptr) {
+                return {nullptr, GgufFailure::Configuration, "CPU backend is unavailable"};
+            }
             mparams.devices = cpu_devices;
         }
 
         model = llama_model_load_from_file(path, mparams);
         if (model == nullptr) {
-            return nullptr;
+            return operation->abort_flag.load(std::memory_order_relaxed)
+                ? CreateResult{nullptr, GgufFailure::Cancellation, "GGUF create operation cancelled"}
+                : CreateResult{nullptr, GgufFailure::Model, "failed to load GGUF model"};
         }
         if (operation->abort_flag.load(std::memory_order_relaxed)) {
             llama_model_free(model);
-            return nullptr;
+            return {nullptr, GgufFailure::Cancellation, "GGUF create operation cancelled"};
         }
 
         llama_context_params cparams = llama_context_default_params();
@@ -314,12 +408,14 @@ static GgufSession* try_create_session(const char* path, int n_gpu_layers, int n
         ctx = llama_init_from_model(model, cparams);
         if (ctx == nullptr) {
             llama_model_free(model);
-            return nullptr;
+            return operation->abort_flag.load(std::memory_order_relaxed)
+                ? CreateResult{nullptr, GgufFailure::Cancellation, "GGUF create operation cancelled"}
+                : CreateResult{nullptr, GgufFailure::Context, "failed to initialize GGUF context"};
         }
         if (operation->abort_flag.load(std::memory_order_relaxed)) {
             llama_free(ctx);
             llama_model_free(model);
-            return nullptr;
+            return {nullptr, GgufFailure::Cancellation, "GGUF create operation cancelled"};
         }
         // llama_context retains the callback pointer. The create-operation token is
         // released after this JNI call, so clear it before publishing the session.
@@ -330,8 +426,25 @@ static GgufSession* try_create_session(const char* path, int n_gpu_layers, int n
         session->ctx = ctx;
         session->vocab = llama_model_get_vocab(model);
         session->n_ctx = static_cast<int>(llama_n_ctx(ctx));
-        session->using_gpu = n_gpu_layers > 0;
-        return session;
+        session->using_gpu = using_gpu;
+        return {session, GgufFailure::Configuration, ""};
+    } catch (const std::exception& e) {
+        if (ctx != nullptr) {
+            try { llama_free(ctx); } catch (...) {}
+        }
+        if (model != nullptr) {
+            try { llama_model_free(model); } catch (...) {}
+        }
+        if (operation->abort_flag.load(std::memory_order_relaxed)) {
+            return {nullptr, GgufFailure::Cancellation, "GGUF create operation cancelled"};
+        }
+        return {
+            nullptr,
+            using_gpu && is_explicit_vulkan_error(e.what())
+                ? GgufFailure::VulkanBackend
+                : GgufFailure::Configuration,
+            e.what()
+        };
     } catch (...) {
         if (ctx != nullptr) {
             try { llama_free(ctx); } catch (...) {}
@@ -339,37 +452,49 @@ static GgufSession* try_create_session(const char* path, int n_gpu_layers, int n
         if (model != nullptr) {
             try { llama_model_free(model); } catch (...) {}
         }
-        return nullptr;
+        return operation->abort_flag.load(std::memory_order_relaxed)
+            ? CreateResult{nullptr, GgufFailure::Cancellation, "GGUF create operation cancelled"}
+            : CreateResult{nullptr, GgufFailure::Configuration, "failed to initialize GGUF runtime"};
     }
 }
 
-static GgufSession* create_session(const char* path, int n_ctx_tokens, int requested_gpu_layers,
+static CreateResult create_session(const char* path, int n_ctx_tokens, int requested_gpu_layers,
                                    GgufCreateOperation* operation) {
-    std::call_once(g_backend_once, init_backend);
+    const bool try_gpu = requested_gpu_layers > 0;
+    try {
+        std::call_once(g_backend_once, init_backend);
+    } catch (const std::exception& e) {
+        return {
+            nullptr,
+            try_gpu && is_explicit_vulkan_error(e.what())
+                ? GgufFailure::VulkanBackend
+                : GgufFailure::Configuration,
+            e.what()
+        };
+    } catch (...) {
+        return {nullptr, GgufFailure::Configuration, "failed to initialize GGUF backends"};
+    }
 
-    bool try_gpu = requested_gpu_layers > 0;
 #ifdef GGML_USE_VULKAN
     if (try_gpu) {
         try {
             int vk_devices = ggml_backend_vk_get_device_count();
             if (vk_devices <= 0) {
-                try_gpu = false;
+                return {nullptr, GgufFailure::VulkanBackend, "no Vulkan backend device is available"};
             }
+        } catch (const std::exception& e) {
+            return {nullptr, GgufFailure::VulkanBackend, e.what()};
         } catch (...) {
-            try_gpu = false;
+            return {nullptr, GgufFailure::VulkanBackend, "failed to enumerate Vulkan backend devices"};
         }
     }
 #else
-    try_gpu = false;
+    if (try_gpu) {
+        return {nullptr, GgufFailure::VulkanBackend, "Vulkan backend is not included in this build"};
+    }
 #endif
 
-    if (try_gpu) {
-        GgufSession* session = try_create_session(path, requested_gpu_layers, n_ctx_tokens, operation);
-        if (session != nullptr) return session;
-        if (operation->abort_flag.load(std::memory_order_relaxed)) return nullptr;
-    }
-
-    return try_create_session(path, 0, n_ctx_tokens, operation);
+    return try_create_session(path, requested_gpu_layers, n_ctx_tokens, operation);
 }
 
 static bool check_cancellation(JNIEnv* env, jobject callback, jmethodID is_cancelled) {
@@ -428,32 +553,35 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_createWithOperation(
     try {
         auto operation = find_create_operation(operation_handle);
         if (operation == nullptr) {
-            throw_runtime_exception(env, "invalid GGUF create operation");
+            throw_gguf_exception(env, GgufFailure::Session, "invalid GGUF create operation");
             return 0;
         }
         JniString path(env, model_path);
         if (path.c_str() == nullptr || path.c_str()[0] == '\0') {
-            throw_runtime_exception(env, "model path is empty");
+            throw_gguf_exception(env, GgufFailure::Model, "model path is empty");
             return 0;
         }
 
-        GgufSession* session = create_session(path.c_str(), static_cast<int>(context_tokens),
-                                              static_cast<int>(gpu_layers), operation.get());
-        if (session == nullptr) {
-            throw_runtime_exception(
+        CreateResult result = create_session(
+            path.c_str(),
+            static_cast<int>(context_tokens),
+            static_cast<int>(gpu_layers),
+            operation.get()
+        );
+        if (result.session == nullptr) {
+            throw_gguf_exception(
                 env,
-                operation->abort_flag.load(std::memory_order_relaxed)
-                    ? "GGUF create operation cancelled"
-                    : "failed to load GGUF model"
+                result.failure,
+                result.detail.empty() ? "failed to load GGUF model" : result.detail.c_str()
             );
             return 0;
         }
-        return register_session(session);
+        return register_session(result.session);
     } catch (const std::exception& e) {
-        throw_runtime_exception(env, e.what());
+        throw_gguf_exception(env, GgufFailure::Configuration, e.what());
         return 0;
     } catch (...) {
-        throw_runtime_exception(env, "failed to load GGUF model");
+        throw_gguf_exception(env, GgufFailure::Configuration, "failed to load GGUF model");
         return 0;
     }
 }
@@ -491,7 +619,7 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_prepareGeneration(
         JNIEnv* env, jclass, jlong handle) {
     auto session = find_session(handle);
     if (session == nullptr) {
-        throw_runtime_exception(env, "invalid GGUF session");
+        throw_gguf_exception(env, GgufFailure::Session, "invalid GGUF session");
         return;
     }
     session->abort_flag.store(false, std::memory_order_relaxed);
@@ -502,12 +630,16 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_getContextSize(
         JNIEnv* env, jclass, jlong handle) {
     try {
         auto session = find_session(handle);
-        return session != nullptr ? session->n_ctx : 0;
+        if (session == nullptr) {
+            throw_gguf_exception(env, GgufFailure::Session, "invalid GGUF session");
+            return 0;
+        }
+        return session->n_ctx;
     } catch (const std::exception& e) {
-        throw_runtime_exception(env, e.what());
+        throw_gguf_exception(env, GgufFailure::Session, e.what());
         return 0;
     } catch (...) {
-        throw_runtime_exception(env, "failed to query GGUF context size");
+        throw_gguf_exception(env, GgufFailure::Session, "failed to query GGUF context size");
         return 0;
     }
 }
@@ -517,17 +649,21 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_getBackendName(
         JNIEnv* env, jclass, jlong handle) {
     try {
         auto session = find_session(handle);
-        const char* name = (session != nullptr && session->using_gpu) ? "vulkan" : "cpu";
+        if (session == nullptr) {
+            throw_gguf_exception(env, GgufFailure::Session, "invalid GGUF session");
+            return nullptr;
+        }
+        const char* name = session->using_gpu ? "vulkan" : "cpu";
         jstring result = new_string_from_utf8(env, name, std::strlen(name));
         if (result == nullptr) {
             throw_runtime_exception(env, "failed to allocate GGUF backend name");
         }
         return result;
     } catch (const std::exception& e) {
-        throw_runtime_exception(env, e.what());
+        throw_gguf_exception(env, GgufFailure::Session, e.what());
         return nullptr;
     } catch (...) {
-        throw_runtime_exception(env, "failed to query GGUF backend name");
+        throw_gguf_exception(env, GgufFailure::Session, "failed to query GGUF backend name");
         return nullptr;
     }
 }
@@ -546,14 +682,14 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
         jobject callback) {
     auto session = find_session(handle);
     if (session == nullptr) {
-        throw_runtime_exception(env, "invalid GGUF session");
+        throw_gguf_exception(env, GgufFailure::Session, "invalid GGUF session");
         return nullptr;
     }
 
     try {
         std::lock_guard<std::mutex> lock(session->mutex);
         if (session->ctx == nullptr) {
-            throw_runtime_exception(env, "GGUF session is closed");
+            throw_gguf_exception(env, GgufFailure::Session, "GGUF session is closed");
             return nullptr;
         }
 
@@ -584,13 +720,13 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
 
         std::vector<llama_token> tokens = tokenize_prompt(session->vocab, prompt);
         if (tokens.empty()) {
-            throw_runtime_exception(env, "failed to tokenize prompt");
+            throw_gguf_exception(env, GgufFailure::Prompt, "failed to tokenize prompt");
             return nullptr;
         }
 
         int n_ctx = session->n_ctx;
         if (static_cast<int>(tokens.size()) >= n_ctx - 1) {
-            throw_runtime_exception(env, "prompt is too long for the configured context");
+            throw_gguf_exception(env, GgufFailure::Prompt, "prompt is too long for the configured context");
             return nullptr;
         }
 
@@ -625,7 +761,7 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
                 return new_string_from_utf8(env, "", 0);
             }
             if (ret != 0) {
-                throw_runtime_exception(env, "prefill decode failed");
+                throw_gguf_exception(env, GgufFailure::Decode, "prefill decode failed");
                 return nullptr;
             }
             if (abort_callback(&session->abort_flag) ||
@@ -682,7 +818,7 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
 
             if (ret == 2) break;
             if (ret != 0) {
-                throw_runtime_exception(env, "generation decode failed");
+                throw_gguf_exception(env, GgufFailure::Decode, "generation decode failed");
                 return nullptr;
             }
 
@@ -708,10 +844,16 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
         }
         return result;
     } catch (const std::exception& e) {
-        throw_runtime_exception(env, e.what());
+        throw_gguf_exception(
+            env,
+            session->using_gpu && is_explicit_vulkan_error(e.what())
+                ? GgufFailure::VulkanBackend
+                : GgufFailure::Decode,
+            e.what()
+        );
         return nullptr;
     } catch (...) {
-        throw_runtime_exception(env, "GGUF generation failed");
+        throw_gguf_exception(env, GgufFailure::Decode, "GGUF generation failed");
         return nullptr;
     }
 }

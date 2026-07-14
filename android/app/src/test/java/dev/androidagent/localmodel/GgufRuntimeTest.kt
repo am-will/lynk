@@ -4,15 +4,9 @@ import dev.androidagent.LocalModelBackend
 import dev.androidagent.localmodel.gguf.GgufModelKey
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
-import org.junit.Before
 import org.junit.Test
 
 class GgufRuntimeTest {
-
-    @Before
-    fun resetFallbackState() {
-        GgufVulkanFallbackState.isGpuDisabled = false
-    }
 
     @Test
     fun gpuLayersForGpuRequestsOffload() {
@@ -148,16 +142,4 @@ class GgufRuntimeTest {
         cache.invalidate()
     }
 
-    @Test
-    fun vulkanFallbackStateDefaultsToFalse() {
-        assertEquals(false, GgufVulkanFallbackState.isGpuDisabled)
-    }
-
-    @Test
-    fun vulkanFallbackStateCanBeSetAndReset() {
-        GgufVulkanFallbackState.isGpuDisabled = true
-        assertEquals(true, GgufVulkanFallbackState.isGpuDisabled)
-        GgufVulkanFallbackState.isGpuDisabled = false
-        assertEquals(false, GgufVulkanFallbackState.isGpuDisabled)
-    }
 }
