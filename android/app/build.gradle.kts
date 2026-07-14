@@ -46,8 +46,10 @@ android {
                     "-DLLAMA_BUILD_UI=OFF",
                     "-DGGML_OPENMP=OFF"
                 )
-                cFlags += listOf("-O3", "-march=armv8.2-a+dotprod")
-                cppFlags += listOf("-O3", "-march=armv8.2-a+dotprod")
+                // Keep generic native code on the arm64-v8a ABI baseline. llama.cpp/ggml
+                // feature-gates optimized ARM kernels; global -march flags bypass that safety.
+                cFlags += "-O3"
+                cppFlags += "-O3"
             }
         }
     }
