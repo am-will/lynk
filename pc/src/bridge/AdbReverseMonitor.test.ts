@@ -27,3 +27,23 @@ test("ADB reverse monitor is opt-in", () => {
     }
   }
 });
+
+test("explicit monitor options override the legacy environment fallback", () => {
+  const previous = process.env.PHONE_AGENT_ADB_REVERSE;
+  try {
+    process.env.PHONE_AGENT_ADB_REVERSE = "1";
+    const monitor = startAdbReverseMonitor({
+      port: 8788,
+      enabled: false,
+      adbPath: "missing-adb-for-test",
+      intervalMs: 1
+    });
+    monitor.stop();
+  } finally {
+    if (previous === undefined) {
+      delete process.env.PHONE_AGENT_ADB_REVERSE;
+    } else {
+      process.env.PHONE_AGENT_ADB_REVERSE = previous;
+    }
+  }
+});

@@ -14,6 +14,7 @@ const originalDevinPermissionMode = process.env.DEVIN_PERMISSION_MODE;
 const configEnvironmentKeys = [
   "PHONE_AGENT_ALLOW_UNSAFE_DEVELOPMENT",
   "PHONE_AGENT_PORT",
+  "PHONE_AGENT_ADB_REVERSE",
   "PHONE_AGENT_HOST",
   "PHONE_AGENT_DEFAULT_DEVICE",
   "PHONE_AGENT_BRIDGE_URL",
@@ -151,6 +152,24 @@ test("getBridgeConfig parses ports as exact bounded integers", () => {
 
   process.env.PHONE_AGENT_PORT = "65535";
   assert.equal(getBridgeConfig().port, 65_535);
+});
+
+test("getBridgeConfig persists ADB reverse self-healing with an exact env override", () => {
+  process.env.PHONE_AGENT_TOKEN = strongTestToken;
+  const defaults = getBridgeConfig();
+  assert.equal(defaults.adbReverseEnabled, false);
+
+  const hostConfig = JSON.parse(readFileSync(defaults.configPath, "utf8")) as Record<string, unknown>;
+  hostConfig.phoneAgentAdbReverse = true;
+  writeFileSync(defaults.configPath, `${JSON.stringify(hostConfig, null, 2)}\n`, { mode: 0o600 });
+  assert.equal(getBridgeConfig().adbReverseEnabled, true);
+
+  process.env.PHONE_AGENT_ADB_REVERSE = "0";
+  assert.equal(getBridgeConfig().adbReverseEnabled, false);
+  process.env.PHONE_AGENT_ADB_REVERSE = "1";
+  assert.equal(getBridgeConfig().adbReverseEnabled, true);
+  process.env.PHONE_AGENT_ADB_REVERSE = "true";
+  assert.throws(() => getBridgeConfig(), /PHONE_AGENT_ADB_REVERSE must be exactly/);
 });
 
 test("getBridgeConfig validates network-facing URL schemes and credentials", () => {

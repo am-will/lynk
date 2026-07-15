@@ -178,6 +178,8 @@ The listener should show `*:8788`, not only `127.0.0.1:8788`.
 
 USB mode is useful while installing or debugging, but it depends on `adb reverse`. It is not part of the normal pairing QR because the app must keep working after the cable is unplugged.
 
+For an installed bridge that should repair the USB tunnel after APK reinstalls, cable reconnects, or ADB restarts, set `"phoneAgentAdbReverse": true` in the persistent host config shown by `lynk-bridge-host service-status`, then restart the bridge service. The bridge will reapply the reverse mapping for every authorized connected device. This remains opt-in because it is a development-only USB transport.
+
 ```bash
 cd pc
 PHONE_AGENT_ADB_REVERSE=1 npm run bridge
@@ -190,7 +192,7 @@ In this mode the Android app may use:
 ws://127.0.0.1:8788/phone
 ```
 
-Run `npm run phone:usb` again after reconnecting USB.
+Without persistent self-healing enabled, run `npm run phone:usb` again after reconnecting USB.
 
 To intentionally include USB reverse in a development pairing payload, run:
 

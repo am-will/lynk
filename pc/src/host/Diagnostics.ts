@@ -22,6 +22,7 @@ export async function buildDiagnosticsBundle(): Promise<Record<string, unknown>>
     bridge: {
       host: bridgeConfig.host,
       port: bridgeConfig.port,
+      adbReverseEnabled: bridgeConfig.adbReverseEnabled,
       defaultDeviceId: bridgeConfig.defaultDeviceId,
       bridgeUrl: bridgeConfig.bridgeUrl,
       codexConfigured: bridgeConfig.codexConfigured,

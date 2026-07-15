@@ -24,7 +24,10 @@ const blobs = new HostBlobStore(hostPaths.blobRoot);
 const chatBridge = new OpenClawChatBridge(config, hub, dispatcher, audit, undefined, blobs);
 const realtimeClient = new OpenAiRealtimeClient(config);
 const webSearchClient = new OpenAiWebSearchClient(config);
-const adbReverseMonitor = startAdbReverseMonitor({ port: config.port });
+const adbReverseMonitor = startAdbReverseMonitor({
+  port: config.port,
+  enabled: config.adbReverseEnabled
+});
 
 let realtimeTaskManager: RealtimeTaskManager;
 

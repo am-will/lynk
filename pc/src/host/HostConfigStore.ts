@@ -12,6 +12,7 @@ export interface HostBridgeConfigFile {
   phoneAgentToken: string;
   phoneAgentHost?: string;
   phoneAgentPort?: number;
+  phoneAgentAdbReverse?: boolean;
   phoneAgentDefaultDevice?: string;
   phoneAgentBridgeUrl?: string;
   openClawGatewayUrl?: string;
@@ -62,6 +63,7 @@ const hostBridgeConfigFileSchema = z.object({
   phoneAgentToken: z.string().trim().min(1),
   phoneAgentHost: z.string().min(1).optional(),
   phoneAgentPort: z.number().int().min(1).max(65_535).optional(),
+  phoneAgentAdbReverse: z.boolean().optional(),
   phoneAgentDefaultDevice: z.string().min(1).optional(),
   phoneAgentBridgeUrl: z.string().min(1).optional(),
   openClawGatewayUrl: z.string().min(1).optional(),
@@ -151,6 +153,7 @@ export function loadOrCreateHostBridgeConfig(path = defaultHostBridgeConfigPath(
     phoneAgentToken: randomBytes(32).toString("hex"),
     phoneAgentHost: "0.0.0.0",
     phoneAgentPort: 8788,
+    phoneAgentAdbReverse: false,
     phoneAgentDefaultDevice: "openclaw-agent",
     phoneAgentBridgeUrl: "http://127.0.0.1:8788",
     openClawGatewayUrl: "ws://127.0.0.1:18789",

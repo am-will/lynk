@@ -11,6 +11,7 @@ import type { HarnessChatAdapter, HarnessCreatedSession, HarnessSessionList } fr
 const config: BridgeConfig = {
   host: "127.0.0.1",
   port: 8788,
+  adbReverseEnabled: false,
   token: "token",
   defaultDeviceId: "pixel",
   bridgeUrl: "http://127.0.0.1:8788",

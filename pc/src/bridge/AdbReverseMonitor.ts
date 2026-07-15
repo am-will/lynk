@@ -10,12 +10,13 @@ export interface AdbReverseMonitor {
 
 export interface AdbReverseMonitorOptions {
   port: number;
+  enabled?: boolean;
   intervalMs?: number;
   adbPath?: string;
 }
 
 export function startAdbReverseMonitor(options: AdbReverseMonitorOptions): AdbReverseMonitor {
-  const enabled = process.env.PHONE_AGENT_ADB_REVERSE === "1";
+  const enabled = options.enabled ?? process.env.PHONE_AGENT_ADB_REVERSE === "1";
   if (!enabled) {
     return { stop: () => undefined };
   }

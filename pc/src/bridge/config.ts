@@ -9,6 +9,7 @@ import { defaultWorkspaceRoot } from "../host/HostPaths.js";
 export interface BridgeConfig {
   host: string;
   port: number;
+  adbReverseEnabled: boolean;
   token: string;
   defaultDeviceId: string;
   bridgeUrl: string;
@@ -129,6 +130,18 @@ function readPort(configPort: number): number {
   return port;
 }
 
+function readBinaryFlag(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") {
+    return fallback;
+  }
+  const normalized = raw.trim();
+  if (normalized !== "0" && normalized !== "1") {
+    throw new Error(`${name} must be exactly 0, 1, or unset.`);
+  }
+  return normalized === "1";
+}
+
 function parsePositiveInteger(name: string, raw: string): number {
   if (!/^[1-9]\d*$/u.test(raw)) {
     throw new Error(`${name} must be a positive integer.`);
@@ -230,6 +243,7 @@ export function getBridgeConfig(): BridgeConfig {
   return {
     host: bridgeHost,
     port,
+    adbReverseEnabled: readBinaryFlag("PHONE_AGENT_ADB_REVERSE", host.phoneAgentAdbReverse ?? false),
     token: readPhoneAgentToken(host.phoneAgentToken),
     defaultDeviceId: readRequiredText("PHONE_AGENT_DEFAULT_DEVICE", process.env.PHONE_AGENT_DEFAULT_DEVICE ?? host.phoneAgentDefaultDevice ?? "openclaw-agent"),
     bridgeUrl,

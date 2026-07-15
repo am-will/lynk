@@ -43,6 +43,7 @@ Pairing candidates are ordered from endpoints that are actually usable:
 The Node bridge does not terminate TLS by default and therefore never invents LAN or Tailscale `wss://` candidates. Without a usable endpoint, pairing JSON includes an actionable warning and QR mode exits without producing a dead QR.
 
 USB reverse is not included in normal pairing because it depends on `adb reverse`. For development-only USB pairing, set `PHONE_AGENT_PAIRING_INCLUDE_USB=1` before printing the pairing QR.
+To make an installed bridge restore its development USB tunnel automatically, set `"phoneAgentAdbReverse": true` in the persistent host config and restart the service. The setting is intentionally opt-in and does not expose any non-phone harness transport.
 Loopback is also omitted from normal Android pairing because `127.0.0.1` points at the phone, not the host. For host-local diagnostics, set `PHONE_AGENT_PAIRING_INCLUDE_LOOPBACK=1`.
 
 Only the token-authenticated phone-facing bridge should be reachable over Tailscale. OpenClaw Gateway, Hermes, Codex app-server, Devin ACP stdio, and other host-agent transports should stay on localhost or trusted private networks. On Android, MagicDNS may require enabling **Use Tailscale DNS** in the Tailscale app; the `100.x.y.z` candidate remains the reliable fallback.
