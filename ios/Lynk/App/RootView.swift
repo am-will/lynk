@@ -7,41 +7,45 @@ struct RootView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                Spacer()
-                Image(systemName: bridge.phase == .registered ? "bolt.horizontal.circle.fill" : "bolt.horizontal.circle")
-                    .font(.system(size: 58, weight: .light))
-                    .foregroundStyle(bridge.phase == .registered ? Color.accentColor : Color.secondary)
-                    .accessibilityIdentifier("connection-symbol")
-                Text("Lynk")
-                    .font(.largeTitle.bold())
-                Text(bridge.phase.label)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .accessibilityIdentifier("connection-status")
+            VStack(spacing: 0) {
                 if bridge.phase != .registered {
-                    Button("Connect") { bridge.connect(using: settings.snapshot) }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(settings.snapshot.token.isEmpty)
+                    ConnectionBanner(
+                        label: bridge.phase.label,
+                        canConnect: !settings.snapshot.token.isEmpty,
+                        connect: { bridge.connect(using: settings.snapshot) }
+                    )
                 }
-                Spacer()
-                Text("Native iPhone chat client")
-                    .font(.footnote)
-                    .foregroundStyle(.tertiary)
+                ChatView(showingSettings: $showingSettings)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding()
-            .background(Color(.systemBackground))
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Settings", systemImage: "gearshape") { showingSettings = true }
-                        .accessibilityIdentifier("settings-button")
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Settings", systemImage: "gearshape") { showingSettings = true }
+                            .accessibilityIdentifier("settings-button")
+                    }
                 }
-            }
-            .sheet(isPresented: $showingSettings) {
-                SettingsView()
-            }
         }
+        .sheet(isPresented: $showingSettings) { SettingsView() }
+    }
+}
+
+private struct ConnectionBanner: View {
+    let label: String
+    let canConnect: Bool
+    let connect: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "bolt.horizontal.circle")
+            Text(label).lineLimit(1)
+            Spacer()
+            Button("Connect", action: connect).disabled(!canConnect)
+        }
+        .font(.subheadline)
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial)
+        .overlay(alignment: .bottom) { Divider() }
+        .accessibilityIdentifier("connection-status")
     }
 }
 
@@ -49,5 +53,5 @@ struct RootView: View {
     RootView()
         .environment(BridgeClient())
         .environment(SettingsStore())
+        .environment(ChatStore())
 }
-

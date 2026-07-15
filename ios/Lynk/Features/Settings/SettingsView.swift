@@ -35,6 +35,7 @@ struct SettingsView: View {
                     Button("Reconnect") { bridge.connect(using: settings.snapshot) }
                 }
             }
+            .accessibilityIdentifier("settings-view")
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

@@ -14,11 +14,16 @@
 		266F35AF015774FFEDF0136A /* LynkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C78EDB8B71EB93B5CDD23F10 /* LynkApp.swift */; };
 		4E843526799BA6E2FD5750CC /* AppContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B18EAF5FB8D913C5D57BFBFC /* AppContainer.swift */; };
 		5C26A6DF7BC3B57C9C96C9FA /* BridgeRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70A0F6402671314E1157127 /* BridgeRegistration.swift */; };
+		74E5BB267F0F3004EA068A36 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D75E38AC85E8F1F1F4C12061 /* ChatView.swift */; };
 		7F3C74BEFD4E60D2A8B90AF2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA02C6438CE2B85F069053F8 /* SettingsView.swift */; };
 		81C072AD7A3CC9323D1D13F6 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABC8ED8E9C64ACE7E008DC1C /* RootView.swift */; };
+		96A8E082D1FF2FA2C81CDB4F /* ChatStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25518B5415F52EF38D3C3EC5 /* ChatStoreTests.swift */; };
 		AB1ED8747A0011901FCAFAC5 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E061195B979C0FDE4025E49 /* SettingsStore.swift */; };
+		B1620919A2A967E744792CAE /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C59BC17A04A11E5EC806E3D7 /* ChatModels.swift */; };
 		BA2C0121F3B97BB04CDBFF05 /* BridgeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D073E826D35527CA5EDEB117 /* BridgeClient.swift */; };
+		C2D16D756EA8DF6C25ACB348 /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1C39E1EA3094760B1BFEEA /* TimelineView.swift */; };
 		DFC821500DA7A51B5E81F1D3 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82FB1A0B0DB416485ADD4586 /* KeychainStore.swift */; };
+		E4760B6B15FB715C38A764DB /* ChatPickers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6602C2ED5D5237135182D331 /* ChatPickers.swift */; };
 		F49FF1A1957AD34A6375E9A5 /* BridgeEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDAC323DB1F7726441A7F697 /* BridgeEndpoint.swift */; };
 		F9D82B57FE748F1E0070D28A /* BridgeRegistrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCB1383DAF6B2C71CA082BBF /* BridgeRegistrationTests.swift */; };
 /* End PBXBuildFile section */
@@ -43,10 +48,12 @@
 /* Begin PBXFileReference section */
 		05DAB1BCAFE7CF6742257063 /* Lynk.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Lynk.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2031A097C8BBD3ADF2EF47F0 /* LynkUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = LynkUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		25518B5415F52EF38D3C3EC5 /* ChatStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStoreTests.swift; sourceTree = "<group>"; };
 		2A37A63DE24881FB82768CB8 /* LynkUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LynkUITests.swift; sourceTree = "<group>"; };
 		2AD2E8682BF953BDE281867A /* JSONValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONValue.swift; sourceTree = "<group>"; };
 		3E061195B979C0FDE4025E49 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
 		49A41FFA7CF088FD6111A5E8 /* BridgeEndpointTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeEndpointTests.swift; sourceTree = "<group>"; };
+		6602C2ED5D5237135182D331 /* ChatPickers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatPickers.swift; sourceTree = "<group>"; };
 		82FB1A0B0DB416485ADD4586 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		8656883AF0E059E0B7E30B99 /* LynkTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = LynkTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A283C841179C3EE36630F875 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -54,8 +61,11 @@
 		B18EAF5FB8D913C5D57BFBFC /* AppContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContainer.swift; sourceTree = "<group>"; };
 		BA02C6438CE2B85F069053F8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		BCB1383DAF6B2C71CA082BBF /* BridgeRegistrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeRegistrationTests.swift; sourceTree = "<group>"; };
+		C59BC17A04A11E5EC806E3D7 /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
 		C78EDB8B71EB93B5CDD23F10 /* LynkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LynkApp.swift; sourceTree = "<group>"; };
+		CB1C39E1EA3094760B1BFEEA /* TimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineView.swift; sourceTree = "<group>"; };
 		D073E826D35527CA5EDEB117 /* BridgeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeClient.swift; sourceTree = "<group>"; };
+		D75E38AC85E8F1F1F4C12061 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		E5399B2E25497A1BCB2C631F /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
 		F70A0F6402671314E1157127 /* BridgeRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeRegistration.swift; sourceTree = "<group>"; };
 		FDAC323DB1F7726441A7F697 /* BridgeEndpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeEndpoint.swift; sourceTree = "<group>"; };
@@ -67,6 +77,7 @@
 			children = (
 				49A41FFA7CF088FD6111A5E8 /* BridgeEndpointTests.swift */,
 				BCB1383DAF6B2C71CA082BBF /* BridgeRegistrationTests.swift */,
+				25518B5415F52EF38D3C3EC5 /* ChatStoreTests.swift */,
 			);
 			path = LynkTests;
 			sourceTree = "<group>";
@@ -193,7 +204,11 @@
 		B94AAF5E03D419431EFDD151 /* Chat */ = {
 			isa = PBXGroup;
 			children = (
+				C59BC17A04A11E5EC806E3D7 /* ChatModels.swift */,
+				6602C2ED5D5237135182D331 /* ChatPickers.swift */,
 				E5399B2E25497A1BCB2C631F /* ChatStore.swift */,
+				D75E38AC85E8F1F1F4C12061 /* ChatView.swift */,
+				CB1C39E1EA3094760B1BFEEA /* TimelineView.swift */,
 			);
 			path = Chat;
 			sourceTree = "<group>";
@@ -302,13 +317,17 @@
 				BA2C0121F3B97BB04CDBFF05 /* BridgeClient.swift in Sources */,
 				F49FF1A1957AD34A6375E9A5 /* BridgeEndpoint.swift in Sources */,
 				5C26A6DF7BC3B57C9C96C9FA /* BridgeRegistration.swift in Sources */,
+				B1620919A2A967E744792CAE /* ChatModels.swift in Sources */,
+				E4760B6B15FB715C38A764DB /* ChatPickers.swift in Sources */,
 				174C3C0161B2C0065E11EA45 /* ChatStore.swift in Sources */,
+				74E5BB267F0F3004EA068A36 /* ChatView.swift in Sources */,
 				0F3A2F75AD3FD65EF09E1FC8 /* JSONValue.swift in Sources */,
 				DFC821500DA7A51B5E81F1D3 /* KeychainStore.swift in Sources */,
 				266F35AF015774FFEDF0136A /* LynkApp.swift in Sources */,
 				81C072AD7A3CC9323D1D13F6 /* RootView.swift in Sources */,
 				AB1ED8747A0011901FCAFAC5 /* SettingsStore.swift in Sources */,
 				7F3C74BEFD4E60D2A8B90AF2 /* SettingsView.swift in Sources */,
+				C2D16D756EA8DF6C25ACB348 /* TimelineView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -326,6 +345,7 @@
 			files = (
 				09359FDA6FBD96B5A71AA377 /* BridgeEndpointTests.swift in Sources */,
 				F9D82B57FE748F1E0070D28A /* BridgeRegistrationTests.swift in Sources */,
+				96A8E082D1FF2FA2C81CDB4F /* ChatStoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -8,7 +8,6 @@ final class LynkUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["Lynk"].waitForExistence(timeout: 5))
         app.buttons["settings-button"].tap()
-        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.descendants(matching: .any)["settings-view"].waitForExistence(timeout: 3))
     }
 }
-

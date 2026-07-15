@@ -1,6 +1,7 @@
 import XCTest
 @testable import Lynk
 
+@MainActor
 final class BridgeRegistrationTests: XCTestCase {
     func testIOSRegistrationExcludesPhoneControl() {
         XCTAssertEqual(BridgeRegistration.platform, "ios")
@@ -27,4 +28,3 @@ final class BridgeRegistrationTests: XCTestCase {
         XCTAssertFalse(prompt.localizedCaseInsensitiveContains("android-phone"))
     }
 }
-

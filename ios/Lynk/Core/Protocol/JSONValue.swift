@@ -44,5 +44,33 @@ enum JSONValue: Codable, Equatable, Sendable {
         guard case let .array(value) = self else { return nil }
         return value
     }
+
+    var numberValue: Double? {
+        guard case let .number(value) = self else { return nil }
+        return value
+    }
+
+    var boolValue: Bool? {
+        guard case let .bool(value) = self else { return nil }
+        return value
+    }
+
+    var displayText: String {
+        switch self {
+        case let .string(value): value
+        case let .number(value): value.formatted()
+        case let .bool(value): value ? "true" : "false"
+        case .null: "null"
+        case .array, .object:
+            ((try? JSONEncoder.pretty.encode(self)).flatMap { String(data: $0, encoding: .utf8) }) ?? ""
+        }
+    }
 }
 
+private extension JSONEncoder {
+    static var pretty: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        return encoder
+    }
+}

@@ -1,0 +1,216 @@
+import SwiftUI
+
+struct ChatView: View {
+    @Binding var showingSettings: Bool
+    @Environment(ChatStore.self) private var chat
+    @Environment(BridgeClient.self) private var bridge
+    @Environment(SettingsStore.self) private var settings
+    @State private var draft = ""
+    @State private var activeSendMode = ActiveSendMode.steer
+    @State private var showingModels = false
+    @State private var showingSessions = false
+    @State private var showingNewSession = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ChatContextBar(
+                chat: chat,
+                deviceID: settings.snapshot.deviceID,
+                bridge: bridge,
+                showModels: { showingModels = true },
+                showSessions: { showingSessions = true }
+            )
+            Divider()
+            TimelineView(chat: chat, deviceID: settings.snapshot.deviceID, bridge: bridge)
+            if let ratio = chat.usage.contextRatio {
+                UsageBar(usage: chat.usage, ratio: ratio)
+            }
+            if let error = chat.error {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.top, 6)
+            }
+            CommandSuggestions(draft: $draft, commands: chat.commands)
+            ComposerView(
+                draft: $draft,
+                isRunning: chat.isRunning,
+                sendMode: $activeSendMode,
+                send: send,
+                stop: { chat.stop(deviceID: settings.snapshot.deviceID, bridge: bridge) }
+            )
+        }
+        .navigationTitle(chat.harnessLabel ?? "Lynk")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingModels) {
+            ModelPickerView(chat: chat, deviceID: settings.snapshot.deviceID, bridge: bridge)
+        }
+        .sheet(isPresented: $showingSessions) {
+            SessionPickerView(
+                chat: chat,
+                deviceID: settings.snapshot.deviceID,
+                bridge: bridge,
+                newSession: { showingSessions = false; showingNewSession = true }
+            )
+        }
+        .sheet(isPresented: $showingNewSession) {
+            NewSessionView(chat: chat, deviceID: settings.snapshot.deviceID, bridge: bridge)
+        }
+    }
+
+    private func send() {
+        let text = draft
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        draft = ""
+        chat.send(
+            text: text,
+            delivery: activeSendMode,
+            systemPrompt: settings.snapshot.systemPrompt,
+            deviceID: settings.snapshot.deviceID,
+            bridge: bridge
+        )
+    }
+}
+
+private struct ChatContextBar: View {
+    let chat: ChatStore
+    let deviceID: String
+    let bridge: BridgeClient
+    let showModels: () -> Void
+    let showSessions: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: showModels) {
+                Label(chat.selectedModelOption?.label ?? chat.selectedModel ?? "Choose model", systemImage: "cpu")
+                    .lineLimit(1)
+            }
+            .buttonStyle(.bordered)
+            Button(action: showSessions) {
+                HStack(spacing: 5) {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                    Text(chat.sessions.first(where: { $0.key == chat.sessionKey })?.title ?? "Sessions")
+                        .lineLimit(1)
+                    let unread = chat.unreadReplies.values.reduce(0) { $0 + $1.count }
+                    if unread > 0 { Text("\(unread)").font(.caption.bold()).foregroundStyle(.red) }
+                }
+            }
+            .buttonStyle(.bordered)
+            Spacer(minLength: 0)
+            Menu {
+                ForEach(chat.effectiveReasoningOptions) { option in
+                    Button {
+                        chat.setReasoning(option.id, deviceID: deviceID, bridge: bridge)
+                    } label: {
+                        if option.id == chat.reasoningEffort { Label(option.label, systemImage: "checkmark") }
+                        else { Text(option.label) }
+                    }
+                }
+            } label: {
+                Image(systemName: "brain.head.profile")
+                    .frame(width: 28, height: 28)
+            }
+            .disabled(chat.effectiveReasoningOptions.isEmpty)
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+    }
+}
+
+private struct UsageBar: View {
+    let usage: ChatUsage
+    let ratio: Double
+
+    var body: some View {
+        VStack(spacing: 3) {
+            ProgressView(value: ratio)
+                .tint(ratio > 0.9 ? .red : ratio > 0.7 ? .orange : .accentColor)
+            HStack {
+                Text("Context \((ratio * 100).formatted(.number.precision(.fractionLength(0))))%")
+                Spacer()
+                if let total = usage.totalTokens { Text("\(total.formatted()) tokens") }
+            }
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal)
+        .padding(.top, 5)
+    }
+}
+
+private struct ComposerView: View {
+    @Binding var draft: String
+    let isRunning: Bool
+    @Binding var sendMode: ActiveSendMode
+    let send: () -> Void
+    let stop: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            if isRunning {
+                Picker("Active send", selection: $sendMode) {
+                    ForEach(ActiveSendMode.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+            }
+            HStack(alignment: .bottom, spacing: 10) {
+                TextField("Message Lynk", text: $draft, axis: .vertical)
+                    .lineLimit(1...6)
+                    .textFieldStyle(.plain)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 10)
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+                    .accessibilityIdentifier("composer")
+                    .onSubmit(send)
+                if isRunning {
+                    Button(action: stop) {
+                        Image(systemName: "stop.fill").frame(width: 38, height: 38)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .accessibilityLabel("Stop")
+                }
+                Button(action: send) {
+                    Image(systemName: isRunning && sendMode == .steer ? "arrow.triangle.turn.up.right.diamond.fill" : "arrow.up")
+                        .frame(width: 38, height: 38)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityLabel("Send")
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+        }
+        .padding(.top, 8)
+        .background(.bar)
+    }
+}
+
+private struct CommandSuggestions: View {
+    @Binding var draft: String
+    let commands: [ChatCommand]
+
+    var matches: [ChatCommand] {
+        guard draft.hasPrefix("/") else { return [] }
+        let query = draft.dropFirst().lowercased()
+        return commands.filter { $0.name.lowercased().hasPrefix(query) || $0.aliases.contains { $0.lowercased().hasPrefix(draft.lowercased()) } }.prefix(6).map { $0 }
+    }
+
+    var body: some View {
+        if !matches.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack {
+                    ForEach(matches) { command in
+                        Button("/\(command.name)") { draft = "/\(command.name) " }
+                            .buttonStyle(.bordered)
+                    }
+                }
+                .padding(.horizontal)
+            }
+            .padding(.vertical, 4)
+        }
+    }
+}
