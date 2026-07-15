@@ -1,0 +1,71 @@
+name: Lynk
+options:
+  bundleIdPrefix: app
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "26.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: targeted
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+targets:
+  Lynk:
+    type: application
+    platform: iOS
+    sources:
+      - path: Lynk
+    info:
+      path: Lynk/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: Lynk
+        UILaunchScreen: {}
+        NSMicrophoneUsageDescription: Lynk uses the microphone for voice conversations and composer transcription.
+        NSLocalNetworkUsageDescription: Lynk connects to your private Lynk bridge on your local network.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIBackgroundModes: []
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.lynk
+        PRODUCT_NAME: Lynk
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+  LynkTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: LynkTests
+    dependencies:
+      - target: Lynk
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.lynk.tests
+        GENERATE_INFOPLIST_FILE: YES
+  LynkUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: LynkUITests
+    dependencies:
+      - target: Lynk
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.lynk.uitests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  Lynk:
+    build:
+      targets:
+        Lynk: all
+        LynkTests: [test]
+        LynkUITests: [test]
+    test:
+      targets:
+        - LynkTests
+        - LynkUITests
+
