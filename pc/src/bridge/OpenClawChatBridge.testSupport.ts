@@ -53,7 +53,9 @@ export class FakeGatewayClient {
   sendError?: Error;
   patchError?: Error;
   historyError?: Error;
+  createError?: Error;
   createGate?: Promise<void>;
+  createResponse?: Record<string, unknown>;
   sendGate?: Promise<void>;
   beforeSendResolve?: (
     result: { runId: string; sessionKey: string },
@@ -107,10 +109,14 @@ export class FakeGatewayClient {
   async createSession(options: { key?: string; label?: string; model?: string; workspacePath?: string; createWorkspaceIfMissing?: boolean }): Promise<unknown> {
     this.created.push(options);
     await this.createGate;
+    if (this.createError) throw this.createError;
     if (options.label && this.duplicateLabels.has(options.label)) {
       throw new Error(`Session label "${options.label}" is already used`);
     }
-    return { key: `agent:main:explicit:${options.key ?? "created"}`, sessionId: `session_${this.created.length}` };
+    return this.createResponse ?? {
+      key: `agent:main:explicit:${options.key ?? "created"}`,
+      sessionId: `session_${this.created.length}`
+    };
   }
 
   async patchSession(sessionKey: string, patch: Record<string, unknown>): Promise<unknown> {

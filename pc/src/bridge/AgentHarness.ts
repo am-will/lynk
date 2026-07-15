@@ -21,6 +21,7 @@ export interface HarnessDescriptor {
   id: HarnessId;
   label: string;
   supportsWorkspaces: boolean;
+  requiresExplicitSessionCreation: boolean;
   enabled(config: HarnessEnabledConfig): boolean;
   defaultSessionKey(config: DefaultSessionKeyConfig, deviceId: string): string;
   readinessAction: string;
@@ -40,6 +41,7 @@ const HARNESS_DESCRIPTORS = {
     id: "openclaw",
     label: "OpenClaw",
     supportsWorkspaces: false,
+    requiresExplicitSessionCreation: false,
     enabled: () => true,
     defaultSessionKey: (config, deviceId) => defaultSessionKeyForDevice(config, deviceId),
     readinessAction: "Install and start OpenClaw Gateway, then run host integration refresh.",
@@ -49,6 +51,7 @@ const HARNESS_DESCRIPTORS = {
     id: "hermes",
     label: "Hermes",
     supportsWorkspaces: false,
+    requiresExplicitSessionCreation: false,
     enabled: (config) => Boolean(config.hermesConfigured ?? config.hermesApiKey),
     defaultSessionKey: (config, deviceId) => `hermes:${sanitizeSessionSegment(config.hermesDefaultSessionId)}-${sanitizeSessionSegment(deviceId)}`,
     readinessAction: "Set HERMES_API_KEY or configure Hermes in the host bridge config, then run host integration refresh.",
@@ -58,6 +61,7 @@ const HARNESS_DESCRIPTORS = {
     id: "codex",
     label: "Codex",
     supportsWorkspaces: true,
+    requiresExplicitSessionCreation: false,
     enabled: (config) => config.codexConfigured,
     defaultSessionKey: (_config, deviceId) => `codex:${sanitizeSessionSegment(deviceId)}`,
     readinessAction: "Install Codex CLI with app-server support, then run host integration refresh.",
@@ -67,6 +71,7 @@ const HARNESS_DESCRIPTORS = {
     id: "opencode",
     label: "OpenCode",
     supportsWorkspaces: true,
+    requiresExplicitSessionCreation: false,
     enabled: (config) => Boolean(config.opencodeConfigured),
     defaultSessionKey: (_config, deviceId) => `opencode:${sanitizeSessionSegment(deviceId)}`,
     readinessAction: "Install OpenCode CLI or configure OPENCODE_SERVER_URL, then run host integration refresh.",
@@ -76,6 +81,7 @@ const HARNESS_DESCRIPTORS = {
     id: "pi",
     label: "Pi",
     supportsWorkspaces: true,
+    requiresExplicitSessionCreation: false,
     enabled: (config) => Boolean(config.piConfigured),
     defaultSessionKey: (_config, deviceId) => `pi:${sanitizeSessionSegment(deviceId)}`,
     readinessAction: "Configure Pi credentials and available models in the Pi agent directory, then run host integration refresh.",
@@ -85,6 +91,7 @@ const HARNESS_DESCRIPTORS = {
     id: "devin",
     label: "Devin",
     supportsWorkspaces: true,
+    requiresExplicitSessionCreation: true,
     enabled: (config) => Boolean(config.devinConfigured),
     defaultSessionKey: (_config, deviceId) => `devin:${sanitizeSessionSegment(deviceId)}`,
     readinessAction: "Install and authenticate the Devin CLI, then run host integration refresh.",
@@ -117,6 +124,10 @@ export function harnessInfos(config: HarnessEnabledConfig): HarnessInfo[] {
 
 export function isWorkspaceAwareHarness(harnessId: HarnessId): boolean {
   return harnessDescriptor(harnessId).supportsWorkspaces;
+}
+
+export function requiresExplicitSessionCreation(harnessId: HarnessId): boolean {
+  return harnessDescriptor(harnessId).requiresExplicitSessionCreation;
 }
 
 export function encodeHarnessModel(harnessId: HarnessId, modelId: string): string {

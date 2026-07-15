@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChatCommandOption, ChatModelOption, ChatSessionSummary } from "../../protocol/messages.js";
 import type { ResolvedChatAttachment } from "../../attachments/AttachmentTypes.js";
-import { defaultSessionKeyForHarness, harnessDescriptors, harnessInfos, isWorkspaceAwareHarness, type HarnessId } from "../AgentHarness.js";
+import {
+  defaultSessionKeyForHarness,
+  harnessDescriptors,
+  harnessInfos,
+  isWorkspaceAwareHarness,
+  requiresExplicitSessionCreation,
+  type HarnessId
+} from "../AgentHarness.js";
 import type { BridgeConfig } from "../config.js";
 import type { GatewayChatSendResult, GatewayEventHandler, HarnessCapabilities } from "../chat/ChatTransportTypes.js";
 import { HarnessChatRouter } from "./HarnessChatRouter.js";
@@ -157,6 +164,8 @@ test("harness descriptors cover labels workspaces enabled state and default keys
   assert.equal(isWorkspaceAwareHarness("codex"), true);
   assert.equal(isWorkspaceAwareHarness("hermes"), false);
   assert.equal(isWorkspaceAwareHarness("devin"), true);
+  assert.equal(requiresExplicitSessionCreation("devin"), true);
+  assert.equal(requiresExplicitSessionCreation("codex"), false);
   assert.equal(defaultSessionKeyForHarness("opencode", config, "Pixel 8"), "opencode:pixel-8");
   assert.equal(defaultSessionKeyForHarness("pi", config, "Pixel 8"), "pi:pixel-8");
   assert.equal(defaultSessionKeyForHarness("devin", config, "Pixel 8"), "devin:pixel-8");

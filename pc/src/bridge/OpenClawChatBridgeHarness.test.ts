@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createHarness, defaultSessionKey, waitFor } from "./OpenClawChatBridge.testSupport.js";
+import { createHarness, defaultSessionKey, deferred, waitFor } from "./OpenClawChatBridge.testSupport.js";
 
 test("OpenCode sends refresh sessions immediately after first user message", async () => {
   const { bridge, chatMessages, client } = createHarness();
@@ -277,4 +277,123 @@ test("harness switch ignores stale OpenClaw session key on next send", async () 
 
   assert.equal(client.patched[0]?.sessionKey, "hermes:hermes-agent-pixel");
   assert.equal(client.sent[0]?.sessionKey, "hermes:hermes-agent-pixel");
+});
+
+test("first Devin model selection creates a real ACP session before applying the model", async () => {
+  const { bridge, chatMessages, client } = createHarness({ devinConfigured: true });
+  client.createResponse = { key: "devin:real-acp-session", sessionId: "real-acp-session" };
+
+  await bridge.setModel({
+    type: "chat.set_model",
+    deviceId: "pixel",
+    sessionKey: defaultSessionKey("pixel"),
+    model: "devin:swe-1-7"
+  });
+
+  assert.equal(client.created.length, 1);
+  assert.equal(client.created[0]?.model, "swe-1-7");
+  assert.equal(client.patched.length, 0);
+  const state = chatMessages.filter((message) => message.type === "chat.state").at(-1);
+  assert.equal(state?.sessionKey, "devin:real-acp-session");
+  assert.equal(state?.model, "devin:swe-1-7");
+});
+
+test("direct send to Devin creates a real ACP session and sends through it", async () => {
+  const { bridge, client } = createHarness({ devinConfigured: true });
+  client.createResponse = { key: "devin:direct-acp-session", sessionId: "direct-acp-session" };
+
+  await bridge.send({
+    type: "chat.send",
+    deviceId: "pixel",
+    sessionKey: defaultSessionKey("pixel"),
+    model: "devin:swe-1-7",
+    text: "Hello Devin"
+  });
+
+  assert.equal(client.created.length, 1);
+  assert.equal(client.created[0]?.model, "swe-1-7");
+  assert.equal(client.patched.some((entry) => "model" in entry.patch), false);
+  assert.equal(client.sent[0]?.sessionKey, "devin:direct-acp-session");
+});
+
+test("Devin model selection on an existing real session patches without creating another", async () => {
+  const { bridge, client } = createHarness({ devinConfigured: true });
+
+  await bridge.selectSession({
+    type: "chat.select_session",
+    deviceId: "pixel",
+    sessionKey: "devin:existing-acp-session"
+  });
+  await bridge.setModel({
+    type: "chat.set_model",
+    deviceId: "pixel",
+    sessionKey: "devin:existing-acp-session",
+    model: "devin:swe-1-7"
+  });
+
+  assert.equal(client.created.length, 0);
+  assert.deepEqual(client.patched, [{
+    sessionKey: "devin:existing-acp-session",
+    patch: { model: "swe-1-7" }
+  }]);
+});
+
+test("concurrent first Devin model selections share one ACP session creation", async () => {
+  const { bridge, client } = createHarness({ devinConfigured: true });
+  const createGate = deferred();
+  client.createGate = createGate.promise;
+  client.createResponse = { key: "devin:shared-acp-session", sessionId: "shared-acp-session" };
+
+  const first = bridge.setModel({
+    type: "chat.set_model",
+    deviceId: "pixel",
+    sessionKey: defaultSessionKey("pixel"),
+    model: "devin:swe-1-7"
+  });
+  await waitFor(() => client.created.length === 1);
+  const second = bridge.setModel({
+    type: "chat.set_model",
+    deviceId: "pixel",
+    sessionKey: defaultSessionKey("pixel"),
+    model: "devin:swe-1-7"
+  });
+
+  createGate.resolve();
+  await Promise.all([first, second]);
+
+  assert.equal(client.created.length, 1);
+  assert.equal(client.created[0]?.model, "swe-1-7");
+  assert.equal(client.patched.at(-1)?.sessionKey, "devin:shared-acp-session");
+});
+
+test("failed concurrent Devin session creation rolls back the harness once", async () => {
+  const { bridge, chatMessages, client } = createHarness({ devinConfigured: true });
+  const createGate = deferred();
+  client.createGate = createGate.promise;
+  client.createError = new Error("ACP session creation failed");
+
+  const first = bridge.setModel({
+    type: "chat.set_model",
+    deviceId: "pixel",
+    sessionKey: defaultSessionKey("pixel"),
+    model: "devin:swe-1-7"
+  });
+  await waitFor(() => client.created.length === 1);
+  const second = bridge.setModel({
+    type: "chat.set_model",
+    deviceId: "pixel",
+    sessionKey: defaultSessionKey("pixel"),
+    model: "devin:swe-1-7"
+  });
+
+  createGate.resolve();
+  const outcomes = await Promise.allSettled([first, second]);
+  assert.equal(outcomes.every((outcome) => outcome.status === "rejected"), true);
+  assert.equal(client.created.length, 1);
+
+  chatMessages.length = 0;
+  await bridge.open({ type: "chat.open", deviceId: "pixel" });
+  const state = chatMessages.filter((message) => message.type === "chat.state").at(-1);
+  assert.equal(state?.harnessId, "openclaw");
+  assert.equal(state?.sessionKey, defaultSessionKey("pixel"));
 });

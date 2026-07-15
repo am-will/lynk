@@ -1,6 +1,7 @@
 import {
   defaultSessionKeyForHarness,
   harnessForSessionKey,
+  requiresExplicitSessionCreation,
   parseHarnessModel,
   type HarnessId,
   type HarnessModelSelection
@@ -182,6 +183,11 @@ export class HarnessDeviceStateStore extends DeviceChatStateStore {
 
   rememberSelectedModel(state: DeviceChatState): void {
     state.modelsByHarness.set(state.harnessId, state.model ?? null);
+  }
+
+  needsExplicitSessionCreation(deviceId: string, state: DeviceChatState): boolean {
+    return requiresExplicitSessionCreation(state.harnessId)
+      && state.sessionKey === defaultSessionKeyForHarness(state.harnessId, this.harnessConfig, deviceId);
   }
 
   private runLifecycleFor(deviceId: string): HarnessRunLifecycle<void, HostChatRunMetadata> {

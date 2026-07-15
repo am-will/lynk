@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AgentRunResult, AgentTaskKind } from "../dispatcher/AgentClient.js";
 import type { Dispatcher } from "../dispatcher/dispatcher.js";
-import type { HarnessId } from "./AgentHarness.js";
+import type { HarnessId, HarnessModelSelection } from "./AgentHarness.js";
 import {
   defaultSessionKeyForHarness,
   harnessForSessionKey,
@@ -96,6 +96,14 @@ interface RealtimeChatOptions {
   reasoningEffort?: string;
 }
 
+interface SessionCreationRequest {
+  key?: string;
+  label?: string;
+  selection?: HarnessModelSelection;
+  workspacePath?: string;
+  createWorkspaceIfMissing?: boolean;
+}
+
 class ChatRunStartStoppedError extends Error {
   constructor(readonly reason: string) {
     super(reason);
@@ -119,6 +127,7 @@ export class OpenClawChatBridge {
   private readonly gatewayEventRouter: OpenClawGatewayEventRouter;
   private readonly realtimeSessions: OpenClawRealtimeSessions;
   private readonly sessionEnsures = new Map<string, Promise<void>>();
+  private readonly explicitSessionCreations = new Map<string, Promise<void>>();
 
   constructor(
     private readonly config: BridgeConfig,
@@ -222,10 +231,33 @@ export class OpenClawChatBridge {
       return;
     }
     const state = this.stateFor(message.deviceId);
+    const previousHarness = state.harnessId;
     const previousModel = state.model;
-    this.states.stageModelSelection(message.deviceId, state, message.model);
+    const selection = this.states.stageModelSelection(message.deviceId, state, message.model);
+    const changedHarness = previousHarness !== state.harnessId;
     if (message.sessionKey && harnessForSessionKey(message.sessionKey) === state.harnessId) {
       this.states.activateSession(message.deviceId, state, message.sessionKey);
+    }
+
+    const requestedModel = this.states.rawModelForSelection(message.model);
+    const requestedSelectionId = this.states.selectionIdForModel(message.model) ?? requestedModel;
+    let createdExplicitSession = false;
+    if (this.states.needsExplicitSessionCreation(message.deviceId, state)) {
+      try {
+        createdExplicitSession = await this.ensureExplicitSession(message.deviceId, state, {
+          selection: selection ?? selectionForState(
+            state,
+            requestedModel ?? this.states.rawModelForSelection(state.model),
+            requestedSelectionId ?? this.states.selectionIdForModel(state.model)
+          ),
+          workspacePath: isWorkspaceAwareHarness(state.harnessId)
+            ? workspacePathForNewSession(state, undefined)
+            : undefined
+        });
+      } catch (error) {
+        if (changedHarness) this.states.switchHarness(message.deviceId, state, previousHarness);
+        throw error;
+      }
     }
 
     const idempotencyKey = message.idempotencyKey ?? randomUUID();
@@ -244,8 +276,6 @@ export class OpenClawChatBridge {
     const sessionId = message.sessionId ?? state.sessionId ?? null;
     const harnessId = state.harnessId;
     const reasoningEffort = requestedReasoningEffort ?? undefined;
-    const requestedModel = this.states.rawModelForSelection(message.model);
-    const requestedSelectionId = this.states.selectionIdForModel(message.model) ?? requestedModel;
     const admission = this.states.runStateFor(message.deviceId, state.sessionKey);
     if (delivery === "queue" && admission.phase !== "idle") {
       this.queueChatMessage(message, state, requestText, idempotencyKey, admission);
@@ -292,7 +322,7 @@ export class OpenClawChatBridge {
     }
 
     try {
-      if (requestedModel && !isSameModelSelection(message.model?.trim() ?? requestedModel, previousModel)) {
+      if (!createdExplicitSession && requestedModel && !isSameModelSelection(message.model?.trim() ?? requestedModel, previousModel)) {
         await this.client.patchSession(sessionKey, { model: requestedModel });
         if (state.sessionKey === sessionKey && state.harnessId === harnessId) {
           this.states.setSelectedModel(state, requestedSelectionId);
@@ -731,24 +761,21 @@ export class OpenClawChatBridge {
     const state = this.stateFor(message.deviceId);
     const previousHarness = state.harnessId;
     const selection = this.states.stageModelSelection(message.deviceId, state, message.model ?? state.model ?? undefined);
-    const sessionUuid = randomUUID();
-    const requestKey = typeof message.key === "string" && message.key.trim()
-      ? message.key.trim()
-      : state.harnessId === "openclaw"
-        ? `phone-${message.deviceId}-${sessionUuid}`
-        : `${state.harnessId}:phone-${message.deviceId}-${sessionUuid}`;
     const explicitLabel = typeof message.label === "string" && message.label.trim()
       ? message.label.trim()
       : undefined;
     const workspacePath = isWorkspaceAwareHarness(state.harnessId)
       ? workspacePathForNewSession(state, message.workspacePath)
       : undefined;
-    let created: unknown;
     try {
-      created = await this.client.createSession({
-        key: requestKey,
-        label: explicitLabel ?? sessionUuid,
-        model: selection?.modelId ?? this.states.rawModelForSelection(state.model) ?? undefined,
+      await this.createAndActivateSession(message.deviceId, state, {
+        key: typeof message.key === "string" && message.key.trim() ? message.key.trim() : undefined,
+        label: explicitLabel,
+        selection: selection ?? selectionForState(
+          state,
+          this.states.rawModelForSelection(state.model),
+          this.states.selectionIdForModel(state.model)
+        ),
         ...(workspacePath ? { workspacePath } : {}),
         ...(isWorkspaceAwareHarness(state.harnessId) && message.createWorkspaceIfMissing ? { createWorkspaceIfMissing: true } : {})
       });
@@ -756,17 +783,6 @@ export class OpenClawChatBridge {
       this.states.switchHarness(message.deviceId, state, previousHarness);
       throw error;
     }
-    const record = created && typeof created === "object" ? created as Record<string, unknown> : {};
-    const key = typeof record.key === "string" && record.key.trim() ? record.key.trim() : undefined;
-    this.states.activateSession(
-      message.deviceId,
-      state,
-      key ?? defaultSessionKeyForHarness(state.harnessId, this.config, message.deviceId)
-    );
-    state.sessionId = typeof record.sessionId === "string" ? record.sessionId : null;
-    if (selection) this.states.setSelectedModel(state, selection.selectionId);
-    state.pendingFirstMessageDisplayName = explicitLabel ? false : true;
-    state.lastRealtimeRequestAt = null;
     this.sendState(message.deviceId, "Started a new chat");
     await this.refreshDevice(message.deviceId);
   }
@@ -775,10 +791,29 @@ export class OpenClawChatBridge {
     const state = this.stateFor(message.deviceId);
     const previousHarness = state.harnessId;
     const selection = this.states.stageModelSelection(message.deviceId, state, message.model);
+    const changedHarness = previousHarness !== state.harnessId;
+    const rawModel = this.states.rawModelForSelection(message.model) ?? message.model;
+    if (this.states.needsExplicitSessionCreation(message.deviceId, state)) {
+      try {
+        const created = await this.ensureExplicitSession(message.deviceId, state, {
+          selection: selection ?? selectionForState(state, rawModel, message.model),
+          workspacePath: isWorkspaceAwareHarness(state.harnessId)
+            ? workspacePathForNewSession(state, undefined)
+            : undefined
+        });
+        if (created) {
+          this.sendState(message.deviceId, `Started a new ${harnessLabel(state.harnessId)} chat`);
+          await this.refreshDevice(message.deviceId);
+          return;
+        }
+      } catch (error) {
+        if (changedHarness) this.states.switchHarness(message.deviceId, state, previousHarness);
+        throw error;
+      }
+    }
     const sessionKey = message.sessionKey && harnessForSessionKey(message.sessionKey) === state.harnessId
       ? message.sessionKey
       : state.sessionKey;
-    const rawModel = this.states.rawModelForSelection(message.model) ?? message.model;
     let accepted: boolean;
     if (state.harnessId === "openclaw") {
       accepted = await this.sendSlashCommand(
@@ -795,6 +830,59 @@ export class OpenClawChatBridge {
     }
     if (accepted) this.states.setSelectedModel(state, selection?.selectionId ?? message.model);
     else this.states.switchHarness(message.deviceId, state, previousHarness);
+  }
+
+  private async createAndActivateSession(
+    deviceId: string,
+    state: DeviceChatState,
+    request: SessionCreationRequest
+  ): Promise<void> {
+    const sessionUuid = randomUUID();
+    const requestKey = request.key ?? (state.harnessId === "openclaw"
+      ? `phone-${deviceId}-${sessionUuid}`
+      : `${state.harnessId}:phone-${deviceId}-${sessionUuid}`);
+    const created = await this.client.createSession({
+      key: requestKey,
+      label: request.label ?? sessionUuid,
+      model: request.selection?.modelId,
+      ...(request.workspacePath ? { workspacePath: request.workspacePath } : {}),
+      ...(request.createWorkspaceIfMissing ? { createWorkspaceIfMissing: true } : {})
+    });
+    const record = created && typeof created === "object" ? created as Record<string, unknown> : {};
+    const key = typeof record.key === "string" && record.key.trim() ? record.key.trim() : undefined;
+    this.states.activateSession(
+      deviceId,
+      state,
+      key ?? defaultSessionKeyForHarness(state.harnessId, this.config, deviceId)
+    );
+    state.sessionId = typeof record.sessionId === "string" ? record.sessionId : null;
+    if (request.selection) this.states.setSelectedModel(state, request.selection.selectionId);
+    state.pendingFirstMessageDisplayName = request.label ? false : true;
+    state.lastRealtimeRequestAt = null;
+  }
+
+  private async ensureExplicitSession(
+    deviceId: string,
+    state: DeviceChatState,
+    request: SessionCreationRequest
+  ): Promise<boolean> {
+    if (!this.states.needsExplicitSessionCreation(deviceId, state)) return false;
+    const creationKey = `${deviceId}:${state.harnessId}`;
+    const existing = this.explicitSessionCreations.get(creationKey);
+    if (existing) {
+      await existing;
+      return false;
+    }
+    const creation = this.createAndActivateSession(deviceId, state, request);
+    this.explicitSessionCreations.set(creationKey, creation);
+    try {
+      await creation;
+      return true;
+    } finally {
+      if (this.explicitSessionCreations.get(creationKey) === creation) {
+        this.explicitSessionCreations.delete(creationKey);
+      }
+    }
   }
 
   async setReasoning(message: ChatSetReasoningMessage): Promise<void> {
@@ -1230,6 +1318,20 @@ function workspacePathForNewSession(state: DeviceChatState, requestedWorkspacePa
   }
   const currentWorkspace = state.sessionSummaries.get(state.sessionKey)?.workspacePath?.trim();
   return currentWorkspace || undefined;
+}
+
+function selectionForState(
+  state: DeviceChatState,
+  modelId: string | undefined,
+  selectionId: string | undefined
+): HarnessModelSelection | undefined {
+  const rawModel = modelId?.trim();
+  if (!rawModel) return undefined;
+  return {
+    harnessId: state.harnessId,
+    modelId: rawModel,
+    selectionId: selectionId?.trim() || rawModel
+  };
 }
 
 function runIdForState(state: HostChatRunState): string | null {
