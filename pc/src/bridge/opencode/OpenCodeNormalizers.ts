@@ -229,11 +229,12 @@ export function normalizeOpenCodeModels(payload: unknown): Array<Record<string, 
     if (!providerID) {
       continue;
     }
+    const providerSource = stringField(provider, "source");
     const providerModels = asRecord(provider.models);
     for (const [key, value] of Object.entries(providerModels ?? {})) {
       const model = asRecord(value);
       const modelID = stringField(model, "id") ?? key;
-      if (!shouldExposeOpenCodeModel(providerID, modelID, model, connected)) {
+      if (!shouldExposeOpenCodeModel(providerID, providerSource, modelID, model, connected)) {
         continue;
       }
       const id = `${providerID}/${modelID}`;
@@ -254,12 +255,13 @@ export function normalizeOpenCodeModels(payload: unknown): Array<Record<string, 
 
 function shouldExposeOpenCodeModel(
   providerID: string,
+  providerSource: string | undefined,
   modelID: string,
   model: Record<string, unknown> | undefined,
   connected: ReadonlySet<string>
 ): boolean {
   if (providerID !== "opencode") {
-    return connected.has(providerID);
+    return providerSource === "config" && connected.has(providerID);
   }
   const cost = asRecord(model?.cost);
   const inputCost = numberField(cost, "input");

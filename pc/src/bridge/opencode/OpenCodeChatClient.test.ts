@@ -107,7 +107,7 @@ class FakeOpenCodeServerClient {
   providerPayload: unknown = {
     connected: ["openai", "opencode"],
     all: [
-      { id: "openai", models: { "gpt-5.5": { id: "gpt-5.5", name: "GPT 5.5", limit: { context: 200_000 } } } },
+      { id: "openai", source: "config", models: { "gpt-5.5": { id: "gpt-5.5", name: "GPT 5.5", limit: { context: 200_000 } } } },
       { id: "opencode", models: { "mimo-v2.5-free": { id: "mimo-v2.5-free", name: "Mimo v2.5 Free" } } }
     ]
   };
@@ -223,30 +223,33 @@ test("OpenCode history preserves typed auth errors instead of treating them as m
   client.close();
 });
 
-test("OpenCode model normalization keeps connected providers and free Zen models only", () => {
+test("OpenCode model normalization keeps explicitly configured models and free Zen models only", () => {
   const models = normalizeOpenCodeModels({
-    connected: ["openai"],
+    connected: ["openai", "cerebras"],
     all: [
-      { id: "openai", models: { "gpt-5.5": { id: "gpt-5.5", name: "GPT 5.5", limit: { context: 200_000 } } } },
+      { id: "openai", source: "custom", models: { "gpt-5.5": { id: "gpt-5.5", name: "GPT 5.5" } } },
+      { id: "cerebras", source: "config", models: { "gpt-oss-120b": { id: "gpt-oss-120b", name: "GPT OSS", limit: { context: 131_072 } } } },
+      { id: "offline", source: "config", models: { "offline-model": { id: "offline-model", name: "Offline" } } },
       {
         id: "opencode",
+        source: "custom",
         models: {
           "mimo-v2.5-free": { id: "mimo-v2.5-free", name: "Mimo", cost: { input: 0, output: 0 } },
           "big-pickle": { id: "big-pickle", name: "Big Pickle", cost: { input: 0, output: 0 } },
           "claude-paid": { id: "claude-paid", name: "Claude Paid", cost: { input: 1, output: 5 } }
         }
       },
-      { id: "requesty", models: { "grok-4": { id: "grok-4", name: "Grok 4" } } }
+      { id: "requesty", source: "api", models: { "grok-4": { id: "grok-4", name: "Grok 4" } } }
     ]
   });
 
   assert.deepEqual(models.map((model) => model.id), [
-    "openai/gpt-5.5",
+    "cerebras/gpt-oss-120b",
     "opencode/mimo-v2.5-free",
     "opencode/big-pickle"
   ]);
   assert.equal(models[0]?.provider, "opencode");
-  assert.equal(models[0]?.contextWindow, 200_000);
+  assert.equal(models[0]?.contextWindow, 131_072);
   assert.equal(models[0]?.available, true);
   assert.equal(models[1]?.available, true);
 });
