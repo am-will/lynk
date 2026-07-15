@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ChatView: View {
     @Binding var showingSettings: Bool
@@ -10,6 +11,9 @@ struct ChatView: View {
     @State private var showingModels = false
     @State private var showingSessions = false
     @State private var showingNewSession = false
+    @State private var showingFileImporter = false
+    @State private var attachments = AttachmentStore()
+    @State private var transcription = TranscriptionController()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -34,10 +38,18 @@ struct ChatView: View {
                     .padding(.top, 6)
             }
             CommandSuggestions(draft: $draft, commands: chat.commands)
+            AttachmentTray(store: attachments)
+            TranscriptionStatus(controller: transcription)
             ComposerView(
                 draft: $draft,
                 isRunning: chat.isRunning,
+                isBusy: attachments.isImporting || attachments.isUploading,
+                hasAttachments: !attachments.pending.isEmpty,
+                transcription: transcription,
                 sendMode: $activeSendMode,
+                attach: { showingFileImporter = true },
+                transcribe: toggleTranscription,
+                cancelTranscription: { transcription.cancel() },
                 send: send,
                 stop: { chat.stop(deviceID: settings.snapshot.deviceID, bridge: bridge) }
             )
@@ -58,19 +70,67 @@ struct ChatView: View {
         .sheet(isPresented: $showingNewSession) {
             NewSessionView(chat: chat, deviceID: settings.snapshot.deviceID, bridge: bridge)
         }
+        .fileImporter(
+            isPresented: $showingFileImporter,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: true
+        ) { result in
+            switch result {
+            case let .success(urls): Task { await attachments.importFiles(urls) }
+            case let .failure(error): attachments.error = error.localizedDescription
+            }
+        }
+        .onDisappear { if transcription.isRecording { transcription.cancel() } }
     }
 
     private func send() {
         let text = draft
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.pending.isEmpty else { return }
         draft = ""
-        chat.send(
-            text: text,
-            delivery: activeSendMode,
-            systemPrompt: settings.snapshot.systemPrompt,
-            deviceID: settings.snapshot.deviceID,
-            bridge: bridge
-        )
+        Task {
+            do {
+                let snapshot = settings.snapshot
+                let sessionKey = chat.sessionKey
+                let connectionGeneration = bridge.connectionGeneration
+                let references = try await attachments.uploadAll(
+                    endpoint: bridge.endpoint.map { BridgeEndpoint(webSocketURL: $0) },
+                    snapshot: snapshot,
+                    sessionKey: sessionKey
+                )
+                guard
+                    bridge.phase == .registered,
+                    bridge.connectionGeneration == connectionGeneration,
+                    chat.sessionKey == sessionKey
+                else { throw AttachmentError.bridgeUnavailable }
+                let sent = await chat.send(
+                    text: text,
+                    attachments: references,
+                    delivery: activeSendMode,
+                    systemPrompt: snapshot.systemPrompt,
+                    deviceID: snapshot.deviceID,
+                    bridge: bridge
+                )
+                if sent { attachments.removeUploaded(references) }
+            } catch {
+                attachments.error = error.localizedDescription
+                if draft.isEmpty { draft = text }
+            }
+        }
+    }
+
+    private func toggleTranscription() {
+        if transcription.isRecording {
+            Task { await transcription.stopAndTranscribe() }
+        } else {
+            let key = settings.snapshot.openAIKey
+            Task {
+                await transcription.start(apiKey: key) { transcript in
+                    draft = [draft.trimmingCharacters(in: .whitespacesAndNewlines), transcript]
+                        .filter { !$0.isEmpty }
+                        .joined(separator: " ")
+                }
+            }
+        }
     }
 }
 
@@ -143,7 +203,13 @@ private struct UsageBar: View {
 private struct ComposerView: View {
     @Binding var draft: String
     let isRunning: Bool
+    let isBusy: Bool
+    let hasAttachments: Bool
+    let transcription: TranscriptionController
     @Binding var sendMode: ActiveSendMode
+    let attach: () -> Void
+    let transcribe: () -> Void
+    let cancelTranscription: () -> Void
     let send: () -> Void
     let stop: () -> Void
 
@@ -157,6 +223,28 @@ private struct ComposerView: View {
                 .padding(.horizontal)
             }
             HStack(alignment: .bottom, spacing: 10) {
+                if transcription.isRecording {
+                    Button(action: cancelTranscription) {
+                        Image(systemName: "xmark").frame(width: 28, height: 38)
+                    }
+                    .tint(.red)
+                    .accessibilityLabel("Cancel transcription")
+                }
+                Button(action: transcribe) {
+                    if transcription.isTranscribing { ProgressView().frame(width: 28, height: 38) }
+                    else {
+                        Image(systemName: transcription.isRecording ? "stop.circle.fill" : "mic")
+                            .frame(width: 28, height: 38)
+                    }
+                }
+                .disabled(isBusy || transcription.isTranscribing)
+                .tint(transcription.isRecording ? .red : .accentColor)
+                .accessibilityLabel(transcription.isRecording ? "Stop and transcribe" : "Start transcription")
+                Button(action: attach) {
+                    Image(systemName: "paperclip").frame(width: 28, height: 38)
+                }
+                .disabled(isBusy || transcription.isRecording || transcription.isTranscribing)
+                .accessibilityLabel("Attach files")
                 TextField("Message Lynk", text: $draft, axis: .vertical)
                     .lineLimit(1...6)
                     .textFieldStyle(.plain)
@@ -174,11 +262,14 @@ private struct ComposerView: View {
                     .accessibilityLabel("Stop")
                 }
                 Button(action: send) {
-                    Image(systemName: isRunning && sendMode == .steer ? "arrow.triangle.turn.up.right.diamond.fill" : "arrow.up")
-                        .frame(width: 38, height: 38)
+                    if isBusy { ProgressView().frame(width: 38, height: 38) }
+                    else {
+                        Image(systemName: isRunning && sendMode == .steer ? "arrow.triangle.turn.up.right.diamond.fill" : "arrow.up")
+                            .frame(width: 38, height: 38)
+                    }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(isBusy || (draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !hasAttachments))
                 .accessibilityLabel("Send")
             }
             .padding(.horizontal)
@@ -186,6 +277,63 @@ private struct ComposerView: View {
         }
         .padding(.top, 8)
         .background(.bar)
+    }
+}
+
+private struct TranscriptionStatus: View {
+    let controller: TranscriptionController
+
+    var body: some View {
+        if controller.isRecording || controller.isTranscribing || controller.error != nil {
+            VStack(alignment: .leading, spacing: 4) {
+                if controller.isRecording {
+                    ProgressView(value: Double(controller.audioLevel))
+                        .tint(.red)
+                    Text("Recording for transcription. Stop to review the text, or cancel.")
+                } else if controller.isTranscribing {
+                    Text("Transcribing…")
+                }
+                if let error = controller.error { Text(error).foregroundStyle(.red) }
+            }
+            .font(.caption)
+            .padding(.horizontal)
+            .padding(.top, 6)
+        }
+    }
+}
+
+private struct AttachmentTray: View {
+    let store: AttachmentStore
+
+    var body: some View {
+        if !store.pending.isEmpty || store.error != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                if let error = store.error {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack {
+                        ForEach(store.pending) { attachment in
+                            HStack(spacing: 6) {
+                                Image(systemName: attachment.kind == "image" ? "photo" : "doc")
+                                Text(attachment.displayName).lineLimit(1)
+                                Button { store.remove(attachment) } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Remove \(attachment.displayName)")
+                            }
+                            .font(.caption)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(Color(.secondarySystemBackground), in: Capsule())
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+            }
+            .padding(.top, 6)
+        }
     }
 }
 

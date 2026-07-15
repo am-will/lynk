@@ -24,6 +24,7 @@ final class BridgeClient {
 
     var phase: Phase = .disconnected
     var endpoint: URL?
+    private(set) var connectionGeneration = UUID()
     var onMessage: (([String: JSONValue]) -> Void)?
 
     private var session: URLSession?
@@ -86,6 +87,7 @@ final class BridgeClient {
         let selected = endpoints[endpointIndex % endpoints.count]
         endpointIndex += 1
         endpoint = selected.webSocketURL
+        connectionGeneration = UUID()
         phase = reconnectAttempt == 0 ? .connecting : .reconnecting
 
         let configuration = URLSessionConfiguration.default
@@ -185,4 +187,3 @@ final class BridgeClient {
         if reconnectAttempt > 8 { phase = .failed(reason) }
     }
 }
-

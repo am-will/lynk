@@ -15,6 +15,10 @@ enum BridgeEndpointError: LocalizedError, Equatable {
 struct BridgeEndpoint: Equatable, Sendable {
     let webSocketURL: URL
 
+    init(webSocketURL: URL) {
+        self.webSocketURL = webSocketURL
+    }
+
     init(_ rawValue: String) throws {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, var components = URLComponents(string: trimmed) else {
@@ -37,4 +41,3 @@ struct BridgeEndpoint: Equatable, Sendable {
         return components.url!
     }
 }
-

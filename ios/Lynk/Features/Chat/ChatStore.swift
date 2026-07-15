@@ -58,16 +58,31 @@ final class ChatStore {
         }
     }
 
-    func send(text: String, delivery: ActiveSendMode, systemPrompt: String, deviceID: String, bridge: BridgeClient) {
+    func send(
+        text: String,
+        attachments: [ChatAttachmentReference] = [],
+        delivery: ActiveSendMode,
+        systemPrompt: String,
+        deviceID: String,
+        bridge: BridgeClient
+    ) async -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty || !attachments.isEmpty else { return false }
         let localID = "local_\(UUID().uuidString)"
         timeline.append(ChatTimelineItem(
             id: localID,
             kind: .message,
             role: "user",
             text: trimmed,
-            attachments: [],
+            attachments: attachments.map {
+                ChatAttachmentMetadata(
+                    id: $0.id,
+                    kind: $0.kind,
+                    displayName: $0.displayName,
+                    mimeType: $0.mimeType,
+                    sizeBytes: $0.sizeBytes
+                )
+            },
             timestamp: Int64(Date().timeIntervalSince1970 * 1_000)
         ))
         error = nil
@@ -83,11 +98,12 @@ final class ChatStore {
         if let sessionID { payload["sessionId"] = .string(sessionID) }
         if let selectedModel { payload["model"] = .string(selectedModel) }
         payload["reasoningEffort"] = .string(reasoningEffort)
-        Task {
-            if !(await bridge.send(payload)) {
-                self.error = "Message was not sent. Reconnect to the bridge and try again."
-            }
+        if !attachments.isEmpty { payload["attachments"] = .array(attachments.map(\.json)) }
+        let sent = await bridge.send(payload)
+        if !sent {
+            error = "Message was not sent. Reconnect to the bridge and try again."
         }
+        return sent
     }
 
     func stop(deviceID: String, bridge: BridgeClient) {
