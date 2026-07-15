@@ -62,7 +62,7 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
             val output = generateOnce(request.copy(config = selectedConfig), deltas::append, onStatus)
             GgufCompletedAttempt(output, deltas.snapshot())
         }
-        completed.deltas.forEach { delta -> onDelta(delta) }
+        commitGgufDeltas(completed.deltas, onDelta)
         completed.output
     }
 
@@ -547,6 +547,16 @@ internal class GgufAttemptDeltaBuffer {
     }
 
     fun snapshot(): List<String> = deltas.toList()
+}
+
+internal suspend fun commitGgufDeltas(
+    deltas: List<String>,
+    onDelta: suspend (String) -> Unit
+) {
+    for (delta in deltas) {
+        currentCoroutineContext().ensureActive()
+        onDelta(delta)
+    }
 }
 
 private data class GgufCompletedAttempt(val output: String, val deltas: List<String>)

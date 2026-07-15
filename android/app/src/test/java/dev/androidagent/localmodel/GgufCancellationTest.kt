@@ -7,8 +7,10 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -116,6 +118,22 @@ class GgufCancellationTest {
             worker.cancelAndJoin()
             registration.dispose()
         }
+    }
+
+    @Test
+    fun cancellationDuringDeltaCommitStopsRemainingBufferedDeltas() = runBlocking {
+        val committed = mutableListOf<String>()
+        val worker = launch {
+            commitGgufDeltas(listOf("first", "second", "third")) { delta ->
+                committed += delta
+                currentCoroutineContext()[Job]?.cancel()
+            }
+        }
+
+        worker.join()
+
+        assertEquals(listOf("first"), committed)
+        assertTrue(worker.isCancelled)
     }
 
     private class FakeCreateOperations : GgufCreateOperations {
