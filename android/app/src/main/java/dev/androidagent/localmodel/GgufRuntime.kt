@@ -26,13 +26,21 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
 
-class GgufRuntime(context: Context) : LocalModelRuntime {
-    private val context = context.applicationContext
-    private val cache = GgufSessionCache { handle -> safeClose(handle) }
-    private val vulkanFallback = GgufVulkanFallbackPolicy()
+class GgufRuntime internal constructor(
+    private val availableMemoryBytes: () -> Long,
+    private val cache: GgufSessionCache,
+    private val vulkanFallback: GgufVulkanFallbackPolicy
+) : LocalModelRuntime {
+    constructor(context: Context) : this(
+        availableMemoryBytes = { readAvailableMemoryBytes(context.applicationContext) },
+        cache = GgufSessionCache(::safeCloseGgufHandle),
+        vulkanFallback = GgufVulkanFallbackPolicy()
+    )
 
     override fun profile(config: AgentConfig): LocalModelRuntimeProfile {
-        val requestedKey = plannedKey(config) ?: return ggufProfile(config.localContextTokens)
+        val effectiveBackend = vulkanFallback.selectionFor(config.localModelBackend).backend
+        val effectiveConfig = config.copy(localModelBackend = effectiveBackend)
+        val requestedKey = plannedKey(effectiveConfig) ?: return ggufProfile(config.localContextTokens)
         return cache.get(requestedKey)?.let { ggufProfile(it.key.contextTokens) }
             ?: ggufProfile(requestedKey.contextTokens)
     }
@@ -68,12 +76,6 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
 
     override fun close() {
         cache.close()
-    }
-
-    private fun safeClose(handle: Long) {
-        if (handle != 0L) {
-            try { GgufNative.close(handle) } catch (_: Throwable) {}
-        }
     }
 
     private suspend fun <T> withSelectedBackend(
@@ -225,7 +227,7 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
         candidateKey: GgufModelKey
     ): LoadedGgufSession {
         val operation = GgufCreateOperation()
-        val pendingHandle = GgufPendingHandle(::safeClose)
+        val pendingHandle = GgufPendingHandle(::safeCloseGgufHandle)
         val job = currentCoroutineContext()[Job]
         val cancelHandle = job?.signalNativeOnCancellation {
             operation.cancel()
@@ -289,17 +291,23 @@ class GgufRuntime(context: Context) : LocalModelRuntime {
     private fun maxOutputTokens(request: LocalModelRequest): Int =
         if (request.systemPrompt.contains("Tools are not needed for this message")) 256 else 128
 
-    private fun availableMemoryBytes(): Long {
-        val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        val memoryInfo = ActivityManager.MemoryInfo()
-        activityManager.getMemoryInfo(memoryInfo)
-        val reserve = maxOf(memoryInfo.threshold, 512L * 1024 * 1024)
-        return (memoryInfo.availMem - reserve).coerceAtLeast(0L)
-    }
-
     private companion object {
         private object END_SENTINEL
     }
+}
+
+private fun safeCloseGgufHandle(handle: Long) {
+    if (handle != 0L) {
+        try { GgufNative.close(handle) } catch (_: Throwable) {}
+    }
+}
+
+private fun readAvailableMemoryBytes(context: Context): Long {
+    val activityManager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+    val memoryInfo = ActivityManager.MemoryInfo()
+    activityManager.getMemoryInfo(memoryInfo)
+    val reserve = maxOf(memoryInfo.threshold, 512L * 1024 * 1024)
+    return (memoryInfo.availMem - reserve).coerceAtLeast(0L)
 }
 
 @OptIn(InternalCoroutinesApi::class)
@@ -491,6 +499,11 @@ internal enum class GgufCpuSelection {
     RuntimeFailure
 }
 
+internal data class GgufBackendSelection(
+    val backend: LocalModelBackend,
+    val cpuReason: GgufCpuSelection? = null
+)
+
 /** Vulkan health is scoped to one runtime rather than contaminating the process. */
 internal class GgufVulkanFallbackPolicy(
     private val deviceDisablesVulkan: () -> Boolean = GgufDevicePolicy::shouldDisableVulkan
@@ -500,23 +513,28 @@ internal class GgufVulkanFallbackPolicy(
     val isRuntimeDisabled: Boolean
         get() = runtimeDisabled.get()
 
+    fun selectionFor(requestedBackend: LocalModelBackend): GgufBackendSelection {
+        if (requestedBackend != LocalModelBackend.Gpu) {
+            return GgufBackendSelection(requestedBackend)
+        }
+        if (deviceDisablesVulkan()) {
+            return GgufBackendSelection(LocalModelBackend.Cpu, GgufCpuSelection.DevicePolicy)
+        }
+        if (runtimeDisabled.get()) {
+            return GgufBackendSelection(LocalModelBackend.Cpu, GgufCpuSelection.RuntimeDisabled)
+        }
+        return GgufBackendSelection(LocalModelBackend.Gpu)
+    }
+
     suspend fun <T> execute(
         requestedBackend: LocalModelBackend,
         onCpuSelected: suspend (GgufCpuSelection) -> Unit = {},
         beforeCpuRetry: suspend () -> Unit = {},
         operation: suspend (LocalModelBackend) -> T
     ): T {
-        val deviceDisabled = requestedBackend == LocalModelBackend.Gpu && deviceDisablesVulkan()
-        val runtimeFailureDisabled = requestedBackend == LocalModelBackend.Gpu && runtimeDisabled.get()
-        val initialBackend = if (deviceDisabled || runtimeFailureDisabled) {
-            onCpuSelected(
-                if (deviceDisabled) GgufCpuSelection.DevicePolicy
-                else GgufCpuSelection.RuntimeDisabled
-            )
-            LocalModelBackend.Cpu
-        } else {
-            requestedBackend
-        }
+        val selection = selectionFor(requestedBackend)
+        selection.cpuReason?.let { onCpuSelected(it) }
+        val initialBackend = selection.backend
 
         try {
             return operation(initialBackend)

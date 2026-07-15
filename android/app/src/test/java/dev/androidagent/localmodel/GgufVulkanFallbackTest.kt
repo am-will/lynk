@@ -1,8 +1,11 @@
 package dev.androidagent.localmodel
 
+import dev.androidagent.AgentConfig
 import dev.androidagent.LocalModelBackend
 import dev.androidagent.localmodel.gguf.GgufFailureCategory
+import dev.androidagent.localmodel.gguf.GgufModelKey
 import dev.androidagent.localmodel.gguf.GgufNativeException
+import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -137,6 +140,69 @@ class GgufVulkanFallbackTest {
         assertEquals(listOf(LocalModelBackend.Cpu), attempts)
         assertEquals(listOf(GgufCpuSelection.DevicePolicy), selections)
         assertFalse(policy.isRuntimeDisabled)
+        assertEquals(
+            GgufBackendSelection(LocalModelBackend.Cpu, GgufCpuSelection.DevicePolicy),
+            policy.selectionFor(LocalModelBackend.Gpu)
+        )
+    }
+
+    @Test
+    fun runtimeFailureChangesEffectiveBackendForLaterProfilesAndOperations() = runBlocking {
+        val policy = GgufVulkanFallbackPolicy { false }
+
+        policy.execute(LocalModelBackend.Gpu) { backend ->
+            if (backend == LocalModelBackend.Gpu) {
+                throw GgufNativeException("vulkan_backend", "device lost")
+            }
+            Unit
+        }
+
+        assertEquals(
+            GgufBackendSelection(LocalModelBackend.Cpu, GgufCpuSelection.RuntimeDisabled),
+            policy.selectionFor(LocalModelBackend.Gpu)
+        )
+        assertEquals(
+            GgufBackendSelection(LocalModelBackend.Cpu),
+            policy.selectionFor(LocalModelBackend.Cpu)
+        )
+    }
+
+    @Test
+    fun profileUsesDeviceSelectedCpuSessionContext() {
+        val policy = GgufVulkanFallbackPolicy { true }
+        val cache = GgufSessionCache {}
+        val config = ggufConfig(LocalModelBackend.Gpu, 65_536)
+        val requestedCpuKey = plannedKey(config, LocalModelBackend.Cpu)
+        cache.replace(
+            requestedCpuKey,
+            requestedCpuKey.copy(contextTokens = 32_768),
+            41L
+        )
+        val runtime = GgufRuntime({ TEST_AVAILABLE_BYTES }, cache, policy)
+
+        assertEquals(32_768, runtime.profile(config).effectiveContextTokens)
+    }
+
+    @Test
+    fun profileUsesRuntimeFallbackCpuSessionContext() = runBlocking {
+        val policy = GgufVulkanFallbackPolicy { false }
+        policy.execute(LocalModelBackend.Gpu) { backend ->
+            if (backend == LocalModelBackend.Gpu) {
+                throw GgufNativeException("vulkan_backend", "device lost")
+            }
+            Unit
+        }
+        val cache = GgufSessionCache {}
+        val config = ggufConfig(LocalModelBackend.Gpu, 65_536)
+        val requestedCpuKey = plannedKey(config, LocalModelBackend.Cpu)
+        cache.replace(
+            requestedCpuKey,
+            requestedCpuKey.copy(contextTokens = 16_384),
+            42L
+        )
+        val runtime = GgufRuntime({ TEST_AVAILABLE_BYTES }, cache, policy)
+
+        assertEquals(16_384, runtime.profile(config).effectiveContextTokens)
     }
 
     @Test
@@ -174,5 +240,38 @@ class GgufVulkanFallbackTest {
         }
         assertEquals(listOf(LocalModelBackend.Gpu), attempts)
         assertFalse(policy.isRuntimeDisabled)
+    }
+
+    private fun ggufConfig(backend: LocalModelBackend, contextTokens: Int): AgentConfig {
+        val model = File.createTempFile("profile-test", ".gguf").apply {
+            writeText("model")
+            deleteOnExit()
+        }
+        return AgentConfig(
+            hostUrl = "",
+            deviceId = "test",
+            token = "test",
+            openAiApiKey = "",
+            systemPrompt = "",
+            model = "local-litertlm",
+            reasoningEffort = "medium",
+            localModelPath = model.absolutePath,
+            localModelBackend = backend,
+            localContextTokens = contextTokens
+        )
+    }
+
+    private fun plannedKey(config: AgentConfig, backend: LocalModelBackend): GgufModelKey =
+        GgufContextPlanner.planKey(
+            path = config.localModelPath,
+            requestedContext = config.localContextTokens,
+            backendKey = backend.key,
+            gpuLayers = gpuLayersFor(backend),
+            modelBytes = File(config.localModelPath).length(),
+            availableBytes = TEST_AVAILABLE_BYTES
+        )
+
+    private companion object {
+        const val TEST_AVAILABLE_BYTES = 10_000_000_000L
     }
 }
