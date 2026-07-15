@@ -22,6 +22,7 @@ final class ChatStore {
     var tools: [ChatToolSummary] = []
     var usage = ChatUsage()
     var unreadReplies: [String: ChatUnreadReply] = [:]
+    private var localRunID: String?
 
     static let defaultReasoningOptions = ["low", "medium", "high", "xhigh"].map {
         ChatReasoningOption(id: $0, label: $0)
@@ -115,6 +116,61 @@ final class ChatStore {
         if let sessionKey { payload["sessionKey"] = .string(sessionKey) }
         if let activeRunID { payload["runId"] = .string(activeRunID) }
         Task { _ = await bridge.send(payload) }
+    }
+
+    func beginLocalTurn(text: String, model: String) -> String {
+        let runID = "local_\(UUID().uuidString)"
+        harnessID = "local"
+        harnessLabel = "Local phone"
+        selectedModel = model
+        isRunning = true
+        activeRunID = runID
+        localRunID = runID
+        error = nil
+        timeline.append(ChatTimelineItem(
+            id: "user_\(runID)", kind: .message, role: "user", text: text,
+            attachments: [], timestamp: Int64(Date().timeIntervalSince1970 * 1_000)
+        ))
+        timeline.append(ChatTimelineItem(
+            id: "assistant_\(runID)", kind: .message, role: "assistant", text: "",
+            attachments: [], timestamp: Int64(Date().timeIntervalSince1970 * 1_000), runID: runID, isStreaming: true
+        ))
+        return runID
+    }
+
+    func appendLocalToken(_ token: String, runID: String) {
+        guard localRunID == runID,
+              let index = timeline.firstIndex(where: { $0.id == "assistant_\(runID)" }) else { return }
+        timeline[index].text += token
+    }
+
+    func finishLocalTurn(runID: String) {
+        guard localRunID == runID else { return }
+        if let index = timeline.firstIndex(where: { $0.id == "assistant_\(runID)" }) { timeline[index].isStreaming = false }
+        isRunning = false
+        activeRunID = nil
+        localRunID = nil
+        status = "Completed locally"
+    }
+
+    func failLocalTurn(_ message: String, runID: String? = nil) {
+        if let runID, localRunID == runID {
+            timeline.removeAll { $0.id == "assistant_\(runID)" && $0.text.isEmpty }
+        }
+        isRunning = false
+        activeRunID = nil
+        localRunID = nil
+        error = message
+    }
+
+    func stopLocalTurn() {
+        if let localRunID, let index = timeline.firstIndex(where: { $0.id == "assistant_\(localRunID)" }) {
+            timeline[index].isStreaming = false
+        }
+        isRunning = false
+        activeRunID = nil
+        localRunID = nil
+        status = "Stopped locally"
     }
 
     func selectSession(_ key: String, deviceID: String, bridge: BridgeClient) {

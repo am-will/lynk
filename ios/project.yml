@@ -12,6 +12,8 @@ settings:
     TARGETED_DEVICE_FAMILY: "1"
     ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
 packages:
+  LynkLlamaRuntime:
+    path: Packages/LynkLlamaRuntime
   WebRTC:
     url: https://github.com/stasel/WebRTC.git
     exactVersion: 150.0.0
@@ -22,6 +24,8 @@ targets:
     sources:
       - path: Lynk
     dependencies:
+      - package: LynkLlamaRuntime
+        product: LynkLlamaRuntime
       - package: WebRTC
     info:
       path: Lynk/Resources/Info.plist

@@ -11,7 +11,7 @@ struct RootView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if bridge.phase != .registered {
+                if settings.runTarget == .host, bridge.phase != .registered {
                     ConnectionBanner(
                         label: bridge.phase.label,
                         canConnect: !settings.snapshot.token.isEmpty,
@@ -23,7 +23,7 @@ struct RootView: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button("Voice", systemImage: "waveform.circle") { showingVoice = true }
-                            .disabled(bridge.phase != .registered)
+                            .disabled(bridge.phase != .registered || settings.runTarget == .local)
                             .accessibilityIdentifier("voice-button")
                     }
                     ToolbarItem(placement: .topBarTrailing) {
@@ -36,6 +36,14 @@ struct RootView: View {
         .fullScreenCover(isPresented: $showingVoice) { VoiceView() }
         .onChange(of: scenePhase) {
             if scenePhase != .active, voice.isActive { voice.stop(reason: "Lynk left the foreground") }
+        }
+        .onChange(of: settings.runTarget) {
+            if settings.runTarget == .local {
+                if voice.isActive { voice.stop(reason: "Switched to local mode") }
+                bridge.disconnect()
+            } else if !settings.snapshot.token.isEmpty {
+                bridge.connect(using: settings.snapshot)
+            }
         }
     }
 }
@@ -67,4 +75,6 @@ private struct ConnectionBanner: View {
         .environment(SettingsStore())
         .environment(ChatStore())
         .environment(RealtimeVoiceController())
+        .environment(LocalModelStore())
+        .environment(LocalInferenceController())
 }

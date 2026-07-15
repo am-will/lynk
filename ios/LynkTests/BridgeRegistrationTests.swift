@@ -6,6 +6,7 @@ final class BridgeRegistrationTests: XCTestCase {
     func testIOSRegistrationExcludesPhoneControl() {
         XCTAssertEqual(BridgeRegistration.platform, "ios")
         XCTAssertFalse(BridgeRegistration.containsPhoneControlCapability())
+        XCTAssertTrue(BridgeRegistration.capabilities.contains("local_inference"))
         let payload = BridgeRegistration.payload(deviceID: "iphone", token: "secret")
         XCTAssertEqual(payload["platform"], .string("ios"))
     }

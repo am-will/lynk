@@ -6,6 +6,8 @@ struct ChatView: View {
     @Environment(ChatStore.self) private var chat
     @Environment(BridgeClient.self) private var bridge
     @Environment(SettingsStore.self) private var settings
+    @Environment(LocalModelStore.self) private var localModels
+    @Environment(LocalInferenceController.self) private var localInference
     @State private var draft = ""
     @State private var activeSendMode = ActiveSendMode.steer
     @State private var showingModels = false
@@ -21,7 +23,12 @@ struct ChatView: View {
                 chat: chat,
                 deviceID: settings.snapshot.deviceID,
                 bridge: bridge,
-                showModels: { showingModels = true },
+                isLocal: settings.runTarget == .local,
+                localModelName: selectedLocalModel?.displayName,
+                showModels: {
+                    if settings.runTarget == .local { showingSettings = true }
+                    else { showingModels = true }
+                },
                 showSessions: { showingSessions = true }
             )
             Divider()
@@ -51,10 +58,13 @@ struct ChatView: View {
                 transcribe: toggleTranscription,
                 cancelTranscription: { transcription.cancel() },
                 send: send,
-                stop: { chat.stop(deviceID: settings.snapshot.deviceID, bridge: bridge) }
+                stop: {
+                    if settings.runTarget == .local { localInference.stop(chat: chat) }
+                    else { chat.stop(deviceID: settings.snapshot.deviceID, bridge: bridge) }
+                }
             )
         }
-        .navigationTitle(chat.harnessLabel ?? "Lynk")
+        .navigationTitle(settings.runTarget == .local ? "Local phone" : (chat.harnessLabel ?? "Lynk"))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingModels) {
             ModelPickerView(chat: chat, deviceID: settings.snapshot.deviceID, bridge: bridge)
@@ -86,6 +96,21 @@ struct ChatView: View {
     private func send() {
         let text = draft
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.pending.isEmpty else { return }
+        if settings.runTarget == .local {
+            guard attachments.pending.isEmpty else {
+                attachments.error = "Host attachment uploads are unavailable in local mode."
+                return
+            }
+            draft = ""
+            localInference.generate(
+                text: text,
+                systemPrompt: settings.snapshot.systemPrompt,
+                selectedModelID: settings.snapshot.selectedLocalModelID,
+                models: localModels,
+                chat: chat
+            )
+            return
+        }
         draft = ""
         Task {
             do {
@@ -118,6 +143,11 @@ struct ChatView: View {
         }
     }
 
+    private var selectedLocalModel: ImportedLocalModel? {
+        guard let id = settings.snapshot.selectedLocalModelID else { return nil }
+        return localModels.models.first { $0.id == id }
+    }
+
     private func toggleTranscription() {
         if transcription.isRecording {
             Task { await transcription.stopAndTranscribe() }
@@ -138,13 +168,15 @@ private struct ChatContextBar: View {
     let chat: ChatStore
     let deviceID: String
     let bridge: BridgeClient
+    let isLocal: Bool
+    let localModelName: String?
     let showModels: () -> Void
     let showSessions: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
             Button(action: showModels) {
-                Label(chat.selectedModelOption?.label ?? chat.selectedModel ?? "Choose model", systemImage: "cpu")
+                Label(isLocal ? (localModelName ?? "Choose local model") : (chat.selectedModelOption?.label ?? chat.selectedModel ?? "Choose model"), systemImage: "cpu")
                     .lineLimit(1)
             }
             .buttonStyle(.bordered)
@@ -158,6 +190,7 @@ private struct ChatContextBar: View {
                 }
             }
             .buttonStyle(.bordered)
+            .disabled(isLocal)
             Spacer(minLength: 0)
             Menu {
                 ForEach(chat.effectiveReasoningOptions) { option in
@@ -172,7 +205,7 @@ private struct ChatContextBar: View {
                 Image(systemName: "brain.head.profile")
                     .frame(width: 28, height: 28)
             }
-            .disabled(chat.effectiveReasoningOptions.isEmpty)
+            .disabled(isLocal || chat.effectiveReasoningOptions.isEmpty)
         }
         .padding(.horizontal)
         .padding(.vertical, 8)

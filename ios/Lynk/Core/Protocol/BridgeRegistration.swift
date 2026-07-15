@@ -2,7 +2,7 @@ import Foundation
 
 enum BridgeRegistration {
     static let platform = "ios"
-    static let capabilities = ["chat", "attachments", "transcription", "realtime_voice"]
+    static let capabilities = ["chat", "attachments", "transcription", "realtime_voice", "local_inference"]
     static let forbiddenPhoneCapabilities: Set<String> = [
         "phone_control", "accessibility_tree", "gestures", "text_input", "screenshots", "app_launch"
     ]

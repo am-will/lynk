@@ -11,6 +11,8 @@ struct LynkApp: App {
                 .environment(container.bridge)
                 .environment(container.chat)
                 .environment(container.voice)
+                .environment(container.localModels)
+                .environment(container.localInference)
                 .task { container.start() }
         }
     }

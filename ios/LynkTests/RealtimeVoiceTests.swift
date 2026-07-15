@@ -120,7 +120,9 @@ final class RealtimeVoiceTests: XCTestCase {
             deviceID: "lynk-ios-test",
             token: "token",
             openAIKey: "sk-test",
-            systemPrompt: SettingsStore.defaultSystemPrompt
+            systemPrompt: SettingsStore.defaultSystemPrompt,
+            runTarget: .host,
+            selectedLocalModelID: nil
         )
     }
 }

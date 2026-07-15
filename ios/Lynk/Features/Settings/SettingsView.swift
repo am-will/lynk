@@ -9,6 +9,19 @@ struct SettingsView: View {
         @Bindable var settings = settings
         NavigationStack {
             Form {
+                Section("Run on") {
+                    Picker("Runtime", selection: $settings.runTarget) {
+                        ForEach(RunTarget.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("run-target-picker")
+                    NavigationLink("Local models") { LocalModelsView() }
+                        .accessibilityIdentifier("local-models-link")
+                    if settings.runTarget == .local {
+                        Text("Local mode is chat-only. It never provides a desktop shell, unrestricted files, screenshots, app control, or Android phone tools.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 Section("Connection") {
                     TextField("ws://127.0.0.1:8788/phone", text: $settings.bridgeURLsText, axis: .vertical)
                         .textInputAutocapitalization(.never)
