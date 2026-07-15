@@ -12,6 +12,7 @@
 #include <cstring>
 #include <mutex>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <sstream>
 #include <thread>
@@ -24,9 +25,43 @@
 
 namespace {
 
+struct LlamaModelDeleter {
+    void operator()(llama_model* model) const noexcept {
+        if (model != nullptr) {
+            llama_model_free(model);
+        }
+    }
+};
+
+struct LlamaContextDeleter {
+    void operator()(llama_context* context) const noexcept {
+        if (context != nullptr) {
+            llama_free(context);
+        }
+    }
+};
+
+using LlamaModelPtr = std::unique_ptr<llama_model, LlamaModelDeleter>;
+using LlamaContextPtr = std::unique_ptr<llama_context, LlamaContextDeleter>;
+
 struct GgufSession {
-    llama_model* model = nullptr;
-    llama_context* ctx = nullptr;
+    GgufSession(LlamaModelPtr loaded_model, LlamaContextPtr loaded_context, bool loaded_with_gpu)
+        : model(std::move(loaded_model)),
+          ctx(std::move(loaded_context)),
+          vocab(llama_model_get_vocab(model.get())),
+          n_ctx(static_cast<int>(llama_n_ctx(ctx.get()))),
+          using_gpu(loaded_with_gpu) {}
+
+    void close() {
+        std::lock_guard<std::mutex> lock(mutex);
+        ctx.reset();
+        model.reset();
+    }
+
+    // Keep the model before the context so normal member destruction releases
+    // the context first. A llama_context borrows resources owned by its model.
+    LlamaModelPtr model;
+    LlamaContextPtr ctx;
     const llama_vocab* vocab = nullptr;
     int n_ctx = 0;
     bool using_gpu = false;
@@ -61,11 +96,14 @@ static std::shared_ptr<GgufCreateOperation> find_create_operation(jlong handle) 
     return it != g_create_operations.end() ? it->second : nullptr;
 }
 
-static jlong register_session(GgufSession* session) {
-    auto owned_session = std::shared_ptr<GgufSession>(session);
+static jlong register_session(std::unique_ptr<GgufSession> session) {
+    auto owned_session = std::shared_ptr<GgufSession>(std::move(session));
     jlong handle = g_next_session.fetch_add(1, std::memory_order_relaxed);
     std::lock_guard<std::mutex> lock(g_sessions_mutex);
-    g_sessions.emplace(handle, std::move(owned_session));
+    auto insertion = g_sessions.emplace(handle, std::move(owned_session));
+    if (!insertion.second) {
+        throw std::runtime_error("failed to allocate a unique GGUF session handle");
+    }
     return handle;
 }
 
@@ -346,15 +384,15 @@ static void init_backend() {
 }
 
 struct CreateResult {
-    GgufSession* session = nullptr;
+    std::unique_ptr<GgufSession> session;
     GgufFailure failure = GgufFailure::Configuration;
     std::string detail;
 };
 
 static CreateResult try_create_session(const char* path, int n_gpu_layers, int n_ctx_tokens,
                                        GgufCreateOperation* operation) {
-    llama_model* model = nullptr;
-    llama_context* ctx = nullptr;
+    LlamaModelPtr model;
+    LlamaContextPtr ctx;
     ggml_backend_dev_t cpu_devices[] = {
         ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU),
         nullptr,
@@ -376,14 +414,13 @@ static CreateResult try_create_session(const char* path, int n_gpu_layers, int n
             mparams.devices = cpu_devices;
         }
 
-        model = llama_model_load_from_file(path, mparams);
+        model.reset(llama_model_load_from_file(path, mparams));
         if (model == nullptr) {
             return operation->abort_flag.load(std::memory_order_relaxed)
                 ? CreateResult{nullptr, GgufFailure::Cancellation, "GGUF create operation cancelled"}
                 : CreateResult{nullptr, GgufFailure::Model, "failed to load GGUF model"};
         }
         if (operation->abort_flag.load(std::memory_order_relaxed)) {
-            llama_model_free(model);
             return {nullptr, GgufFailure::Cancellation, "GGUF create operation cancelled"};
         }
 
@@ -405,36 +442,26 @@ static CreateResult try_create_session(const char* path, int n_gpu_layers, int n
             cparams.offload_kqv = false;
         }
 
-        ctx = llama_init_from_model(model, cparams);
+        ctx.reset(llama_init_from_model(model.get(), cparams));
         if (ctx == nullptr) {
-            llama_model_free(model);
             return operation->abort_flag.load(std::memory_order_relaxed)
                 ? CreateResult{nullptr, GgufFailure::Cancellation, "GGUF create operation cancelled"}
                 : CreateResult{nullptr, GgufFailure::Context, "failed to initialize GGUF context"};
         }
         if (operation->abort_flag.load(std::memory_order_relaxed)) {
-            llama_free(ctx);
-            llama_model_free(model);
             return {nullptr, GgufFailure::Cancellation, "GGUF create operation cancelled"};
         }
         // llama_context retains the callback pointer. The create-operation token is
         // released after this JNI call, so clear it before publishing the session.
-        llama_set_abort_callback(ctx, nullptr, nullptr);
+        llama_set_abort_callback(ctx.get(), nullptr, nullptr);
 
-        auto* session = new GgufSession();
-        session->model = model;
-        session->ctx = ctx;
-        session->vocab = llama_model_get_vocab(model);
-        session->n_ctx = static_cast<int>(llama_n_ctx(ctx));
-        session->using_gpu = using_gpu;
-        return {session, GgufFailure::Configuration, ""};
+        auto session = std::make_unique<GgufSession>(
+            std::move(model),
+            std::move(ctx),
+            using_gpu
+        );
+        return {std::move(session), GgufFailure::Configuration, ""};
     } catch (const std::exception& e) {
-        if (ctx != nullptr) {
-            try { llama_free(ctx); } catch (...) {}
-        }
-        if (model != nullptr) {
-            try { llama_model_free(model); } catch (...) {}
-        }
         if (operation->abort_flag.load(std::memory_order_relaxed)) {
             return {nullptr, GgufFailure::Cancellation, "GGUF create operation cancelled"};
         }
@@ -446,12 +473,6 @@ static CreateResult try_create_session(const char* path, int n_gpu_layers, int n
             e.what()
         };
     } catch (...) {
-        if (ctx != nullptr) {
-            try { llama_free(ctx); } catch (...) {}
-        }
-        if (model != nullptr) {
-            try { llama_model_free(model); } catch (...) {}
-        }
         return operation->abort_flag.load(std::memory_order_relaxed)
             ? CreateResult{nullptr, GgufFailure::Cancellation, "GGUF create operation cancelled"}
             : CreateResult{nullptr, GgufFailure::Configuration, "failed to initialize GGUF runtime"};
@@ -576,7 +597,7 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_createWithOperation(
             );
             return 0;
         }
-        return register_session(result.session);
+        return register_session(std::move(result.session));
     } catch (const std::exception& e) {
         throw_gguf_exception(env, GgufFailure::Configuration, e.what());
         return 0;
@@ -592,15 +613,7 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_close(
     auto session = remove_session(handle);
     if (session == nullptr) return;
     try {
-        std::lock_guard<std::mutex> lock(session->mutex);
-        if (session->ctx != nullptr) {
-            try { llama_free(session->ctx); } catch (...) {}
-            session->ctx = nullptr;
-        }
-        if (session->model != nullptr) {
-            try { llama_model_free(session->model); } catch (...) {}
-            session->model = nullptr;
-        }
+        session->close();
     } catch (...) {}
 }
 
@@ -693,8 +706,8 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
             return nullptr;
         }
 
-        llama_set_abort_callback(session->ctx, abort_callback, &session->abort_flag);
-        llama_memory_clear(llama_get_memory(session->ctx), true);
+        llama_set_abort_callback(session->ctx.get(), abort_callback, &session->abort_flag);
+        llama_memory_clear(llama_get_memory(session->ctx.get()), true);
 
         jmethodID on_delta = nullptr;
         jmethodID is_cancelled = nullptr;
@@ -714,7 +727,7 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
         JniString system(env, system_prompt);
         JniString user(env, user_prompt);
 
-        std::string prompt = apply_chat_template(session->model,
+        std::string prompt = apply_chat_template(session->model.get(),
                                                  system.c_str() ? system.c_str() : "",
                                                  user.c_str() ? user.c_str() : "");
 
@@ -730,7 +743,7 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
             return nullptr;
         }
 
-        int n_batch = static_cast<int>(llama_n_batch(session->ctx));
+        int n_batch = static_cast<int>(llama_n_batch(session->ctx.get()));
         if (n_batch <= 0) n_batch = 2048;
         // CPU backends support llama's in-flight abort callback. Vulkan currently
         // does not, so use bounded prefill chunks to keep cancellation responsive.
@@ -756,7 +769,7 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
             }
             batch.logits[chunk - 1] = 1;
             batch.n_tokens = chunk;
-            int32_t ret = llama_decode(session->ctx, batch);
+            int32_t ret = llama_decode(session->ctx.get(), batch);
             if (ret == 2) {
                 return new_string_from_utf8(env, "", 0);
             }
@@ -784,7 +797,7 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
 
         std::string output;
         std::string pending_utf8;
-        llama_token id = llama_sampler_sample(sampler_guard.smpl, session->ctx, -1);
+        llama_token id = llama_sampler_sample(sampler_guard.smpl, session->ctx.get(), -1);
 
         for (int i = 0; i < remaining; ++i) {
             if (id < 0 || llama_vocab_is_eog(session->vocab, id)) break;
@@ -813,7 +826,7 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
             batch.seq_id[0][0] = 0;
             batch.logits[0] = 1;
             batch.n_tokens = 1;
-            int32_t ret = llama_decode(session->ctx, batch);
+            int32_t ret = llama_decode(session->ctx.get(), batch);
             n_past++;
 
             if (ret == 2) break;
@@ -823,7 +836,7 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
             }
 
             if (i + 1 < remaining) {
-                id = llama_sampler_sample(sampler_guard.smpl, session->ctx, -1);
+                id = llama_sampler_sample(sampler_guard.smpl, session->ctx.get(), -1);
             }
         }
 

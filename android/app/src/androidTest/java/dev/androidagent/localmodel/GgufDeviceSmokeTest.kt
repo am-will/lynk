@@ -44,7 +44,7 @@ class GgufDeviceSmokeTest {
     }
 
     @Test
-    fun loadsConfiguredModel() {
+    fun loadsConfiguredModelAndClosesIdempotently() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("modelPath") != null)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val arguments = InstrumentationRegistry.getArguments()
@@ -57,6 +57,7 @@ class GgufDeviceSmokeTest {
             println("GGUF_LOAD_STATUS=${GgufNative.getContextSize(handle)} tokens, ${GgufNative.getBackendName(handle)}")
             assertTrue(handle != 0L)
         } finally {
+            GgufNative.close(handle)
             GgufNative.close(handle)
         }
     }
