@@ -67,7 +67,9 @@ test("Android model and reasoning options match protocol enums", () => {
 test("Android local phone tool registry matches shared MCP command names", () => {
   const source = readRepoFile("android/app/src/main/java/dev/androidagent/localmodel/LocalToolSpecs.kt");
   const localTools = Array.from(
-    source.matchAll(/LocalToolSpec\("([^"]+)",\s*"[^"]*",\s*"phone",\s*"([^"]+)"\)/g),
+    source.matchAll(
+      /LocalToolSpec\("([^"]+)",\s*"[^"]*",\s*"phone",\s*"([^"]+)"(?:,\s*requiresImageInput\s*=\s*(?:true|false))?\)/g
+    ),
     (match) => [match[1], match[2]]
   ).sort();
   const expectedTools = Object.entries(MCP_PHONE_TOOL_NAME_BY_COMMAND)
