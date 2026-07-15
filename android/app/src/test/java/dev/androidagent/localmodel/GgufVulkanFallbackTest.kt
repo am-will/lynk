@@ -206,21 +206,33 @@ class GgufVulkanFallbackTest {
     }
 
     @Test
-    fun failedGpuDeltasAreDiscardedBeforeCleanCpuCommit() = runBlocking {
+    fun cpuAttemptStreamsDeltasBeforeGenerationCompletes() = runBlocking {
+        val events = mutableListOf<String>()
+        val delivery = GgufAttemptDeltaDelivery(LocalModelBackend.Cpu) { events += it }
+
+        delivery.emit("first")
+        events += "generation completed"
+        delivery.commit()
+
+        assertEquals(listOf("first", "generation completed"), events)
+    }
+
+    @Test
+    fun failedGpuDeltasAreDiscardedBeforeCleanCpuStreams() = runBlocking {
         val policy = GgufVulkanFallbackPolicy { false }
         val callerDeltas = mutableListOf<String>()
 
         val completed = policy.execute(LocalModelBackend.Gpu) { backend ->
-            val attempt = GgufAttemptDeltaBuffer()
+            val delivery = GgufAttemptDeltaDelivery(backend) { callerDeltas += it }
             if (backend == LocalModelBackend.Gpu) {
-                attempt.append("discarded gpu delta")
+                delivery.emit("discarded gpu delta")
                 throw GgufNativeException("vulkan_backend", "device lost")
             }
-            attempt.append("clean ")
-            attempt.append("cpu")
-            Pair("clean cpu", attempt.snapshot())
+            delivery.emit("clean ")
+            delivery.emit("cpu")
+            Pair("clean cpu", delivery)
         }
-        completed.second.forEach(callerDeltas::add)
+        completed.second.commit()
 
         assertEquals("clean cpu", completed.first)
         assertEquals(listOf("clean ", "cpu"), callerDeltas)

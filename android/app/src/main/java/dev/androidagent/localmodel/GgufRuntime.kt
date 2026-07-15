@@ -66,11 +66,11 @@ class GgufRuntime internal constructor(
         onStatus: suspend (String) -> Unit
     ): String = withContext(Dispatchers.IO) {
         val completed = withSelectedBackend(request.config, onStatus) { selectedConfig ->
-            val deltas = GgufAttemptDeltaBuffer()
-            val output = generateOnce(request.copy(config = selectedConfig), deltas::append, onStatus)
-            GgufCompletedAttempt(output, deltas.snapshot())
+            val delivery = GgufAttemptDeltaDelivery(selectedConfig.localModelBackend, onDelta)
+            val output = generateOnce(request.copy(config = selectedConfig), delivery::emit, onStatus)
+            GgufCompletedAttempt(output, delivery)
         }
-        commitGgufDeltas(completed.deltas, onDelta)
+        completed.delivery.commit()
         completed.output
     }
 
@@ -557,24 +557,22 @@ internal class GgufVulkanFallbackPolicy(
         error.category == GgufFailureCategory.VulkanBackend
 }
 
-internal class GgufAttemptDeltaBuffer {
-    private val deltas = mutableListOf<String>()
-
-    fun append(delta: String) {
-        deltas += delta
-    }
-
-    fun snapshot(): List<String> = deltas.toList()
-}
-
-internal suspend fun commitGgufDeltas(
-    deltas: List<String>,
-    onDelta: suspend (String) -> Unit
+internal class GgufAttemptDeltaDelivery(
+    backend: LocalModelBackend,
+    private val onDelta: suspend (String) -> Unit
 ) {
-    for (delta in deltas) {
-        currentCoroutineContext().ensureActive()
-        onDelta(delta)
+    private val bufferedDeltas = if (backend == LocalModelBackend.Gpu) mutableListOf<String>() else null
+
+    suspend fun emit(delta: String) {
+        if (bufferedDeltas == null) onDelta(delta) else bufferedDeltas += delta
+    }
+
+    suspend fun commit() {
+        bufferedDeltas?.forEach { delta ->
+            currentCoroutineContext().ensureActive()
+            onDelta(delta)
+        }
     }
 }
 
-private data class GgufCompletedAttempt(val output: String, val deltas: List<String>)
+private data class GgufCompletedAttempt(val output: String, val delivery: GgufAttemptDeltaDelivery)

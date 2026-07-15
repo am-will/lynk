@@ -1,5 +1,6 @@
 package dev.androidagent.localmodel
 
+import dev.androidagent.LocalModelBackend
 import dev.androidagent.localmodel.gguf.GgufCreateOperation
 import dev.androidagent.localmodel.gguf.GgufCreateOperations
 import dev.androidagent.localmodel.gguf.GgufModelKey
@@ -123,12 +124,14 @@ class GgufCancellationTest {
     @Test
     fun cancellationDuringDeltaCommitStopsRemainingBufferedDeltas() = runBlocking {
         val committed = mutableListOf<String>()
-        val worker = launch {
-            commitGgufDeltas(listOf("first", "second", "third")) { delta ->
-                committed += delta
-                currentCoroutineContext()[Job]?.cancel()
-            }
+        val delivery = GgufAttemptDeltaDelivery(LocalModelBackend.Gpu) { delta ->
+            committed += delta
+            currentCoroutineContext()[Job]?.cancel()
         }
+        delivery.emit("first")
+        delivery.emit("second")
+        delivery.emit("third")
+        val worker = launch { delivery.commit() }
 
         worker.join()
 

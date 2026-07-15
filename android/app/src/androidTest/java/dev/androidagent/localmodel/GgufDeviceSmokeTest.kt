@@ -5,10 +5,12 @@ import androidx.test.platform.app.InstrumentationRegistry
 import dev.androidagent.AgentConfig
 import dev.androidagent.LocalModelBackend
 import dev.androidagent.localmodel.gguf.GgufNative
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -41,6 +43,34 @@ class GgufDeviceSmokeTest {
         }
         runtime.close()
         assertTrue(generation.isCancelled)
+    }
+
+    @Test
+    fun runtimeDeliversDeltaBeforeGenerationCompletes() = runBlocking {
+        assumeTrue(InstrumentationRegistry.getArguments().getString("modelPath") != null)
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val modelPath = requireNotNull(InstrumentationRegistry.getArguments().getString("modelPath"))
+        val firstDelta = CompletableDeferred<String>()
+        val runtime = GgufRuntime(instrumentation.targetContext)
+        val generation = launch {
+            runtime.generate(
+                LocalModelRequest(
+                    prompt = "Write a detailed explanation of electromagnetism.",
+                    systemPrompt = "Answer directly.",
+                    config = config(modelPath, LocalModelBackend.Cpu, 4096)
+                ),
+                onDelta = { firstDelta.complete(it) },
+                onStatus = {}
+            )
+        }
+        try {
+            assertTrue(withTimeout(5 * 60 * 1000L) { firstDelta.await() }.isNotEmpty())
+            assertFalse(generation.isCompleted)
+        } finally {
+            generation.cancel()
+            generation.join()
+            runtime.close()
+        }
     }
 
     @Test
