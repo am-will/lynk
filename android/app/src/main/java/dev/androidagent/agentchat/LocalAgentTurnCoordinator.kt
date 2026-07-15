@@ -15,6 +15,7 @@ import dev.androidagent.localmodel.LocalModelRuntimeProfile
 import dev.androidagent.localmodel.LocalPhoneCommandOwner
 import dev.androidagent.localmodel.LocalToolRegistry
 import dev.androidagent.localmodel.TermuxCommandCancellationException
+import dev.androidagent.localmodel.UnsupportedLocalModelPathException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -82,8 +83,7 @@ class LocalAgentTurnCoordinator internal constructor(
 
     fun open(sessionKey: String?): Boolean {
         activeSessionKey = store.session(sessionKey).key
-        refresh(activeSessionKey, "Local phone model ready")
-        return true
+        return refresh(activeSessionKey, "Local phone model ready")
     }
 
     fun startTurn(request: LocalTurnRequest): Boolean {
@@ -91,7 +91,7 @@ class LocalAgentTurnCoordinator internal constructor(
         val trimmed = request.text.trim()
         if (trimmed.isBlank() && request.attachments.isEmpty()) return false
         val config = configProvider()
-        val profile = runtimeProfile(config)
+        val profile = runtimeProfileOrReport(config, activeSessionKey) ?: return false
         val preparedAttachments = try {
             LocalAttachmentInputPreparer.prepare(trimmed, request.attachments, profile)
         } catch (error: IllegalArgumentException) {
@@ -132,8 +132,9 @@ class LocalAgentTurnCoordinator internal constructor(
                 store.append(session.key, "assistant", finalText, "assistant_$runId")
                 cancelCommandOwner(commandOwner)
                 if (clearIfOwner(generation)) {
-                    refresh(session.key, request.completedStatus)
-                    onStatus(request.completedStatus, "done")
+                    if (refresh(session.key, request.completedStatus)) {
+                        onStatus(request.completedStatus, "done")
+                    }
                 }
                 emit(LocalChatMessages.replyAvailable(store.session(session.key), runId, "completed", finalText))
                 request.onCompleted(LocalTurnOutcome(session.key, runId, finalText))
@@ -248,10 +249,10 @@ class LocalAgentTurnCoordinator internal constructor(
         shutdownJobs.clear()
     }
 
-    private fun refresh(sessionKey: String, status: String) {
+    private fun refresh(sessionKey: String, status: String): Boolean {
         val session = store.session(sessionKey)
         val config = configProvider()
-        val profile = runtimeProfile(config)
+        val profile = runtimeProfileOrReport(config, sessionKey) ?: return false
         val toolDescriptions = toolDescriptions(profile)
         val toolDescriptionsJson = toolDescriptions.toString()
         emit(LocalChatMessages.models(profile))
@@ -260,7 +261,27 @@ class LocalAgentTurnCoordinator internal constructor(
         emit(LocalChatMessages.usage(session, config, profile, toolDescriptionsJson))
         emit(LocalChatMessages.history(session))
         emit(LocalChatMessages.state(config, session.key, null, activeTurn?.job?.isActive == true, status))
+        return true
     }
+
+    private fun runtimeProfileOrReport(config: AgentConfig, sessionKey: String): LocalModelRuntimeProfile? =
+        try {
+            runtimeProfile(config)
+        } catch (error: UnsupportedLocalModelPathException) {
+            val message = error.message ?: "Select a .litertlm or .gguf local model."
+            emit(LocalChatMessages.error(sessionKey, message))
+            emit(
+                LocalChatMessages.state(
+                    config,
+                    sessionKey,
+                    activeTurn?.runId,
+                    activeTurn?.job?.isActive == true,
+                    message
+                )
+            )
+            onStatus(message, "error")
+            null
+        }
 
     private fun emit(message: JSONObject) {
         onChatMessage(message.put("deviceId", configProvider().deviceId))

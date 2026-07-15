@@ -35,7 +35,7 @@ class LocalModelRuntimeRouterTest {
         val gguf = RecordingRuntime()
         val router = LocalModelRuntimeRouter({ liteRt }, { gguf })
         val result = runCatching { router.generate(request("x", "model.bin"), {}, {}) }
-        assertTrue(result.exceptionOrNull() is IllegalArgumentException)
+        assertTrue(result.exceptionOrNull() is UnsupportedLocalModelPathException)
         assertTrue(liteRt.prompts.isEmpty())
         assertTrue(gguf.prompts.isEmpty())
     }

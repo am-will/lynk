@@ -45,22 +45,11 @@ class LocalModelRuntimeRouter(
         }
     }
 
-    private fun extensionOf(path: String): String =
-        path.trim().substringAfterLast('.', "").lowercase()
-
     private fun runtimeFor(config: AgentConfig): LocalModelRuntime = synchronized(lock) {
         check(!closed) { "Local model runtime router is closed" }
-        when (extensionOf(config.localModelPath)) {
-            LITERTLM_EXTENSION -> liteRt ?: liteRtFactory().also { liteRt = it }
-            GGUF_EXTENSION -> gguf ?: ggufFactory().also { gguf = it }
-            else -> throw IllegalArgumentException(
-                "Unsupported local model path: ${config.localModelPath}. Only .litertlm and .gguf models are supported."
-            )
+        when (LocalModelStore.requireFormatForPath(config.localModelPath)) {
+            LocalModelStore.ModelFormat.LiteRtLm -> liteRt ?: liteRtFactory().also { liteRt = it }
+            LocalModelStore.ModelFormat.Gguf -> gguf ?: ggufFactory().also { gguf = it }
         }
-    }
-
-    private companion object {
-        const val LITERTLM_EXTENSION = "litertlm"
-        const val GGUF_EXTENSION = "gguf"
     }
 }

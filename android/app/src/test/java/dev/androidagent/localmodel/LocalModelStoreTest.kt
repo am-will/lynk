@@ -8,6 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.File
@@ -54,6 +55,15 @@ class LocalModelStoreTest {
         assertEquals(LocalModelStore.ModelFormat.Gguf, LocalModelStore.formatForDisplayName("model.gguf"))
         assertNull(LocalModelStore.formatForDisplayName("model.gguf.bin"))
         assertNull(LocalModelStore.formatForDisplayName(null))
+    }
+
+    @Test
+    fun existingUnsupportedFileIsNotAnAvailableLocalModel() {
+        val unsupported = File(root(), "model.bin").apply { writeText("not a model") }
+        val supported = File(root(), "model.gguf").apply { writeText("model") }
+
+        assertFalse(LocalModelStore.exists(unsupported.absolutePath))
+        assertTrue(LocalModelStore.exists(supported.absolutePath))
     }
 
     @Test

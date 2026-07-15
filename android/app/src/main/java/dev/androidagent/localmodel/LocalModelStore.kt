@@ -95,7 +95,11 @@ object LocalModelStore {
         return ModelFormat.values().firstOrNull { normalized.endsWith(it.extension, ignoreCase = true) }
     }
 
-    fun exists(path: String): Boolean = path.isNotBlank() && File(path).isFile
+    internal fun requireFormatForPath(path: String): ModelFormat =
+        formatForDisplayName(path) ?: throw UnsupportedLocalModelPathException(path)
+
+    fun exists(path: String): Boolean =
+        formatForDisplayName(path) != null && File(path.trim()).isFile
 
     fun displayName(path: String): String {
         val name = File(path.trim()).name
@@ -126,3 +130,7 @@ object LocalModelStore {
         retentionMillis = Long.MAX_VALUE
     )
 }
+
+internal class UnsupportedLocalModelPathException(path: String) : IllegalArgumentException(
+    "Unsupported local model path: $path. Only .litertlm and .gguf models are supported."
+)
