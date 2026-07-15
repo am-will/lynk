@@ -233,6 +233,9 @@ export function normalizeOpenCodeModels(payload: unknown): Array<Record<string, 
     for (const [key, value] of Object.entries(providerModels ?? {})) {
       const model = asRecord(value);
       const modelID = stringField(model, "id") ?? key;
+      if (!shouldExposeOpenCodeModel(providerID, modelID, model, connected)) {
+        continue;
+      }
       const id = `${providerID}/${modelID}`;
       models.push({
         id,
@@ -240,13 +243,32 @@ export function normalizeOpenCodeModels(payload: unknown): Array<Record<string, 
         name: stringField(model, "name") ?? modelID,
         provider: "opencode",
         contextWindow: numberField(asRecord(model?.limit), "context"),
-        available: connected.size === 0 || connected.has(providerID),
+        available: true,
         reasoningOptions: DEFAULT_REASONING_OPTIONS.map((option) => option.id),
         defaultReasoningEffort: "medium"
       });
     }
   }
   return models;
+}
+
+function shouldExposeOpenCodeModel(
+  providerID: string,
+  modelID: string,
+  model: Record<string, unknown> | undefined,
+  connected: ReadonlySet<string>
+): boolean {
+  if (providerID !== "opencode") {
+    return connected.has(providerID);
+  }
+  const cost = asRecord(model?.cost);
+  const inputCost = numberField(cost, "input");
+  const outputCost = numberField(cost, "output");
+  if (inputCost === 0 && outputCost === 0) {
+    return true;
+  }
+  const name = stringField(model, "name") ?? "";
+  return /(?:^|[-\s])free(?:$|[-\s])/i.test(`${modelID} ${name}`);
 }
 
 function textFromParts(parts: unknown[], role: string): string {

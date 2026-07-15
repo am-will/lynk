@@ -223,20 +223,32 @@ test("OpenCode history preserves typed auth errors instead of treating them as m
   client.close();
 });
 
-test("OpenCode model normalization namespaces provider/model ids", () => {
+test("OpenCode model normalization keeps connected providers and free Zen models only", () => {
   const models = normalizeOpenCodeModels({
     connected: ["openai"],
     all: [
       { id: "openai", models: { "gpt-5.5": { id: "gpt-5.5", name: "GPT 5.5", limit: { context: 200_000 } } } },
-      { id: "opencode", models: { "mimo-v2.5-free": { id: "mimo-v2.5-free", name: "Mimo" } } }
+      {
+        id: "opencode",
+        models: {
+          "mimo-v2.5-free": { id: "mimo-v2.5-free", name: "Mimo", cost: { input: 0, output: 0 } },
+          "big-pickle": { id: "big-pickle", name: "Big Pickle", cost: { input: 0, output: 0 } },
+          "claude-paid": { id: "claude-paid", name: "Claude Paid", cost: { input: 1, output: 5 } }
+        }
+      },
+      { id: "requesty", models: { "grok-4": { id: "grok-4", name: "Grok 4" } } }
     ]
   });
 
-  assert.deepEqual(models.map((model) => model.id), ["openai/gpt-5.5", "opencode/mimo-v2.5-free"]);
+  assert.deepEqual(models.map((model) => model.id), [
+    "openai/gpt-5.5",
+    "opencode/mimo-v2.5-free",
+    "opencode/big-pickle"
+  ]);
   assert.equal(models[0]?.provider, "opencode");
   assert.equal(models[0]?.contextWindow, 200_000);
   assert.equal(models[0]?.available, true);
-  assert.equal(models[1]?.available, false);
+  assert.equal(models[1]?.available, true);
 });
 
 test("OpenCode sessions, commands, and tools are normalized with workspace directory", async () => {
