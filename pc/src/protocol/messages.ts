@@ -125,13 +125,36 @@ export const CHAT_ATTACHMENT_KINDS = ["image", "file"] as const;
 export const CHAT_ATTACHMENT_MAX_BYTES = 50 * 1024 * 1024;
 export const CHAT_ATTACHMENT_MAX_COUNT = 8;
 export const CHAT_ATTACHMENT_MAX_MESSAGE_BYTES = 100 * 1024 * 1024;
+export const CLIENT_PLATFORMS = ["android", "ios"] as const;
+export type ClientPlatform = typeof CLIENT_PLATFORMS[number];
+export const IOS_FORBIDDEN_CAPABILITIES = [
+  "phone_control",
+  "accessibility_tree",
+  "gestures",
+  "text_input",
+  "screenshots",
+  "app_launch"
+] as const;
 export type ChatTaskKind = typeof CHAT_TASK_KINDS[number];
 
 export const registerMessageSchema = z.object({
   type: z.literal("register"),
   deviceId: z.string().min(1),
   token: z.string().min(1),
+  platform: z.enum(CLIENT_PLATFORMS).optional(),
   capabilities: z.array(z.string())
+}).superRefine((message, context) => {
+  if (message.platform !== "ios") return;
+  const forbidden = message.capabilities.filter((capability) =>
+    (IOS_FORBIDDEN_CAPABILITIES as readonly string[]).includes(capability)
+  );
+  if (forbidden.length > 0) {
+    context.addIssue({
+      code: "custom",
+      path: ["capabilities"],
+      message: `iOS cannot register phone-control capabilities: ${forbidden.join(", ")}`
+    });
+  }
 });
 
 export const observedNodeTargetSchema = z.object({
@@ -287,6 +310,7 @@ export const chatSendMessageSchema = z.object({
   sessionId: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   reasoningEffort: z.string().min(1).optional(),
+  systemPrompt: z.string().max(32_000).optional(),
   idempotencyKey: z.string().min(1).optional(),
   delivery: z.enum(CHAT_SEND_DELIVERIES).optional(),
   attachments: z.array(chatAttachmentReferenceSchema).max(CHAT_ATTACHMENT_MAX_COUNT).optional()

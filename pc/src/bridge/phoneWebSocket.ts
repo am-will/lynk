@@ -5,7 +5,7 @@ import type { RealtimeTaskManager } from "./RealtimeTaskManager.js";
 import type { Dispatcher } from "../dispatcher/dispatcher.js";
 import type { BridgeConfig } from "./config.js";
 import type { PhoneHub } from "./PhoneHub.js";
-import { REALTIME_TOOL_NAMES, inboundPhoneMessageSchema } from "../protocol/messages.js";
+import { REALTIME_TOOL_NAMES, inboundPhoneMessageSchema, type ClientPlatform } from "../protocol/messages.js";
 import type { BridgeRealtime } from "./bridgeRealtime.js";
 import { buildChatErrorMessage } from "./chat/ChatErrors.js";
 import { tokenEquals } from "./httpAuth.js";
@@ -76,6 +76,7 @@ export function bindPhoneSocket(
   const ingress = resolvePhoneWebSocketIngressOptions(options);
   const messageBudget = new WebSocketMessageBudget(ingress);
   let deviceId: string | undefined;
+  let clientPlatform: ClientPlatform = "android";
   const registrationTimer = setTimeout(() => {
     if (!deviceId) {
       closeSocket(socket, 4002, "registration timeout");
@@ -120,6 +121,7 @@ export function bindPhoneSocket(
           return;
         }
         deviceId = message.deviceId;
+        clientPlatform = message.platform ?? "android";
         clearTimeout(registrationTimer);
         deps.hub.register(message, socket);
         deps.audit.record("phone_registered", deviceId, {
@@ -268,6 +270,10 @@ export function bindPhoneSocket(
           });
           return;
         }
+        if (clientPlatform === "ios" && isPhoneControlRealtimeTool(message.name)) {
+          deps.realtime.sendRealtimeError(message.deviceId, message.voiceSessionId, `Realtime tool ${message.name} is unavailable on iOS.`);
+          return;
+        }
         deps.realtimeTaskManager.handleToolCall(message).catch((error) => {
           deps.realtime.sendRealtimeError(message.deviceId, message.voiceSessionId, error instanceof Error ? error.message : String(error));
         });
@@ -325,6 +331,12 @@ export function bindPhoneSocket(
   socket.on("error", () => {
     deps.audit.record("phone_socket_error", deviceId);
   });
+}
+
+function isPhoneControlRealtimeTool(name: string): boolean {
+  return name === REALTIME_TOOL_NAMES.runPhoneTask ||
+    name === REALTIME_TOOL_NAMES.steerPhoneTask ||
+    name === REALTIME_TOOL_NAMES.stopPhoneTask;
 }
 
 function closeSocket(socket: WebSocket, code: number, reason: string): void {

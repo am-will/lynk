@@ -1,6 +1,7 @@
 package dev.androidagent.net
 
 import dev.androidagent.AgentConfig
+import dev.androidagent.DefaultSystemPrompt
 import dev.androidagent.BridgeEndpointPolicy
 import dev.androidagent.AgentLocation
 import dev.androidagent.accessibility.AccessibilityCommandExecutor
@@ -155,6 +156,7 @@ class PhoneWebSocketClient(
             .put("deviceId", config.deviceId)
             .put("text", text)
             .put("delivery", delivery.key)
+            .put("systemPrompt", config.systemPrompt.ifBlank { DefaultSystemPrompt.text })
         normalizedSessionKey?.let { message.put("sessionKey", it) }
         model?.takeIf { it.isNotBlank() }?.let { message.put("model", it) }
         reasoningEffort?.takeIf { it.isNotBlank() }?.let { message.put("reasoningEffort", it) }
@@ -364,9 +366,10 @@ class PhoneWebSocketClient(
             .put("type", "register")
             .put("deviceId", config.deviceId)
             .put("token", config.token)
+            .put("platform", "android")
             .put(
                 "capabilities",
-                JSONArray(listOf("accessibility_tree", "gestures", "text_input", "screenshots", "app_launch", "realtime_voice", "gateway_chat"))
+                JSONArray(listOf("phone_control", "accessibility_tree", "gestures", "text_input", "screenshots", "app_launch", "chat", "realtime_voice", "transcription", "attachments"))
             )
         val accepted = webSocket.send(register.toString())
         Log.i(TAG, "register sent=$accepted deviceId=${config.deviceId}")

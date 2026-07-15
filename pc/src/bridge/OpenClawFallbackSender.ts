@@ -62,6 +62,7 @@ export class OpenClawFallbackSender {
         inputType: "text",
         deviceId: message.deviceId,
         text: message.text,
+        systemPrompt: message.systemPrompt,
         model: undefined,
         reasoningEffort: undefined
       };

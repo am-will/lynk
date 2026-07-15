@@ -24,6 +24,7 @@ interface ConnectedPhone {
 
 export interface ConnectedPhoneSummary {
   deviceId: string;
+  platform: "android" | "ios";
   capabilities: string[];
   connectedAt: number;
 }
@@ -47,7 +48,10 @@ export class PhoneHub {
 
   register(registration: RegisterMessage, socket: WebSocket): void {
     const existing = this.phones.get(registration.deviceId);
-    existing?.socket.close(4000, "replaced by newer connection");
+    if (existing) {
+      this.cancelPendingCommands(registration.deviceId, "Replaced by newer connection");
+      existing.socket.close(4000, "replaced by newer connection");
+    }
     this.phones.set(registration.deviceId, {
       registration,
       socket,
@@ -73,6 +77,7 @@ export class PhoneHub {
   listPhones(): ConnectedPhoneSummary[] {
     return [...this.phones.values()].map((phone) => ({
       deviceId: phone.registration.deviceId,
+      platform: phone.registration.platform ?? "android",
       capabilities: phone.registration.capabilities,
       connectedAt: phone.connectedAt
     }));
@@ -87,6 +92,9 @@ export class PhoneHub {
     if (!phone || phone.socket.readyState !== WebSocket.OPEN) {
       throw new Error(`Phone ${deviceId} is not connected`);
     }
+    if (message.type === "command" && !this.supportsPhoneControl(deviceId)) {
+      throw new Error(`Phone commands are not supported by ${phone.registration.platform ?? "legacy"} client ${deviceId}`);
+    }
     validatePhoneOutboundMessage(message);
     phone.socket.send(JSON.stringify(message));
   }
@@ -96,6 +104,9 @@ export class PhoneHub {
     const phone = this.phones.get(deviceId);
     if (!phone || phone.socket.readyState !== WebSocket.OPEN) {
       throw new Error(`Phone ${deviceId} is not connected`);
+    }
+    if (!this.supportsPhoneControl(deviceId)) {
+      throw new Error(`Phone commands are not supported by ${phone.registration.platform ?? "this client"} client ${deviceId}`);
     }
 
     const id = newCommandId();
@@ -133,6 +144,19 @@ export class PhoneHub {
         }
       });
     });
+  }
+
+  supportsPhoneControl(deviceId: string): boolean {
+    const registration = this.phones.get(deviceId)?.registration;
+    if (!registration || registration.platform === "ios") return false;
+    return registration.capabilities.some((capability) =>
+      capability === "phone_control" ||
+      capability === "accessibility_tree" ||
+      capability === "gestures" ||
+      capability === "text_input" ||
+      capability === "screenshots" ||
+      capability === "app_launch"
+    );
   }
 
   cancelPendingCommands(deviceId: string, reason: string): void {

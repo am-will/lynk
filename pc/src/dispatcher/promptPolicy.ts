@@ -9,6 +9,13 @@ export const PHONE_TURN_HINT = [
 
 export const PHONE_AGENT_SYSTEM_PROMPT = GENERATED_DEFAULT_SYSTEM_PROMPT;
 
+export const GENERIC_AGENT_SYSTEM_PROMPT = [
+  "You're accessed through the Lynk client.",
+  "Help with chat and agent tasks using only tools explicitly available in the selected host harness.",
+  "Do not assume device-control capabilities.",
+  "Keep status and final responses concise without leaving important details out."
+].join("\n\n");
+
 export function agentContext(agentName: string, taskKind: AgentTaskKind = "general"): string {
   const basePrompt = PHONE_AGENT_SYSTEM_PROMPT.replace("the selected host agent", agentName);
   if (taskKind === "phone") {

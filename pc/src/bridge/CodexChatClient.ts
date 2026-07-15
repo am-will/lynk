@@ -4,7 +4,7 @@ import { createHostPaths, ownedPath } from "../host/HostPaths.js";
 import type { AuditLog } from "./AuditLog.js";
 import type { AgentRunResult, AgentStatusSink } from "../dispatcher/AgentClient.js";
 import { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js";
-import { PHONE_AGENT_SYSTEM_PROMPT } from "../dispatcher/promptPolicy.js";
+import { GENERIC_AGENT_SYSTEM_PROMPT } from "../dispatcher/promptPolicy.js";
 import { codexAppServerContextWindow, DEFAULT_REASONING_OPTIONS } from "./chat/ModelCatalog.js";
 import { InMemoryHarnessSessionStore, type HarnessStoredSession } from "./harness/InMemoryHarnessSessionStore.js";
 import type { ResolvedChatAttachment } from "../attachments/AttachmentTypes.js";
@@ -223,7 +223,7 @@ export class CodexChatClient {
     const workspacePath = prepareCodexWorkspace(options.workspacePath, options.createWorkspaceIfMissing === true);
     const threadId = await this.client.createThread({
       model: options.model,
-      baseInstructions: PHONE_AGENT_SYSTEM_PROMPT,
+      baseInstructions: GENERIC_AGENT_SYSTEM_PROMPT,
       ...(workspacePath ? { cwd: workspacePath } : {})
     });
     const key = `${CODEX_THREAD_SESSION_KEY_PREFIX}${threadId}`;
@@ -234,7 +234,7 @@ export class CodexChatClient {
     });
     const session = this.sessions.ensureSession(key, threadId);
     this.sessions.setSessionId(session, threadId);
-    this.sessions.setMetadata(session, CODEX_BASE_INSTRUCTIONS_FINGERPRINT_KEY, promptFingerprint(PHONE_AGENT_SYSTEM_PROMPT));
+    this.sessions.setMetadata(session, CODEX_BASE_INSTRUCTIONS_FINGERPRINT_KEY, promptFingerprint(GENERIC_AGENT_SYSTEM_PROMPT));
     if (workspacePath) {
       this.sessions.setMetadata(session, CODEX_THREAD_CWD_KEY, workspacePath);
     }
@@ -302,7 +302,7 @@ export class CodexChatClient {
       const result = await this.client.submitUserRequest(text, this.statusSink(session.key, runId), {
         threadId,
         cwd,
-        systemPrompt: PHONE_AGENT_SYSTEM_PROMPT,
+        systemPrompt: GENERIC_AGENT_SYSTEM_PROMPT,
         model,
         reasoningEffort,
         attachments,
@@ -396,10 +396,10 @@ export class CodexChatClient {
     }
     const threadId = await this.client.createThread({
       model: model ?? session.model,
-      baseInstructions: PHONE_AGENT_SYSTEM_PROMPT
+      baseInstructions: GENERIC_AGENT_SYSTEM_PROMPT
     });
     this.sessions.setSessionId(session, threadId);
-    this.sessions.setMetadata(session, CODEX_BASE_INSTRUCTIONS_FINGERPRINT_KEY, promptFingerprint(PHONE_AGENT_SYSTEM_PROMPT));
+    this.sessions.setMetadata(session, CODEX_BASE_INSTRUCTIONS_FINGERPRINT_KEY, promptFingerprint(GENERIC_AGENT_SYSTEM_PROMPT));
   }
 
   private async listCodexThreads(maxThreads: number): Promise<CodexThreadRecord[]> {
@@ -480,7 +480,7 @@ function isLocalCodexSessionId(sessionKey: string, sessionId: string): boolean {
 
 function codexBaseInstructionsBound(session: HarnessStoredSession): boolean {
   const metadata = session.metadata ?? {};
-  return metadata[CODEX_BASE_INSTRUCTIONS_FINGERPRINT_KEY] === promptFingerprint(PHONE_AGENT_SYSTEM_PROMPT)
+  return metadata[CODEX_BASE_INSTRUCTIONS_FINGERPRINT_KEY] === promptFingerprint(GENERIC_AGENT_SYSTEM_PROMPT)
     || metadata[LEGACY_CODEX_BASE_INSTRUCTIONS_BOUND_KEY] === true;
 }
 

@@ -6,7 +6,7 @@ import test from "node:test";
 import type { AgentRequestOptions, AgentRunResult, AgentStatusSink } from "../dispatcher/AgentClient.js";
 import { normalizeCodexUsage } from "../dispatcher/CodexAppServerClient.js";
 import type { CodexAppServerClient } from "../dispatcher/CodexAppServerClient.js";
-import { PHONE_AGENT_SYSTEM_PROMPT } from "../dispatcher/promptPolicy.js";
+import { GENERIC_AGENT_SYSTEM_PROMPT } from "../dispatcher/promptPolicy.js";
 import type { ChatAttachment } from "../protocol/messages.js";
 import { CODEX_WORKSPACE_NOT_FOUND_CODE } from "./chat/ChatErrors.js";
 import { CodexChatClient } from "./CodexChatClient.js";
@@ -93,7 +93,7 @@ test("Codex new sessions create and reuse app-server threads", async () => {
   assert.equal(created.key, "codex:019e0000-0000-7000-8000-000000000001");
   assert.equal(created.sessionId, "019e0000-0000-7000-8000-000000000001");
   assert.equal(fake.createdThreads[0]?.model, "gpt-5.3-codex");
-  assert.equal(fake.createdThreads[0]?.baseInstructions, PHONE_AGENT_SYSTEM_PROMPT);
+  assert.equal(fake.createdThreads[0]?.baseInstructions, GENERIC_AGENT_SYSTEM_PROMPT);
 
   await client.sendChat({
     sessionKey: created.key!,
@@ -219,7 +219,7 @@ test("Codex sends from implicit sessions create a durable thread first", async (
   await waitFor(() => fake.submitted.length === 1);
 
   assert.equal(fake.createdThreads.length, 1);
-  assert.equal(fake.createdThreads[0]?.baseInstructions, PHONE_AGENT_SYSTEM_PROMPT);
+  assert.equal(fake.createdThreads[0]?.baseInstructions, GENERIC_AGENT_SYSTEM_PROMPT);
   assert.equal(fake.submitted[0]?.options.threadId, "019e0000-0000-7000-8000-000000000001");
   assert.equal(fake.submitted[0]?.options.useSessionInstructions, true);
   assert.equal(fake.submitted[0]?.text, "Hello");

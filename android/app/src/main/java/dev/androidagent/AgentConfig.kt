@@ -207,7 +207,9 @@ object AgentConfigStore {
             token = sanitizedToken(prefs.getString(TOKEN, "")),
             allowInsecureTrustedOverlay = prefs.getBoolean(ALLOW_INSECURE_TRUSTED_OVERLAY, false),
             openAiApiKey = prefs.getString(OPENAI_API_KEY, "") ?: "",
-            systemPrompt = prefs.getString(SYSTEM_PROMPT, "") ?: "",
+            systemPrompt = prefs.getString(SYSTEM_PROMPT, DefaultSystemPrompt.text)
+                ?.ifBlank { DefaultSystemPrompt.text }
+                ?: DefaultSystemPrompt.text,
             model = prefs.getString(MODEL, "gpt-5.5") ?: "gpt-5.5",
             reasoningEffort = prefs.getString(REASONING_EFFORT, "medium") ?: "medium",
             agentMode = if (experimentalLocalModelsEnabled) {

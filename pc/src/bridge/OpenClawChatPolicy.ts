@@ -10,11 +10,16 @@ export function isSameModelSelection(requestedModel: string, currentModel?: stri
   return requestedModel === currentModel || currentModel.endsWith(`/${requestedModel}`);
 }
 
-export function messageForGateway(text: string, taskKind: AgentTaskKind): string {
-  if (taskKind !== "phone") {
+export function messageForGateway(text: string, taskKind: AgentTaskKind, systemPrompt?: string): string {
+  const prompt = systemPrompt?.trim();
+  if (!prompt && taskKind !== "phone") {
     return text;
   }
-  return `${PHONE_TURN_HINT}\n\nUser request:\n${text}`;
+  return [
+    prompt,
+    taskKind === "phone" ? PHONE_TURN_HINT : undefined,
+    `User request:\n${text}`
+  ].filter(Boolean).join("\n\n");
 }
 
 export function isExplicitPhoneTask(text: string): boolean {

@@ -12,7 +12,7 @@ import type {
 
 export interface BridgeRealtimeDependencies {
   config: Pick<BridgeConfig, "openAiRealtimeModel" | "openAiRealtimeVoice">;
-  hub: Pick<PhoneHub, "sendRealtime">;
+  hub: Pick<PhoneHub, "sendRealtime"> & Partial<Pick<PhoneHub, "supportsPhoneControl">>;
   audit: Pick<AuditLog, "record">;
   realtimeClient: Pick<OpenAiRealtimeClient, "start" | "stop">;
   stopAgentWork: (deviceId: string, voiceSessionId: string, reason: string) => Promise<void>;
@@ -96,7 +96,8 @@ export class BridgeRealtime {
         sdp: message.sdp,
         systemPrompt: message.systemPrompt,
         apiKey: message.openAiApiKey,
-        location: message.location
+        location: message.location,
+        supportsPhoneControl: this.deps.hub.supportsPhoneControl?.(message.deviceId) ?? true
       });
       if (!this.isOwner(message.deviceId, owner)) {
         await this.deps.realtimeClient.stop(started.session);
@@ -156,7 +157,7 @@ export class BridgeRealtime {
     const reason = typeof message.arguments.reason === "string" && message.arguments.reason.trim()
       ? message.arguments.reason.trim()
       : "Realtime voice hung up";
-    if (message.arguments.stopPhoneTask === true) {
+    if (message.arguments.stopPhoneTask === true && (this.deps.hub.supportsPhoneControl?.(message.deviceId) ?? true)) {
       await this.deps.stopAgentWork(message.deviceId, message.voiceSessionId, reason);
     }
     await this.stopRealtimeSession(message.deviceId, message.voiceSessionId, reason);

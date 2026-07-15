@@ -8,6 +8,7 @@ export interface OpenAiRealtimeStartOptions {
   systemPrompt?: string;
   apiKey?: string;
   location?: PhoneLocation;
+  supportsPhoneControl?: boolean;
 }
 
 export interface OpenAiRealtimeSession {
@@ -18,18 +19,22 @@ export interface OpenAiRealtimeSession {
 }
 
 const VOICE_PROMPT = `
-You are OpenAgent in a live voice conversation from the user's Android phone. Keep responses short and conversational.
+You are Lynk in a live voice conversation. Keep responses short and conversational.
 For normal remote-agent work on the PC, briefly acknowledge it and call ${REALTIME_TOOL_NAMES.delegateAgentTask}; the bridge routes that task to the currently selected harness.
-Use ${REALTIME_TOOL_NAMES.runPhoneTask} only when the user asks to inspect/control the Android phone or the request clearly needs phone screen/app context.
 Do not claim delegated work is complete until tool output is returned.
-If the user interrupts, corrects, or adds information while a general agent task is running, use ${REALTIME_TOOL_NAMES.steerAgentTask}. If a phone task is running, use ${REALTIME_TOOL_NAMES.steerPhoneTask}.
-If a follow-up can be handled from the current phone screen and no phone task is running, call ${REALTIME_TOOL_NAMES.runPhoneTask} with the follow-up as the instruction; the phone agent will observe the current screen first.
-If the user asks to stop, pause, cancel, or leave the current task as-is, use ${REALTIME_TOOL_NAMES.stopAgentTask} for general work or ${REALTIME_TOOL_NAMES.stopPhoneTask} for phone work. Do not start a new task for stop requests.
-If the user asks to hang up, end the call, or stop listening, call ${REALTIME_TOOL_NAMES.hangUpRealtime} with stopPhoneTask false so any running phone task can continue.
-If the user asks to stop and hang up, call ${REALTIME_TOOL_NAMES.hangUpRealtime} with stopPhoneTask true.
-If the user asks a current-events or factual lookup that does not require controlling the phone, use ${REALTIME_TOOL_NAMES.webSearch} and answer from its result instead of running a phone task.
+If the user interrupts, corrects, or adds information while a general agent task is running, use ${REALTIME_TOOL_NAMES.steerAgentTask}.
+If the user asks to stop, pause, cancel, or leave the current task as-is, use ${REALTIME_TOOL_NAMES.stopAgentTask}. Do not start a new task for stop requests.
+If the user asks to hang up, end the call, or stop listening, call ${REALTIME_TOOL_NAMES.hangUpRealtime}.
+If the user asks a current-events or factual lookup, use ${REALTIME_TOOL_NAMES.webSearch} and answer from its result when appropriate.
 Ask a short clarification question when the instruction is ambiguous.
-Confirm only when an action is risky or irreversible, and never bypass Android or desktop-agent safety confirmations.
+Confirm only when an action is risky or irreversible, and never bypass agent safety confirmations.
+`.trim();
+
+const PHONE_CONTROL_VOICE_PROMPT = `
+This Android client supports phone control.
+Use ${REALTIME_TOOL_NAMES.runPhoneTask} only when the user asks to inspect or control the Android phone or the request clearly needs phone screen or app context.
+Use ${REALTIME_TOOL_NAMES.steerPhoneTask} to correct a running phone task and ${REALTIME_TOOL_NAMES.stopPhoneTask} to stop it.
+For a stop-and-hang-up request, call ${REALTIME_TOOL_NAMES.hangUpRealtime} with stopPhoneTask true.
 `.trim();
 
 export function formatLocationContext(location: PhoneLocation | undefined): string | undefined {
@@ -182,10 +187,27 @@ const HANG_UP_REALTIME_TOOL = {
   }
 } as const;
 
+const HANG_UP_REALTIME_TOOL_GENERIC = {
+  type: "function",
+  name: REALTIME_TOOL_NAMES.hangUpRealtime,
+  description: "End the live realtime voice session.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      reason: {
+        type: "string",
+        description: "A short reason for ending the realtime voice session."
+      }
+    },
+    required: []
+  }
+} as const;
+
 const WEB_SEARCH_TOOL = {
   type: "function",
   name: REALTIME_TOOL_NAMES.webSearch,
-  description: "Search the web for current information when a question can be answered without using the Android phone.",
+  description: "Search the web for current information when a direct lookup is more appropriate than delegating a task.",
   parameters: {
     type: "object",
     additionalProperties: false,
@@ -206,6 +228,36 @@ function callIdFromLocation(location: string | null): string | undefined {
   return location.split("/").filter(Boolean).at(-1);
 }
 
+export function realtimeVoiceInstructions(options: Pick<OpenAiRealtimeStartOptions, "systemPrompt" | "location" | "supportsPhoneControl">): string {
+  return [
+    options.systemPrompt?.trim(),
+    formatLocationContext(options.location),
+    VOICE_PROMPT,
+    options.supportsPhoneControl === true ? PHONE_CONTROL_VOICE_PROMPT : undefined
+  ].filter(Boolean).join("\n\n");
+}
+
+export function realtimeVoiceTools(supportsPhoneControl: boolean): readonly unknown[] {
+  return supportsPhoneControl
+    ? [
+      DELEGATE_AGENT_TASK_TOOL,
+      RUN_PHONE_TASK_TOOL,
+      STEER_AGENT_TASK_TOOL,
+      STEER_PHONE_TASK_TOOL,
+      STOP_AGENT_TASK_TOOL,
+      STOP_PHONE_TASK_TOOL,
+      HANG_UP_REALTIME_TOOL,
+      WEB_SEARCH_TOOL
+    ]
+    : [
+      DELEGATE_AGENT_TASK_TOOL,
+      STEER_AGENT_TASK_TOOL,
+      STOP_AGENT_TASK_TOOL,
+      HANG_UP_REALTIME_TOOL_GENERIC,
+      WEB_SEARCH_TOOL
+    ];
+}
+
 export class OpenAiRealtimeClient {
   constructor(private readonly config: BridgeConfig) {}
 
@@ -218,17 +270,8 @@ export class OpenAiRealtimeClient {
     const sessionConfig = {
       type: "realtime",
       model: this.config.openAiRealtimeModel,
-      instructions: [options.systemPrompt?.trim(), formatLocationContext(options.location), VOICE_PROMPT].filter(Boolean).join("\n\n"),
-      tools: [
-        DELEGATE_AGENT_TASK_TOOL,
-        RUN_PHONE_TASK_TOOL,
-        STEER_AGENT_TASK_TOOL,
-        STEER_PHONE_TASK_TOOL,
-        STOP_AGENT_TASK_TOOL,
-        STOP_PHONE_TASK_TOOL,
-        HANG_UP_REALTIME_TOOL,
-        WEB_SEARCH_TOOL
-      ],
+      instructions: realtimeVoiceInstructions(options),
+      tools: realtimeVoiceTools(options.supportsPhoneControl === true),
       tool_choice: "auto",
       audio: {
         output: {

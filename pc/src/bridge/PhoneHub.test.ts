@@ -14,7 +14,7 @@ test("command results resolve only from the owning registered device", async () 
     }
   } as unknown as WebSocket;
   const hub = new PhoneHub("phone-a");
-  hub.register({ type: "register", deviceId: "phone-a", token: "token", capabilities: [] }, socket);
+  hub.register({ type: "register", deviceId: "phone-a", token: "token", capabilities: ["accessibility_tree"] }, socket);
 
   let settled = false;
   const resultPromise = hub.sendCommand({
@@ -34,7 +34,7 @@ test("command timeout sends an owner-bound cancellation to Android", async () =>
   const sent: string[] = [];
   const socket = fakeSocket(sent);
   const hub = new PhoneHub("phone-a");
-  hub.register({ type: "register", deviceId: "phone-a", token: "token", capabilities: [] }, socket);
+  hub.register({ type: "register", deviceId: "phone-a", token: "token", capabilities: ["accessibility_tree"] }, socket);
 
   await assert.rejects(hub.sendCommand({
     requestOwner: "test:timeout",
@@ -57,7 +57,7 @@ test("task cancellation rejects pending result and notifies Android", async () =
   const sent: string[] = [];
   const socket = fakeSocket(sent);
   const hub = new PhoneHub("phone-a");
-  hub.register({ type: "register", deviceId: "phone-a", token: "token", capabilities: [] }, socket);
+  hub.register({ type: "register", deviceId: "phone-a", token: "token", capabilities: ["accessibility_tree"] }, socket);
   const result = hub.sendCommand({ requestOwner: "test:stop", command: "wait", args: { ms: 60_000 } });
   const rejection = assert.rejects(result, /Stopped by test/);
 
@@ -71,6 +71,41 @@ test("task cancellation rejects pending result and notifies Android", async () =
     requestOwner: command.requestOwner,
     reason: "Stopped by test"
   });
+});
+
+test("iOS registrations cannot receive phone commands", async () => {
+  const sent: string[] = [];
+  const hub = new PhoneHub("iphone");
+  hub.register({
+    type: "register",
+    deviceId: "iphone",
+    token: "token",
+    platform: "ios",
+    capabilities: ["chat", "realtime_voice", "transcription", "attachments", "local_inference"]
+  }, fakeSocket(sent));
+
+  await assert.rejects(hub.sendCommand({
+    requestOwner: "test:ios-boundary",
+    command: "observe_screen"
+  }), /not supported by ios client/);
+  assert.deepEqual(sent, []);
+});
+
+test("chat-only legacy registrations cannot receive phone commands", async () => {
+  const sent: string[] = [];
+  const hub = new PhoneHub("legacy-chat");
+  hub.register({
+    type: "register",
+    deviceId: "legacy-chat",
+    token: "token",
+    capabilities: ["chat"]
+  }, fakeSocket(sent));
+
+  await assert.rejects(hub.sendCommand({
+    requestOwner: "test:legacy-boundary",
+    command: "press_home"
+  }), /not supported/);
+  assert.deepEqual(sent, []);
 });
 
 function fakeSocket(sent: string[]): WebSocket {

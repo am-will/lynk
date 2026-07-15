@@ -269,7 +269,7 @@ export class OpenClawChatBridge {
     ) {
       return;
     }
-    const taskKind = isExplicitPhoneTask(requestText) ? "phone" : "general";
+    const taskKind = (this.hub.supportsPhoneControl?.(message.deviceId) ?? true) && isExplicitPhoneTask(requestText) ? "phone" : "general";
     const delivery = message.delivery ?? "normal";
     const requestedReasoningEffort = normalizeThinkingLevel(message.reasoningEffort, state.reasoningEffort);
     const sessionKey = state.sessionKey;
@@ -339,7 +339,7 @@ export class OpenClawChatBridge {
       const result = await this.client.sendChat({
         sessionKey: reservation.sessionKey,
         sessionId: sessionId ?? undefined,
-        message: messageForGateway(requestText, taskKind),
+        message: messageForGateway(requestText, taskKind, message.systemPrompt),
         attachments: resolvedAttachments,
         thinking: reasoningEffort,
         idempotencyKey
@@ -607,7 +607,7 @@ export class OpenClawChatBridge {
           sessionKey,
           sessionId: message.sessionId ?? state.sessionId ?? undefined,
           runId: activeRunId,
-          message: messageForGateway(text, taskKind),
+          message: messageForGateway(text, taskKind, message.systemPrompt),
           attachments,
           thinking: state.reasoningEffort ?? undefined,
           idempotencyKey
@@ -616,7 +616,7 @@ export class OpenClawChatBridge {
         await this.client.sendChat({
           sessionKey,
           sessionId: message.sessionId ?? state.sessionId ?? undefined,
-          message: `/steer ${messageForGateway(text, taskKind)}`,
+          message: `/steer ${messageForGateway(text, taskKind, message.systemPrompt)}`,
           attachments,
           thinking: state.reasoningEffort ?? undefined,
           idempotencyKey

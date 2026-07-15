@@ -179,6 +179,29 @@ test("phone websocket registers phones and preserves registered ack prefix", () 
   assert.match((hub.statuses[0] as { text: string }).text, /^Registered /);
 });
 
+test("iOS registration rejects phone-control realtime tool calls", async () => {
+  const { socket, realtime, realtimeTaskManager } = bindFakes();
+  socket.receive({
+    type: "register",
+    deviceId: "iphone",
+    token,
+    platform: "ios",
+    capabilities: ["chat", "realtime_voice"]
+  });
+  socket.receive({
+    type: "realtime.tool_call",
+    deviceId: "iphone",
+    voiceSessionId: "11111111-1111-4111-8111-111111111111",
+    callId: "call-1",
+    name: "run_phone_task",
+    arguments: { instruction: "Open Settings" }
+  });
+  await flushPromises();
+
+  assert.equal(realtimeTaskManager.toolCalls.length, 0);
+  assert.match(realtime.errors[0]?.message ?? "", /unavailable on iOS/);
+});
+
 test("phone websocket rejects wrong tokens and pre-register messages", () => {
   const wrongToken = bindFakes();
   wrongToken.socket.receive({ type: "register", deviceId: "phone", token: "wrong", capabilities: [] });

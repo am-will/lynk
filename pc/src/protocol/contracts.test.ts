@@ -27,10 +27,34 @@ import {
   realtimeStartMessageSchema,
   realtimeStopMessageSchema,
   realtimeToolCallMessageSchema,
+  registerMessageSchema,
   validatePhoneOutboundMessage
 } from "./messages.js";
 
 const repoRoot = resolve(import.meta.dirname, "../../..");
+
+test("iOS registration excludes phone-control capabilities", () => {
+  assert.equal(registerMessageSchema.safeParse({
+    type: "register",
+    deviceId: "iphone",
+    token: "token",
+    platform: "ios",
+    capabilities: ["chat", "realtime_voice", "transcription", "attachments", "local_inference"]
+  }).success, true);
+  assert.equal(registerMessageSchema.safeParse({
+    type: "register",
+    deviceId: "iphone",
+    token: "token",
+    platform: "ios",
+    capabilities: ["chat", "phone_control"]
+  }).success, false);
+  assert.equal(registerMessageSchema.safeParse({
+    type: "register",
+    deviceId: "legacy-android",
+    token: "token",
+    capabilities: ["accessibility_tree"]
+  }).success, true);
+});
 
 function readRepoFile(path: string): string {
   return readFileSync(resolve(repoRoot, path), "utf8");
