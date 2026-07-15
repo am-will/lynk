@@ -29,6 +29,7 @@ export interface ServiceActionResult {
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const pcRoot = resolve(scriptDir, "../..");
 const macLabel = "dev.androidagent.bridge";
+const legacyMacLabels = ["dev.openclaw.agent.bridge"] as const;
 const linuxUnitName = "lynk-bridge.service";
 const windowsTaskName = "LynkBridge";
 
@@ -44,6 +45,10 @@ export function serviceInstallPlan(): ServiceInstallPlan {
         description: "Install a per-user LaunchAgent for the Lynk bridge.",
         commands: [
           `mkdir -p "$HOME/Library/LaunchAgents"`,
+          ...legacyMacLabels.flatMap((label) => [
+            `launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/${label}.plist" 2>/dev/null || true`,
+            `rm -f "$HOME/Library/LaunchAgents/${label}.plist"`
+          ]),
           `cat > "$HOME/Library/LaunchAgents/${macLabel}.plist" <<'PLIST'\n${macLaunchAgentPlist(process.execPath, [resolve(pcRoot, "dist/bridge/server.js")], configPath)}\nPLIST`,
           `launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/${macLabel}.plist"`,
           `launchctl enable "gui/$(id -u)/${macLabel}"`
@@ -136,6 +141,7 @@ function servicePath(): string {
 
 async function installMacLaunchAgent(configPath: string): Promise<ServiceActionResult> {
   const plistPath = resolve(homedir(), "Library", "LaunchAgents", `${macLabel}.plist`);
+  await removeLegacyMacLaunchAgents();
   await mkdir(dirname(plistPath), { recursive: true });
   await writeFile(plistPath, macLaunchAgentPlist(process.execPath, [resolve(pcRoot, "dist/bridge/server.js")], configPath));
   await execFileQuiet("launchctl", ["bootout", `gui/${process.getuid?.() ?? ""}`, plistPath]);
@@ -155,6 +161,7 @@ async function uninstallMacLaunchAgent(configPath: string): Promise<ServiceActio
   const plistPath = resolve(homedir(), "Library", "LaunchAgents", `${macLabel}.plist`);
   await execFileQuiet("launchctl", ["bootout", `gui/${process.getuid?.() ?? ""}`, plistPath]);
   await rm(plistPath, { force: true });
+  await removeLegacyMacLaunchAgents();
   return {
     platform: "darwin",
     serviceName: macLabel,
@@ -167,15 +174,40 @@ async function uninstallMacLaunchAgent(configPath: string): Promise<ServiceActio
 
 async function macServiceStatus(configPath: string): Promise<ServiceActionResult> {
   const result = await execFileQuiet("launchctl", ["print", `gui/${process.getuid?.() ?? ""}/${macLabel}`]);
+  const legacyResults = await Promise.all(
+    legacyMacLabels.map(async (label) => ({
+      label,
+      result: await execFileQuiet("launchctl", ["print", `gui/${process.getuid?.() ?? ""}/${label}`])
+    }))
+  );
+  const running = result.ok && macLaunchAgentIsRunning(result.output);
+  const legacyConflicts = legacyResults.filter(({ result: legacy }) => legacy.ok);
+  const conflictSuffix = legacyConflicts.length > 0
+    ? ` Legacy bridge service also registered: ${legacyConflicts.map(({ label }) => label).join(", ")}. Reinstall the service to remove it.`
+    : "";
   return {
     platform: "darwin",
     serviceName: macLabel,
     installed: result.ok,
-    running: result.ok,
+    running,
     configPath,
-    message: result.ok ? `${macLabel} is registered with launchctl.` : `${macLabel} is not registered with launchctl.`,
+    message: result.ok
+      ? `${macLabel} is registered with launchctl and is ${running ? "running" : "not running"}.${conflictSuffix}`
+      : `${macLabel} is not registered with launchctl.${conflictSuffix}`,
     details: result.output.trim() || undefined
   };
+}
+
+export function macLaunchAgentIsRunning(output: string): boolean {
+  return /^\s*state = running\s*$/mu.test(output);
+}
+
+async function removeLegacyMacLaunchAgents(): Promise<void> {
+  for (const label of legacyMacLabels) {
+    const plistPath = resolve(homedir(), "Library", "LaunchAgents", `${label}.plist`);
+    await execFileQuiet("launchctl", ["bootout", `gui/${process.getuid?.() ?? ""}`, plistPath]);
+    await rm(plistPath, { force: true });
+  }
 }
 
 async function installLinuxService(configPath: string): Promise<ServiceActionResult> {

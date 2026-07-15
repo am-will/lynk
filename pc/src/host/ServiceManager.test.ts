@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { serviceInstallPlan } from "./ServiceManager.js";
+import { macLaunchAgentIsRunning, serviceInstallPlan } from "./ServiceManager.js";
 
 test("macOS service plan preserves a useful PATH for managed harness commands", { skip: process.platform !== "darwin" }, () => {
   const originalPath = process.env.PATH;
@@ -12,6 +12,7 @@ test("macOS service plan preserves a useful PATH for managed harness commands", 
 
     assert.match(plistCommand, /<key>WorkingDirectory<\/key>/);
     assert.match(plistCommand, /<key>PATH<\/key><string>\/opt\/homebrew\/bin:/);
+    assert.equal(plan.commands.some((command) => command.includes("dev.openclaw.agent.bridge.plist")), true);
   } finally {
     if (originalPath === undefined) {
       delete process.env.PATH;
@@ -19,4 +20,9 @@ test("macOS service plan preserves a useful PATH for managed harness commands", 
       process.env.PATH = originalPath;
     }
   }
+});
+
+test("macOS service status distinguishes a running job from a registered crash loop", () => {
+  assert.equal(macLaunchAgentIsRunning("state = spawn scheduled\nlast exit code = 1"), false);
+  assert.equal(macLaunchAgentIsRunning("\tstate = running\n\tpid = 123"), true);
 });
