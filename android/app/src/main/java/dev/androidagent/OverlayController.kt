@@ -61,6 +61,8 @@ import dev.androidagent.overlay.HostConnectionCopy
 import dev.androidagent.overlay.HostConnectionIndicatorButton
 import dev.androidagent.overlay.HostConnectionPhase
 import dev.androidagent.overlay.HostConnectionState
+import dev.androidagent.overlay.ModelPickerFuzzySearch
+import dev.androidagent.overlay.ModelPickerSearchState
 import dev.androidagent.overlay.PanelBounds
 import dev.androidagent.overlay.PanelChrome
 import dev.androidagent.overlay.PanelKeyboardLayout
@@ -227,6 +229,7 @@ class OverlayController(
     private var panelContent: LinearLayout? = null
     private var anchoredPicker: AnchoredPicker? = null
     private val expandedModelHarnesses = mutableSetOf<String>()
+    private val modelPickerSearchState = ModelPickerSearchState()
     private val expandedSessionWorkspaces = mutableSetOf<String>()
     private var expandedSessionQuickChats = false
     private val expandedCommandPickerGroups = mutableSetOf<String>()
@@ -1562,36 +1565,43 @@ class OverlayController(
                     )
                 }
             )
-            val rows = if (!expanded) {
-                listOf(harnessRow)
-            } else {
-                listOf(harnessRow) + group.models.map { model ->
-                    AnchoredPicker.Row(
-                        id = "model:${model.id}",
-                        label = model.label,
-                        sublabel = ChatPresentationHelpers.modelProviderSublabel(model, group.label),
-                        iconRes = ChatPresentationHelpers.harnessLogoRes(group.id) ?: R.drawable.ic_model,
-                        tintIcon = ChatPresentationHelpers.harnessLogoRes(group.id) == null,
-                        selected = model.id == selectedId,
-                        enabled = model.available != false,
-                        onSelect = {
-                            onSetChatModel(model.id)
-                            setStatus("Model: ${group.label} / ${model.label}")
-                        }
-                    )
+            val isSearchableHarness = group.id != AgentConfig.HARNESS_LOCAL
+            val rows = when {
+                !expanded -> listOf(harnessRow)
+                isSearchableHarness -> listOf(harnessRow)
+                else -> listOf(harnessRow) + group.models.map { model ->
+                    modelPickerRow(model, group.id, group.label, selectedId)
                 }
             }
-            AnchoredPicker.Section(null, rows)
+            val searchField = if (expanded && isSearchableHarness) {
+                AnchoredPicker.SearchField(
+                    id = "model-search:${group.id}",
+                    hint = "Search ${group.label} models",
+                    query = modelPickerSearchState.queryFor(group.id),
+                    emptyLabel = "No matching ${group.label} models",
+                    results = { query ->
+                        ModelPickerFuzzySearch.filter(group.models, query).map { model ->
+                            modelPickerRow(model, group.id, group.label, selectedId)
+                        }
+                    },
+                    onQueryChanged = { query -> modelPickerSearchState.update(group.id, query) }
+                )
+            } else {
+                null
+            }
+            AnchoredPicker.Section(null, rows, searchField)
         }
         val hasExpandedHarness = groups.any { group -> group.id in expandedModelHarnesses }
         val firstModelRevealRowId = revealFirstModelForHarnessId
             ?.let { harnessId ->
-                groups.firstOrNull { group -> group.id == harnessId }
-                    ?.models
-                    ?.firstOrNull()
-                    ?.id
+                groups.firstOrNull { group -> group.id == harnessId }?.let { group ->
+                    if (group.id == AgentConfig.HARNESS_LOCAL) {
+                        group.models.firstOrNull()?.id?.let { modelId -> "model:$modelId" }
+                    } else {
+                        "model-search:${group.id}"
+                    }
+                }
             }
-            ?.let { modelId -> "model:$modelId" }
         showAnchoredPicker(
             anchor = anchor,
             title = "Model",
@@ -1600,6 +1610,28 @@ class OverlayController(
             replaceShowing = replace,
             heightFraction = if (hasExpandedHarness) 0.65f else null,
             revealRowId = firstModelRevealRowId
+        )
+    }
+
+    private fun modelPickerRow(
+        model: ChatModelOption,
+        harnessId: String,
+        harnessLabel: String,
+        selectedId: String
+    ): AnchoredPicker.Row {
+        val harnessLogo = ChatPresentationHelpers.harnessLogoRes(harnessId)
+        return AnchoredPicker.Row(
+            id = "model:${model.id}",
+            label = model.label,
+            sublabel = ChatPresentationHelpers.modelProviderSublabel(model, harnessLabel),
+            iconRes = harnessLogo ?: R.drawable.ic_model,
+            tintIcon = harnessLogo == null,
+            selected = model.id == selectedId,
+            enabled = model.available != false,
+            onSelect = {
+                onSetChatModel(model.id)
+                setStatus("Model: $harnessLabel / ${model.label}")
+            }
         )
     }
 

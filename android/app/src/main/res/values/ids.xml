@@ -76,6 +76,8 @@
     <item name="openclaw_picker_scroller" type="id" />
     <item name="openclaw_picker_row" type="id" />
     <item name="openclaw_picker_row_key" type="id" />
+    <item name="openclaw_picker_search_input" type="id" />
+    <item name="openclaw_picker_search_key" type="id" />
 
     <item name="openclaw_confirmation_scrim" type="id" />
     <item name="openclaw_confirmation_card" type="id" />

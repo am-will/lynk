@@ -4,10 +4,14 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.text.Editable
+import android.text.InputType
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -29,8 +33,8 @@ import dev.androidagent.ui.DesignTokens.withAlpha
  * - dismisses on outside tap, back press from the host's key listener,
  *   or explicit [dismiss]
  * - supports a title, multiple sections with overline headers, optional
- *   leading icons, a trailing check icon for the active row, and a
- *   destructive row tone
+ *   inline search results, leading icons, a trailing check icon for the
+ *   active row, and a destructive row tone
  */
 class AnchoredPicker(
     private val context: Context,
@@ -56,7 +60,20 @@ class AnchoredPicker(
         val onSelect: () -> Unit
     )
 
-    data class Section(val title: String? = null, val rows: List<Row>)
+    data class SearchField(
+        val id: String,
+        val hint: String,
+        val query: String = "",
+        val emptyLabel: String = "No matching options",
+        val results: (String) -> List<Row>,
+        val onQueryChanged: (String) -> Unit = {}
+    )
+
+    data class Section(
+        val title: String? = null,
+        val rows: List<Row>,
+        val searchField: SearchField? = null
+    )
 
     private var scrimView: View? = null
     private var sheetView: View? = null
@@ -416,6 +433,9 @@ class AnchoredPicker(
             section.rows.forEach { row ->
                 body.addView(buildRow(row))
             }
+            section.searchField?.let { searchField ->
+                body.addView(buildSearchField(searchField))
+            }
         }
 
         container.addView(scroller)
@@ -622,6 +642,105 @@ class AnchoredPicker(
         }
 
         return rowView
+    }
+
+    private fun buildSearchField(searchField: SearchField): View {
+        val resultContainer = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        var currentRows = emptyList<Row>()
+
+        fun bindResults(query: String) {
+            currentRows.forEach { row -> row.id?.let(rowViewsById::remove) }
+            resultContainer.removeAllViews()
+            currentRows = searchField.results(query)
+            if (currentRows.isEmpty()) {
+                resultContainer.addView(buildRow(Row(
+                    label = searchField.emptyLabel,
+                    selectable = false,
+                    enabled = false,
+                    onSelect = {}
+                )))
+            } else {
+                currentRows.forEach { row -> resultContainer.addView(buildRow(row)) }
+            }
+        }
+
+        val input = EditText(context).apply {
+            exposeToAccessibility(
+                viewId = R.id.openclaw_picker_search_input,
+                description = searchField.hint,
+                focusable = true
+            )
+            setTag(R.id.openclaw_picker_search_key, searchField.id)
+            hint = searchField.hint
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT
+            background = null
+            setTextColor(tokens.primaryText)
+            setHintTextColor(tokens.tertiaryText)
+            textSize = DesignTokens.Text.callout
+            setPadding(dp(context, DesignTokens.Spacing.sm), 0, 0, 0)
+            setText(searchField.query)
+            setSelection(text?.length ?: 0)
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    val query = s?.toString().orEmpty()
+                    searchField.onQueryChanged(query)
+                    bindResults(query)
+                }
+
+                override fun afterTextChanged(s: Editable?) = Unit
+            })
+        }
+
+        val searchRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = Drawables.rounded(
+                fill = tokens.surfaceInset,
+                radius = dp(context, DesignTokens.Radius.md).toFloat(),
+                strokeColor = tokens.borderSoft,
+                strokeWidth = dp(context, 1).coerceAtLeast(1)
+            )
+            setPadding(
+                dp(context, DesignTokens.Spacing.md),
+                dp(context, DesignTokens.Spacing.xs),
+                dp(context, DesignTokens.Spacing.md),
+                dp(context, DesignTokens.Spacing.xs)
+            )
+            minimumHeight = dp(context, DesignTokens.Sizes.compactAction)
+            addView(ImageView(context).apply {
+                setImageResource(R.drawable.ic_search)
+                setColorFilter(tokens.tertiaryText)
+                hideFromAccessibility()
+            }, LinearLayout.LayoutParams(dp(context, 18), dp(context, 18)))
+            addView(input, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        }
+
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                dp(context, DesignTokens.Spacing.sm),
+                dp(context, DesignTokens.Spacing.xs),
+                dp(context, DesignTokens.Spacing.sm),
+                0
+            )
+            addView(searchRow, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ))
+            addView(resultContainer, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(context, DesignTokens.Spacing.xs)
+            })
+            rowViewsById[searchField.id] = this
+            bindResults(searchField.query)
+        }
     }
 
     private fun badgeText(count: Int): String {
