@@ -16,7 +16,7 @@ class LocalToolSpecsTest {
     }
 
     @Test
-    fun phoneDescriptionsExcludeUnrelatedAndSkillTools() {
+    fun phoneRequestsAdvertiseDirectPhoneToolsWithoutSkillPrerequisite() {
         val descriptions = LocalToolSpecs.descriptions(
             profile(supportsImageInput = true),
             LocalToolAccess(phoneControl = true)
@@ -28,6 +28,9 @@ class LocalToolSpecsTest {
         assertTrue(ids.contains("phone_open_app"))
         assertTrue(!ids.contains("local_read_skill"))
         assertTrue(!ids.contains("termux_command"))
+        assertTrue((0 until descriptions.length()).none {
+            descriptions.getJSONObject(it).getString("description").contains("local_read_skill")
+        })
     }
 
     @Test
@@ -41,6 +44,12 @@ class LocalToolSpecsTest {
         assertTrue(ids.contains("phone_long_press_node"))
         assertTrue(ids.contains("phone_wait"))
         assertTrue(ids.contains("local_read_skill"))
+        val skillDescription = (0 until descriptions.length())
+            .map(descriptions::getJSONObject)
+            .single { it.getString("id") == "local_read_skill" }
+            .getString("description")
+        assertTrue(!skillDescription.contains("android-control"))
+        assertTrue(!skillDescription.contains("phone-control"))
     }
 
     @Test

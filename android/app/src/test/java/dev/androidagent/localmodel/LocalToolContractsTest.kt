@@ -43,6 +43,15 @@ class LocalToolContractsTest {
     }
 
     @Test
+    fun directSensitivePhoneActionsStillRequireApprovalCapabilities() {
+        val tapArgs = JSONObject().put("x", 100).put("y", 200)
+
+        assertInvalid("phone_tap_xy", tapArgs)
+        assertValid("phone_tap_xy", JSONObject(tapArgs.toString())
+            .put("approvalCapability", "a".repeat(20)))
+    }
+
+    @Test
     fun confirmationValidatesItsExactNestedTarget() {
         assertValid("phone_ask_user_confirmation", JSONObject()
             .put("command", "local_write_file")

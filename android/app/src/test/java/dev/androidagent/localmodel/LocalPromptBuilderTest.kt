@@ -22,6 +22,8 @@ class LocalPromptBuilderTest {
         assertTrue(systemPrompt.contains("phone_observe"))
         assertTrue(systemPrompt.contains("phone_* tools directly"))
         assertFalse(systemPrompt.contains("local_read_skill"))
+        assertTrue(systemPrompt.contains("Sensitive phone actions"))
+        assertTrue(systemPrompt.contains("approvalCapability"))
         assertTrue(systemPrompt.contains("<|lynk_control|>"))
         assertTrue(systemPrompt.contains("<|/lynk_control|>"))
         assertTrue(systemPrompt.contains("intentionally invalid"))

@@ -37,7 +37,7 @@ internal object LocalToolSpecs {
         LocalToolSpec("phone_submit_text", "Submit focused text. Args: approvalCapability returned by approval for submit_text with empty args.", "phone", "submit_text"),
         LocalToolSpec("phone_ask_user_confirmation", "Request one approval. Args: command, exact args object for the next sensitive action, and optional message/preview. Pass returned approvalCapability unchanged to that exact action.", "phone", "ask_user_confirmation"),
         LocalToolSpec("phone_wait", "Wait for the requested number of milliseconds. Args: ms.", "phone", "wait"),
-        LocalToolSpec("local_read_skill", "Read a packaged local skill file by name. Args: name. Use name android-control before Android phone-control tools.", "skill"),
+        LocalToolSpec("local_read_skill", "Read a packaged local skill file by name. Args: name.", "skill"),
         LocalToolSpec("local_list_files", "List files in the local app workspace.", "workspace"),
         LocalToolSpec("local_read_file", "Read a UTF-8 text file from the local app-private workspace. Args: path.", "workspace"),
         LocalToolSpec("local_write_file", "Write a UTF-8 text file in the local app-private workspace. Args: path (string, max 4096), text (non-empty string, max 80000), approvalCapability (from approval for the exact path and text). Do not use this for files the user wants to open in another phone app or browser.", "workspace"),

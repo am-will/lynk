@@ -130,7 +130,6 @@ class LocalAgentController(
         var rejectedUnneededTool = false
         var repeatedObserveCount = 0
         var latestScreenshotPath: String? = null
-        var androidControlSkillLoaded = phoneControlRequest
         var phoneToolExecuted = false
         var phoneActionCount = 0
         var noToolPhoneNudges = 0
@@ -256,14 +255,6 @@ class LocalAgentController(
                     transcript.add("tool ${call.name} result: $rejected")
                     continue
                 }
-                if (phoneControlRequest && LocalToolPolicy.isPhoneTool(call.name) && !androidControlSkillLoaded) {
-                    val rejected = JSONObject()
-                        .put("ok", false)
-                        .put("error", "Before Android phone-control tools, call local_read_skill with args {\"name\":\"android-control\"} and follow that skill.")
-                    transcript.add("assistant tool request: ${JSONObject().put("tool", call.name).put("args", call.args)}")
-                    transcript.add("tool ${call.name} result: ${rejected.toString()}")
-                    continue
-                }
                 if (call.name == "phone_observe" && latestScreenshotPath != null) {
                     val rejected = JSONObject()
                         .put("ok", false)
@@ -288,11 +279,6 @@ class LocalAgentController(
                     if (LocalPhoneControlTurnPolicy.isPhoneActionTool(call.name)) {
                         phoneActionCount += 1
                     }
-                }
-                if (call.name == "local_read_skill" && result.optBoolean("ok", false) &&
-                    result.optString("name") == LocalToolRegistry.ANDROID_CONTROL_SKILL_NAME
-                ) {
-                    androidControlSkillLoaded = true
                 }
                 if (runtimeProfile.supportsImageInput) {
                     result.optString("screenshotPath").takeIf { it.isNotBlank() }?.let { path ->
