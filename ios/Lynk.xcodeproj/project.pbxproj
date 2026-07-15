@@ -14,18 +14,25 @@
 		174C3C0161B2C0065E11EA45 /* ChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5399B2E25497A1BCB2C631F /* ChatStore.swift */; };
 		25764FBE3BCD0C8C588AE43E /* AttachmentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83F6ED23D308B38CDE2CE9BF /* AttachmentStore.swift */; };
 		266F35AF015774FFEDF0136A /* LynkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C78EDB8B71EB93B5CDD23F10 /* LynkApp.swift */; };
+		2CA39E034CEAF0F54C79174F /* RealtimeToolCallAccumulator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 302B17EA35B5CF60DB08E73D /* RealtimeToolCallAccumulator.swift */; };
 		3C853B173130467C0270AF8B /* TranscriptionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D85D2CD9ACDC21DEEDFE6BAA /* TranscriptionClient.swift */; };
+		413ADE8F6B4FB50E2EC7184E /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 16D980A140D68EC435A2C63F /* WebRTC */; };
+		49FDED8CA75CBC071BF6A240 /* VoiceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40EAE28A303061F8E169EB0 /* VoiceView.swift */; };
 		4E843526799BA6E2FD5750CC /* AppContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B18EAF5FB8D913C5D57BFBFC /* AppContainer.swift */; };
+		5480EA0CD4E2F3D5CDBABC7E /* RealtimeVoiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFE24D02EE500C1C8A2AD668 /* RealtimeVoiceTests.swift */; };
 		59BEE0BB4C33DE065B600674 /* AttachmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 731EDB36BEBD1A348A3519E2 /* AttachmentTests.swift */; };
 		5C26A6DF7BC3B57C9C96C9FA /* BridgeRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70A0F6402671314E1157127 /* BridgeRegistration.swift */; };
 		5D1CDA4C0392F3A301BB705B /* AttachmentModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 946D6582B28B930EE5C00BCB /* AttachmentModels.swift */; };
+		5EB5B2757C4AFAE81E92FA34 /* WebRTCRealtimeTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4149D66B703B99AEA5BE8180 /* WebRTCRealtimeTransport.swift */; };
 		74E5BB267F0F3004EA068A36 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D75E38AC85E8F1F1F4C12061 /* ChatView.swift */; };
+		7AAD383249A0768E5378255E /* RealtimeVoiceTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E23637C359F28AC997DB298 /* RealtimeVoiceTransport.swift */; };
 		7F3C74BEFD4E60D2A8B90AF2 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA02C6438CE2B85F069053F8 /* SettingsView.swift */; };
 		81C072AD7A3CC9323D1D13F6 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABC8ED8E9C64ACE7E008DC1C /* RootView.swift */; };
 		9124E4EA5CD494E3FF1D6C40 /* PcmCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7ECB951089B2EE10B917D329 /* PcmCapture.swift */; };
 		96A8E082D1FF2FA2C81CDB4F /* ChatStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25518B5415F52EF38D3C3EC5 /* ChatStoreTests.swift */; };
 		AB1ED8747A0011901FCAFAC5 /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E061195B979C0FDE4025E49 /* SettingsStore.swift */; };
 		B1620919A2A967E744792CAE /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C59BC17A04A11E5EC806E3D7 /* ChatModels.swift */; };
+		B68F598069E592AE549FBC61 /* RealtimeVoiceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4728134A5FF78C8D2B0416E0 /* RealtimeVoiceController.swift */; };
 		BA2C0121F3B97BB04CDBFF05 /* BridgeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D073E826D35527CA5EDEB117 /* BridgeClient.swift */; };
 		C2D16D756EA8DF6C25ACB348 /* TimelineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1C39E1EA3094760B1BFEEA /* TimelineView.swift */; };
 		CE08E32C4663DD866F45DB86 /* TranscriptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 93B2D721CC32EFF2B37D2CA9 /* TranscriptionTests.swift */; };
@@ -35,6 +42,7 @@
 		F497C7287B968E03C8509907 /* AttachmentImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FB5EC1CD37E94DB9B1E6362 /* AttachmentImporter.swift */; };
 		F49FF1A1957AD34A6375E9A5 /* BridgeEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDAC323DB1F7726441A7F697 /* BridgeEndpoint.swift */; };
 		F52D737749B304CF6834CB0F /* TranscriptionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3484185CDBAC0C88F6C52C77 /* TranscriptionController.swift */; };
+		F9162450268D3979457AFBA8 /* RealtimeTranscriptNormalizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6323AB09F3CD6A1C80A41BB /* RealtimeTranscriptNormalizer.swift */; };
 		F9D82B57FE748F1E0070D28A /* BridgeRegistrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCB1383DAF6B2C71CA082BBF /* BridgeRegistrationTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -61,8 +69,12 @@
 		25518B5415F52EF38D3C3EC5 /* ChatStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStoreTests.swift; sourceTree = "<group>"; };
 		2A37A63DE24881FB82768CB8 /* LynkUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LynkUITests.swift; sourceTree = "<group>"; };
 		2AD2E8682BF953BDE281867A /* JSONValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONValue.swift; sourceTree = "<group>"; };
+		302B17EA35B5CF60DB08E73D /* RealtimeToolCallAccumulator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeToolCallAccumulator.swift; sourceTree = "<group>"; };
 		3484185CDBAC0C88F6C52C77 /* TranscriptionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionController.swift; sourceTree = "<group>"; };
 		3E061195B979C0FDE4025E49 /* SettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
+		3E23637C359F28AC997DB298 /* RealtimeVoiceTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeVoiceTransport.swift; sourceTree = "<group>"; };
+		4149D66B703B99AEA5BE8180 /* WebRTCRealtimeTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebRTCRealtimeTransport.swift; sourceTree = "<group>"; };
+		4728134A5FF78C8D2B0416E0 /* RealtimeVoiceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeVoiceController.swift; sourceTree = "<group>"; };
 		49A41FFA7CF088FD6111A5E8 /* BridgeEndpointTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeEndpointTests.swift; sourceTree = "<group>"; };
 		52F4CADB105641D8380683DB /* AttachmentUploader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentUploader.swift; sourceTree = "<group>"; };
 		6602C2ED5D5237135182D331 /* ChatPickers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatPickers.swift; sourceTree = "<group>"; };
@@ -76,10 +88,12 @@
 		93B2D721CC32EFF2B37D2CA9 /* TranscriptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionTests.swift; sourceTree = "<group>"; };
 		946D6582B28B930EE5C00BCB /* AttachmentModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentModels.swift; sourceTree = "<group>"; };
 		A283C841179C3EE36630F875 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		A6323AB09F3CD6A1C80A41BB /* RealtimeTranscriptNormalizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeTranscriptNormalizer.swift; sourceTree = "<group>"; };
 		ABC8ED8E9C64ACE7E008DC1C /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		B18EAF5FB8D913C5D57BFBFC /* AppContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppContainer.swift; sourceTree = "<group>"; };
 		BA02C6438CE2B85F069053F8 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		BCB1383DAF6B2C71CA082BBF /* BridgeRegistrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeRegistrationTests.swift; sourceTree = "<group>"; };
+		C40EAE28A303061F8E169EB0 /* VoiceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceView.swift; sourceTree = "<group>"; };
 		C59BC17A04A11E5EC806E3D7 /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
 		C78EDB8B71EB93B5CDD23F10 /* LynkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LynkApp.swift; sourceTree = "<group>"; };
 		CB1C39E1EA3094760B1BFEEA /* TimelineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineView.swift; sourceTree = "<group>"; };
@@ -87,9 +101,21 @@
 		D75E38AC85E8F1F1F4C12061 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		D85D2CD9ACDC21DEEDFE6BAA /* TranscriptionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionClient.swift; sourceTree = "<group>"; };
 		E5399B2E25497A1BCB2C631F /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
+		EFE24D02EE500C1C8A2AD668 /* RealtimeVoiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeVoiceTests.swift; sourceTree = "<group>"; };
 		F70A0F6402671314E1157127 /* BridgeRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeRegistration.swift; sourceTree = "<group>"; };
 		FDAC323DB1F7726441A7F697 /* BridgeEndpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeEndpoint.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		0EA1F946CFA6AA366B26BC42 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				413ADE8F6B4FB50E2EC7184E /* WebRTC in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		072135060ACC6C7660F337B8 /* LynkTests */ = {
@@ -99,6 +125,7 @@
 				49A41FFA7CF088FD6111A5E8 /* BridgeEndpointTests.swift */,
 				BCB1383DAF6B2C71CA082BBF /* BridgeRegistrationTests.swift */,
 				25518B5415F52EF38D3C3EC5 /* ChatStoreTests.swift */,
+				EFE24D02EE500C1C8A2AD668 /* RealtimeVoiceTests.swift */,
 				93B2D721CC32EFF2B37D2CA9 /* TranscriptionTests.swift */,
 			);
 			path = LynkTests;
@@ -188,6 +215,19 @@
 			path = Persistence;
 			sourceTree = "<group>";
 		};
+		6E7EDE951034E9739EC03989 /* Voice */ = {
+			isa = PBXGroup;
+			children = (
+				302B17EA35B5CF60DB08E73D /* RealtimeToolCallAccumulator.swift */,
+				A6323AB09F3CD6A1C80A41BB /* RealtimeTranscriptNormalizer.swift */,
+				4728134A5FF78C8D2B0416E0 /* RealtimeVoiceController.swift */,
+				3E23637C359F28AC997DB298 /* RealtimeVoiceTransport.swift */,
+				C40EAE28A303061F8E169EB0 /* VoiceView.swift */,
+				4149D66B703B99AEA5BE8180 /* WebRTCRealtimeTransport.swift */,
+			);
+			path = Voice;
+			sourceTree = "<group>";
+		};
 		71F5B6C6778011842867A2F2 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
@@ -221,6 +261,7 @@
 				B94AAF5E03D419431EFDD151 /* Chat */,
 				785F7F85E6DA12583E3A32ED /* Settings */,
 				2CEB80F4FAF519C75B5F00D2 /* Transcription */,
+				6E7EDE951034E9739EC03989 /* Voice */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -267,6 +308,7 @@
 			buildConfigurationList = 27295A2D283E8E1749910D59 /* Build configuration list for PBXNativeTarget "Lynk" */;
 			buildPhases = (
 				6720BED0B8241E346746D12B /* Sources */,
+				0EA1F946CFA6AA366B26BC42 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -274,6 +316,7 @@
 			);
 			name = Lynk;
 			packageProductDependencies = (
+				16D980A140D68EC435A2C63F /* WebRTC */,
 			);
 			productName = Lynk;
 			productReference = 05DAB1BCAFE7CF6742257063 /* Lynk.app */;
@@ -342,6 +385,9 @@
 			);
 			mainGroup = 4EF1B7B142D31CB4EB3D9093;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				9F2AB111042A50D54317A585 /* XCRemoteSwiftPackageReference "WebRTC" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 461DAB1FA34F7615B4D9E714 /* Products */;
 			projectDirPath = "";
@@ -375,6 +421,10 @@
 				DFC821500DA7A51B5E81F1D3 /* KeychainStore.swift in Sources */,
 				266F35AF015774FFEDF0136A /* LynkApp.swift in Sources */,
 				9124E4EA5CD494E3FF1D6C40 /* PcmCapture.swift in Sources */,
+				2CA39E034CEAF0F54C79174F /* RealtimeToolCallAccumulator.swift in Sources */,
+				F9162450268D3979457AFBA8 /* RealtimeTranscriptNormalizer.swift in Sources */,
+				B68F598069E592AE549FBC61 /* RealtimeVoiceController.swift in Sources */,
+				7AAD383249A0768E5378255E /* RealtimeVoiceTransport.swift in Sources */,
 				81C072AD7A3CC9323D1D13F6 /* RootView.swift in Sources */,
 				AB1ED8747A0011901FCAFAC5 /* SettingsStore.swift in Sources */,
 				7F3C74BEFD4E60D2A8B90AF2 /* SettingsView.swift in Sources */,
@@ -382,6 +432,8 @@
 				DB2C7F496926D0CACDCBEE42 /* TranscriptionAudio.swift in Sources */,
 				3C853B173130467C0270AF8B /* TranscriptionClient.swift in Sources */,
 				F52D737749B304CF6834CB0F /* TranscriptionController.swift in Sources */,
+				49FDED8CA75CBC071BF6A240 /* VoiceView.swift in Sources */,
+				5EB5B2757C4AFAE81E92FA34 /* WebRTCRealtimeTransport.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -401,6 +453,7 @@
 				09359FDA6FBD96B5A71AA377 /* BridgeEndpointTests.swift in Sources */,
 				F9D82B57FE748F1E0070D28A /* BridgeRegistrationTests.swift in Sources */,
 				96A8E082D1FF2FA2C81CDB4F /* ChatStoreTests.swift in Sources */,
+				5480EA0CD4E2F3D5CDBABC7E /* RealtimeVoiceTests.swift in Sources */,
 				CE08E32C4663DD866F45DB86 /* TranscriptionTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -692,6 +745,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		9F2AB111042A50D54317A585 /* XCRemoteSwiftPackageReference "WebRTC" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stasel/WebRTC.git";
+			requirement = {
+				kind = exactVersion;
+				version = 150.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		16D980A140D68EC435A2C63F /* WebRTC */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9F2AB111042A50D54317A585 /* XCRemoteSwiftPackageReference "WebRTC" */;
+			productName = WebRTC;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = BC27ABE352944E316F16F69E /* Project object */;
 }

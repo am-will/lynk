@@ -7,16 +7,20 @@ final class AppContainer {
     let settings: SettingsStore
     let bridge: BridgeClient
     let chat: ChatStore
+    let voice: RealtimeVoiceController
 
     init() {
         let settings = SettingsStore()
         let chat = ChatStore()
         let bridge = BridgeClient()
+        let voice = RealtimeVoiceController()
         self.settings = settings
         self.chat = chat
         self.bridge = bridge
-        bridge.onMessage = { [weak chat] message in
+        self.voice = voice
+        bridge.onMessage = { [weak chat, weak voice] message in
             chat?.receive(message)
+            voice?.receive(message)
         }
     }
 
@@ -25,4 +29,3 @@ final class AppContainer {
         bridge.connect(using: settings.snapshot)
     }
 }
-

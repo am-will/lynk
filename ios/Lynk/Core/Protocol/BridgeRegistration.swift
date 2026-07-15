@@ -2,7 +2,7 @@ import Foundation
 
 enum BridgeRegistration {
     static let platform = "ios"
-    static let capabilities = ["chat", "attachments", "transcription"]
+    static let capabilities = ["chat", "attachments", "transcription", "realtime_voice"]
     static let forbiddenPhoneCapabilities: Set<String> = [
         "phone_control", "accessibility_tree", "gestures", "text_input", "screenshots", "app_launch"
     ]
@@ -26,4 +26,3 @@ enum BridgeRegistration {
         !forbiddenPhoneCapabilities.isDisjoint(with: capabilities)
     }
 }
-

@@ -11,12 +11,18 @@ settings:
     IPHONEOS_DEPLOYMENT_TARGET: "17.0"
     TARGETED_DEVICE_FAMILY: "1"
     ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+packages:
+  WebRTC:
+    url: https://github.com/stasel/WebRTC.git
+    exactVersion: 150.0.0
 targets:
   Lynk:
     type: application
     platform: iOS
     sources:
       - path: Lynk
+    dependencies:
+      - package: WebRTC
     info:
       path: Lynk/Resources/Info.plist
       properties:
@@ -68,4 +74,3 @@ schemes:
       targets:
         - LynkTests
         - LynkUITests
-

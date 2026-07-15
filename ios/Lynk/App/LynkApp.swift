@@ -10,8 +10,8 @@ struct LynkApp: App {
                 .environment(container.settings)
                 .environment(container.bridge)
                 .environment(container.chat)
+                .environment(container.voice)
                 .task { container.start() }
         }
     }
 }
-
