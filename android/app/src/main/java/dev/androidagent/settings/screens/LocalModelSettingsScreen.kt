@@ -9,6 +9,8 @@ import android.widget.LinearLayout
 import dev.androidagent.AgentConfigStore
 import dev.androidagent.LocalModelBackend
 import dev.androidagent.R
+import dev.androidagent.localmodel.LocalModelImportStatus
+import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.settings.ColorUtils
 import dev.androidagent.settings.SettingsComponents
 import dev.androidagent.settings.SettingsComponents.BadgeTone
@@ -75,8 +77,46 @@ object LocalModelSettingsScreen {
             exposeToAccessibility(R.id.openclaw_local_model_path_field, "Local model path")
         }
 
+        val modelPickerPaths = mutableListOf<String>()
+        fun modelPickerChoices(): List<String> {
+            val models = LocalModelStore.listImportedModels(activity)
+            modelPickerPaths.clear()
+            modelPickerPaths.addAll(models.map { it.path })
+            return if (models.isEmpty()) {
+                listOf("No models imported yet")
+            } else {
+                models.map { "${it.displayName} (${it.sizeBytes / (1024 * 1024)} MB)" }
+            }
+        }
+        val initialModelChoices = modelPickerChoices()
+        val initialModelSelection = modelPickerPaths.indexOf(config.localModelPath).coerceAtLeast(0)
+        val modelPickerSpinner = SettingsUi.styledSpinner(activity, initialModelChoices, initialModelSelection, tokens)
+        root.addView(modelPickerSpinner, SettingsComponents.verticalMargin(activity, bottom = DesignTokens.Spacing.md))
+        SettingsUi.onSpinnerSelectionChanged(modelPickerSpinner) { index ->
+            modelPickerPaths.getOrNull(index)?.let { path -> pathInput.setText(path) }
+        }
+
         // Import model card
-        root.addView(buildImportCard(activity, tokens, callbacks, pathInput, config.localModelPath))
+        val importProgressLabel = SettingsComponents.body(activity, tokens, "").apply {
+            visibility = View.GONE
+        }
+        root.addView(buildImportCard(activity, tokens, callbacks, pathInput, config.localModelPath, importProgressLabel))
+        LocalModelImportStatus.observe { status ->
+            if (status == null) {
+                importProgressLabel.visibility = View.GONE
+                val choices = modelPickerChoices()
+                (modelPickerSpinner.adapter as? android.widget.ArrayAdapter<String>)?.let { adapter ->
+                    adapter.clear()
+                    adapter.addAll(choices)
+                    adapter.notifyDataSetChanged()
+                }
+                val selection = modelPickerPaths.indexOf(pathInput.text.toString()).coerceAtLeast(0)
+                modelPickerSpinner.setSelection(selection)
+            } else {
+                importProgressLabel.visibility = View.VISIBLE
+                importProgressLabel.text = status
+            }
+        }
 
         // Backend card
         val backends = LocalModelBackend.values().toList()
@@ -158,7 +198,8 @@ object LocalModelSettingsScreen {
         tokens: ThemeTokens,
         callbacks: Callbacks,
         pathInput: EditText,
-        currentPath: String
+        currentPath: String,
+        progressLabel: android.widget.TextView
     ): LinearLayout {
         val card = SettingsComponents.card(activity, tokens, padding = DesignTokens.Spacing.md)
         val row = LinearLayout(activity).apply {
@@ -191,6 +232,7 @@ object LocalModelSettingsScreen {
         }.exposeToAccessibility(R.id.openclaw_local_model_import_button, "Import local model"))
 
         card.addView(row)
+        card.addView(progressLabel, SettingsComponents.verticalMargin(activity, top = DesignTokens.Spacing.sm))
         // Hidden text field driver
         card.addView(pathInput)
         return card

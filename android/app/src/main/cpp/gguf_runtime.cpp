@@ -431,9 +431,10 @@ static CreateResult try_create_session(const char* path, int n_gpu_layers, int n
         cparams.abort_callback = abort_callback;
         cparams.abort_callback_data = &operation->abort_flag;
         if (n_gpu_layers > 0) {
-            cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
-            cparams.type_k = GGML_TYPE_F16;
-            cparams.type_v = GGML_TYPE_F16;
+            // Standard attention hard-aborts on some Vulkan GPUs (uncatchable); flash attn avoids it and requires quantized KV.
+            cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+            cparams.type_k = GGML_TYPE_Q4_0;
+            cparams.type_v = GGML_TYPE_Q4_0;
             cparams.offload_kqv = true;
         } else {
             cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
@@ -792,6 +793,8 @@ Java_dev_androidagent_localmodel_gguf_GgufNative_generate(
         sampler_guard.smpl = llama_sampler_chain_init(sparams);
         llama_sampler_chain_add(sampler_guard.smpl, llama_sampler_init_top_k(static_cast<int32_t>(top_k)));
         llama_sampler_chain_add(sampler_guard.smpl, llama_sampler_init_top_p(static_cast<float>(top_p), 1));
+        // Prevents small-model repetition loops; must come after top-k/top-p per llama.cpp's guidance.
+        llama_sampler_chain_add(sampler_guard.smpl, llama_sampler_init_penalties(64, 1.1f, 0.0f, 0.0f));
         llama_sampler_chain_add(sampler_guard.smpl, llama_sampler_init_temp(static_cast<float>(temperature)));
         llama_sampler_chain_add(sampler_guard.smpl, llama_sampler_init_dist(static_cast<uint32_t>(time(nullptr))));
 

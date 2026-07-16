@@ -115,7 +115,8 @@ class LocalAgentController(
         val systemPrompt = LocalPromptBuilder.systemPrompt(
             basePrompt = config.systemPrompt,
             toolsAllowed = toolsAllowed,
-            toolDescriptionsJson = tools.toolDescriptions(runtimeProfile, toolAccess).toString()
+            toolDescriptionsJson = tools.toolDescriptions(runtimeProfile, toolAccess).toString(),
+            isTinyModel = LocalModelSize.isTiny(LocalModelStore.displayName(config.localModelPath))
         )
         val transcript = selectNewestHistory(
             history = history,

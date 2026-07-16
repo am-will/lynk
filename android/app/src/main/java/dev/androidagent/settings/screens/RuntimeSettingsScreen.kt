@@ -17,6 +17,8 @@ import dev.androidagent.LocalModelBackend
 import dev.androidagent.R
 import dev.androidagent.chat.ChatModelCatalog
 import dev.androidagent.chat.ChatModelOption
+import dev.androidagent.localmodel.LocalModelImportStatus
+import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.settings.DiagnosticsBackendSnapshot
 import dev.androidagent.settings.SettingsButtonTone
 import dev.androidagent.settings.SettingsUi
@@ -81,7 +83,23 @@ object RuntimeSettingsScreen {
         val workspaceControls = root.addWorkspaceCards(activity, tokens, config)
 
         val localModelPathInput = SettingsUi.configField(activity, "Model file", config.localModelPath, tokens).apply {
-            exposeToAccessibility(R.id.openclaw_local_model_path_field, "Local model path")
+            visibility = View.GONE
+        }
+        val modelPickerPaths = mutableListOf<String>()
+        fun modelPickerChoices(): List<String> {
+            val models = LocalModelStore.listImportedModels(activity)
+            modelPickerPaths.clear()
+            modelPickerPaths.addAll(models.map { it.path })
+            return if (models.isEmpty()) {
+                listOf("No models imported yet")
+            } else {
+                models.map { "${it.displayName} (${it.sizeBytes / (1024 * 1024)} MB)" }
+            }
+        }
+        val initialModelChoices = modelPickerChoices()
+        val initialModelSelection = modelPickerPaths.indexOf(config.localModelPath).coerceAtLeast(0)
+        val modelPickerSpinner = SettingsUi.styledSpinner(activity, initialModelChoices, initialModelSelection, tokens).apply {
+            exposeToAccessibility(R.id.openclaw_local_model_path_field, "Imported model")
         }
         val localBackends = LocalModelBackend.values().toList()
         val localBackendSpinner = SettingsUi.styledSpinner(
@@ -108,15 +126,37 @@ object RuntimeSettingsScreen {
             R.id.openclaw_local_developer_tools_checkbox
         )
 
+        val importProgressLabel = SettingsUi.body(activity, "", tokens).apply {
+            visibility = View.GONE
+        }
+        LocalModelImportStatus.observe { status ->
+            if (status == null) {
+                importProgressLabel.visibility = View.GONE
+                val choices = modelPickerChoices()
+                (modelPickerSpinner.adapter as? android.widget.ArrayAdapter<String>)?.let { adapter ->
+                    adapter.clear()
+                    adapter.addAll(choices)
+                    adapter.notifyDataSetChanged()
+                }
+                val selection = modelPickerPaths.indexOf(localModelPathInput.text.toString()).coerceAtLeast(0)
+                modelPickerSpinner.setSelection(selection)
+            } else {
+                importProgressLabel.visibility = View.VISIBLE
+                importProgressLabel.text = status
+            }
+        }
+
         root.addView(SettingsUi.card(activity, tokens).apply {
             addView(SettingsUi.sectionHeader(activity, "Local Models", "Import and tune the on-device model harness.", tokens))
-            addView(SettingsUi.labeledField(activity, "Model file", localModelPathInput, tokens, DesignTokens.Spacing.md))
+            addView(SettingsUi.labeledField(activity, "Model", modelPickerSpinner, tokens, DesignTokens.Spacing.md))
             addView(
                 SettingsUi.actionButton(activity, "Import Local Model", SettingsButtonTone.Secondary, tokens) {
                     callbacks.onImportRequested(localModelPathInput)
                 }.exposeToAccessibility(R.id.openclaw_local_model_import_button, "Import local model"),
                 SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm + 2)
             )
+            addView(importProgressLabel, SettingsUi.stackedParams(activity, DesignTokens.Spacing.sm))
+            addView(localModelPathInput)
             addView(SettingsUi.labeledField(activity, "Backend", localBackendSpinner, tokens))
             addView(SettingsUi.labeledField(activity, "Context window", localContextInput, tokens))
             addView(localDeveloperTools, SettingsUi.stackedParams(activity, DesignTokens.Spacing.md))
@@ -181,6 +221,9 @@ object RuntimeSettingsScreen {
             SettingsUi.onTextChanged(control.input) { saveCurrent() }
         }
         SettingsUi.onTextChanged(localModelPathInput) { saveCurrent() }
+        SettingsUi.onSpinnerSelectionChanged(modelPickerSpinner) { index ->
+            modelPickerPaths.getOrNull(index)?.let { path -> localModelPathInput.setText(path) }
+        }
         SettingsUi.onSpinnerSelectionChanged(localBackendSpinner) { saveCurrent() }
         SettingsUi.onTextChanged(localContextInput) { saveCurrent() }
 
