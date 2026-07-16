@@ -33,6 +33,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import dev.androidagent.chat.ChatAttachmentKind
 import dev.androidagent.chat.ChatAttachmentStore
+import dev.androidagent.localmodel.LocalModelImportStatus
 import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.settings.DiagnosticsEventLog
 import dev.androidagent.settings.DiagnosticsEventLevel
@@ -102,6 +103,7 @@ class AppShellActivity : ComponentActivity() {
         }
         localModelImportJob?.cancel()
         DiagnosticsEventLog.append(DiagnosticsEventLevel.Info, "Importing local model")
+        LocalModelImportStatus.publish("Importing local model…")
         localModelImportJob = lifecycleScope.launch {
             try {
                 var lastProgressMarker = -1L
@@ -116,14 +118,21 @@ class AppShellActivity : ComponentActivity() {
                             "${copied / (1024 * 1024)} MB"
                         }
                         DiagnosticsEventLog.append(DiagnosticsEventLevel.Info, "Importing local model: $label")
+                        LocalModelImportStatus.publish("Importing local model… $label")
                     }
                 }
                 pendingLocalModelPathField?.setText(path)
                 DiagnosticsEventLog.append(DiagnosticsEventLevel.Success, "Imported local model")
+                LocalModelImportStatus.publish("Imported ✓ ${LocalModelStore.displayName(path)}")
+                mainHandler.postDelayed({ LocalModelImportStatus.publish(null) }, 2500)
             } catch (cancelled: CancellationException) {
+                LocalModelImportStatus.publish(null)
                 throw cancelled
             } catch (error: Exception) {
-                DiagnosticsEventLog.append(DiagnosticsEventLevel.Error, error.message ?: "Import failed")
+                val message = error.message ?: "Import failed"
+                DiagnosticsEventLog.append(DiagnosticsEventLevel.Error, message)
+                LocalModelImportStatus.publish("Import failed: $message")
+                mainHandler.postDelayed({ LocalModelImportStatus.publish(null) }, 4000)
             }
         }
     }

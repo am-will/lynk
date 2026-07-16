@@ -10,6 +10,7 @@ import dev.androidagent.storage.StoredBlob
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -25,7 +26,8 @@ object LocalModelStore {
     )
     private val GGUF_LIMITS = modelLimits(
         maxItemBytes = 12L * 1024L * 1024L * 1024L,
-        maxAggregateBytes = 24L * 1024L * 1024L * 1024L
+        maxAggregateBytes = 24L * 1024L * 1024L * 1024L,
+        maxBlobCount = 8
     )
 
     suspend fun importModel(
@@ -102,9 +104,52 @@ object LocalModelStore {
         formatForDisplayName(path) != null && File(path.trim()).isFile
 
     fun displayName(path: String): String {
-        val name = File(path.trim()).name
-        return name.removeSuffix(".litertlm").removeSuffix(".gguf").ifBlank { "Local model" }
+        val trimmed = path.trim()
+        if (trimmed.isBlank()) return "No model selected"
+        val file = File(trimmed)
+        val fallback = file.name.removeSuffix(".litertlm").removeSuffix(".gguf").ifBlank { "Local model" }
+        val metadataFile = File(file.parentFile, "${file.nameWithoutExtension}.json")
+        val storedDisplayName = runCatching {
+            if (metadataFile.isFile) {
+                JSONObject(metadataFile.readText()).optString("displayName").takeIf { it.isNotBlank() }
+            } else {
+                null
+            }
+        }.getOrNull()
+        return storedDisplayName ?: fallback
     }
+
+    // Newest first.
+    internal fun listImportedModels(context: Context): List<ImportedModel> {
+        return ModelFormat.values().flatMap { format ->
+            val directory = File(context.filesDir, format.directoryName)
+            directory.listFiles().orEmpty()
+                .filter { it.name.endsWith(".json") }
+                .mapNotNull { metadataFile ->
+                    runCatching {
+                        val json = JSONObject(metadataFile.readText())
+                        val id = json.getString("id")
+                        val payloadFile = File(directory, "$id${format.extension}")
+                        if (!payloadFile.isFile) return@runCatching null
+                        ImportedModel(
+                            path = payloadFile.absolutePath,
+                            displayName = json.optString("displayName").takeIf { it.isNotBlank() } ?: id,
+                            format = format,
+                            sizeBytes = json.optLong("sizeBytes", payloadFile.length()),
+                            createdAt = json.optLong("createdAt", payloadFile.lastModified())
+                        )
+                    }.getOrNull()
+                }
+        }.sortedByDescending { it.createdAt }
+    }
+
+    internal data class ImportedModel(
+        val path: String,
+        val displayName: String,
+        val format: ModelFormat,
+        val sizeBytes: Long,
+        val createdAt: Long
+    )
 
     internal enum class ModelFormat(
         val extension: String,
@@ -121,10 +166,10 @@ object LocalModelStore {
         val mimeType: String?
     )
 
-    private fun modelLimits(maxItemBytes: Long, maxAggregateBytes: Long) = BlobStoreLimits(
+    private fun modelLimits(maxItemBytes: Long, maxAggregateBytes: Long, maxBlobCount: Int = 3) = BlobStoreLimits(
         minItemBytes = MIN_MODEL_BYTES,
         maxItemBytes = maxItemBytes,
-        maxBlobCount = 3,
+        maxBlobCount = maxBlobCount,
         maxAggregateBytes = maxAggregateBytes,
         freeSpaceReserveBytes = 512L * 1024L * 1024L,
         retentionMillis = Long.MAX_VALUE

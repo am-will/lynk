@@ -4,8 +4,13 @@ internal object LocalPromptBuilder {
     fun systemPrompt(
         basePrompt: String,
         toolsAllowed: Boolean,
-        toolDescriptionsJson: String
+        toolDescriptionsJson: String,
+        isTinyModel: Boolean = false
     ): String {
+        // Sub-2B models can't reliably use the tool-call protocol below; skip to a plain prompt.
+        if (isTinyModel) {
+            return "Answer the user's question directly and completely, in plain conversational language."
+        }
         val toolPolicy = if (toolsAllowed) {
             """
             Tool mode:

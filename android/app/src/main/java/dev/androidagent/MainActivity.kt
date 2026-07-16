@@ -28,6 +28,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import dev.androidagent.avatar.AvatarLibrary
+import dev.androidagent.localmodel.LocalModelImportStatus
 import dev.androidagent.localmodel.LocalModelStore
 import dev.androidagent.settings.SettingsHost
 import dev.androidagent.settings.SettingsUi
@@ -67,6 +68,7 @@ class MainActivity : ComponentActivity() {
         }
         localModelImportJob?.cancel()
         setupBanner.text = "Importing local model..."
+        LocalModelImportStatus.publish("Importing local model…")
         localModelImportJob = lifecycleScope.launch {
             try {
                 var lastProgressMarker = -1L
@@ -74,14 +76,23 @@ class MainActivity : ComponentActivity() {
                     val marker = if (total != null && total > 0L) copied * 100L / total else copied / PROGRESS_STEP_BYTES
                     if (marker == lastProgressMarker) return@importModel
                     lastProgressMarker = marker
-                    mainHandler.post { setupBanner.text = modelImportProgress(copied, total) }
+                    mainHandler.post {
+                        setupBanner.text = modelImportProgress(copied, total)
+                        LocalModelImportStatus.publish(modelImportProgress(copied, total))
+                    }
                 }
                 pendingLocalModelPathField?.setText(path)
                 setupBanner.text = "Imported local model."
+                LocalModelImportStatus.publish("Imported ✓ ${LocalModelStore.displayName(path)}")
+                mainHandler.postDelayed({ LocalModelImportStatus.publish(null) }, 2500)
             } catch (cancelled: CancellationException) {
+                LocalModelImportStatus.publish(null)
                 throw cancelled
             } catch (error: Exception) {
-                setupBanner.text = error.message ?: "Could not import local model."
+                val message = error.message ?: "Could not import local model."
+                setupBanner.text = message
+                LocalModelImportStatus.publish("Import failed: $message")
+                mainHandler.postDelayed({ LocalModelImportStatus.publish(null) }, 4000)
             }
         }
     }
